@@ -22,17 +22,25 @@ import {
 
 export interface DiffServiceDeps {
   gh: (repoUrl: string) => GhClient;
+  /**
+   * Batched + TTL-cached open-PR listing (issue #40). Defaults to the
+   * uncached REST + per-PR enrichment flow for direct constructions.
+   */
+  pullListing?: (projectId: string, repoUrl: string) => Promise<PullRequest[]>;
 }
 
 export class DiffService {
   private readonly gh: (repoUrl: string) => GhClient;
+  private readonly pullListing?: (projectId: string, repoUrl: string) => Promise<PullRequest[]>;
 
   constructor(deps: DiffServiceDeps) {
     this.gh = deps.gh;
+    this.pullListing = deps.pullListing;
   }
 
   /** All pull requests for a project, enriched with ciStatus/reviewState. */
   async listPullRequests(projectId: string, repoUrl: string): Promise<PullRequest[]> {
+    if (this.pullListing !== undefined) return this.pullListing(projectId, repoUrl);
     return listPullRequestsWithMeta(this.gh(repoUrl), projectId, parseRepoUrl(repoUrl));
   }
 

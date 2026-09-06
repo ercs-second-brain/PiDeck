@@ -63,6 +63,128 @@ export async function listPullRequests(gh: GhClient, projectId: string, repo: Re
 }
 
 // ---------------------------------------------------------------------------
+// Batched listing: one GraphQL call for open PRs + CI/review meta (issue #40)
+// ---------------------------------------------------------------------------
+
+const graphqlPullsQuery = `
+query($owner: String!, $name: String!, $first: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: $first, states: OPEN, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      nodes {
+        number
+        title
+        url
+        updatedAt
+        author { login }
+        headRefName
+        baseRefName
+        headRefOid
+        reviewDecision
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup { state }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+` as const;
+
+const graphqlPullsSchema = z.object({
+  repository: z.object({
+    pullRequests: z.object({
+      nodes: z.array(
+        z.object({
+          number: z.number().int().positive(),
+          title: z.string(),
+          url: z.string().url(),
+          updatedAt: z.string(),
+          author: z.object({ login: z.string() }).nullable(),
+          headRefName: z.string(),
+          baseRefName: z.string(),
+          headRefOid: z.string(),
+          reviewDecision: z.enum(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"]).nullable(),
+          commits: z.object({
+            nodes: z.array(
+              z.object({
+                commit: z.object({
+                  statusCheckRollup: z.object({ state: z.enum(["ERROR", "EXPECTED", "FAILURE", "PENDING", "SUCCESS"]) }).nullable(),
+                }),
+              }),
+            ),
+          }),
+        }),
+      ),
+    }),
+  }),
+});
+
+function mapRollupState(state: string | null): CiStatus {
+  switch (state) {
+    case "SUCCESS":
+      return "success";
+    case "FAILURE":
+    case "ERROR":
+      return "failure";
+    case "PENDING":
+    case "EXPECTED":
+      return "pending";
+    default:
+      return "unknown";
+  }
+}
+
+function mapReviewDecision(decision: string | null): ReviewState {
+  if (decision === "APPROVED") return "approved";
+  if (decision === "CHANGES_REQUESTED") return "changes_requested";
+  return "none";
+}
+
+export interface BatchedPullListOptions {
+  /** Maximum open PRs to return (top N by `updatedAt`). Default 100. */
+  first?: number;
+}
+
+/**
+ * Lists the most recently updated open PRs with CI status and review decision
+ * already resolved — in a **single** GraphQL call (issue #40).
+ *
+ * Replaces the O(PR) enrichment loop ({@link listPullRequestsWithMeta}) for
+ * the daemon API's pulls listing path: the old flow made 1 REST list call + 2
+ * calls per PR (check-runs + reviews) — 201 calls per kanban refresh at 100
+ * open PRs — while this flow costs **1 GraphQL call regardless of PR count**
+ * (up to `first`, default 100; no pagination). The API layer additionally
+ * caches the result with a TTL (see `apps/daemon/src/api/pull-listing.ts`).
+ *
+ * CI/review mapping is coarser than the per-PR REST path: the rollup commit
+ * status has no `running` distinction (maps to `"pending"`), and a PR with no
+ * checks/`statusCheckRollup` maps to `"unknown"`/`"none"`.
+ */
+export async function listOpenPullRequestsBatched(gh: GhClient, projectId: string, repo: RepoRef, options: BatchedPullListOptions = {}): Promise<PullRequest[]> {
+  const first = options.first ?? 100;
+  const data = await gh.graphql<unknown>(graphqlPullsQuery, { owner: repo.owner, name: repo.repo, first });
+  const parsed = graphqlPullsSchema.parse(data);
+  return parsed.repository.pullRequests.nodes.map((node) =>
+    pullRequestSchema.parse({
+      projectId,
+      number: node.number,
+      title: node.title,
+      state: "open",
+      ciStatus: mapRollupState(node.commits.nodes.at(-1)?.commit.statusCheckRollup?.state ?? null),
+      reviewState: mapReviewDecision(node.reviewDecision),
+      headBranch: node.headRefName,
+      baseBranch: node.baseRefName,
+      author: node.author?.login ?? "unknown",
+      url: node.url,
+      updatedAt: node.updatedAt,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CI status (checks + legacy combined status fallback)
 // ---------------------------------------------------------------------------
 
