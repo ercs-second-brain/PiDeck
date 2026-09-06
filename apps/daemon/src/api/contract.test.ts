@@ -33,6 +33,26 @@ const UPDATED_AT = "2026-01-01T00:00:00.000Z";
 
 const ghRoutes = {
   graphql: {
+    "pullRequests(first: $first": {
+      repository: {
+        pullRequests: {
+          nodes: [
+            {
+              number: 9,
+              title: "Fix the flaky test",
+              url: "https://github.com/o/r/pull/9",
+              updatedAt: UPDATED_AT,
+              author: { login: "auto-agent" },
+              headRefName: "ao/fix-flaky",
+              baseRefName: "main",
+              headRefOid: "abc123",
+              reviewDecision: null,
+              commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
+            },
+          ],
+        },
+      },
+    },
     "issues(first: $first": {
       repository: {
         issues: {
@@ -60,21 +80,6 @@ const ghRoutes = {
     },
   },
   api: {
-    "/repos/o/r/pulls": [
-      {
-        number: 9,
-        title: "Fix the flaky test",
-        state: "open",
-        merged_at: null,
-        user: { login: "auto-agent" },
-        head: { ref: "ao/fix-flaky", sha: "abc123" },
-        base: { ref: "main" },
-        html_url: "https://github.com/o/r/pull/9",
-        updated_at: UPDATED_AT,
-      },
-    ],
-    "/repos/o/r/commits/abc123/check-runs": { total_count: 1, check_runs: [{ status: "completed", conclusion: "success" }] },
-    "/repos/o/r/pulls/9/reviews": [],
     "/repos/o/r/pulls/9": {
       number: 9,
       title: "Fix the flaky test",

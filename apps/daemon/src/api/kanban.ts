@@ -104,25 +104,30 @@ export interface KanbanServiceDeps {
   gh: (repoUrl: string) => GhClient;
   /** Live worker list (usually `SessionManager.listWorkers`). */
   listWorkers: () => Worker[];
+  /**
+   * Batched + TTL-cached open-PR listing (issue #40). Defaults to the
+   * uncached REST + per-PR enrichment flow for direct constructions.
+   */
+  listPullRequests?: (project: Project) => Promise<PullRequest[]>;
 }
 
 export class KanbanService {
   private readonly gh: (repoUrl: string) => GhClient;
   private readonly listWorkers: () => Worker[];
+  private readonly listPullRequests?: (project: Project) => Promise<PullRequest[]>;
 
   constructor(deps: KanbanServiceDeps) {
     this.gh = deps.gh;
     this.listWorkers = deps.listWorkers;
+    this.listPullRequests = deps.listPullRequests;
   }
 
   /** Fetches the project's GitHub entities and derives the board. */
   async getBoard(project: Project): Promise<KanbanBoard> {
     const gh = this.gh(project.repoUrl);
     const repo = parseRepoUrl(project.repoUrl);
-    const [issues, pullRequests] = await Promise.all([
-      fetchIssuesWithBlockedBy(gh, project.id, repo),
-      listPullRequestsWithMeta(gh, project.id, repo),
-    ]);
+    const pullRequests = await (this.listPullRequests?.(project) ?? listPullRequestsWithMeta(gh, project.id, repo));
+    const issues = await fetchIssuesWithBlockedBy(gh, project.id, repo);
     return deriveBoard(project, issues, pullRequests, this.listWorkers());
   }
 }

@@ -18,6 +18,7 @@ import { Tmux } from "../sessions/tmux.js";
 
 import { DiffService } from "./diffs.js";
 import { KanbanService } from "./kanban.js";
+import { PullListingService } from "./pull-listing.js";
 import { ProjectService, ProjectStore } from "./projects.js";
 import { SettingsStore } from "./settings.js";
 import { WsHub } from "./ws.js";
@@ -28,6 +29,8 @@ export interface DaemonServices {
   settings: SettingsStore;
   kanban: KanbanService;
   diffs: DiffService;
+  /** Batched + TTL-cached open-PR listing shared by kanban/diffs (issue #40). */
+  pullListing: PullListingService;
   sessions: SessionManager;
   hub: WsHub;
   /** Shared tmux runner (the terminal bridge streams through the same one). */
@@ -83,11 +86,15 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   });
   const hub = new WsHub();
 
+  const pullListing = new PullListingService({ gh });
   const kanban = new KanbanService({
     gh,
     listWorkers: () => sessions.listWorkers(),
+    // Batched + cached PR listing (issue #40) — the API layer shares the
+    // GitHub token with watchers/pipelines, so it must not burn O(PR) calls.
+    listPullRequests: (project) => pullListing.list(project.id, project.repoUrl),
   });
-  const diffs = new DiffService({ gh });
+  const diffs = new DiffService({ gh, pullListing: (projectId, repoUrl) => pullListing.list(projectId, repoUrl) });
 
   return {
     projects,
@@ -95,6 +102,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     settings,
     kanban,
     diffs,
+    pullListing,
     sessions,
     hub,
     tmux,

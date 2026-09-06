@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { pullRequestSchema } from "@agentskiss/shared";
 
 import { GhClient } from "./gh.js";
-import { fetchReviewComments, getCiStatus, getReviewState, listPullRequests, listPullRequestsWithMeta, mapRestPull } from "./pulls.js";
+import { fetchReviewComments, getCiStatus, getReviewState, listOpenPullRequestsBatched, listPullRequests, listPullRequestsWithMeta, mapRestPull } from "./pulls.js";
 
 const PROJECT = "proj";
 const REPO = { owner: "ercs-second-brain", repo: "agentsKISS" };
@@ -214,5 +214,77 @@ describe("listPullRequestsWithMeta", () => {
     expect(prs).toHaveLength(1);
     expect(prs[0]?.ciStatus).toBe("failure");
     expect(prs[0]?.reviewState).toBe("changes_requested");
+  });
+});
+
+describe("listOpenPullRequestsBatched", () => {
+  /** GraphQL pullRequest node for the batched listing (issue #40). */
+  function gqlNode(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      number: 18,
+      title: "Phase 0: Shared contracts",
+      url: "https://github.com/ercs-second-brain/agentsKISS/pull/18",
+      updatedAt: "2026-09-06T12:00:00Z",
+      author: { login: "eric" },
+      headRefName: "ao/agentskiss-4/shared-contracts",
+      baseRefName: "main",
+      headRefOid: "abc123",
+      reviewDecision: "CHANGES_REQUESTED",
+      commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] },
+      ...overrides,
+    };
+  }
+
+  function batchedGh(node: Record<string, unknown>, seen: string[][]): GhClient {
+    return new GhClient(async (args) => {
+      seen.push(args);
+      return { stdout: JSON.stringify({ data: { repository: { pullRequests: { nodes: [node] } } } }), stderr: "" };
+    });
+  }
+
+  it("resolves CI status and review decision in a single GraphQL call", async () => {
+    const seen: string[][] = [];
+    const prs = await listOpenPullRequestsBatched(batchedGh(gqlNode(), seen), PROJECT, REPO);
+    // One call total — no per-PR enrichment (issue #40).
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.slice(0, 3)).toEqual(["api", "graphql", "-f"]);
+    expect(seen[0]?.some((a) => a === "owner=ercs-second-brain")).toBe(true);
+    const pr = pullRequestSchema.parse(prs[0]);
+    expect(pr.ciStatus).toBe("failure");
+    expect(pr.reviewState).toBe("changes_requested");
+    expect(pr.state).toBe("open");
+    expect(pr.headBranch).toBe("ao/agentskiss-4/shared-contracts");
+  });
+
+  it("passes the recency limit via -F and maps missing rollup/review to unknown/none", async () => {
+    const seen: string[][] = [];
+    const node = gqlNode({ reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: null } }] } });
+    const prs = await listOpenPullRequestsBatched(batchedGh(node, seen), PROJECT, REPO, { first: 25 });
+    expect(seen[0]).toContain("-F");
+    expect(seen[0]).toContain("first=25");
+    expect(prs[0]?.ciStatus).toBe("unknown");
+    expect(prs[0]?.reviewState).toBe("none");
+  });
+
+  it("maps the rollup states onto the shared CiStatus enum", async () => {
+    const cases: Array<[string | null, string]> = [
+      ["SUCCESS", "success"],
+      ["FAILURE", "failure"],
+      ["ERROR", "failure"],
+      ["PENDING", "pending"],
+      ["EXPECTED", "pending"],
+    ];
+    for (const [state, expected] of cases) {
+      const node = gqlNode({ commits: { nodes: [{ commit: { statusCheckRollup: { state } } }] } });
+      const prs = await listOpenPullRequestsBatched(batchedGh(node, []), PROJECT, REPO);
+      expect(prs[0]?.ciStatus).toBe(expected);
+    }
+  });
+
+  it("tolerates a deleted author and an empty commits list", async () => {
+    const node = gqlNode({ author: null, commits: { nodes: [] } });
+    const prs = await listOpenPullRequestsBatched(batchedGh(node, []), PROJECT, REPO);
+    expect(prs[0]?.author).toBe("unknown");
+    expect(prs[0]?.ciStatus).toBe("unknown");
   });
 });
