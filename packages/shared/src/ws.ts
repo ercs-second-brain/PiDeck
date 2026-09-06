@@ -1,0 +1,140 @@
+/**
+ * WebSocket message contracts for the daemon ⇄ webapp socket.
+ *
+ * Two families of messages:
+ * - Terminal messages (attach / data / resize / reconnect / detach) bridge
+ *   tmux sessions into browser terminals, including reconnect-and-resume.
+ * - Kanban / project / worker update events push board changes so the
+ *   webapp updates live (card moved, project updated, worker spawned).
+ *
+ * Every message is discriminated on its `type` field. Server events also
+ * carry an `at` timestamp. Client→server: `WsClientMessage`.
+ * Server→client: `WsServerEvent`.
+ */
+
+import { z } from "zod";
+import {
+  isoDateTimeSchema,
+  kanbanCardSchema,
+  kanbanColumnSchema,
+  projectSchema,
+  workerSchema,
+  workerStatusSchema,
+} from "./domain.js";
+
+// ---------------------------------------------------------------------------
+// Shared fields
+// ---------------------------------------------------------------------------
+
+const sessionIdField = z.string().min(1);
+const projectIdField = z.string().min(1);
+const workerIdField = z.string().min(1);
+
+const terminalSize = {
+  cols: z.number().int().positive().max(1024),
+  rows: z.number().int().positive().max(1024),
+};
+
+// ---------------------------------------------------------------------------
+// Client → server: terminal messages
+// ---------------------------------------------------------------------------
+
+/**
+ * Terminal client messages.
+ *
+ * - `terminal.attach` — attach to a session's tmux pane and start streaming.
+ * - `terminal.data` — keystrokes / stdin for the session.
+ * - `terminal.resize` — the browser terminal was resized.
+ * - `terminal.reconnect` — re-attach after a dropped socket, replaying the
+ *   server's retained scrollback so the conversation survives reconnects.
+ * - `terminal.detach` — stop streaming; the tmux session keeps running.
+ */
+export const terminalClientMessageSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("terminal.attach"), sessionId: sessionIdField, ...terminalSize }),
+  z.object({ type: z.literal("terminal.data"), sessionId: sessionIdField, data: z.string() }),
+  z.object({ type: z.literal("terminal.resize"), sessionId: sessionIdField, ...terminalSize }),
+  z.object({ type: z.literal("terminal.reconnect"), sessionId: sessionIdField, ...terminalSize }),
+  z.object({ type: z.literal("terminal.detach"), sessionId: sessionIdField }),
+]);
+export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
+
+/** All client→server WS messages (currently all terminal-related). */
+export const wsClientMessageSchema = terminalClientMessageSchema;
+export type WsClientMessage = TerminalClientMessage;
+
+// ---------------------------------------------------------------------------
+// Server → client: terminal events
+// ---------------------------------------------------------------------------
+
+export const terminalServerEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("terminal.attached"),
+    at: isoDateTimeSchema,
+    sessionId: sessionIdField,
+    /** True when the attach resumed an existing (reconnected) session. */
+    resumed: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("terminal.data"),
+    at: isoDateTimeSchema,
+    sessionId: sessionIdField,
+    /** Raw terminal output chunk (UTF-8). */
+    data: z.string(),
+  }),
+  z.object({
+    type: z.literal("terminal.exited"),
+    at: isoDateTimeSchema,
+    sessionId: sessionIdField,
+    /** Process exit code, or `null` if the tmux session died unexpectedly. */
+    exitCode: z.number().int().nullable(),
+  }),
+]);
+export type TerminalServerEvent = z.infer<typeof terminalServerEventSchema>;
+
+// ---------------------------------------------------------------------------
+// Server → client: kanban / project / worker update events
+// ---------------------------------------------------------------------------
+
+export const kanbanUpdateEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("kanban.card.moved"),
+    at: isoDateTimeSchema,
+    projectId: projectIdField,
+    cardId: z.string().min(1),
+    from: kanbanColumnSchema,
+    to: kanbanColumnSchema,
+    /** Full updated card, so clients can replace it wholesale. */
+    card: kanbanCardSchema,
+  }),
+  z.object({
+    type: z.literal("project.updated"),
+    at: isoDateTimeSchema,
+    project: projectSchema,
+  }),
+  z.object({
+    type: z.literal("worker.spawned"),
+    at: isoDateTimeSchema,
+    worker: workerSchema,
+  }),
+  z.object({
+    type: z.literal("worker.status.changed"),
+    at: isoDateTimeSchema,
+    projectId: projectIdField,
+    workerId: workerIdField,
+    status: workerStatusSchema,
+  }),
+]);
+export type KanbanUpdateEvent = z.infer<typeof kanbanUpdateEventSchema>;
+
+// ---------------------------------------------------------------------------
+// Full unions
+// ---------------------------------------------------------------------------
+
+/** Everything the server can send over the WebSocket. */
+export const wsServerEventSchema = z.union([terminalServerEventSchema, kanbanUpdateEventSchema]);
+export type WsServerEvent = z.infer<typeof wsServerEventSchema>;
+
+/** Type guard narrowing a parsed server payload. */
+export function isWsServerEvent(value: unknown): value is WsServerEvent {
+  return wsServerEventSchema.safeParse(value).success;
+}
