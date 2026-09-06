@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ProjectLayout } from "./layout.js";
-import { SessionManager, parseTmuxSessionName, sanitizeTmuxSegment } from "./manager.js";
+import {
+  SessionManager,
+  RESURRECT_WORKER_COMMAND,
+  parseTmuxSessionName,
+  sanitizeTmuxSegment,
+} from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { Tmux, TmuxError } from "./tmux.js";
@@ -117,10 +122,11 @@ describe("SessionManager.reconcile (issue #15)", () => {
       expect.arrayContaining([worker.session.tmuxSession, orchestrator.tmuxSession]),
     );
     expect(result.lost).toEqual([]);
-    // Worker pane re-runs the agent command in the clone dir; orchestrator
-    // gets a plain shell in the project dir.
+    // Worker pane is resurrected via the shell-fallback command (runs the
+    // agent when it is on PATH, else an interactive shell) in the clone
+    // dir; orchestrator gets a plain shell in the project dir.
     const workerPane = rebooted.sessions.get(worker.session.tmuxSession);
-    expect(workerPane?.command).toEqual(["pi"]);
+    expect(workerPane?.command).toEqual(RESURRECT_WORKER_COMMAND);
     expect(workerPane?.cwd).toBe(layout.cloneDir("proj"));
     const orchPane = rebooted.sessions.get(orchestrator.tmuxSession);
     expect(orchPane?.command).toEqual([]);

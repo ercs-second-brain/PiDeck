@@ -24,6 +24,19 @@ import { Tmux } from "./tmux.js";
 /** Command launched in worker panes. The pi coding agent CLI runs interactively in the pane. */
 export const DEFAULT_WORKER_COMMAND: string[] = ["pi"];
 
+/**
+ * Command used to resurrect a worker pane (see {@link SessionManager.reconcile}).
+ * After a reboot/restart the agent binary may be missing; re-running `pi`
+ * verbatim would exit instantly and tmux would close the session, making it
+ * un-attachable. Instead, run the agent when it is on PATH, else fall back
+ * to an interactive shell so the pane survives and stays re-attachable.
+ */
+export const RESURRECT_WORKER_COMMAND: string[] = [
+  "sh",
+  "-c",
+  'command -v pi >/dev/null 2>&1 && exec pi || exec "${SHELL:-/bin/sh}"',
+];
+
 export interface SpawnWorkerOptions {
   /** Issue the worker is spawned for (recorded on the Worker). */
   issueNumber: number;
@@ -211,7 +224,7 @@ export class SessionManager {
             session.role === "worker"
               ? this.layout.cloneDir(session.projectId)
               : this.layout.projectDir(session.projectId),
-          ...(session.role === "worker" ? { command: [...DEFAULT_WORKER_COMMAND] } : {}),
+          ...(session.role === "worker" ? { command: [...RESURRECT_WORKER_COMMAND] } : {}),
         });
         result.resurrected.push(session);
       } catch (err) {
