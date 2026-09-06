@@ -1,190 +1,285 @@
 /**
- * App state store.
+ * Live app state store (issue #13).
  *
- * Seam design (for issue #13): every UI component reads state exclusively
- * through the {@link BoardStore} interface — `subscribe()` +
- * `getState()` — via `useSyncExternalStore`. The mock implementation below
- * mutates in-memory mock data when `simulateStateChange()` is called; #13
- * swaps in a websocket-backed implementation that pushes the same shape of
- * state, and no UI component changes.
+ * Seam design: every UI component reads state exclusively through the
+ * {@link BoardStore} interface — `subscribe()` + `getState()` — via
+ * `useSyncExternalStore`, so no component knows where state comes from.
+ *
+ * Data source (replacing Phase 1's mock store):
+ * - REST bootstrap: project list; per-project kanban board, workers, and
+ *   pull requests, fetched lazily when a board page mounts.
+ * - WebSocket fan-out on `/api/ws`: `KanbanUpdateEvent`s (card moved,
+ *   project updated, worker spawned / status changed) are applied to the
+ *   current state as they arrive. Every payload is validated against the
+ *   shared `wsServerEventSchema` before use.
+ * - The socket reconnects with exponential backoff + jitter; while it is
+ *   down a slow poll keeps the board roughly current.
+ *
+ * Kanban boards are **server-derived** (the daemon's `KanbanService` owns
+ * column placement; the webapp renders what it returns).
  */
 
 import { useSyncExternalStore } from "react";
-import type { Issue, Project, PullRequest, Worker } from "@agentskiss/shared";
-import { mockIssues, mockProjects, mockPullRequests, mockWorkers } from "./mockData";
+import {
+  wsServerEventSchema,
+  type KanbanBoard,
+  type KanbanColumnSummary,
+  type KanbanUpdateEvent,
+  type Project,
+  type PullRequest,
+  type Worker,
+} from "@agentskiss/shared";
+
+import { apiGetKanban, apiListPullRequests, apiListProjects, apiListWorkers, errorMessage } from "../lib/api";
+
+// ---------------------------------------------------------------------------
+// State shape
+// ---------------------------------------------------------------------------
+
+export type ConnectionState = "connecting" | "online" | "offline";
 
 export interface AppState {
+  connection: ConnectionState;
+  /** True once the initial project list fetch has completed (ok or failed). */
+  loaded: boolean;
+  /** Set when the project list fetch failed (daemon unreachable). */
+  loadError: string | null;
   projects: Project[];
-  issues: Issue[];
-  pullRequests: PullRequest[];
-  workers: Worker[];
+  /** Server-derived kanban board per project id. */
+  boards: Record<string, KanbanBoard>;
+  /** Worker list per project id. */
+  workers: Record<string, Worker[]>;
+  /** Pull requests per project id (card badges + diff links). */
+  pullRequests: Record<string, PullRequest[]>;
 }
 
 export interface BoardStore {
   subscribe(listener: () => void): () => void;
   getState(): AppState;
-  /**
-   * Mock-only demo action: advances one entity through its lifecycle so
-   * cards visibly move between columns. #13 removes this in favor of
-   * server-pushed state updates.
-   */
-  simulateStateChange(): void;
+  /** Fetches/refreshes one project's kanban, workers, and pull requests. */
+  loadProject(projectId: string): Promise<void>;
+  /** Refreshes the project list (and any already-loaded project data). */
+  refresh(): Promise<void>;
 }
 
-const ACTIVE_WORKER_STATUSES = new Set(["spawning", "running", "awaiting_ci", "fixing_ci", "addressing_review"]);
+const INITIAL_STATE: AppState = {
+  connection: "connecting",
+  loaded: false,
+  loadError: null,
+  projects: [],
+  boards: {},
+  workers: {},
+  pullRequests: {},
+};
 
-function nowIso(): string {
-  return new Date().toISOString();
+// ---------------------------------------------------------------------------
+// Reconnect backoff (same schedule as the terminal bridge client: exponential
+// from 500ms, capped at 8s, ±25% jitter to spread reconnect storms)
+// ---------------------------------------------------------------------------
+
+export function backoffDelayMs(attempt: number): number {
+  return Math.min(500 * 2 ** Math.max(0, attempt - 1), 8000);
 }
 
-type Writable<T> = { -readonly [K in keyof T]: T[K] };
+export function nextBackoffMs(attempt: number): number {
+  return Math.round(backoffDelayMs(attempt) * (0.75 + Math.random() * 0.5));
+}
 
-function cloneState(state: AppState): Writable<AppState> {
-  return {
-    projects: state.projects.map((p) => ({ ...p, settings: { ...p.settings } })),
-    issues: state.issues.map((i) => ({ ...i, blockedBy: [...i.blockedBy] })),
-    pullRequests: state.pullRequests.map((pr) => ({ ...pr })),
-    workers: state.workers.map((w) => ({ ...w })),
+// ---------------------------------------------------------------------------
+// Pure event reduction — exported for unit tests
+// ---------------------------------------------------------------------------
+
+/** Applies one server `KanbanUpdateEvent` to the state, immutably. */
+export function applyKanbanEvent(state: AppState, event: KanbanUpdateEvent): AppState {
+  switch (event.type) {
+    case "kanban.card.moved": {
+      const board = state.boards[event.projectId];
+      if (board === undefined) return state;
+      const columns = board.columns.map((column: KanbanColumnSummary) => ({
+        column: column.column,
+        cards:
+          column.column === event.to
+            ? [...column.cards.filter((c) => c.id !== event.cardId), event.card]
+            : column.cards.filter((c) => c.id !== event.cardId),
+      }));
+      return {
+        ...state,
+        boards: { ...state.boards, [event.projectId]: { ...board, columns, updatedAt: event.at } },
+      };
+    }
+    case "project.updated": {
+      const projects = state.projects.some((p) => p.id === event.project.id)
+        ? state.projects.map((p) => (p.id === event.project.id ? event.project : p))
+        : [...state.projects, event.project];
+      return { ...state, projects };
+    }
+    case "worker.spawned": {
+      const existing = state.workers[event.worker.projectId] ?? [];
+      const workers = existing.some((w) => w.id === event.worker.id)
+        ? existing.map((w) => (w.id === event.worker.id ? event.worker : w))
+        : [...existing, event.worker];
+      return { ...state, workers: { ...state.workers, [event.worker.projectId]: workers } };
+    }
+    case "worker.status.changed": {
+      const existing = state.workers[event.projectId];
+      if (existing === undefined || !existing.some((w) => w.id === event.workerId)) return state;
+      const workers = existing.map((w) =>
+        w.id === event.workerId ? { ...w, status: event.status, updatedAt: event.at } : w,
+      );
+      return { ...state, workers: { ...state.workers, [event.projectId]: workers } };
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Live store
+// ---------------------------------------------------------------------------
+
+/** Slow-poll interval while the websocket is down (or as a safety net). */
+const POLL_INTERVAL_MS = 30_000;
+
+/** Default WebSocket URL: same origin, kanban hub path. */
+function defaultKanbanWsUrl(): string {
+  const secure = window.location.protocol === "https:";
+  return `${secure ? "wss" : "ws"}://${window.location.host}/api/ws`;
+}
+
+class LiveBoardStore implements BoardStore {
+  private listeners = new Set<() => void>();
+  private state: AppState = INITIAL_STATE;
+  private readonly loadedProjects = new Set<string>();
+  private ws: WebSocket | null = null;
+  private wsAttempt = 0;
+  private wsTimer: number | undefined;
+  private pollTimer: number | undefined;
+  private stopped = false;
+
+  start(): void {
+    this.refresh().catch(() => {});
+    this.connectWs();
+    this.pollTimer = window.setInterval(() => {
+      void this.refresh().catch(() => {});
+    }, POLL_INTERVAL_MS);
+  }
+
+  /** Stops timers/sockets — used only by tests. */
+  stop(): void {
+    this.stopped = true;
+    if (this.pollTimer !== undefined) window.clearInterval(this.pollTimer);
+    if (this.wsTimer !== undefined) window.clearTimeout(this.wsTimer);
+    this.ws?.close();
+    this.ws = null;
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   };
+
+  getState = (): AppState => this.state;
+
+  async refresh(): Promise<void> {
+    try {
+      const projects = await apiListProjects();
+      this.setState({ projects, loaded: true, loadError: null });
+      for (const id of this.loadedProjects) {
+        void this.loadProject(id).catch(() => {});
+      }
+    } catch (err) {
+      this.setState({ loaded: true, loadError: errorMessage(err) });
+    }
+  }
+
+  async loadProject(projectId: string): Promise<void> {
+    const [board, workers, pullRequests] = await Promise.all([
+      apiGetKanban(projectId),
+      apiListWorkers(projectId),
+      apiListPullRequests(projectId),
+    ]);
+    this.loadedProjects.add(projectId);
+    this.setState({
+      boards: { ...this.state.boards, [projectId]: board },
+      workers: { ...this.state.workers, [projectId]: workers },
+      pullRequests: { ...this.state.pullRequests, [projectId]: pullRequests },
+    });
+  }
+
+  private setState(patch: Partial<AppState>): void {
+    this.state = { ...this.state, ...patch };
+    for (const listener of this.listeners) listener();
+  }
+
+  private emit(): void {
+    for (const listener of this.listeners) listener();
+  }
+
+  // --- WebSocket ----------------------------------------------------------
+
+  private connectWs(): void {
+    if (this.stopped) return;
+    const ws = new WebSocket(defaultKanbanWsUrl());
+    this.ws = ws;
+    ws.onopen = () => {
+      this.wsAttempt = 0;
+      this.setState({ connection: "online" });
+    };
+    ws.onmessage = (event) => this.onWsMessage(String(event.data));
+    ws.onclose = () => {
+      if (this.ws !== ws) return;
+      this.ws = null;
+      if (this.stopped) return;
+      this.wsAttempt += 1;
+      this.setState({ connection: "offline" });
+      this.wsTimer = window.setTimeout(() => this.connectWs(), nextBackoffMs(this.wsAttempt));
+    };
+    ws.onerror = () => ws.close();
+  }
+
+  private onWsMessage(payload: string): void {
+    let json: unknown;
+    try {
+      json = JSON.parse(payload);
+    } catch {
+      return;
+    }
+    const parsed = wsServerEventSchema.safeParse(json);
+    if (!parsed.success) return;
+    const event = parsed.data;
+    if (
+      event.type === "terminal.attached" ||
+      event.type === "terminal.data" ||
+      event.type === "terminal.exited"
+    ) {
+      return; // terminal events: the /ws bridge, not this store
+    }
+    this.apply(event);
+  }
+
+  /** Applies one kanban update event (exposed for tests). */
+  apply(event: KanbanUpdateEvent): void {
+    const next = applyKanbanEvent(this.state, event);
+    if (next === this.state) return;
+    this.state = next;
+    if (event.type === "project.updated") void this.loadProject(event.project.id).catch(() => {});
+    this.emit();
+  }
 }
 
 /**
- * Pure lifecycle step for the mock demo, matching the agent-orchestrator
- * flow: unassigned issue → worker spawned (in_progress) → PR opened
- * (in_review) → CI green → review approved → merged + issue closed (done).
- * Cycles back to the start when the pipeline drains so the demo can repeat.
+ * Single app-wide store instance. Connection/REST side effects start only
+ * in a browser context, so importing this module in node tests stays inert.
  */
-export function advanceMockState(state: AppState): AppState {
-  const next = cloneState(state);
-  const firstProject = next.projects[0];
-  if (!firstProject) return next;
+export const boardStore: BoardStore & {
+  apply(event: KanbanUpdateEvent): void;
+  start(): void;
+  stop(): void;
+} = new LiveBoardStore();
 
-  const issues = next.issues.filter((i) => i.projectId === firstProject.id);
-  const workers = next.workers.filter((w) => w.projectId === firstProject.id);
-  const ts = nowIso();
-
-  const activeWorker = workers.find((w) => ACTIVE_WORKER_STATUSES.has(w.status));
-
-  // 1. Spawn a worker for the first unassigned open issue.
-  const unassigned = issues.find((i) => i.state === "open" && i.assignee === null);
-  if (unassigned && !activeWorker) {
-    unassigned.assignee = firstProject.settings.autoAgentUsername ?? "agentskiss-bot";
-    unassigned.updatedAt = ts;
-    next.workers.push({
-      id: `w-${firstProject.id}-${unassigned.number}`,
-      projectId: firstProject.id,
-      sessionId: `s-${firstProject.id}-${unassigned.number}`,
-      issueNumber: unassigned.number,
-      prNumber: null,
-      status: "running",
-      statusMessage: "Working on the issue",
-      startedAt: ts,
-      updatedAt: ts,
-    });
-    return next;
-  }
-
-  // 2. Active worker without a PR opens one → card moves to In Review.
-  if (activeWorker && activeWorker.prNumber === null) {
-    const issue = next.issues.find(
-      (i) => i.projectId === firstProject.id && i.number === activeWorker.issueNumber,
-    );
-    const prNumber = 100 + activeWorker.issueNumber;
-    next.pullRequests.push({
-      projectId: firstProject.id,
-      number: prNumber,
-      title: `fix: address #${activeWorker.issueNumber} — ${issue?.title ?? "issue work"}`,
-      state: "open",
-      ciStatus: "running",
-      reviewState: "none",
-      headBranch: `ao/worker-${activeWorker.issueNumber}/root`,
-      baseBranch: firstProject.defaultBranch,
-      author: "agentskiss-bot",
-      url: `${firstProject.repoUrl}/pull/${prNumber}`,
-      updatedAt: ts,
-    });
-    activeWorker.prNumber = prNumber;
-    activeWorker.status = "awaiting_ci";
-    activeWorker.statusMessage = "Awaiting CI on opened PR";
-    activeWorker.updatedAt = ts;
-    return next;
-  }
-
-  // 3. Awaiting-CI PR's checks finish → review requested.
-  const awaitingCi = workers.find((w) => w.status === "awaiting_ci");
-  if (awaitingCi && awaitingCi.prNumber !== null) {
-    const pr = next.pullRequests.find(
-      (p) => p.projectId === firstProject.id && p.number === awaitingCi.prNumber,
-    );
-    if (pr && pr.state === "open") {
-      pr.ciStatus = "success";
-      pr.reviewState = "pending";
-      pr.updatedAt = ts;
-      awaitingCi.status = "addressing_review";
-      awaitingCi.statusMessage = "Waiting on review";
-      awaitingCi.updatedAt = ts;
-      return next;
-    }
-  }
-
-  // 4. Approved, passing PR merges; its issue closes and the worker finishes.
-  const reviewing = workers.find((w) => w.status === "addressing_review");
-  if (reviewing && reviewing.prNumber !== null) {
-    const pr = next.pullRequests.find(
-      (p) => p.projectId === firstProject.id && p.number === reviewing.prNumber,
-    );
-    const issue = next.issues.find((i) => i.projectId === firstProject.id && i.number === reviewing.issueNumber);
-    if (pr && pr.state === "open") {
-      pr.state = "merged";
-      pr.reviewState = "approved";
-      pr.ciStatus = "success";
-      pr.updatedAt = ts;
-      if (issue) {
-        issue.state = "closed";
-        issue.updatedAt = ts;
-      }
-      reviewing.status = "done";
-      reviewing.statusMessage = null;
-      reviewing.updatedAt = ts;
-      return next;
-    }
-  }
-
-  // 5. Pipeline drained — reset the demo loop.
-  next.issues = next.issues.map((i) =>
-    i.projectId === firstProject.id ? { ...i, state: "open", assignee: null, updatedAt: ts } : i,
-  );
-  next.pullRequests = next.pullRequests.filter((pr) => pr.projectId !== firstProject.id || pr.state === "merged");
-  next.workers = next.workers.filter((w) => w.projectId !== firstProject.id);
-  return next;
+if (typeof window !== "undefined" && typeof WebSocket !== "undefined") {
+  boardStore.start();
 }
-
-function createMockStore(): BoardStore {
-  let state: AppState = {
-    projects: mockProjects,
-    issues: mockIssues,
-    pullRequests: mockPullRequests,
-    workers: mockWorkers,
-  };
-  const listeners = new Set<() => void>();
-
-  return {
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    getState: () => state,
-    simulateStateChange() {
-      state = advanceMockState(state);
-      for (const listener of listeners) listener();
-    },
-  };
-}
-
-/** Single app-wide store instance. Module-level so React re-renders on change. */
-export const boardStore: BoardStore = createMockStore();
 
 /** React binding — the only store API UI components are allowed to use. */
 export function useAppState(): AppState {

@@ -1,4 +1,5 @@
-import type { Issue, KanbanCard, PullRequest } from "@agentskiss/shared";
+import { Link } from "react-router";
+import type { KanbanCard, PullRequest } from "@agentskiss/shared";
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -23,11 +24,11 @@ const REVIEW_LABELS = {
 
 /**
  * A single kanban card. Issues and PRs are visually distinguishable via a
- * type badge and accent color. `detail` — the underlying shared entity, when
- * available — contributes state badges: issue state, PR CI status, review
- * decision, branch info.
+ * type badge and accent color. `pr` — the underlying PR entity from the
+ * daemon, when available — contributes state badges: PR state, CI status,
+ * review decision, branch info, and a link to the diff-review view.
  */
-export function KanbanCardView({ card, detail }: { card: KanbanCard; detail?: Issue | PullRequest }) {
+export function KanbanCardView({ card, pr }: { card: KanbanCard; pr?: PullRequest }) {
   return (
     <article className={`card card-${card.kind}`}>
       <div className="card-top">
@@ -38,7 +39,7 @@ export function KanbanCardView({ card, detail }: { card: KanbanCard; detail?: Is
       </div>
       <div className="card-title">{card.title}</div>
       <div className="card-meta">
-        {card.kind === "issue" ? <IssueBadges detail={detail} /> : <PrBadges detail={detail} />}
+        {card.kind === "issue" ? <IssueBadges card={card} /> : <PrBadges card={card} pr={pr} />}
         {card.workerId && <span className="badge badge-worker">⚒ {card.workerId}</span>}
         <span className="card-time">{formatTimestamp(card.updatedAt)}</span>
       </div>
@@ -46,24 +47,41 @@ export function KanbanCardView({ card, detail }: { card: KanbanCard; detail?: Is
   );
 }
 
-function IssueBadges({ detail }: { detail?: Issue | PullRequest }) {
-  const state = detail && "headBranch" in detail ? "open" : (detail?.state ?? "open");
-  return <span className={`badge badge-${state === "closed" ? "closed" : "open"}`}>{state}</span>;
+function IssueBadges({ card }: { card: KanbanCard }) {
+  // Issue entities are not shipped to the client; column placement (from the
+  // daemon) encodes the state: `done` means the issue is closed.
+  const state = card.column === "done" ? "closed" : "open";
+  return <span className={`badge badge-${state}`}>{state}</span>;
 }
 
-function PrBadges({ detail }: { detail?: Issue | PullRequest }) {
-  if (!detail || !("headBranch" in detail)) {
-    return <span className="badge badge-open-pr">open</span>;
+function PrBadges({ card, pr }: { card: KanbanCard; pr?: PullRequest }) {
+  if (pr === undefined) {
+    return (
+      <>
+        <span className="badge badge-open">open</span>
+        <DiffLink card={card} />
+      </>
+    );
   }
-  const review = REVIEW_LABELS[detail.reviewState];
+  const review = REVIEW_LABELS[pr.reviewState];
   return (
     <>
-      <span className={`badge badge-${detail.state === "merged" ? "merged" : detail.state}`}>{detail.state}</span>
-      <span className={`badge badge-ci badge-ci-${detail.ciStatus}`}>{CI_LABELS[detail.ciStatus]}</span>
+      <span className={`badge badge-${pr.state === "merged" ? "merged" : pr.state}`}>{pr.state}</span>
+      <span className={`badge badge-ci badge-ci-${pr.ciStatus}`}>{CI_LABELS[pr.ciStatus]}</span>
       {review && <span className="badge badge-review">{review}</span>}
-      <span className="badge badge-branch" title={`${detail.headBranch} → ${detail.baseBranch}`}>
-        {detail.headBranch}
+      <span className="badge badge-branch" title={`${pr.headBranch} → ${pr.baseBranch}`}>
+        {pr.headBranch}
       </span>
+      {pr.state === "open" && <DiffLink card={card} />}
     </>
+  );
+}
+
+/** Link to the diff-review view for open PRs. */
+function DiffLink({ card }: { card: KanbanCard }) {
+  return (
+    <Link className="card-diff-link" to={`/projects/${card.projectId}/pulls/${card.number}`}>
+      diff
+    </Link>
   );
 }
