@@ -11,8 +11,18 @@ import { mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-/** Default daemon state directory (`~/.agentskiss`). */
-export const DEFAULT_STATE_DIR = path.join(os.homedir(), ".agentskiss");
+/**
+ * Default daemon state directory (`~/.agentskiss`), overridable via the
+ * `AGENTSKISS_HOME` environment variable (set by the service units).
+ */
+export function defaultStateDir(): string {
+  const fromEnv = process.env["AGENTSKISS_HOME"];
+  if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
+  return path.join(os.homedir(), ".agentskiss");
+}
+
+/** Default daemon state directory (honors `AGENTSKISS_HOME`). */
+export const DEFAULT_STATE_DIR = defaultStateDir();
 
 export interface ProjectDirs {
   projectDir: string;
@@ -32,7 +42,7 @@ export function sanitizeSegment(name: string): string {
 export class ProjectLayout {
   private readonly stateDir: string;
 
-  constructor(stateDir: string = DEFAULT_STATE_DIR) {
+  constructor(stateDir: string = defaultStateDir()) {
     this.stateDir = stateDir;
   }
 

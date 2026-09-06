@@ -175,3 +175,15 @@ lan_addr() {
 webapp_url() {
   printf 'http://%s:%s' "$(lan_addr)" "$AK_WEB_PORT"
 }
+
+# URL to open in the *Windows host* browser on WSL installs. Under WSL2
+# localhost forwarding, http://localhost:<port> on Windows reaches a server
+# inside the distro (works for both localhost and 0.0.0.0 binds); use the
+# `lan_addr`-based URL only for LAN access from other devices, which also
+# needs a Windows firewall rule (see install/README.md, WSL section).
+windows_host_url() {
+  case "$DETECTED_OS" in
+    wsl) printf 'http://localhost:%s' "$AK_WEB_PORT" ;;
+    *) return 1 ;;
+  esac
+}

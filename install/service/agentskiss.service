@@ -11,6 +11,9 @@ Description=agentsKISS daemon + webapp
 Documentation=https://github.com/ercs-second-brain/agentsKISS
 After=network-online.target
 Wants=network-online.target
+# Never enter a permanent failed state after repeated crashes — keep
+# restarting (the default start-rate limit would give up after 5 tries).
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -19,6 +22,10 @@ ExecStart=@AK_HOME@/bin/agentskiss-daemon
 Environment=PATH=@AK_SERVE_PATH@
 Environment=AGENTSKISS_HOME=@AK_HOME@
 Environment=AGENTSKISS_WEB_PORT=@AK_PORT@
+# Bind the webapp on all interfaces: under WSL2 (NAT mode) the Windows host
+# reaches the distro via localhost forwarding, and LAN access needs a
+# non-localhost bind (see install/README.md, WSL section).
+Environment=AGENTSKISS_WEB_HOST=0.0.0.0
 Restart=on-failure
 RestartSec=3
 

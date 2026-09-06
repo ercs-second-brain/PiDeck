@@ -123,6 +123,16 @@ if (-not $NoAutoStart) {
 # 6. Where is the webapp?
 # ---------------------------------------------------------------------------
 Step "finishing up"
-$webUrl = wsl.exe -d $Distro -- sh -lc '"$HOME/.local/bin/agentskiss" addr' 2>$null
-Info "webapp address (from the Windows host): $webUrl"
-Info "done. open the address above in your browser once onboarding is complete."
+
+# Primary Windows-host URL: WSL2 localhost forwarding makes the port on the
+# distro reachable at http://localhost:<port> on the Windows host (works for
+# both localhost and 0.0.0.0 binds inside the distro). LAN access from other
+# devices additionally needs a portproxy + firewall rule — see
+# install/README.md ("WSL: reaching the webapp from Windows").
+Info "webapp URL for the Windows host: http://localhost:$Port"
+$wslAddr = wsl.exe -d $Distro -- sh -lc '"$HOME/.local/bin/agentskiss" addr' 2>$null
+if ($LASTEXITCODE -eq 0 -and $wslAddr) {
+    Info "address inside the distro (for LAN access from Windows, requires a firewall/portproxy rule): $($wslAddr | Select-Object -First 1)"
+}
+Write-Host ""
+Info "done. open http://localhost:$Port in your Windows browser once onboarding is complete."

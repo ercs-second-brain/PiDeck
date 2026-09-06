@@ -39,8 +39,17 @@ case "$cmd" in
   status)
     svc_status
     printf '\nwebapp: %s\n' "$(webapp_url)"
+    if _win_url=$(windows_host_url 2>/dev/null); then
+      printf 'from Windows (host browser): %s\n' "$_win_url"
+    fi
     ;;
-  addr) webapp_url; printf '\n' ;;
+  addr)
+    webapp_url
+    printf '\n'
+    if _win_url=$(windows_host_url 2>/dev/null); then
+      printf 'from Windows (host browser): %s\n' "$_win_url"
+    fi
+    ;;
   onboard)
     # shellcheck disable=SC2086
     sh "$AK_LIB/onboard.sh" "$@"

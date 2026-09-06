@@ -163,6 +163,9 @@ if [ "$AK_DRY_RUN" != "1" ]; then
     printf 'AGENTSKISS_SRC="%s"\n' "$AK_SRC"
     printf 'AGENTSKISS_NODE="%s"\n' "$AK_NODE_BIN"
     printf 'AGENTSKISS_WEB_PORT="%s"\n' "$AK_WEB_PORT"
+    printf '# Webapp bind address; 0.0.0.0 keeps the webapp reachable from the\n'
+    printf '# Windows host browser under WSL2 (see install/README.md, WSL section).\n'
+    printf 'AGENTSKISS_WEB_HOST="%s"\n' "${AGENTSKISS_WEB_HOST:-0.0.0.0}"
     printf '# AGENTSKISS_MODEL is set by onboarding (agentskiss onboard).\n'
   } > "$AK_HOME/env"
   {
@@ -201,6 +204,10 @@ if [ "$AK_DRY_RUN" != "1" ] && grep -q 'placeholder' "$AK_SRC/apps/daemon/src/in
 fi
 printf '\n'
 info "webapp: $(webapp_url)  (once the daemon serves it)"
+if [ "$DETECTED_OS" = "wsl" ]; then
+  info "from the Windows host: open $(windows_host_url) in your browser"
+  info "  (WSL2 localhost forwarding; LAN access needs a firewall/portproxy rule — see install/README.md)"
+fi
 info "service: agentskiss start|stop|status  /  logs: agentskiss logs"
 info "onboarding: agentskiss onboard   uninstall: sh $AK_SRC/install/uninstall.sh"
 printf '\n'
