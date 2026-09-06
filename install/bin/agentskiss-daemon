@@ -1,0 +1,30 @@
+#!/bin/sh
+# shellcheck shell=sh disable=SC1090
+#
+# agentskiss daemon launcher — the ExecStart target of both service units
+# (launchd plist and systemd user unit). Sources ~/.agentskiss/env and execs
+# the built daemon entrypoint from the monorepo.
+#
+# Today apps/daemon's entry is a placeholder that only runs under
+# AGENTSKESS_DAEMON_RUN=1; once the real daemon lands (main() runs by
+# default) this launcher becomes the persistent service with no changes.
+
+set -u
+
+AK_ENV="$HOME/.agentskiss/env"
+if [ ! -f "$AK_ENV" ]; then
+  printf 'agentskiss-daemon: %s not found — run the agentskiss installer first\n' "$AK_ENV" >&2
+  exit 1
+fi
+. "$AK_ENV"
+
+: "${AGENTSKISS_NODE:?AGENTSKISS_NODE missing in $AK_ENV}"
+: "${AGENTSKISS_SRC:?AGENTSKISS_SRC missing in $AK_ENV}"
+
+DAEMON_ENTRY="$AGENTSKISS_SRC/apps/daemon/dist/index.js"
+[ -f "$DAEMON_ENTRY" ] || {
+  printf 'agentskiss-daemon: missing build output %s — re-run the installer\n' "$DAEMON_ENTRY" >&2
+  exit 1
+}
+
+exec "$AGENTSKISS_NODE" "$DAEMON_ENTRY"
