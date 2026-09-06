@@ -43,10 +43,10 @@ describe("domain: project", () => {
     });
     expect(project.id).toBe("agentskiss");
     expectTypeOf(project).toEqualTypeOf<Project>();
-    expectTypeOf(project.settings.workerConcurrency).toEqualTypeOf<number>();
+    expectTypeOf(project.settings.workerConcurrency).toEqualTypeOf<number | undefined>();
   });
 
-  it("applies the workerConcurrency default", () => {
+  it("leaves workerConcurrency unset (unbounded) when not provided", () => {
     const project = projectSchema.parse({
       id: "p",
       name: "p",
@@ -56,7 +56,21 @@ describe("domain: project", () => {
       createdAt: NOW,
       updatedAt: NOW,
     });
-    expect(project.settings.workerConcurrency).toBe(1);
+    expect(project.settings.workerConcurrency).toBeUndefined();
+  });
+
+  it("rejects a workerConcurrency cap below 1", () => {
+    expect(
+      projectSchema.safeParse({
+        id: "p",
+        name: "p",
+        repoUrl: "https://github.com/example/example",
+        defaultBranch: "main",
+        settings: { autoAgentUsername: null, workerConcurrency: 0 },
+        createdAt: NOW,
+        updatedAt: NOW,
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects a non-URL repoUrl and a non-UTC timestamp", () => {

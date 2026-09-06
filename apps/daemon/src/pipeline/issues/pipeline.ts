@@ -16,9 +16,12 @@
  *    event redelivery: an in-memory in-flight/succeeded map guards the
  *    pipeline lifetime, and non-terminal registry workers (surviving a
  *    daemon restart) are checked via the {@link WorkerSpawner} port.
- * 4. **Spawn** — through the {@link SpawnScheduler} (unbounded by default;
- *    the concurrency cap of #14 is another scheduler implementation) and
- *    the {@link WorkerSpawner} port (default: `SessionManager.spawnWorker`).
+ * 4. **Spawn** — through the {@link SpawnScheduler} and the
+ *    {@link WorkerSpawner} port (default: `SessionManager.spawnWorker`).
+ *    The default {@link QueueingScheduler} honors the project's
+ *    `settings.workerConcurrency` cap: at most N workers per project, extras
+ *    queueing FIFO as slots free; projects without a cap spawn immediately
+ *    (default unbounded, #14).
  * 5. **Kanban** — on a successful spawn a shared-contract
  *    `kanban.card.moved` event (backlog → in_progress, full card attached)
  *    is emitted on {@link IssueSpawnPipeline.kanbanEvents} for the API
@@ -39,7 +42,7 @@ import {
   type RegisteredProject,
   type WorkerSpawner,
 } from "./ports.js";
-import { UnboundedScheduler, type SpawnScheduler } from "./scheduler.js";
+import { QueueingScheduler, type SpawnScheduler } from "./scheduler.js";
 
 export interface IssueSpawnPipelineOptions {
   /** Registered projects eligible for auto-spawn. */
@@ -50,7 +53,7 @@ export interface IssueSpawnPipelineOptions {
   spawner: WorkerSpawner;
   /** GhClient used by the default blocker resolver (required unless `blockers` is given). */
   gh?: GhClient;
-  /** Spawn scheduling. Default: unbounded (concurrency cap is issue #14). */
+  /** Spawn scheduling. Default: cap-aware {@link QueueingScheduler} (unbounded when the project sets no cap). */
   scheduler?: SpawnScheduler;
   /** Injectable clock (tests). */
   now?: () => Date;
@@ -93,9 +96,12 @@ export class IssueSpawnPipeline {
     this.projects = options.projects;
     this.spawner = options.spawner;
     this.blockers = options.blockers ?? new GhBlockerResolver(options.gh as GhClient);
-    this.scheduler = options.scheduler ?? new UnboundedScheduler(options.onError);
     this.now = options.now ?? (() => new Date());
     this.onError = options.onError ?? ((err) => console.error("[agentskiss/pipeline] issue pipeline error:", err));
+    // Cap-aware by default: with no `workerConcurrency` set, queueing is
+    // bypassed entirely and behavior matches the old UnboundedScheduler.
+    this.scheduler =
+      options.scheduler ?? new QueueingScheduler({ spawner: this.spawner, onError: (err) => this.onError(err) });
   }
 
   /**
@@ -115,7 +121,14 @@ export class IssueSpawnPipeline {
     const key = issueKey(issue);
     if (this.accepted.has(key)) return; // already in flight / already spawned
     this.accepted.add(key);
-    this.scheduler.schedule(() => this.spawnFor(registered, issue, key));
+    this.scheduler.schedule(
+      () => this.spawnFor(registered, issue, key),
+      {
+        projectId: issue.projectId,
+        issueNumber: issue.number,
+        maxConcurrentWorkers: registered.project.settings.workerConcurrency,
+      },
+    );
   }
 
   /** Whether this pipeline has accepted the issue for spawn (dedupe view, tests/ops). */
