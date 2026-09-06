@@ -10,12 +10,12 @@
  * - `POST /api/dev/orchestrator` `{projectId}` — creates the project's
  *   orchestrator tmux session for manual testing (dev-only convenience).
  * - `WS /ws` — the terminal bridge.
- * - Static files from `AGENTSKESS_WEB_DIST` (the built webapp), so the
+ * - Static files from `AGENTSKISS_WEB_DIST` (the built webapp), so the
  *   terminal page works end-to-end from one origin.
  *
  * Run: `pnpm --filter @agentskiss/daemon build && node dist/terminal/standalone.js`
- * Env: `AGENTSKESS_PORT` (default 8787), `AGENTSKESS_STATE_DIR`
- * (default `~/.agentskiss`), `AGENTSKESS_WEB_DIST` (optional path to
+ * Env: `AGENTSKISS_PORT` (default 8787), `AGENTSKISS_STATE_DIR`
+ * (default `~/.agentskiss`), `AGENTSKISS_WEB_DIST` (optional path to
  * `apps/web/dist`).
  */
 
@@ -30,9 +30,9 @@ import { Tmux } from "../sessions/tmux.js";
 import { TerminalBridge } from "./bridge.js";
 import { attachTerminalWebSocket } from "./ws-server.js";
 
-const port = Number(process.env["AGENTSKESS_PORT"] ?? 8787);
-const stateDir = process.env["AGENTSKESS_STATE_DIR"] ?? DEFAULT_STATE_DIR;
-const webDist = process.env["AGENTSKESS_WEB_DIST"];
+const port = Number(process.env["AGENTSKISS_PORT"] ?? 8787);
+const stateDir = process.env["AGENTSKISS_STATE_DIR"] ?? DEFAULT_STATE_DIR;
+const webDist = process.env["AGENTSKISS_WEB_DIST"];
 
 const layout = new ProjectLayout(stateDir);
 const registry = new SessionRegistry(layout.sessionsFilePath());
@@ -128,7 +128,7 @@ function serveStatic(res: ServerResponse, pathname: string): void {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(
       "<!doctype html><title>agentskiss daemon</title><p>Terminal WebSocket is live on <code>/ws</code>. " +
-        "Set AGENTSKESS_WEB_DIST to serve the webapp.</p>",
+        "Set AGENTSKISS_WEB_DIST to serve the webapp.</p>",
     );
     return;
   }

@@ -3,11 +3,8 @@
 #
 # agentskiss daemon launcher — the ExecStart target of both service units
 # (launchd plist and systemd user unit). Sources ~/.agentskiss/env and execs
-# the built daemon entrypoint from the monorepo.
-#
-# Today apps/daemon's entry is a placeholder that only runs under
-# AGENTSKESS_DAEMON_RUN=1; once the real daemon lands (main() runs by
-# default) this launcher becomes the persistent service with no changes.
+# the built daemon entrypoint from the monorepo; the entrypoint detects that
+# it is the main module and runs main() persistently until stopped.
 
 set -u
 
