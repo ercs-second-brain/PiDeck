@@ -245,8 +245,13 @@ export const workerSchema = z.object({
   projectId: idSchema,
   /** Terminal session the worker's agent runs in. */
   sessionId: idSchema,
-  /** Issue the worker was spawned for. */
-  issueNumber: refNumberSchema,
+  /**
+   * Issue the worker was spawned for. `0` marks a **freeform worker** —
+   * spawned from a plain task prompt (`agentskiss spawn --prompt ...`)
+   * with no backing GitHub issue; freeform workers have no issue/kanban
+   * card of their own and only ever appear in the workers list.
+   */
+  issueNumber: z.number().int().min(0),
   /** PR opened by the worker, once one exists. */
   prNumber: refNumberSchema.nullable(),
   /**
