@@ -2,7 +2,7 @@
   "name": "@agentskiss/daemon",
   "version": "0.1.0",
   "private": true,
-  "description": "agentsKISS daemon — orchestration backend (placeholder, implemented in a later issue)",
+  "description": "agentsKISS daemon \u2014 orchestration backend (tmux sessions, GitHub integration, watchers, pipeline)",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
@@ -10,6 +10,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@agentskiss/shared": "workspace:*"
+    "@agentskiss/shared": "workspace:*",
+    "zod": "^4.5.4"
   }
 }
