@@ -2,14 +2,24 @@
   "name": "@agentskiss/web",
   "version": "0.1.0",
   "private": true,
-  "description": "agentsKISS web app — kanban, terminals, diff review (placeholder, implemented in a later issue)",
+  "description": "agentsKISS web app — project list + kanban board (terminal and diff review land in later phases)",
   "type": "module",
-  "main": "./dist/index.js",
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agentskiss/shared": "workspace:*"
+    "@agentskiss/shared": "workspace:*",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router": "^7.9.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "vite": "^7.3.0"
   }
 }
