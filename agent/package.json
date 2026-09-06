@@ -2,11 +2,5 @@
   "name": "@agentskiss/agent",
   "version": "0.1.0",
   "private": true,
-  "description": "pi coding agent integration — skills, extensions, prompts (placeholder, implemented in a later issue)",
-  "type": "module",
-  "main": "./dist/index.js",
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  }
+  "description": "pi coding agent integration — orchestrator/worker prompts and orchestration skills (content-only; see agent/README.md)"
 }
