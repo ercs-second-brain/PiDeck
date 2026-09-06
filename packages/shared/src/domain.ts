@@ -45,8 +45,14 @@ export type KanbanColumn = (typeof KANBAN_COLUMNS)[number];
 export const projectSettingsSchema = z.object({
   /** GitHub username whose newly created/assigned issues auto-spawn workers. `null` disables auto-spawn. */
   autoAgentUsername: z.string().min(1).nullable(),
-  /** Max concurrent workers for this project. */
-  workerConcurrency: z.number().int().min(1).max(16).default(1),
+  /**
+   * Max workers that may run concurrently for this project (issue #14).
+   * Unset = unbounded: every unblocked issue spawns a worker immediately —
+   * the default per #14's planning decision. With a cap, further unblocked
+   * issues queue and spawn FIFO as slots free (a worker reaching a terminal
+   * state — done/failed/stopped — frees its slot).
+   */
+  workerConcurrency: z.number().int().min(1).max(16).optional(),
 });
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
 export type ProjectSettingsInput = z.input<typeof projectSettingsSchema>;
