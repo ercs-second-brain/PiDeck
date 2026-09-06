@@ -107,18 +107,61 @@ distro), and the portproxy/firewall notes above.
 | `state/onboard-complete` | Marker so the daemon can skip/flag onboarding      |
 | `src/`                   | Monorepo clone (built artifacts the service runs)  |
 | `opt/`                   | Private node/gh/pnpm installs (when not on system) |
-| `bin/`                   | `agentskiss` CLI, `agentskiss-daemon` service launcher |
+| `bin/`                   | `agentskiss` CLI (service control + daemon-CLI forwarder), `agentskiss-daemon` service launcher |
 | `lib/`                   | Installed installer libs + `onboard.sh`            |
 | `log/`                   | daemon stdout/stderr                               |
 
 ## CLI
 
+`agentskiss` is one entry point with two surfaces: service control is handled
+by the installed shim itself; **every other subcommand is forwarded verbatim
+(args intact, exit code propagated) to the daemon CLI**
+(`apps/daemon/src/cli`), resolved from the install layout
+(`$AGENTSKISS_SRC/apps/daemon/dist/cli/main.js`):
+
 ```
-agentskiss start|stop|restart|status   service control
-agentskiss addr                        webapp URL for this machine
+# service control — always handled by the shim
+agentskiss service start|stop|restart|status
+agentskiss start|stop|restart        bare shortcuts, same as `service ...`
+agentskiss addr                      webapp URL for this machine
 agentskiss onboard [--dry-run|--skip-pi|--skip-gh]
 agentskiss logs [-f]
+agentskiss help
+
+# agent CLI — forwarded to the daemon (used by the pi skills)
+agentskiss status [--json]
+agentskiss project get <id> | ls [--json]
+agentskiss kanban|sessions|workers|pulls --project <id> [--json]
+agentskiss diff --project <id> <pr-number>
+agentskiss spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]
+agentskiss send --session <id> --message <text>
+agentskiss issue create ...
 ```
+
+### Command precedence
+
+The shim owns a small, fixed set of verbs; anything else goes to the daemon
+CLI untouched:
+
+| Invoked as                       | Handled by   |
+| -------------------------------- | ------------ |
+| `service start\|stop\|restart\|status`, bare `start\|stop\|restart` | shim (service control) |
+| `addr`, `onboard`, `logs`, `help`, `-h`, `--help` | shim |
+| `status`                         | **daemon CLI** (daemon health — the pi skills' health check) |
+| anything else                    | **daemon CLI**, verbatim |
+
+Notes:
+
+- `status` is the one verb that exists on both surfaces. It deliberately
+  resolves to the **daemon CLI** (that is what the skills call); for service
+  status use `agentskiss service status`. This is a change from earlier
+  installer-only releases, where bare `status` printed service status.
+- `start`/`stop`/`restart` have no daemon-CLI counterpart, so the bare
+  shortcuts are unambiguous; `service start` etc. are the canonical form.
+- The forwarded CLI reaches the daemon at `http://127.0.0.1:$AGENTSKISS_WEB_PORT`
+  by default (set as `AGENTSKISS_DAEMON_URL` by the shim; a `AGENTSKISS_DAEMON_URL`
+  already present in your environment wins). If the daemon build output is
+  missing, the shim says so and points at re-running the installer.
 
 ## Flags (bootstrap)
 
@@ -131,16 +174,22 @@ agentskiss logs [-f]
 --port N        webapp port             (default: 8321)
 ```
 
-## Shell lint
+## Shell lint & shim tests
 
 `pnpm build` in this package runs `shellcheck` over all scripts (skipped
-with a note when shellcheck isn't installed; CI runners have it).
+with a note when shellcheck isn't installed; CI runners have it) and the
+plain-shell forwarding tests in `test/cli-forwarding.sh` (service verbs,
+daemon-CLI forwarding with args + exit codes, `status` precedence, missing-
+build error path) against a fake install layout — no daemons, no systemd.
 
 ## Tested matrix
 
 - **Tested here (Linux x64):** `shellcheck` clean on all scripts; `--dry-run`
   full-bootstrap run; `onboard.sh --dry-run`; service unit rendering;
-  `agentskiss-daemon` smoke against the built placeholder daemon.
+  `agentskiss-daemon` smoke against the built placeholder daemon; shim
+  forwarding tests (`test/cli-forwarding.sh`); live smoke of the installed
+  shim forwarding to the real built daemon CLI (its errors and exit codes
+  surface unchanged).
 - **Untested (needs hardware/VMs):** the real fresh-machine runs — macOS
   (launchd bootstrap, `ipconfig getifaddr`, Xcode CLT install dialog),
   non-apt Linux distros, sudo-requiring git installs, and the whole

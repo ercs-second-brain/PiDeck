@@ -152,7 +152,7 @@ for _lib_file in "$AK_SRC/install/lib/"*.sh "$AK_SRC/install/onboard.sh"; do
 done
 run ln -sfn "$AK_HOME/bin/agentskiss" "$AK_LOCAL_BIN/agentskiss"
 ensure_local_bin_path
-ok "CLI installed: agentskiss (start|stop|status|addr|onboard|logs)"
+ok "CLI installed: agentskiss (service control + daemon CLI forwarder)"
 
 # --- config/state: ~/.agentskiss (read by the daemon later) ---------------
 step "writing config/state to $AK_HOME"
@@ -208,6 +208,7 @@ if [ "$DETECTED_OS" = "wsl" ]; then
   info "from the Windows host: open $(windows_host_url) in your browser"
   info "  (WSL2 localhost forwarding; LAN access needs a firewall/portproxy rule — see install/README.md)"
 fi
-info "service: agentskiss start|stop|status  /  logs: agentskiss logs"
+info "service: agentskiss service start|stop|status  /  logs: agentskiss logs"
+info "agent CLI (spawn/send/kanban/...): forwarded to the daemon — see 'agentskiss help'"
 info "onboarding: agentskiss onboard   uninstall: sh $AK_SRC/install/uninstall.sh"
 printf '\n'
