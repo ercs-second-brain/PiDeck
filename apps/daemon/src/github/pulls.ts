@@ -153,7 +153,8 @@ export interface BatchedPullListOptions {
  * already resolved — in a **single** GraphQL call (issue #40).
  *
  * Replaces the O(PR) enrichment loop ({@link listPullRequestsWithMeta}) for
- * the daemon API's pulls listing path: the old flow made 1 REST list call + 2
+ * the daemon API's pulls listing path (issue #40) and for the PR watcher's
+ * poll loop (issue #42): the old flow made 1 REST list call + 2
  * calls per PR (check-runs + reviews) — 201 calls per kanban refresh at 100
  * open PRs — while this flow costs **1 GraphQL call regardless of PR count**
  * (up to `first`, default 100; no pagination). The API layer additionally

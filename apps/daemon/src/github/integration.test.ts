@@ -1,8 +1,9 @@
 /**
  * Integration-style tests for the github library: the combined flows the
  * daemon actually runs (auth probe → issue list → blocked-by resolution →
- * issues-with-blockers → open PRs with CI/review meta), exercised end-to-end
- * through a fake `gh` runner that dispatches on the real gh argv shapes.
+ * issues-with-blockers → open PRs with CI/review meta → the PR watcher's
+ * batched poll), exercised end-to-end through a fake `gh` runner that
+ * dispatches on the real gh argv shapes.
  *
  * Hermetic by design: no network access, no live GitHub state, and no
  * assertions on mutable live entities (issue numbers/titles/states of real
@@ -21,6 +22,7 @@ import { getAuthStatus, hasGhToken } from "./auth.js";
 import { defaultGhRunner, GhClient, type GhRunner, type RepoRef } from "./gh.js";
 import { fetchIssuesWithBlockedBy, listIssues, resolveBlockedBy } from "./issues.js";
 import { listPullRequestsWithMeta } from "./pulls.js";
+import { PullRequestWatcher } from "./watch.js";
 
 const PROJECT = "integration-test";
 const REPO: RepoRef = { owner: "fixture-owner", repo: "fixture-repo" };
@@ -52,11 +54,26 @@ const REST_PULL = {
   updated_at: "2026-09-06T13:00:00Z",
 };
 
+/** GraphQL pullRequest node for the batched listing (issues #40/#42). */
+const GRAPHQL_PULL = {
+  number: 201,
+  title: "Fixture PR: adds a feature",
+  url: "https://github.com/fixture-owner/fixture-repo/pull/201",
+  updatedAt: "2026-09-06T13:00:00Z",
+  author: { login: "fixture-bob" },
+  headRefName: "fixture/branch",
+  baseRefName: "main",
+  headRefOid: "abc123",
+  reviewDecision: "APPROVED",
+  commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
+};
+
 // Distinctive substrings of the two GraphQL queries in issues.ts (the inner
 // blockedBy connection uses a literal `first: 100` in both, so it cannot
 // distinguish them).
 const ISSUES_QUERY_MARKER = "issues(first: $first";
 const BLOCKEDBY_QUERY_MARKER = "issue(number: $number";
+const PULLS_QUERY_MARKER = "pullRequests(first: $first";
 
 /** GraphQL issues-list node for `fetchIssuesWithBlockedBy`. */
 function graphqlIssueNode(number: number, blockers: Array<{ number: number; state: "OPEN" | "CLOSED" }>) {
@@ -139,6 +156,9 @@ function fixtureGhRunner(): GhRunner {
         }
         return { stdout: gql({ repository: { issue: graphqlBlockedByNode(number, []) } }), stderr: "" };
       }
+      if (queryArg.includes(PULLS_QUERY_MARKER)) {
+        return { stdout: gql({ repository: { pullRequests: { nodes: [GRAPHQL_PULL] } } }), stderr: "" };
+      }
       throw new Error(`fixtureGhRunner: unknown graphql query: ${queryArg}`);
     }
 
@@ -212,6 +232,35 @@ describe("integration: github flows end-to-end over a fake gh runner (hermetic)"
     expect(pr.state).toBe("open");
     expect(pr.ciStatus).toBe("success");
     expect(pr.reviewState).toBe("approved");
+  });
+
+  it("polls the PR watcher with a single batched GraphQL call per poll", async () => {
+    const calls: string[][] = [];
+    const countingGh = new GhClient(async (args) => {
+      calls.push(args);
+      return fixtureGhRunner()(args);
+    });
+    const watcher = new PullRequestWatcher({ gh: countingGh, projectId: PROJECT, repo: REPO, emit: () => {} });
+    const first = await watcher.pollOnce();
+    expect(first.map((e) => e.type)).toEqual(["pull_request.opened"]);
+    const opened = first[0]?.type === "pull_request.opened" ? first[0].pullRequest : null;
+    expect(pullRequestSchema.parse(opened)).toEqual({
+      projectId: PROJECT,
+      number: 201,
+      title: "Fixture PR: adds a feature",
+      state: "open",
+      ciStatus: "success",
+      reviewState: "approved",
+      headBranch: "fixture/branch",
+      baseBranch: "main",
+      author: "fixture-bob",
+      url: "https://github.com/fixture-owner/fixture-repo/pull/201",
+      updatedAt: "2026-09-06T13:00:00Z",
+    });
+    // Unchanged snapshot: no events, still exactly one call per poll.
+    expect(await watcher.pollOnce()).toEqual([]);
+    expect(calls).toHaveLength(2);
+    expect(calls.every((args) => args[1] === "graphql")).toBe(true);
   });
 });
 
