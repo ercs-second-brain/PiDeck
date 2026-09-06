@@ -12,9 +12,12 @@
   },
   "dependencies": {
     "@agentskiss/shared": "workspace:*",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router": "^7.9.6"
+    "react-router": "^7.9.6",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
