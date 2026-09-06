@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -6,8 +6,11 @@ import { ProjectLayout } from "./layout.js";
 import {
   SessionManager,
   RESURRECT_WORKER_COMMAND,
+  deserializeCommand,
   parseTmuxSessionName,
+  resurrectionCommand,
   sanitizeTmuxSegment,
+  serializeCommand,
 } from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
@@ -63,6 +66,113 @@ const fakePaneState = (command: string[], cwd: string | undefined) => ({
   paneLines: [] as string[],
   cols: 80,
   rows: 24,
+});
+
+describe("command serialization (issue #27)", () => {
+  it("round-trips argv through the Session.command string", () => {
+    const cases = [
+      ["pi"],
+      ["bash", "-c", "sleep 300"],
+      ["pi", "--model", "gpt '5'", "--flag=x"],
+      ["/usr/local/bin/agent", "run", "a b", ""],
+    ];
+    for (const argv of cases) {
+      expect(deserializeCommand(serializeCommand(argv))).toEqual(argv);
+    }
+  });
+
+  it("guards recorded commands with the reboot-resilient shell fallback", () => {
+    const guarded = resurrectionCommand(["bash", "-c", "sleep 300"]);
+    expect(guarded[0]).toBe("sh");
+    expect(guarded[2]).toContain("command -v bash >/dev/null 2>&1 && exec bash -c 'sleep 300'");
+    expect(guarded[2]).toContain('|| exec "${SHELL:-/bin/sh}"');
+    // The default worker command produces the established legacy constant.
+    expect(resurrectionCommand(["pi"])).toEqual(RESURRECT_WORKER_COMMAND);
+  });
+});
+
+describe("SessionManager spawn cwd/command persistence (issue #27)", () => {
+  it("records the launched cwd and command on the registry session and file", async () => {
+    const { manager, layout } = makeManager();
+    const worktree = path.join(stateDir, "worktrees", "issue-7");
+    const { session } = await manager.spawnWorker("proj", {
+      issueNumber: 7,
+      cwd: worktree,
+      command: ["bash", "-c", "sleep 300"],
+    });
+    const orch = await manager.ensureOrchestrator("proj");
+
+    expect(session.cwd).toBe(worktree);
+    expect(session.command).toBe("bash -c 'sleep 300'");
+    expect(orch.cwd).toBe(layout.projectDir("proj"));
+    expect(orch.command).toBeUndefined(); // orchestrator panes use tmux's default shell
+
+    const onDisk = JSON.parse(readFileSync(layout.sessionsFilePath(), "utf8")) as {
+      sessions: { id: string; cwd?: string; command?: string }[];
+    };
+    const stored = onDisk.sessions.find((s) => s.id === session.id);
+    expect(stored?.cwd).toBe(worktree);
+    expect(stored?.command).toBe("bash -c 'sleep 300'");
+  });
+
+  it("resurrects a worker pane from its recorded cwd and command after a reboot", async () => {
+    const { manager, layout } = makeManager();
+    const worktree = path.join(stateDir, "worktrees", "issue-9");
+    const spawned = await manager.spawnWorker("proj", {
+      issueNumber: 9,
+      cwd: worktree,
+      command: ["bash", "-c", "sleep 300"],
+    });
+
+    // Reboot: the tmux server is gone; only the persisted registry remains.
+    const rebooted = new FakeTmuxRunner();
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: (args) => rebooted.run(args) }),
+      registry: new SessionRegistry(layout.sessionsFilePath()),
+      layout,
+    });
+    const result = await manager2.reconcile();
+
+    expect(result.resurrected.map((s) => s.tmuxSession)).toContain(spawned.session.tmuxSession);
+    const pane = rebooted.sessions.get(spawned.session.tmuxSession);
+    expect(pane?.cwd).toBe(worktree);
+    expect(pane?.command).toEqual(resurrectionCommand(["bash", "-c", "sleep 300"]));
+    expect(manager2.getWorker(spawned.worker.id)?.status).toBe("running");
+  });
+
+  it("falls back to role defaults for legacy records without cwd/command", async () => {
+    const { manager, layout } = makeManager();
+    const spawned = await manager.spawnWorker("proj", { issueNumber: 1 });
+    const orch = await manager.ensureOrchestrator("proj");
+
+    // Strip the #27 fields from the persisted file to simulate records
+    // written by daemons that predate cwd/command tracking.
+    const filePath = layout.sessionsFilePath();
+    const state = JSON.parse(readFileSync(filePath, "utf8")) as {
+      sessions: Record<string, unknown>[];
+    };
+    for (const record of state.sessions) {
+      delete record.cwd;
+      delete record.command;
+    }
+    writeFileSync(filePath, JSON.stringify(state));
+
+    const rebooted = new FakeTmuxRunner();
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: (args) => rebooted.run(args) }),
+      registry: new SessionRegistry(filePath),
+      layout,
+    });
+    const result = await manager2.reconcile();
+
+    expect(result.resurrected).toHaveLength(2);
+    const workerPane = rebooted.sessions.get(spawned.session.tmuxSession);
+    expect(workerPane?.cwd).toBe(layout.cloneDir("proj"));
+    expect(workerPane?.command).toEqual(RESURRECT_WORKER_COMMAND);
+    const orchPane = rebooted.sessions.get(orch.tmuxSession);
+    expect(orchPane?.cwd).toBe(layout.projectDir("proj"));
+    expect(orchPane?.command).toEqual([]); // tmux default shell
+  });
 });
 
 describe("SessionManager.reconcile (issue #15)", () => {
