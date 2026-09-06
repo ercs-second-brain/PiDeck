@@ -24,6 +24,10 @@
         <string>@AK_HOME@</string>
         <key>AGENTSKISS_WEB_PORT</key>
         <string>@AK_PORT@</string>
+        <!-- Bind the webapp on all interfaces (WSL/remote-access friendly;
+             see install/README.md). -->
+        <key>AGENTSKISS_WEB_HOST</key>
+        <string>0.0.0.0</string>
     </dict>
 
     <key>RunAtLoad</key>

@@ -8,6 +8,9 @@
  * - worker spawn = launch a pi session in the project's workspace tmux
  *   pane and register it (Session + Worker records from shared contracts)
  * - capture-pane / resize passthroughs keyed by registry session id
+ * - startup reconciliation against live tmux state: re-discovery,
+ *   resurrection of sessions lost to daemon restarts or reboots, and
+ *   adoption of orphaned tmux sessions (issue #15)
  *
  * The orchestrator persona/prompt content itself is issue #12; we only
  * create and track its tmux session here.
@@ -20,6 +23,19 @@ import { Tmux } from "./tmux.js";
 
 /** Command launched in worker panes. The pi coding agent CLI runs interactively in the pane. */
 export const DEFAULT_WORKER_COMMAND: string[] = ["pi"];
+
+/**
+ * Command used to resurrect a worker pane (see {@link SessionManager.reconcile}).
+ * After a reboot/restart the agent binary may be missing; re-running `pi`
+ * verbatim would exit instantly and tmux would close the session, making it
+ * un-attachable. Instead, run the agent when it is on PATH, else fall back
+ * to an interactive shell so the pane survives and stays re-attachable.
+ */
+export const RESURRECT_WORKER_COMMAND: string[] = [
+  "sh",
+  "-c",
+  'command -v pi >/dev/null 2>&1 && exec pi || exec "${SHELL:-/bin/sh}"',
+];
 
 export interface SpawnWorkerOptions {
   /** Issue the worker is spawned for (recorded on the Worker). */
@@ -35,6 +51,36 @@ export interface SpawnWorkerOptions {
 export interface SpawnedWorker {
   session: Session;
   worker: Worker;
+}
+
+/** Result of {@link SessionManager.reconcile}. */
+export interface ReconcileResult {
+  /** Registry sessions whose tmux session is alive (re-attachable as-is). */
+  alive: Session[];
+  /** Registry sessions whose tmux session had died and was recreated. */
+  resurrected: Session[];
+  /** Registry sessions that could not be resurrected (workers marked stopped). */
+  lost: Session[];
+  /** Live tmux sessions adopted into the registry (no prior record). */
+  adopted: Session[];
+}
+
+/** Matches tmux session names created by {@link SessionManager}: `agentskiss-<projectId>-<role>-<n>`. */
+const TMUX_NAME_PATTERN = /^agentskiss-(.+)-(orchestrator|worker)-(\d+)$/;
+
+/**
+ * Parses a daemon-managed tmux session name back into its parts. Note the
+ * projectId is the *sanitized* segment (see {@link sanitizeTmuxSegment}); the
+ * mapping back to the raw project id is lossy by design.
+ */
+export function parseTmuxSessionName(name: string): {
+  projectId: string;
+  role: SessionRole;
+  n: number;
+} | null {
+  const match = TMUX_NAME_PATTERN.exec(name);
+  if (!match) return null;
+  return { projectId: match[1] ?? "", role: match[2] as SessionRole, n: Number(match[3]) };
 }
 
 export class SessionManager {
@@ -140,6 +186,83 @@ export class SessionManager {
 
   setWorkerPr(workerId: string, prNumber: number): Worker {
     return this.registry.setWorkerPr(workerId, prNumber);
+  }
+
+  /**
+   * Reconciles the registry with live tmux state. Call once at daemon
+   * startup (and optionally periodically) so sessions survive a daemon
+   * restart or a machine reboot (issue #15):
+   *
+   * - registry sessions whose tmux session is still alive are kept as-is
+   *   (already re-attachable from the web terminal);
+   * - registry sessions whose tmux session died (daemon restart or reboot
+   *   killed the tmux server) are **resurrected**: the tmux session is
+   *   recreated at the role's default working directory, worker panes
+   *   re-running the default agent command;
+   * - sessions that cannot be resurrected (e.g. their directory vanished)
+   *   are reported as lost and any attached worker is marked `stopped`;
+   * - live tmux sessions following our naming scheme with no registry
+   *   record (e.g. the registry file was lost) are adopted.
+   */
+  async reconcile(options: { resurrect?: boolean } = {}): Promise<ReconcileResult> {
+    const result: ReconcileResult = { alive: [], resurrected: [], lost: [], adopted: [] };
+    const live = new Set(await this.tmux.listSessions());
+
+    for (const session of this.registry.listSessions()) {
+      if (live.has(session.tmuxSession)) {
+        result.alive.push(session);
+        continue;
+      }
+      if (options.resurrect === false) {
+        this.markWorkerStopped(session, `tmux session ${session.tmuxSession} is gone`);
+        result.lost.push(session);
+        continue;
+      }
+      try {
+        await this.tmux.newSession(session.tmuxSession, {
+          cwd:
+            session.role === "worker"
+              ? this.layout.cloneDir(session.projectId)
+              : this.layout.projectDir(session.projectId),
+          ...(session.role === "worker" ? { command: [...RESURRECT_WORKER_COMMAND] } : {}),
+        });
+        result.resurrected.push(session);
+      } catch (err) {
+        this.markWorkerStopped(
+          session,
+          `tmux pane died and could not be recreated: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        result.lost.push(session);
+      }
+    }
+
+    for (const name of live) {
+      if (this.registry.getSessionByTmuxName(name) !== undefined) continue;
+      const parsed = parseTmuxSessionName(name);
+      if (!parsed) continue; // not a daemon-managed session; leave it alone
+      result.adopted.push(
+        this.registry.createSession({
+          projectId: parsed.projectId,
+          role: parsed.role,
+          tmuxSession: name,
+          workerId: null,
+        }),
+      );
+    }
+    return result;
+  }
+
+  /** Marks a session's worker `stopped` (unless already terminal). */
+  private markWorkerStopped(session: Session, message: string): void {
+    if (session.workerId === null) return;
+    const worker = this.registry.getWorker(session.workerId);
+    if (!worker) return;
+    if (worker.status === "done" || worker.status === "failed" || worker.status === "stopped") {
+      return;
+    }
+    this.registry.updateWorkerStatus(worker.id, "stopped", message);
   }
 
   /**

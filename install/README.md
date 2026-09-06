@@ -66,11 +66,42 @@ Results are recorded in `~/.agentskiss/onboarding.json` +
 `AGENTSKISS_MODEL` in `~/.agentskiss/env` and remembered across restarts.
 Re-run any time with `agentskiss onboard`.
 
+## WSL: reaching the webapp from Windows
+
+Under WSL2, the daemon runs inside the Linux distro and is reached from the
+Windows host browser like this:
+
+1. **Bind address.** The service units set `AGENTSKISS_WEB_HOST=0.0.0.0`
+   (also written to `~/.agentskiss/env`), so the daemon listens on all
+   interfaces. A `localhost`-only bind also works for host-browser access
+   via localhost forwarding, but 0.0.0.0 keeps the LAN/portproxy path open.
+2. **From the Windows host browser** open `http://localhost:<port>` — WSL2
+   forwards localhost connections from Windows into the distro by default
+   (requires a reasonably recent Windows 10/11 build; `wsl --update` if
+   not). `agentskiss addr` and the installer summary print this URL.
+3. **From other devices on the LAN** (optional) you need a Windows-side
+   port proxy plus a firewall rule, run in an elevated PowerShell:
+
+   ```powershell
+   $wslIp = (wsl hostname -I).Trim().Split(' ')[0]
+   netsh interface portproxy add v4tov4 listenport=8321 connectaddress=$wslIp connectport=8321
+   New-NetFirewallRule -DisplayName agentskiss -Direction Inbound -LocalPort 8321 -Protocol TCP -Action Allow
+   ```
+
+   Note: the distro IP changes across WSL restarts; re-run the portproxy
+   after reboots (or script it). Windows Defender Firewall may also prompt
+   to allow the port on first access.
+
+⚠️ This whole path is **code-reviewed but untested on real Windows
+hardware** — see "Tested matrix" below. If localhost access fails, check
+`wsl --version`, that the daemon is listening (`ss -tlnp` inside the
+distro), and the portproxy/firewall notes above.
+
 ## Config/state layout (`~/.agentskiss/`)
 
 | Path                     | Purpose                                            |
 | ------------------------ | -------------------------------------------------- |
-| `env`                    | Sourceable env (`AGENTSKISS_HOME/SRC/NODE/WEB_PORT/MODEL`) for the service + CLI |
+| `env`                    | Sourceable env (`AGENTSKISS_HOME/SRC/NODE/WEB_PORT/WEB_HOST/MODEL`) for the service + CLI |
 | `config.json`            | Install metadata (paths, port, os, ref)            |
 | `onboarding.json`        | pi + gh onboarding results (consumed by repo-connect) |
 | `state/onboard-complete` | Marker so the daemon can skip/flag onboarding      |
@@ -114,9 +145,12 @@ with a note when shellcheck isn't installed; CI runners have it).
   (launchd bootstrap, `ipconfig getifaddr`, Xcode CLT install dialog),
   non-apt Linux distros, sudo-requiring git installs, and the whole
   Windows/WSL path (`windows/agentskiss-setup.ps1` — WSL install, distro
-  bootstrap, systemd enablement, logon task). The OS-specific paths are
-  kept in clearly separated functions (`_register_launchd`,
-  `_register_systemd`, `_install_node_tarball`, the PS1 file) for review.
+  bootstrap, systemd enablement, logon task, and Windows-host browser
+  access to the webapp; the localhost-forwarding and portproxy/firewall
+  steps in "WSL: reaching the webapp from Windows" are unverified). The
+  OS-specific paths are kept in clearly separated functions
+  (`_register_launchd`, `_register_systemd`, `_install_node_tarball`, the
+  PS1 file) for review.
 
 ## Known limitation
 

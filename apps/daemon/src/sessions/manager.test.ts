@@ -1,9 +1,14 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ProjectLayout } from "./layout.js";
-import { SessionManager, sanitizeTmuxSegment } from "./manager.js";
+import {
+  SessionManager,
+  RESURRECT_WORKER_COMMAND,
+  parseTmuxSessionName,
+  sanitizeTmuxSegment,
+} from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { Tmux, TmuxError } from "./tmux.js";
@@ -31,6 +36,191 @@ describe("sanitizeTmuxSegment", () => {
   it("strips characters tmux forbids in session names", () => {
     expect(sanitizeTmuxSegment("my.project:2")).toBe("my-project-2");
     expect(sanitizeTmuxSegment("../etc")).toBe("etc");
+  });
+});
+
+describe("parseTmuxSessionName", () => {
+  it("parses daemon-managed names and rejects foreign ones", () => {
+    expect(parseTmuxSessionName("agentskiss-my-proj-worker-12")).toEqual({
+      projectId: "my-proj",
+      role: "worker",
+      n: 12,
+    });
+    expect(parseTmuxSessionName("agentskiss-proj-orchestrator-1")).toEqual({
+      projectId: "proj",
+      role: "orchestrator",
+      n: 1,
+    });
+    expect(parseTmuxSessionName("agentskiss-proj-worker-x")).toBeNull();
+    expect(parseTmuxSessionName("my-personal-session")).toBeNull();
+    expect(parseTmuxSessionName("agentskiss-proj-chat-1")).toBeNull();
+  });
+});
+
+const fakePaneState = (command: string[], cwd: string | undefined) => ({
+  command,
+  cwd,
+  paneLines: [] as string[],
+  cols: 80,
+  rows: 24,
+});
+
+describe("SessionManager.reconcile (issue #15)", () => {
+  it("re-attaches prior sessions after a daemon restart (tmux still alive)", async () => {
+    const fake = new FakeTmuxRunner();
+    const tmux = new Tmux({ runner: (args) => fake.run(args) });
+    const layout = new ProjectLayout(stateDir);
+    const registry = new SessionRegistry(layout.sessionsFilePath());
+    const manager = new SessionManager({ tmux, registry, layout });
+    const spawned = await manager.spawnWorker("proj", { issueNumber: 1 });
+    await manager.ensureOrchestrator("proj");
+    fake.sessions.set(spawned.session.tmuxSession, {
+      ...fakePaneState(["pi"], layout.cloneDir("proj")),
+      paneLines: ["hello from the old pane"],
+    });
+
+    // Daemon restart: fresh registry + manager over the same state dir and
+    // the same, still-running tmux server.
+    const registry2 = new SessionRegistry(layout.sessionsFilePath());
+    const manager2 = new SessionManager({ tmux, registry: registry2, layout });
+    const result = await manager2.reconcile();
+
+    expect(result.alive.map((s) => s.tmuxSession)).toEqual(
+      expect.arrayContaining([spawned.session.tmuxSession, "agentskiss-proj-orchestrator-1"]),
+    );
+    expect(result.resurrected).toEqual([]);
+    expect(result.lost).toEqual([]);
+    expect(result.adopted).toEqual([]);
+    // Re-attachable: pane capture + sendKeys work through the new manager.
+    expect(await manager2.capturePane(spawned.session.id)).toContain("hello from the old pane");
+    await manager2.sendKeys(spawned.session.id, "hi", { enter: true });
+    expect(fake.sessions.get(spawned.session.tmuxSession)?.paneLines).toContain("hi");
+  });
+
+  it("resurrects sessions after a reboot (tmux server gone)", async () => {
+    const fake = new FakeTmuxRunner();
+    const tmux = new Tmux({ runner: (args) => fake.run(args) });
+    const layout = new ProjectLayout(stateDir);
+    layout.ensureProject("proj");
+    const registry = new SessionRegistry(layout.sessionsFilePath());
+    const manager = new SessionManager({ tmux, registry, layout });
+    const worker = await manager.spawnWorker("proj", { issueNumber: 1 });
+    const orchestrator = await manager.ensureOrchestrator("proj");
+
+    // Reboot: the tmux server is gone but sessions.json and the state dir
+    // (including the project clone) survived.
+    const rebooted = new FakeTmuxRunner();
+    const registry2 = new SessionRegistry(layout.sessionsFilePath());
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: (args) => rebooted.run(args) }),
+      registry: registry2,
+      layout,
+    });
+    const result = await manager2.reconcile();
+
+    expect(result.resurrected.map((s) => s.tmuxSession)).toEqual(
+      expect.arrayContaining([worker.session.tmuxSession, orchestrator.tmuxSession]),
+    );
+    expect(result.lost).toEqual([]);
+    // Worker pane is resurrected via the shell-fallback command (runs the
+    // agent when it is on PATH, else an interactive shell) in the clone
+    // dir; orchestrator gets a plain shell in the project dir.
+    const workerPane = rebooted.sessions.get(worker.session.tmuxSession);
+    expect(workerPane?.command).toEqual(RESURRECT_WORKER_COMMAND);
+    expect(workerPane?.cwd).toBe(layout.cloneDir("proj"));
+    const orchPane = rebooted.sessions.get(orchestrator.tmuxSession);
+    expect(orchPane?.command).toEqual([]);
+    expect(orchPane?.cwd).toBe(layout.projectDir("proj"));
+    // Worker status is untouched (it is running again in a fresh pane).
+    expect(manager2.getWorker(worker.worker.id)?.status).toBe("running");
+    expect(await manager2.capturePane(worker.session.id)).toBeDefined();
+  });
+
+  it("marks workers stopped when a dead session cannot be resurrected", async () => {
+    const layout = new ProjectLayout(stateDir);
+    layout.ensureProject("proj");
+    const registry = new SessionRegistry(layout.sessionsFilePath());
+    const tmux = new Tmux({ runner: new FakeTmuxRunner().asRunner() });
+    const manager = new SessionManager({ tmux, registry, layout });
+    const spawned = await manager.spawnWorker("proj", { issueNumber: 1 });
+
+    // Reboot, and tmux cannot recreate any session (e.g. the project dir
+    // is gone — real tmux fails new-session when the cwd is missing).
+    rmSync(layout.projectDir("proj"), { recursive: true, force: true });
+    const registry2 = new SessionRegistry(layout.sessionsFilePath());
+    const manager2 = new SessionManager({
+      tmux: new Tmux({
+        runner: (args) => {
+          const cmd = args[0] === "-L" ? args[2] : args[0];
+          if (cmd === "new-session") {
+            return Promise.reject(
+              new TmuxError("tmux new-session failed: can't change working directory", {
+                args,
+                exitCode: 1,
+                stderr: "can't change working directory",
+              }),
+            );
+          }
+          return new FakeTmuxRunner().run(args);
+        },
+      }),
+      registry: registry2,
+      layout,
+    });
+    const result = await manager2.reconcile();
+
+    expect(result.lost.map((s) => s.id)).toContain(spawned.session.id);
+    expect(result.resurrected).toEqual([]);
+    const worker = manager2.getWorker(spawned.worker.id);
+    expect(worker?.status).toBe("stopped");
+    expect(worker?.statusMessage).toContain("tmux pane died");
+  });
+
+  it("marks workers stopped without resurrecting when asked (resurrect: false)", async () => {
+    const fake = new FakeTmuxRunner();
+    const layout = new ProjectLayout(stateDir);
+    const registry = new SessionRegistry(layout.sessionsFilePath());
+    const manager = new SessionManager({
+      tmux: new Tmux({ runner: (args) => fake.run(args) }),
+      registry,
+      layout,
+    });
+    const spawned = await manager.spawnWorker("proj", { issueNumber: 1 });
+    fake.sessions.clear(); // pane died
+
+    const registry2 = new SessionRegistry(layout.sessionsFilePath());
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: new FakeTmuxRunner().asRunner() }),
+      registry: registry2,
+      layout,
+    });
+    const result = await manager2.reconcile({ resurrect: false });
+
+    expect(result.lost.map((s) => s.id)).toContain(spawned.session.id);
+    expect(manager2.getWorker(spawned.worker.id)?.status).toBe("stopped");
+  });
+
+  it("adopts live daemon-named tmux sessions missing from the registry", async () => {
+    const fake = new FakeTmuxRunner();
+    fake.sessions.set("agentskiss-lostproj-worker-1", fakePaneState(["pi"], undefined));
+    fake.sessions.set("someone-elses-session", fakePaneState(["bash"], undefined));
+    const layout = new ProjectLayout(stateDir);
+    const manager = new SessionManager({
+      tmux: new Tmux({ runner: (args) => fake.run(args) }),
+      registry: new SessionRegistry(layout.sessionsFilePath()),
+      layout,
+    });
+
+    const result = await manager.reconcile({ resurrect: false });
+
+    expect(result.adopted.map((s) => s.tmuxSession)).toEqual(["agentskiss-lostproj-worker-1"]);
+    const adopted = manager.listSessions("lostproj");
+    expect(adopted).toHaveLength(1);
+    expect(adopted[0]?.role).toBe("worker");
+    expect(adopted[0]?.workerId).toBeNull();
+    // Foreign sessions are neither adopted nor killed.
+    expect(manager.listSessions()).toHaveLength(1);
+    expect(fake.sessions.has("someone-elses-session")).toBe(true);
   });
 });
 

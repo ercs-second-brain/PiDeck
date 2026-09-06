@@ -25,12 +25,13 @@ const execFileP = promisify(execFile);
 
 let stateDir = "";
 let tmux: Tmux;
+let layout: ProjectLayout;
 let manager: SessionManager;
 
 beforeAll(() => {
   stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-integration-"));
   tmux = new Tmux({ socketName: SOCKET });
-  const layout = new ProjectLayout(stateDir);
+  layout = new ProjectLayout(stateDir);
   manager = new SessionManager({
     tmux,
     registry: new SessionRegistry(layout.sessionsFilePath()),
@@ -103,6 +104,36 @@ describe.skipIf(!tmuxAvailable)("SessionManager against a real tmux server", () 
     expect(await tmux.hasSession(session.tmuxSession)).toBe(false);
     expect(manager.getWorker(worker.id)?.status).toBe("stopped");
   }, 30_000);
+
+  it("resurrects sessions after the tmux server dies (reboot path)", async () => {
+    const { session } = await manager.spawnWorker("itproj", {
+      issueNumber: 15,
+      command: ["bash", "-c", "sleep 300"],
+    });
+    expect(await tmux.hasSession(session.tmuxSession)).toBe(true);
+
+    // Simulate a reboot: kill the whole server, wait for it to be fully
+    // gone (shutdown is asynchronous — racing it yields "server exited
+    // unexpectedly"), then reconcile from the persisted registry.
+    await tmux.run(["kill-server"]);
+    for (let i = 0; i < 50; i++) {
+      try {
+        if ((await tmux.listSessions()).length === 0) break;
+      } catch {
+        // transient errors while the server shuts down; retry
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const manager2 = new SessionManager({
+      tmux,
+      registry: new SessionRegistry(layout.sessionsFilePath()),
+      layout,
+    });
+    const result = await manager2.reconcile();
+    expect(result.resurrected.map((s) => s.tmuxSession)).toContain(session.tmuxSession);
+    expect(await tmux.hasSession(session.tmuxSession)).toBe(true);
+    expect(await manager2.capturePane(session.id)).toBeDefined();
+  }, 15_000);
 
   it("launches the pi coding agent in a worker pane (when pi is installed)", async () => {
     const piOnPath = await execFileP("which", ["pi"])

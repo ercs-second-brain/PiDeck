@@ -1,8 +1,8 @@
 import { existsSync, mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
-import { ProjectLayout, sanitizeSegment } from "./layout.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { defaultStateDir, ProjectLayout, sanitizeSegment } from "./layout.js";
 
 describe("sanitizeSegment", () => {
   it("keeps safe characters", () => {
@@ -31,8 +31,14 @@ describe("ProjectLayout", () => {
   });
 
   it("defaults the state dir to ~/.agentskiss", () => {
-    const layout = new ProjectLayout();
-    expect(layout.root).toBe(path.join(homedir(), ".agentskiss"));
+    const prev = process.env["AGENTSKISS_HOME"];
+    delete process.env["AGENTSKISS_HOME"];
+    try {
+      const layout = new ProjectLayout();
+      expect(layout.root).toBe(path.join(homedir(), ".agentskiss"));
+    } finally {
+      if (prev !== undefined) process.env["AGENTSKISS_HOME"] = prev;
+    }
   });
 
   it("ensureProject creates the clone and worktrees dirs", () => {
@@ -48,5 +54,30 @@ describe("ProjectLayout", () => {
   it("sanitizes project ids in paths", () => {
     const layout = new ProjectLayout("/state");
     expect(layout.projectDir("my.project")).toBe("/state/projects/my-project");
+  });
+});
+
+describe("defaultStateDir", () => {
+  const prev = process.env["AGENTSKISS_HOME"];
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env["AGENTSKISS_HOME"];
+    else process.env["AGENTSKISS_HOME"] = prev;
+  });
+
+  it("honors AGENTSKISS_HOME (set by the service units)", () => {
+    process.env["AGENTSKISS_HOME"] = "/tmp/ak-home";
+    expect(defaultStateDir()).toBe("/tmp/ak-home");
+    expect(new ProjectLayout().root).toBe("/tmp/ak-home");
+  });
+
+  it("falls back to ~/.agentskiss", () => {
+    delete process.env["AGENTSKISS_HOME"];
+    expect(defaultStateDir()).toBe(path.join(homedir(), ".agentskiss"));
+  });
+
+  it("ignores an empty AGENTSKISS_HOME", () => {
+    process.env["AGENTSKISS_HOME"] = "";
+    expect(defaultStateDir()).toBe(path.join(homedir(), ".agentskiss"));
   });
 });
