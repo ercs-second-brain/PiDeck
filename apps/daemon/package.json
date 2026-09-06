@@ -7,10 +7,15 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "standalone": "tsc -b && node dist/terminal/standalone.js"
   },
   "dependencies": {
     "@agentskiss/shared": "workspace:*",
+    "ws": "^8.18.3",
     "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }
