@@ -1,0 +1,143 @@
+/**
+ * PR tracker: persisted registry of pull requests owned by platform
+ * workers (issue #11).
+ *
+ * Each tracked PR records the association worker-session → PR (resolved
+ * from the session registry's `worker.prNumber`) plus the loop state
+ * needed to drive and bound the CI-fix / review-addressing cycle:
+ *
+ * - `state`: `watching` (idle) → `fixing` | `addressing` (prompt sent,
+ *   waiting for the worker to push) → back to `watching`; `done` /
+ *   `failed` are terminal.
+ * - `fixAttempts`: consecutive failed CI-fix prompts; reset whenever CI
+ *   goes green. Bounded by the pipeline's `maxFixAttempts`.
+ * - `lastPromptedHeadSha` / `lastPromptedAt`: distinguishes "worker still
+ *   working on the previous prompt" from "worker pushed and CI failed
+ *   again", and detects stuck prompts.
+ * - `lastSeenCommentId`: watermark so review comments are delivered once,
+ *   including comments that arrive after fixes.
+ *
+ * State is persisted to a JSON file (same pattern as the session
+ * registry) so a daemon restart reconciles tracked PRs instead of losing
+ * the loop (re-watch resilience).
+ */
+
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { z } from "zod";
+
+export const trackedPrStateSchema = z.enum(["watching", "fixing", "addressing", "done", "failed"]);
+export type TrackedPRState = z.infer<typeof trackedPrStateSchema>;
+
+const trackedPRSchema = z.object({
+  projectId: z.string().min(1),
+  prNumber: z.number().int().positive(),
+  headBranch: z.string().min(1),
+  workerId: z.string().min(1),
+  sessionId: z.string().min(1),
+  title: z.string(),
+  state: trackedPrStateSchema,
+  fixAttempts: z.number().int().nonnegative(),
+  lastPromptedAt: z.string().nullable(),
+  lastPromptedHeadSha: z.string().nullable(),
+  lastSeenCommentId: z.number().int().nullable(),
+  headSha: z.string().nullable(),
+  cardSignature: z.string().nullable(),
+  updatedAt: z.string(),
+});
+
+export type TrackedPR = z.infer<typeof trackedPRSchema>;
+
+const persistedStateSchema = z.object({
+  version: z.literal(1),
+  prs: z.array(trackedPRSchema),
+});
+
+interface PersistedState {
+  version: 1;
+  prs: TrackedPR[];
+}
+
+export interface RegisterTrackedPRInput {
+  projectId: string;
+  prNumber: number;
+  headBranch: string;
+  workerId: string;
+  sessionId: string;
+  title: string;
+}
+
+/** Kanban card id for a tracked PR (stable across restarts). */
+export function prCardId(projectId: string, prNumber: number): string {
+  return `pr:${projectId}:${prNumber}`;
+}
+
+function trackingKey(projectId: string, prNumber: number): string {
+  return `${projectId}#${prNumber}`;
+}
+
+export class PRTracker {
+  private readonly prs = new Map<string, TrackedPR>();
+
+  constructor(private readonly filePath: string) {
+    this.load();
+  }
+
+  /** Registers a newly discovered worker-owned PR (no-op-safe via {@link get}). */
+  register(input: RegisterTrackedPRInput, now = new Date()): TrackedPR {
+    const tracked: TrackedPR = {
+      ...input,
+      state: "watching",
+      fixAttempts: 0,
+      lastPromptedAt: null,
+      lastPromptedHeadSha: null,
+      lastSeenCommentId: null,
+      headSha: null,
+      cardSignature: null,
+      updatedAt: now.toISOString(),
+    };
+    this.prs.set(trackingKey(input.projectId, input.prNumber), tracked);
+    this.save();
+    return tracked;
+  }
+
+  get(projectId: string, prNumber: number): TrackedPR | undefined {
+    return this.prs.get(trackingKey(projectId, prNumber));
+  }
+
+  list(): TrackedPR[] {
+    return [...this.prs.values()];
+  }
+
+  /** PRs still being driven (terminal `done` / `failed` excluded). */
+  listActive(): TrackedPR[] {
+    return this.list().filter((pr) => pr.state !== "done" && pr.state !== "failed");
+  }
+
+  /** Writes current state to the JSON file. */
+  save(): void {
+    const state: PersistedState = { version: 1, prs: this.list() };
+    mkdirSync(path.dirname(this.filePath), { recursive: true });
+    writeFileSync(this.filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  }
+
+  private load(): void {
+    let raw: string;
+    try {
+      raw = readFileSync(this.filePath, "utf8");
+    } catch {
+      return; // no persisted state yet
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return; // corrupt file: start empty rather than crash the daemon
+    }
+    const state = persistedStateSchema.safeParse(parsed);
+    if (!state.success) return;
+    for (const pr of state.data.prs) {
+      this.prs.set(trackingKey(pr.projectId, pr.prNumber), pr);
+    }
+  }
+}
