@@ -186,7 +186,7 @@ build error path) against a fake install layout — no daemons, no systemd.
 
 - **Tested here (Linux x64):** `shellcheck` clean on all scripts; `--dry-run`
   full-bootstrap run; `onboard.sh --dry-run`; service unit rendering;
-  `agentskiss-daemon` smoke against the built placeholder daemon; shim
+  `agentskiss-daemon` smoke against the built daemon; shim
   forwarding tests (`test/cli-forwarding.sh`); live smoke of the installed
   shim forwarding to the real built daemon CLI (its errors and exit codes
   surface unchanged).
@@ -201,11 +201,13 @@ build error path) against a fake install layout — no daemons, no systemd.
   (`_register_launchd`, `_register_systemd`, `_install_node_tarball`, the
   PS1 file) for review.
 
-## Known limitation
+## Daemon service
 
-`apps/daemon` is still a placeholder: its `main()` exits immediately (and
-only runs under `AGENTSKESS_DAEMON_RUN=1`). Both service units are wired to
-the documented entrypoint (`~/.agentskiss/bin/agentskiss-daemon` →
-`apps/daemon/dist/index.js`), so they start running the real daemon with no
-installer changes once it lands. Until then `KeepAlive`/`Restart=on-failure`
-correctly leave the service down after the placeholder exits 0.
+`apps/daemon` is the real daemon: its `main()` runs persistently (REST API,
+websocket hub, terminal bridge, static webapp serving) until it receives
+`SIGINT`/`SIGTERM`. Both service units start it via the documented entrypoint
+(`~/.agentskiss/bin/agentskiss-daemon` → `apps/daemon/dist/index.js`), and
+`KeepAlive`/`Restart=on-failure` bring it back if it crashes. As a smoke
+check, the built entrypoint can also be run directly
+(`node apps/daemon/dist/index.js`): it detects that it is the main module and
+starts the daemon; stop it with Ctrl-C.

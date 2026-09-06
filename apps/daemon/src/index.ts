@@ -74,11 +74,6 @@ export function main(options: { stateDir?: string; host?: string; port?: number;
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
-// Allow `node dist/index.js` to run as a smoke check without blocking build/test.
-if (process.env["AGENTSKESS_DAEMON_RUN"] === "1") {
-  main();
-}
-
 // Run when executed as the main module (`node dist/index.js`, the installer's
 // ExecStart target): dist/index.js → src/index.ts counterpart of this file.
 const invokedAs = process.argv[1] !== undefined ? path.resolve(process.argv[1]) : undefined;

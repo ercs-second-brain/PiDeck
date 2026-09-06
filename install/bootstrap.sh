@@ -199,9 +199,6 @@ fi
 # --- summary --------------------------------------------------------------
 printf '\n'
 info "agentsKISS installed"
-if [ "$AK_DRY_RUN" != "1" ] && grep -q 'placeholder' "$AK_SRC/apps/daemon/src/index.ts" 2>/dev/null; then
-  warn "the current daemon build is a placeholder (main() exits immediately) — the service unit is registered and will run the real daemon once it lands"
-fi
 printf '\n'
 info "webapp: $(webapp_url)  (once the daemon serves it)"
 if [ "$DETECTED_OS" = "wsl" ]; then
