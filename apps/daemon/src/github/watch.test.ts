@@ -56,30 +56,11 @@ function restIssue(rec: IssueRecord): Record<string, unknown> {
   };
 }
 
-function restPull(pr: PullRequest, sha = "abc123"): Record<string, unknown> {
-  return {
-    number: pr.number,
-    title: pr.title,
-    state: pr.state === "open" ? "open" : "closed",
-    merged_at: pr.state === "merged" ? "2026-09-06T13:00:00Z" : null,
-    user: { login: pr.author },
-    head: { ref: pr.headBranch, sha },
-    base: { ref: pr.baseBranch },
-    html_url: pr.url,
-    updated_at: pr.updatedAt,
-  };
-}
-
-const CHECK_RUNS_NONE = { total_count: 0, check_runs: [] };
-const CHECK_RUNS_FAILURE = { total_count: 1, check_runs: [{ status: "completed", conclusion: "failure" }] };
-
 /**
- * GhClient driven by a sequence of poll snapshots. Snapshot fields:
- * - `issues`: REST issue list (used by IssueWatcher)
- * - `pulls`: REST PR list, `checkRuns`/`reviews`: enrichment responses
- *   (used by PullRequestWatcher; one PR per snapshot in these tests)
+ * GhClient driven by a sequence of poll snapshots (REST issue lists, used by
+ * IssueWatcher tests).
  */
-function scriptedGh(snapshots: Array<{ issues?: Record<string, unknown>[]; pulls?: Record<string, unknown>[]; checkRuns?: object; reviews?: unknown[] }>): GhClient {
+function scriptedGh(snapshots: Array<{ issues?: Record<string, unknown>[] }>): GhClient {
   let poll = 0;
   const at = (i: number) => snapshots[Math.min(Math.max(i, 0), snapshots.length - 1)] ?? {};
   return new GhClient(async (args) => {
@@ -89,18 +70,57 @@ function scriptedGh(snapshots: Array<{ issues?: Record<string, unknown>[]; pulls
       poll++;
       return { stdout: JSON.stringify(snap.issues ?? []), stderr: "" };
     }
-    if (path.includes("/pulls?state=open")) {
-      const snap = at(poll);
-      poll++;
-      return { stdout: JSON.stringify(snap.pulls ?? []), stderr: "" };
-    }
-    // Enrichment calls belong to the snapshot of the poll that issued them.
-    const snap = at(poll - 1);
-    if (path.includes("/check-runs")) return { stdout: JSON.stringify(snap.checkRuns ?? CHECK_RUNS_NONE), stderr: "" };
-    if (path.includes("/commits/") && path.includes("/status")) return { stdout: JSON.stringify({ state: "success", total_count: 0 }), stderr: "" };
-    if (path.includes("/reviews")) return { stdout: JSON.stringify(snap.reviews ?? []), stderr: "" };
     throw new Error(`unexpected args: ${JSON.stringify(args)}`);
   });
+}
+
+/**
+ * GraphQL pullRequest node in the batched-listing shape (fixture style from
+ * pulls.test.ts), derived from a PullRequest so event assertions can compare
+ * against the shared contract.
+ */
+function gqlPull(pr: PullRequest, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const rollup =
+    pr.ciStatus === "success"
+      ? { state: "SUCCESS" }
+      : pr.ciStatus === "failure"
+        ? { state: "FAILURE" }
+        : pr.ciStatus === "pending"
+          ? { state: "PENDING" }
+          : null;
+  return {
+    number: pr.number,
+    title: pr.title,
+    url: pr.url,
+    updatedAt: pr.updatedAt,
+    author: { login: pr.author },
+    headRefName: pr.headBranch,
+    baseRefName: pr.baseBranch,
+    headRefOid: "abc123",
+    reviewDecision: pr.reviewState === "approved" ? "APPROVED" : pr.reviewState === "changes_requested" ? "CHANGES_REQUESTED" : null,
+    commits: { nodes: [{ commit: { statusCheckRollup: rollup } }] },
+    ...overrides,
+  };
+}
+
+/**
+ * GhClient for PullRequestWatcher tests: serves each poll's open-PR nodes via
+ * the single batched GraphQL call and fails loudly on any REST route —
+ * proving no per-PR enrichment calls remain in the poll loop. Returns the
+ * argv of every call for O(1)-per-poll assertions.
+ */
+function batchedGh(snapshots: Array<Record<string, unknown>[]>): { gh: GhClient; calls: string[][] } {
+  let poll = 0;
+  const calls: string[][] = [];
+  const at = (i: number) => snapshots[Math.min(Math.max(i, 0), snapshots.length - 1)] ?? [];
+  const gh = new GhClient(async (args) => {
+    calls.push(args);
+    if (args[1] === "graphql") {
+      return { stdout: JSON.stringify({ data: { repository: { pullRequests: { nodes: at(poll++) } } } }), stderr: "" };
+    }
+    throw new Error(`unexpected non-graphql call: ${JSON.stringify(args)}`);
+  });
+  return { gh, calls };
 }
 
 describe("IssueWatcher", () => {
@@ -163,11 +183,11 @@ describe("IssueWatcher", () => {
 });
 
 describe("PullRequestWatcher", () => {
-  it("emits opened once, then updated only on changes (CI status flip)", async () => {
-    const gh = scriptedGh([
-      { pulls: [restPull(makePullRequest(7))], checkRuns: CHECK_RUNS_NONE },
-      { pulls: [restPull(makePullRequest(7))], checkRuns: CHECK_RUNS_NONE },
-      { pulls: [restPull(makePullRequest(7))], checkRuns: CHECK_RUNS_FAILURE },
+  it("emits opened once, then updated only on changes (CI rollup flip)", async () => {
+    const { gh, calls } = batchedGh([
+      [gqlPull(makePullRequest(7))],
+      [gqlPull(makePullRequest(7))],
+      [gqlPull(makePullRequest(7), { commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] } })],
     ]);
     const watcher = new PullRequestWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
     expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["pull_request.opened"]);
@@ -176,25 +196,28 @@ describe("PullRequestWatcher", () => {
     expect(third.map((e) => e.type)).toEqual(["pull_request.updated"]);
     const updated = third[0]?.type === "pull_request.updated" ? third[0].pullRequest : null;
     expect(updated?.ciStatus).toBe("failure");
+    // O(1) per poll: exactly one batched GraphQL call, no REST enrichment.
+    expect(calls).toHaveLength(3);
+    expect(calls.every((args) => args[1] === "graphql")).toBe(true);
   });
 
-  it("detects new PRs in later polls", async () => {
-    const gh = scriptedGh([
-      { pulls: [restPull(makePullRequest(7))], checkRuns: CHECK_RUNS_NONE },
-      { pulls: [restPull(makePullRequest(7)), restPull(makePullRequest(8))], checkRuns: CHECK_RUNS_NONE },
+  it("detects new PRs and emits the unchanged PullRequest contract", async () => {
+    const { gh, calls } = batchedGh([
+      [gqlPull(makePullRequest(7))],
+      [gqlPull(makePullRequest(7)), gqlPull(makePullRequest(8))],
     ]);
     const watcher = new PullRequestWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
     expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["pull_request.opened"]);
     const second = await watcher.pollOnce();
     expect(second.map((e) => e.type)).toEqual(["pull_request.opened"]);
-    expect(second[0]?.type === "pull_request.opened" && second[0]?.pullRequest.number).toBe(8);
+    expect(second[0]?.type === "pull_request.opened" && second[0]?.pullRequest).toEqual(makePullRequest(8));
+    expect(calls).toHaveLength(2);
   });
 
-  it("emits updated when the review state changes", async () => {
-    const review = [{ user: { login: "a" }, state: "CHANGES_REQUESTED", submitted_at: "2026-09-06T12:00:00Z" }];
-    const gh = scriptedGh([
-      { pulls: [restPull(makePullRequest(7))], checkRuns: CHECK_RUNS_NONE, reviews: [] },
-      { pulls: [restPull(makePullRequest(7))], checkRuns: CHECK_RUNS_NONE, reviews: review },
+  it("emits updated when the review decision changes", async () => {
+    const { gh } = batchedGh([
+      [gqlPull(makePullRequest(7))],
+      [gqlPull(makePullRequest(7), { reviewDecision: "CHANGES_REQUESTED" })],
     ]);
     const watcher = new PullRequestWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
     expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["pull_request.opened"]);
@@ -202,10 +225,38 @@ describe("PullRequestWatcher", () => {
     expect(second[0]?.type === "pull_request.updated" && second[0]?.pullRequest.reviewState).toBe("changes_requested");
   });
 
+  it("emits updated when the title changes", async () => {
+    const { gh } = batchedGh([
+      [gqlPull(makePullRequest(7))],
+      [gqlPull(makePullRequest(7), { title: "PR 7 (edited)" })],
+    ]);
+    const watcher = new PullRequestWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
+    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["pull_request.opened"]);
+    const second = await watcher.pollOnce();
+    expect(second[0]?.type === "pull_request.updated" && second[0]?.pullRequest.title).toBe("PR 7 (edited)");
+  });
+
+  it("makes one API call per poll regardless of open-PR count", async () => {
+    const snapshot = [1, 2, 3, 4, 5].map((n) => gqlPull(makePullRequest(n)));
+    const { gh, calls } = batchedGh([snapshot, snapshot]);
+    const watcher = new PullRequestWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
+    expect(await watcher.pollOnce()).toHaveLength(5);
+    expect(await watcher.pollOnce()).toEqual([]);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("passes the recency limit to the batched fetch", async () => {
+    const { gh, calls } = batchedGh([[gqlPull(makePullRequest(7))]]);
+    const watcher = new PullRequestWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {}, first: 25 });
+    expect(await watcher.pollOnce()).toHaveLength(1);
+    expect(calls[0]).toContain("-F");
+    expect(calls[0]).toContain("first=25");
+  });
+
   it("start() wires emit and stop() works", async () => {
     vi.useFakeTimers();
     try {
-      const gh = scriptedGh([{ pulls: [restPull(makePullRequest(7))], checkRuns: CHECK_RUNS_NONE }]);
+      const { gh } = batchedGh([[gqlPull(makePullRequest(7))]]);
       const events: GithubWatcherEvent[] = [];
       const watcher = new PullRequestWatcher({ gh, projectId: PROJECT, repo: REPO, emit: (e) => events.push(e), pollIntervalMs: 10 });
       watcher.start();

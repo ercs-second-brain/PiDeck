@@ -16,7 +16,7 @@ import type { PullRequest } from "@agentskiss/shared";
 
 import type { GhClient, RepoRef } from "./gh.js";
 import { listIssues, type IssueRecord } from "./issues.js";
-import { listPullRequestsWithMeta } from "./pulls.js";
+import { listOpenPullRequestsBatched } from "./pulls.js";
 
 // ---------------------------------------------------------------------------
 // Events
@@ -175,9 +175,27 @@ export class IssueWatcher {
 // Pull request watcher
 // ---------------------------------------------------------------------------
 
-export type PullRequestWatcherOptions = WatcherBaseOptions;
+export interface PullRequestWatcherOptions extends WatcherBaseOptions {
+  /**
+   * Max open PRs fetched per poll (top N by last update). Default 100.
+   * Per-poll cost is a single GraphQL call regardless of this value.
+   */
+  first?: number;
+}
 
-/** Watches open PRs for opened / updated (title, state, CI, reviews) transitions. */
+/**
+ * Watches open PRs for opened / updated (title, state, CI, reviews) transitions.
+ *
+ * Each poll fetches every watched PR's CI status and review decision in one
+ * batched GraphQL call ({@link listOpenPullRequestsBatched}) — O(1) gh calls
+ * per poll regardless of open-PR count (issue #42), instead of the O(PR)
+ * REST enrichment loop. Granularity note (same as the API listing): the
+ * commit-status rollup cannot distinguish "running" CI (it maps to
+ * `"pending"`), and only the top `first` most-recently-updated open PRs are
+ * watched. Updates remain triggered by the full `prSignature` diff
+ * (title/state/CI/review/branches/updatedAt), so event fidelity is
+ * preserved.
+ */
 export class PullRequestWatcher {
   private readonly seen = new Map<number, PullRequest>();
   private loop: PollLoop | null = null;
@@ -186,8 +204,8 @@ export class PullRequestWatcher {
 
   /** Runs one poll and returns the events it produced (without emitting). */
   async pollOnce(): Promise<GithubWatcherEvent[]> {
-    const { gh, projectId, repo, now = () => new Date() } = this.options;
-    const pulls = await listPullRequestsWithMeta(gh, projectId, repo);
+    const { gh, projectId, repo, first, now = () => new Date() } = this.options;
+    const pulls = await listOpenPullRequestsBatched(gh, projectId, repo, { first });
     const events: GithubWatcherEvent[] = [];
     for (const pr of pulls) {
       const prev = this.seen.get(pr.number);
