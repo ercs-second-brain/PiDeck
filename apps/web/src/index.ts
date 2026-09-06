@@ -1,15 +1,8 @@
 /**
- * @agentskiss/web — placeholder module.
+ * @agentskiss/web — module entry point.
  *
- * The real web app (kanban board, browser tmux terminals, diff review) is
- * implemented in a later issue. This module only proves the workspace builds
- * and links against @agentskiss/shared.
+ * The kanban board UI lives in `src/App.tsx` + `src/routes/`; browser tmux
+ * terminals and diff review are implemented in later issues.
  */
 
-import { placeholder } from "@agentskiss/shared";
-
 export const APP_NAME = "agentskiss-web";
-
-export function describeApp(): string {
-  return `${APP_NAME} placeholder (${placeholder()})`;
-}

@@ -70,14 +70,48 @@ export type Project = z.infer<typeof projectSchema>;
 
 export const issueStateSchema = z.enum(["open", "closed"]);
 
+/**
+ * One native blocker of an issue, as reported by GitHub's GraphQL
+ * `Issue.blockedBy` connection.
+ *
+ * Blocker semantics (verified against the live API — see issue #24):
+ * - GraphQL `Issue.blockedBy` includes **closed** blockers; whether a
+ *   blocker actually blocks work is an open-state question, so filtering
+ *   to `state: "open"` is done **client-side**.
+ * - Blockers may be **cross-repository**; `repository` carries the
+ *   `owner/repo` of a foreign blocker and is `null` for same-repo ones.
+ */
+export const issueBlockerSchema = z.object({
+  /** Blocker issue number (unique per blocker repository). */
+  number: refNumberSchema,
+  state: issueStateSchema,
+  /** `owner/repo` of the blocker's repository; `null` when same-repo. */
+  repository: z.string().min(1).nullable(),
+});
+export type IssueBlocker = z.infer<typeof issueBlockerSchema>;
+
 export const issueSchema = z.object({
   projectId: idSchema,
   /** GitHub issue number, unique per repository. */
   number: refNumberSchema,
   title: z.string().min(1),
   state: issueStateSchema,
-  /** Issue number(s) this issue is natively "blocked by" on GitHub. */
+  /**
+   * Issue number(s) this issue is natively "blocked by" on GitHub.
+   *
+   * Same-repo **open** blockers only: GitHub's GraphQL `Issue.blockedBy`
+   * includes closed (and cross-repo) blockers, so the open-state filter is
+   * applied client-side when producing this field. Full detail — closed and
+   * cross-repo blockers included — lives in {@link issueSchema `blockers`}.
+   */
   blockedBy: z.array(refNumberSchema),
+  /**
+   * Optional full blocker detail mirroring GraphQL `Issue.blockedBy`,
+   * including closed and cross-repo blockers ({@link IssueBlocker}).
+   * Producers that only resolve open same-repo blockers may omit it;
+   * consumers must not assume it is present.
+   */
+  blockers: z.array(issueBlockerSchema).optional(),
   /** GitHub login of the assignee, if any. */
   assignee: z.string().min(1).nullable(),
   url: z.url(),
@@ -154,6 +188,8 @@ export type KanbanBoard = z.infer<typeof kanbanBoardSchema>;
 // ---------------------------------------------------------------------------
 
 export const sessionRoleSchema = z.enum(["orchestrator", "worker"]);
+/** Role of a tmux-backed session (parity with `WorkerStatus`). */
+export type SessionRole = z.infer<typeof sessionRoleSchema>;
 
 export const sessionSchema = z.object({
   id: idSchema,
@@ -161,6 +197,16 @@ export const sessionSchema = z.object({
   role: sessionRoleSchema,
   /** Name of the backing tmux session. */
   tmuxSession: z.string().min(1),
+  /**
+   * Working directory the session's pane was launched in (project clone or
+   * worktree path). Optional: producers that don't track it may omit it.
+   */
+  cwd: z.string().min(1).optional(),
+  /**
+   * Command the session's pane was launched with (e.g. `pi`). Optional:
+   * producers that don't track it may omit it.
+   */
+  command: z.string().min(1).optional(),
   /** Set when `role` is `"worker"` and the session belongs to a worker. */
   workerId: idSchema.nullable(),
   createdAt: isoDateTimeSchema,
@@ -197,6 +243,12 @@ export const workerSchema = z.object({
   issueNumber: refNumberSchema,
   /** PR opened by the worker, once one exists. */
   prNumber: refNumberSchema.nullable(),
+  /**
+   * Filesystem path the worker's agent runs in — the project clone or a
+   * per-issue worktree (e.g. under `<stateDir>/projects/<projectId>/worktrees/`).
+   * Optional: producers that derive location from project layout may omit it.
+   */
+  worktreePath: z.string().min(1).optional(),
   status: workerStatusSchema,
   /** Short human-readable detail for the current status. */
   statusMessage: z.string().nullable(),

@@ -4,6 +4,8 @@ import {
   formatPath,
   isoDateTimeSchema,
   kanbanBoardSchema,
+  githubWatcherEventSchema,
+  issueSchema,
   kanbanCardSchema,
   KANBAN_COLUMNS,
   projectSchema,
@@ -18,8 +20,11 @@ import {
   wsServerEventSchema,
   type EndpointRequest,
   type EndpointResponse,
+  type GithubWatcherEvent,
+  type IssueBlocker,
   type KanbanColumn,
   type Project,
+  type SessionRole,
   type WsServerEvent,
 } from "./index.js";
 
@@ -137,6 +142,23 @@ describe("domain: session and worker", () => {
     expect(orchestrator.role).toBe("orchestrator");
     expect(workerSession.workerId).toBe("w1");
     expect(sessionSchema.safeParse({ ...orchestrator, role: "chat" }).success).toBe(false);
+    expectTypeOf(orchestrator.role).toEqualTypeOf<SessionRole>();
+  });
+
+  it("accepts optional cwd/command on sessions and worktreePath on workers", () => {
+    const session = sessionSchema.parse({
+      id: "s1",
+      projectId: "p",
+      role: "worker",
+      tmuxSession: "p-worker-1",
+      workerId: "w1",
+      cwd: "/home/me/.agentskiss/projects/p/worktrees/issue-7",
+      command: "pi",
+      createdAt: NOW,
+    });
+    expect(session.cwd).toContain("worktrees");
+    expect(session.command).toBe("pi");
+    expect(sessionSchema.safeParse({ ...session, cwd: "" }).success).toBe(false);
   });
 
   it("covers the full worker lifecycle statuses", () => {
@@ -151,6 +173,9 @@ describe("domain: session and worker", () => {
       startedAt: NOW,
       updatedAt: NOW,
     });
+    const located = workerSchema.parse({ ...worker, worktreePath: "/home/me/.agentskiss/projects/p/worktrees/issue-2" });
+    expect(located.worktreePath).toContain("worktrees");
+    expect(workerSchema.safeParse({ ...worker, worktreePath: "" }).success).toBe(false);
     expect(worker.status).toBe("spawning");
     for (const status of [
       "spawning",
@@ -165,6 +190,41 @@ describe("domain: session and worker", () => {
       expect(workerStatusSchema.safeParse(status).success).toBe(true);
     }
     expect(workerStatusSchema.safeParse("meditating").success).toBe(false);
+  });
+});
+
+describe("domain: issue blockers", () => {
+  const baseIssue = {
+    projectId: "p",
+    number: 7,
+    title: "Blocked issue",
+    state: "open",
+    blockedBy: [2],
+    assignee: null,
+    url: "https://github.com/example/example/issues/7",
+    updatedAt: NOW,
+  } as const;
+
+  it("keeps blockedBy as open same-repo blocker numbers", () => {
+    const issue = issueSchema.parse(baseIssue);
+    expect(issue.blockedBy).toEqual([2]);
+    expectTypeOf(issue.blockedBy).toEqualTypeOf<number[]>();
+  });
+
+  it("accepts blockers without the optional detail field", () => {
+    expect(issueSchema.parse(baseIssue).blockers).toBeUndefined();
+  });
+
+  it("parses blocker detail including closed and cross-repo blockers", () => {
+    const blockers: IssueBlocker[] = [
+      { number: 2, state: "closed", repository: null },
+      { number: 5, state: "open", repository: "example/other-repo" },
+    ];
+    const issue = issueSchema.parse({ ...baseIssue, blockers });
+    expect(issue.blockers).toEqual(blockers);
+    expect(issueSchema.safeParse({ ...baseIssue, blockers: [{ number: 2, state: "merged", repository: null }] }).success)
+      .toBe(false);
+    expect(issueSchema.safeParse({ ...baseIssue, blockers: [{ number: 2, state: "open" }] }).success).toBe(false);
   });
 });
 
@@ -331,6 +391,69 @@ describe("websocket events", () => {
       wsServerEventSchema.parse({ type: "worker.status.changed", at: NOW, projectId: "p", workerId: "w1", status: "done" })
         .type,
     ).toBe("worker.status.changed");
+  });
+
+  it("parses GitHub watcher events (issue created/assigned, PR opened/updated)", () => {
+    const issue = {
+      projectId: "p",
+      number: 7,
+      title: "Do a thing",
+      state: "open",
+      blockedBy: [],
+      assignee: "eric",
+      url: "https://github.com/example/example/issues/7",
+      updatedAt: NOW,
+    };
+    expect(githubWatcherEventSchema.parse({ type: "issue.created", at: NOW, issue }).type).toBe("issue.created");
+    expect(githubWatcherEventSchema.parse({ type: "issue.assigned", at: NOW, issue }).type).toBe("issue.assigned");
+
+    const pullRequest = {
+      projectId: "p",
+      number: 9,
+      title: "Do the thing",
+      state: "open",
+      ciStatus: "pending",
+      reviewState: "none",
+      headBranch: "feature",
+      baseBranch: "main",
+      author: "eric",
+      url: "https://github.com/example/example/pull/9",
+      updatedAt: NOW,
+    };
+    expect(githubWatcherEventSchema.parse({ type: "pull_request.opened", at: NOW, pullRequest }).type).toBe(
+      "pull_request.opened",
+    );
+    expect(githubWatcherEventSchema.parse({ type: "pull_request.updated", at: NOW, pullRequest }).type).toBe(
+      "pull_request.updated",
+    );
+
+    expect(githubWatcherEventSchema.safeParse({ type: "issue.exploded", at: NOW, issue }).success).toBe(false);
+    expect(githubWatcherEventSchema.safeParse({ type: "issue.created", at: "not-a-date", issue }).success).toBe(false);
+  });
+
+  it("narrows the watcher event union", () => {
+    const event: GithubWatcherEvent = {
+      type: "pull_request.updated",
+      at: NOW,
+      pullRequest: {
+        projectId: "p",
+        number: 9,
+        title: "Do the thing",
+        state: "open",
+        ciStatus: "running",
+        reviewState: "pending",
+        headBranch: "feature",
+        baseBranch: "main",
+        author: "eric",
+        url: "https://github.com/example/example/pull/9",
+        updatedAt: NOW,
+      },
+    };
+    if (event.type === "pull_request.updated") {
+      expectTypeOf(event.pullRequest.ciStatus).toEqualTypeOf<"pending" | "running" | "success" | "failure" | "unknown">();
+    } else {
+      expect.unreachable();
+    }
   });
 
   it("rejects unknown message types", () => {
