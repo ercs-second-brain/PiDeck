@@ -21,21 +21,110 @@ import { ProjectLayout } from "./layout.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { Tmux } from "./tmux.js";
 
+/** Characters that are safe in a POSIX shell word without quoting. */
+const SH_BARE_WORD = /^[A-Za-z0-9_./:=,+@%^-]+$/;
+
+/** Single-quotes a word for the POSIX shell unless it is safe bare. */
+function shQuote(word: string): string {
+  return SH_BARE_WORD.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`;
+}
+
 /** Command launched in worker panes. The pi coding agent CLI runs interactively in the pane. */
 export const DEFAULT_WORKER_COMMAND: string[] = ["pi"];
 
 /**
- * Command used to resurrect a worker pane (see {@link SessionManager.reconcile}).
- * After a reboot/restart the agent binary may be missing; re-running `pi`
- * verbatim would exit instantly and tmux would close the session, making it
- * un-attachable. Instead, run the agent when it is on PATH, else fall back
- * to an interactive shell so the pane survives and stays re-attachable.
+ * Command used to resurrect a worker pane with no recorded command (see
+ * {@link SessionManager.reconcile}): the {@link DEFAULT_WORKER_COMMAND}
+ * guarded by {@link resurrectionCommand}.
+ *
+ * After a reboot/restart the agent binary may be missing; re-running the
+ * agent verbatim would exit instantly and tmux would close the session,
+ * making it un-attachable. Instead, run the agent when it is on PATH, else
+ * fall back to an interactive shell so the pane survives and stays
+ * re-attachable.
  */
-export const RESURRECT_WORKER_COMMAND: string[] = [
-  "sh",
-  "-c",
-  'command -v pi >/dev/null 2>&1 && exec pi || exec "${SHELL:-/bin/sh}"',
-];
+export const RESURRECT_WORKER_COMMAND: string[] = resurrectionCommand(DEFAULT_WORKER_COMMAND);
+
+/**
+ * Serializes a pane command argv into the `Session.command` contract field: a
+ * POSIX-shell word string (e.g. `pi` or `bash -c 'sleep 300'`) that
+ * {@link deserializeCommand} can parse back (issue #27).
+ */
+export function serializeCommand(command: string[]): string {
+  return command.map(shQuote).join(" ");
+}
+
+/**
+ * Parses a `Session.command` string back into argv. Best-effort POSIX-ish
+ * splitting — whitespace-separated words with single-quote, double-quote and
+ * backslash escaping — that round-trips {@link serializeCommand} exactly.
+ */
+export function deserializeCommand(command: string): string[] {
+  const argv: string[] = [];
+  let current = "";
+  let started = false;
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+  for (const ch of command.trim()) {
+    if (escaped) {
+      current += ch;
+      started = true;
+      escaped = false;
+      continue;
+    }
+    if (quote === null && ch === "\\") {
+      escaped = true;
+      started = true;
+      continue;
+    }
+    if (quote === null && (ch === " " || ch === "\t")) {
+      if (started) {
+        argv.push(current);
+        current = "";
+        started = false;
+      }
+      continue;
+    }
+    if (quote === "'") {
+      if (ch === "'") quote = null;
+      else current += ch;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '"') quote = null;
+      else current += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      started = true;
+      continue;
+    }
+    current += ch;
+    started = true;
+  }
+  if (started || current !== "") argv.push(current);
+  return argv;
+}
+
+/**
+ * Wraps a pane command in the reboot-resilient shell guard used by
+ * {@link RESURRECT_WORKER_COMMAND}: run the recorded command verbatim when
+ * its binary is on PATH, else fall back to an interactive shell so the pane
+ * survives a reboot/restart where the agent binary may be missing (issue #15).
+ * Used by {@link SessionManager.reconcile} to faithfully resurrect recorded
+ * spawn commands (issue #27).
+ */
+export function resurrectionCommand(recorded: string[]): string[] {
+  const bin = recorded[0] ?? "";
+  return [
+    "sh",
+    "-c",
+    `command -v ${shQuote(bin)} >/dev/null 2>&1 && exec ${recorded
+      .map(shQuote)
+      .join(" ")} || exec "\${SHELL:-/bin/sh}"`,
+  ];
+}
 
 export interface SpawnWorkerOptions {
   /** Issue the worker is spawned for (recorded on the Worker). */
@@ -109,11 +198,13 @@ export class SessionManager {
     }
     await this.ensureProject(projectId);
     const name = await this.nextTmuxSessionName(projectId, "orchestrator");
-    await this.tmux.newSession(name, { cwd: this.layout.projectDir(projectId) });
+    const cwd = this.layout.projectDir(projectId);
+    await this.tmux.newSession(name, { cwd });
     return this.registry.createSession({
       projectId,
       role: "orchestrator",
       tmuxSession: name,
+      cwd,
       workerId: null,
     });
   }
@@ -133,6 +224,10 @@ export class SessionManager {
       projectId,
       role: "worker",
       tmuxSession: name,
+      // Record what is actually launched so reconcile() can resurrect the
+      // same pane after a daemon restart or reboot (issue #27).
+      cwd,
+      command: serializeCommand(command),
       workerId: null,
     });
     const worker = this.registry.registerWorker({
@@ -197,8 +292,10 @@ export class SessionManager {
    *   (already re-attachable from the web terminal);
    * - registry sessions whose tmux session died (daemon restart or reboot
    *   killed the tmux server) are **resurrected**: the tmux session is
-   *   recreated at the role's default working directory, worker panes
-   *   re-running the default agent command;
+   *   recreated in the session's recorded cwd and, for workers, re-running
+   *   the recorded command guarded by {@link resurrectionCommand}; records
+   *   without recorded cwd/command (e.g. written by older daemons) fall
+   *   back to the role's default working directory and command;
    * - sessions that cannot be resurrected (e.g. their directory vanished)
    *   are reported as lost and any attached worker is marked `stopped`;
    * - live tmux sessions following our naming scheme with no registry
@@ -219,12 +316,23 @@ export class SessionManager {
         continue;
       }
       try {
+        const cwd =
+          session.cwd ??
+          (session.role === "worker"
+            ? this.layout.cloneDir(session.projectId)
+            : this.layout.projectDir(session.projectId));
+        // Recorded commands are re-run through the reboot-resilient guard
+        // (binary on PATH → verbatim, else interactive shell); legacy
+        // records without a recorded command keep the role default.
+        const command =
+          session.command !== undefined
+            ? resurrectionCommand(deserializeCommand(session.command))
+            : session.role === "worker"
+              ? [...RESURRECT_WORKER_COMMAND]
+              : undefined;
         await this.tmux.newSession(session.tmuxSession, {
-          cwd:
-            session.role === "worker"
-              ? this.layout.cloneDir(session.projectId)
-              : this.layout.projectDir(session.projectId),
-          ...(session.role === "worker" ? { command: [...RESURRECT_WORKER_COMMAND] } : {}),
+          cwd,
+          ...(command === undefined ? {} : { command }),
         });
         result.resurrected.push(session);
       } catch (err) {

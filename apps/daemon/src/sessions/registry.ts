@@ -26,6 +26,10 @@ export interface CreateSessionInput {
   projectId: string;
   role: SessionRole;
   tmuxSession: string;
+  /** Working directory the pane is launched in (`Session.cwd` contract field). */
+  cwd?: string;
+  /** Command the pane is launched with (`Session.command` contract field). */
+  command?: string;
   workerId?: string | null;
 }
 
@@ -79,6 +83,8 @@ export class SessionRegistry {
       workerId: input.workerId ?? null,
       createdAt: new Date().toISOString(),
     };
+    if (input.cwd !== undefined) session.cwd = input.cwd;
+    if (input.command !== undefined) session.command = input.command;
     this.sessions.set(session.id, session);
     this.save();
     return session;

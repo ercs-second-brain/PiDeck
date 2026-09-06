@@ -101,6 +101,40 @@ describe("SessionRegistry", () => {
     expect(registry.listWorkers({ status: "failed" })).toHaveLength(0);
   });
 
+  it("persists optional cwd/command on session records (issue #27)", () => {
+    const registry = new SessionRegistry(filePath);
+    const withOverrides = registry.createSession({
+      projectId: "a",
+      role: "worker",
+      tmuxSession: "agentskiss-a-worker-1",
+      cwd: "/tmp/worktrees/issue-7",
+      command: "bash -c 'sleep 300'",
+    });
+    registry.createSession({
+      projectId: "a",
+      role: "orchestrator",
+      tmuxSession: "agentskiss-a-orchestrator-1",
+    });
+
+    // The fields land in the JSON file...
+    const state = JSON.parse(readFileSync(filePath, "utf8")) as {
+      sessions: { id: string; cwd?: string; command?: string }[];
+    };
+    const stored = state.sessions.find((s) => s.id === withOverrides.id);
+    expect(stored?.cwd).toBe("/tmp/worktrees/issue-7");
+    expect(stored?.command).toBe("bash -c 'sleep 300'");
+
+    // ...and survive a reload. Records without the fields stay fieldless.
+    const reloaded = new SessionRegistry(filePath);
+    expect(reloaded.getSession(withOverrides.id)?.cwd).toBe("/tmp/worktrees/issue-7");
+    expect(reloaded.getSession(withOverrides.id)?.command).toBe("bash -c 'sleep 300'");
+    const [legacy] = reloaded
+      .listSessions({ role: "orchestrator" })
+      .map((s) => reloaded.getSession(s.id));
+    expect(legacy?.cwd).toBeUndefined();
+    expect(legacy?.command).toBeUndefined();
+  });
+
   it("survives an in-process reload (new instance over the same file)", () => {
     const registry = new SessionRegistry(filePath);
     const session = registry.createSession({
