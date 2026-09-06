@@ -2,9 +2,9 @@
   "name": "@agentskiss/install",
   "version": "0.1.0",
   "private": true,
-  "description": "One-line install & service setup for agentsKISS (placeholder, implemented in a later issue)",
+  "description": "One-line install, service setup and guided onboarding for agentsKISS (launchd/systemd/WSL)",
   "type": "module",
   "scripts": {
-    "build": "node placeholder.mjs"
+    "build": "sh -c 'if command -v shellcheck >/dev/null 2>&1; then shellcheck bootstrap.sh onboard.sh uninstall.sh bin/agentskiss bin/agentskiss-daemon lib/*.sh; else echo \"shellcheck not installed; skipping shell lint\"; fi'"
   }
 }

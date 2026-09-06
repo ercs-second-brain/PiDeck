@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  agentsKISS daemon — macOS launchd agent template.
+  Placeholders (@AK_…@) are substituted by install/lib/service.sh at install
+  time. Runs $HOME-based paths only, no root required.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agentskiss.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>@AK_HOME@/bin/agentskiss-daemon</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>@AK_SERVE_PATH@</string>
+        <key>AGENTSKISS_HOME</key>
+        <string>@AK_HOME@</string>
+        <key>AGENTSKISS_WEB_PORT</key>
+        <string>@AK_PORT@</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- KeepAlive only on abnormal exit; the placeholder daemon exits 0 and
+         stays down until the real daemon lands (see install/README.md). -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>@AK_HOME@/log/daemon.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>@AK_HOME@/log/daemon.err.log</string>
+</dict>
+</plist>

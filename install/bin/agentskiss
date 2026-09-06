@@ -1,0 +1,65 @@
+#!/bin/sh
+# shellcheck shell=sh disable=SC1090,SC1091
+#
+# agentskiss CLI — installed to ~/.agentskiss/bin/agentskiss (symlinked into
+# ~/.local/bin by the installer).
+#
+#   agentskiss start|stop|restart|status   service control
+#   agentskiss addr                        webapp URL for this machine
+#   agentskiss onboard [flags]             (re-)run guided onboarding
+#   agentskiss logs [-f]                   daemon logs
+#   agentskiss help
+
+set -u
+
+AK_HOME="${AGENTSKISS_HOME:-$HOME/.agentskiss}"
+AK_ENV="$AK_HOME/env"
+
+if [ -f "$AK_ENV" ]; then
+  . "$AK_ENV"
+else
+  printf 'agentskiss: %s not found — run the agentskiss installer first\n' "$AK_ENV" >&2
+  exit 1
+fi
+
+AK_LIB="$AK_HOME/lib"
+[ -f "$AK_LIB/common.sh" ] || { printf 'agentskiss: install broken, %s missing\n' "$AK_LIB" >&2; exit 1; }
+. "$AK_LIB/common.sh"
+. "$AK_LIB/service.sh"
+
+detect_os
+
+cmd=${1:-help}
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+  start) svc_start ;;
+  stop) svc_stop ;;
+  restart) svc_restart ;;
+  status)
+    svc_status
+    printf '\nwebapp: %s\n' "$(webapp_url)"
+    ;;
+  addr) webapp_url; printf '\n' ;;
+  onboard)
+    # shellcheck disable=SC2086
+    sh "$AK_LIB/onboard.sh" "$@"
+    ;;
+  logs)
+    tail -n 100 "$@" "$AK_HOME/log/daemon.out.log" "$AK_HOME/log/daemon.err.log" 2>/dev/null
+    ;;
+  help | -h | --help | *)
+    cat <<EOF
+agentskiss — control the agentsKISS daemon/webapp
+
+Usage: agentskiss <command>
+
+  start|stop|restart|status   manage the persistent service
+  addr                        print the webapp URL for this machine
+  onboard [flags]             (re-)run guided onboarding (--dry-run, --skip-pi, --skip-gh)
+  logs [-f]                   tail daemon logs
+  help                        this text
+EOF
+    [ "$cmd" = "help" ] || [ "$cmd" = "-h" ] || [ "$cmd" = "--help" ] || exit 1
+    ;;
+esac
