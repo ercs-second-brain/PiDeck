@@ -1,0 +1,6 @@
+packages:
+  - apps/daemon
+  - apps/web
+  - packages/shared
+  - agent
+  - install

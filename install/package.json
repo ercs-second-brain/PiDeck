@@ -1,0 +1,10 @@
+{
+  "name": "@agentskiss/install",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One-line install & service setup for agentsKISS (placeholder, implemented in a later issue)",
+  "type": "module",
+  "scripts": {
+    "build": "node placeholder.mjs"
+  }
+}
