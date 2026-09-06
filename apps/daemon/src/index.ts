@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { createDaemonContext } from "./api/context.js";
 import { createDaemonServer } from "./api/server.js";
+import { ensureProjectOrchestrators } from "./orchestrator/bootstrap.js";
 import { TerminalBridge } from "./terminal/bridge.js";
 import { attachTerminalWebSocket } from "./terminal/ws-server.js";
 
@@ -35,18 +36,27 @@ export function main(options: { stateDir?: string; host?: string; port?: number;
   const terminalWss = attachTerminalWebSocket(server, bridge);
   const closeTerminal = (): void => terminalWss.close();
 
-  void services.sessions.reconcile().then(
-    (result) => {
-      if (result.resurrected.length > 0 || result.lost.length > 0 || result.adopted.length > 0) {
-        console.log(
-          `[daemon] session reconcile: ${result.alive.length} alive, ${result.resurrected.length} resurrected, ${result.lost.length} lost, ${result.adopted.length} adopted`,
-        );
-      }
-    },
-    (err: unknown) => {
-      console.error("[daemon] session reconcile failed:", err);
-    },
-  );
+  void services.sessions
+    .reconcile()
+    .then(
+      (result) => {
+        if (result.resurrected.length > 0 || result.lost.length > 0 || result.adopted.length > 0) {
+          console.log(
+            `[daemon] session reconcile: ${result.alive.length} alive, ${result.resurrected.length} resurrected, ${result.lost.length} lost, ${result.adopted.length} adopted`,
+          );
+        }
+      },
+      (err: unknown) => {
+        console.error("[daemon] session reconcile failed:", err);
+      },
+    )
+    // Orchestrator bootstrap (issue #12): after reconcile, ensure one
+    // orchestrator session per registered project, listed in the web
+    // terminal picker, running pi with the rendered orchestrator prompt.
+    .then(() => ensureProjectOrchestrators(services))
+    .catch((err: unknown) => {
+      console.error("[daemon] orchestrator bootstrap failed:", err);
+    });
 
   server.listen(port, host, () => {
     console.log(`[daemon] agentskiss daemon listening on http://${host}:${port} (ws: /api/ws)`);
