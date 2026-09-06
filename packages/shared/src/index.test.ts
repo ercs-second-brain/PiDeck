@@ -205,6 +205,24 @@ describe("domain: session and worker", () => {
     }
     expect(workerStatusSchema.safeParse("meditating").success).toBe(false);
   });
+
+  it("accepts freeform workers with issueNumber 0 and rejects negatives", () => {
+    const base = {
+      id: "w1",
+      projectId: "p",
+      sessionId: "s2",
+      issueNumber: 0,
+      prNumber: null,
+      status: "running",
+      statusMessage: null,
+      startedAt: NOW,
+      updatedAt: NOW,
+    };
+    // 0 = freeform spawn (no backing GitHub issue).
+    expect(workerSchema.parse(base).issueNumber).toBe(0);
+    expect(wsServerEventSchema.parse({ type: "worker.spawned", at: NOW, worker: base }).type).toBe("worker.spawned");
+    expect(workerSchema.safeParse({ ...base, issueNumber: -1 }).success).toBe(false);
+  });
 });
 
 describe("domain: issue blockers", () => {
