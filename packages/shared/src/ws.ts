@@ -15,9 +15,11 @@
 import { z } from "zod";
 import {
   isoDateTimeSchema,
+  issueSchema,
   kanbanCardSchema,
   kanbanColumnSchema,
   projectSchema,
+  pullRequestSchema,
   workerSchema,
   workerStatusSchema,
 } from "./domain.js";
@@ -125,6 +127,30 @@ export const kanbanUpdateEventSchema = z.discriminatedUnion("type", [
   }),
 ]);
 export type KanbanUpdateEvent = z.infer<typeof kanbanUpdateEventSchema>;
+
+// ---------------------------------------------------------------------------
+// GitHub watcher events (daemon-internal; may be forwarded over the socket)
+// ---------------------------------------------------------------------------
+
+/**
+ * Typed events emitted by the daemon's GitHub watchers (issue + PR polling).
+ *
+ * Each event carries the full shared-contract entity at the moment of the
+ * transition; `at` is when the watcher observed it. Consumed by the
+ * orchestrator wiring (#9/#10/#11) so package-local event types are not
+ * redefined per package.
+ */
+export const githubWatcherEventSchema = z.discriminatedUnion("type", [
+  /** A newly seen issue (authored by, or assigned to, the watched login). */
+  z.object({ type: z.literal("issue.created"), at: isoDateTimeSchema, issue: issueSchema }),
+  /** The watched login became an assignee of a previously-seen issue. */
+  z.object({ type: z.literal("issue.assigned"), at: isoDateTimeSchema, issue: issueSchema }),
+  /** A PR was opened / newly seen by the PR watcher. */
+  z.object({ type: z.literal("pull_request.opened"), at: isoDateTimeSchema, pullRequest: pullRequestSchema }),
+  /** A previously-seen PR changed (title, state, CI status, or review decision). */
+  z.object({ type: z.literal("pull_request.updated"), at: isoDateTimeSchema, pullRequest: pullRequestSchema }),
+]);
+export type GithubWatcherEvent = z.infer<typeof githubWatcherEventSchema>;
 
 // ---------------------------------------------------------------------------
 // Full unions

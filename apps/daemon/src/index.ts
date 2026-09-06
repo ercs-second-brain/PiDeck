@@ -1,15 +1,13 @@
 /**
- * @agentskiss/daemon — placeholder entry point.
+ * @agentskiss/daemon — entry point.
  *
- * The real daemon (project management, issue/PR watchers, tmux session
- * supervision) is implemented in a later issue. This entry point only proves
- * the workspace builds and links against @agentskiss/shared.
+ * The full daemon wiring (project management, issue/PR watchers, kanban
+ * updates) is implemented in later issues; session/worker supervision lives
+ * in `src/sessions/`.
  */
 
-import { placeholder } from "@agentskiss/shared";
-
 export function main(): void {
-  console.log(`agentskiss daemon placeholder (${placeholder()})`);
+  console.log("agentskiss daemon");
 }
 
 // Allow `node dist/index.js` to run as a smoke check without blocking build/test.
