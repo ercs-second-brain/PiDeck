@@ -59,6 +59,7 @@ mkdir -p "$AK_HOME/lib" "$AK_HOME/bin" "$AK_SRC/.git"
 cp "$INSTALL_DIR/lib/common.sh" "$INSTALL_DIR/lib/source.sh" "$INSTALL_DIR/lib/update.sh" "$AK_HOME/lib/"
 cat > "$AK_HOME/lib/service.sh" <<'EOF'
 svc_restart() { printf 'SVC restart\n'; }
+register_service() { printf 'REGISTER service\n'; }
 EOF
 
 # env file (as bootstrap writes it) + config.json pointing at a private repo/ref
@@ -106,10 +107,12 @@ chmod +x "$FAKE_BIN/git" "$FAKE_BIN/gh"
 
 # Runs an update.sh snippet with the fake git/gh and the fake install layout.
 # Usage: run_update <local-sha> <remote-sha|''> <remote-url|''> <snippet>
+# HOME is pinned to the fake home so ~/.local/bin writes (the agentskiss
+# symlink the apply path re-creates) land in the tmp tree, not the real one.
 run_update() {
   env PATH="$FAKE_BIN:$PATH" \
     FAKE_LOCAL_SHA="$1" FAKE_REMOTE_SHA="$2" FAKE_REMOTE_URL="$3" UPDATE_SNIPPET="$4" \
-    AGENTSKISS_HOME="$AK_HOME" \
+    AGENTSKISS_HOME="$AK_HOME" HOME="$AK_HOME" \
     sh -c '
       set -u
       set -a; . "$AGENTSKISS_HOME/env"; set +a
@@ -156,7 +159,7 @@ write_config
 run_shim() { # run_shim <local-sha> <remote-sha|''> <args...>
   _rs_local=$1; _rs_remote=$2; shift 2
   env PATH="$FAKE_BIN:$PATH" FAKE_LOCAL_SHA="$_rs_local" FAKE_REMOTE_SHA="$_rs_remote" \
-    AGENTSKISS_HOME="$AK_HOME" sh "$SHIM" "$@"
+    AGENTSKISS_HOME="$AK_HOME" HOME="$AK_HOME" sh "$SHIM" "$@"
 }
 
 out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update --check)
@@ -190,6 +193,90 @@ check_eq 'apply with update available exits 0' '0' "$rc"
 check_grep 'apply fetches the configured ref' 'RESOLVE fetch dev-branch' "$out"
 check_grep 'apply rebuilds via build_from_source' 'BUILD' "$out"
 check_grep 'apply restarts the service' 'SVC restart' "$out"
+cp "$INSTALL_DIR/lib/source.sh" "$AK_HOME/lib/"
+
+# --- apply path: installed shell layer refresh (issue #66) -------------------
+# Regression: `agentskiss update` used to refresh $AK_HOME/src, rebuild and
+# restart — but never re-copied the installed shell layer ($AK_LIB/*.sh,
+# onboard.sh, bin/*) or the rendered service units, so fixes to the install
+# scripts themselves never reached machines that update via the CLI.
+#
+# Setup: a fake freshly-fetched source tree whose shell files differ from the
+# installed ones; resolve_source is stubbed to point AK_SRC at it (as the real
+# one does after fetch+reset). The fresh tree carries the real current lib/bin
+# scripts; the installed layer carries the same files plus a marker line —
+# functional (the shim sources the installed copies) but distinguishable.
+# After update_apply the installed files must match the source, the
+# ~/.local/bin/agentskiss symlink must survive, and the service units must
+# have been re-registered.
+FAKE_SRC="$tmp/fresh-src"
+mkdir -p "$FAKE_SRC/install/bin" "$FAKE_SRC/install/lib" "$FAKE_SRC/install/service"
+cp "$INSTALL_DIR/lib/"*.sh "$FAKE_SRC/install/lib/"
+cp "$INSTALL_DIR/onboard.sh" "$FAKE_SRC/install/onboard.sh"
+cp "$INSTALL_DIR/bin/agentskiss" "$INSTALL_DIR/bin/agentskiss-daemon" "$FAKE_SRC/install/bin/"
+printf 'unit template v2\n' > "$FAKE_SRC/install/service/agentskiss.service"
+
+# stale installed layer: real scripts + marker line (so they differ from the
+# fresh tree but keep the shim runnable)
+for _stale_lib in "$FAKE_SRC/install/lib/"*.sh; do
+  _stale_name=$(basename "$_stale_lib")
+  cp "$_stale_lib" "$AK_HOME/lib/$_stale_name"
+  printf '# stale installed copy\n' >> "$AK_HOME/lib/$_stale_name"
+done
+printf '# stale installed copy\n' >> "$AK_HOME/lib/onboard.sh"
+printf '#!/bin/sh\n# stale shim\n' > "$AK_HOME/bin/agentskiss"
+printf '#!/bin/sh\n# stale launcher\n' > "$AK_HOME/bin/agentskiss-daemon"
+rm -rf "$AK_HOME/.local" # no leftover symlink from an earlier pass
+
+# The shim sources the installed copies of service.sh/update.sh — put the
+# test stubs back over the stale copies, and stub source.sh: "fetch" = point
+# AK_SRC at the fresh tree (the real resolve_source ends with AK_SRC at the
+# reset checkout); build is a no-op marker.
+cat > "$AK_HOME/lib/service.sh" <<'EOF'
+svc_restart() { printf 'SVC restart\n'; }
+register_service() { printf 'REGISTER service\n'; }
+EOF
+cat > "$AK_HOME/lib/source.sh" <<EOF
+resolve_source() { AK_SRC="$FAKE_SRC"; printf 'RESOLVE fetch %s\n' "\$AK_REPO_REF"; }
+build_from_source() { printf 'BUILD\n'; }
+EOF
+
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_NEW" update); rc=$?
+check_eq 'apply with refresh exits 0' '0' "$rc"
+check_grep 'refresh still runs after fetch + build' 'RESOLVE fetch dev-branch' "$out"
+check_grep 'refresh re-registers the service units' 'REGISTER service' "$out"
+check_grep 'refresh restarts the service' 'SVC restart' "$out"
+
+for _fresh_lib in "$FAKE_SRC/install/lib/"*.sh; do
+  _stale_name=$(basename "$_fresh_lib")
+  if cmp -s "$_fresh_lib" "$AK_HOME/lib/$_stale_name"; then
+    printf 'ok - installed lib/%s refreshed\n' "$_stale_name"
+  else
+    printf 'not ok - installed lib/%s was not refreshed from the fetched source\n' "$_stale_name"
+    failures=$((failures + 1))
+  fi
+done
+if cmp -s "$FAKE_SRC/install/onboard.sh" "$AK_HOME/lib/onboard.sh"; then
+  printf 'ok - installed onboard.sh refreshed\n'
+else
+  printf 'not ok - installed onboard.sh was not refreshed from the fetched source\n'
+  failures=$((failures + 1))
+fi
+for _fresh_bin in "$FAKE_SRC/install/bin/"*; do
+  _stale_name=$(basename "$_fresh_bin")
+  if cmp -s "$_fresh_bin" "$AK_HOME/bin/$_stale_name" && [ -x "$AK_HOME/bin/$_stale_name" ]; then
+    printf 'ok - installed bin/%s refreshed (executable)\n' "$_stale_name"
+  else
+    printf 'not ok - installed bin/%s not refreshed/executable\n' "$_stale_name"
+    failures=$((failures + 1))
+  fi
+done
+if [ "$(readlink "$AK_HOME/.local/bin/agentskiss")" = "$AK_HOME/bin/agentskiss" ]; then
+  printf 'ok - ~/.local/bin/agentskiss symlink preserved\n'
+else
+  printf 'not ok - ~/.local/bin/agentskiss symlink missing/wrong after refresh\n'
+  failures=$((failures + 1))
+fi
 cp "$INSTALL_DIR/lib/source.sh" "$AK_HOME/lib/"
 
 # --- summary ----------------------------------------------------------------

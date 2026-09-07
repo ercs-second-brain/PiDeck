@@ -44,7 +44,7 @@ agentskiss update --check   # report only: up to date, or old -> new short SHA
 agentskiss update           # fetch (gh-authed git), rebuild, restart the service
 ```
 
-`agentskiss update` is a no-op (no rebuild) when the installed source already matches the upstream ref; otherwise it reuses the installer's fetch/build machinery and restarts the daemon, leaving sessions and project state intact.
+`agentskiss update` is a no-op (no rebuild) when the installed source already matches the upstream ref; otherwise it reuses the installer's fetch/build machinery, refreshes the installed shell layer (`lib/*.sh` + `onboard.sh`, the `bin/` shim, and the service unit files — so fixes to the install scripts itself ship with updates), and restarts the daemon, leaving sessions and project state intact.
 
 ## Everyday commands
 

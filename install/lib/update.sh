@@ -96,6 +96,38 @@ update_check() {
   return 0
 }
 
+# refresh_installed_layer — copy the freshly fetched shell layer over the
+# installed one, exactly like bootstrap.sh installs it:
+#   install/bin/*            -> $AK_HOME/bin/        (chmod +x, symlink kept)
+#   install/lib/*.sh +
+#   install/onboard.sh       -> $AK_LIB/            (flat, see issue #65)
+# plus a register_service pass so the rendered service unit files
+# (launchd plist / systemd unit) are rebuilt from the new $AK_SRC too.
+#
+# Safe to run from inside a running `agentskiss update`: the CLI has already
+# parsed its copies of common.sh/service.sh/update.sh into memory, so
+# overwriting those files on disk mid-run is fine — the refreshed scripts
+# take effect on the next shim invocation. Nothing is re-sourced here.
+#
+# Consumes $AK_SRC (must point at the freshly fetched tree) — call after
+# resolve_source/build_from_source, like bootstrap does.
+refresh_installed_layer() {
+  step "refreshing the installed shell layer"
+  for _cli_file in "$AK_SRC/install/bin/"*; do
+    [ -f "$_cli_file" ] || continue
+    run cp "$_cli_file" "$AK_HOME/bin/$(basename "$_cli_file")"
+    run chmod +x "$AK_HOME/bin/$(basename "$_cli_file")"
+  done
+  for _lib_file in "$AK_SRC/install/lib/"*.sh "$AK_SRC/install/onboard.sh"; do
+    [ -f "$_lib_file" ] || continue
+    run cp "$_lib_file" "$AK_LIB/$(basename "$_lib_file")"
+  done
+  run mkdir -p "$AK_LOCAL_BIN"
+  run ln -sfn "$AK_HOME/bin/agentskiss" "$AK_LOCAL_BIN/agentskiss"
+  ok "installed shell layer refreshed (bin, lib, onboard.sh)"
+  register_service
+}
+
 # short_sha — first 7 chars of a SHA ('' passthrough for empty).
 short_sha() {
   printf '%.7s' "$1"
@@ -123,7 +155,10 @@ update_report() {
 #                       with gh credentials on failure (_retry_with_gh_auth
 #                       semantics, so private repos work)
 #   build_from_source → pnpm install --frozen-lockfile && pnpm build
-# then restarts the persistent service via svc_restart (service.sh).
+# then refreshes the installed shell layer (lib/*.sh + onboard.sh, bin/*,
+# service unit files — issue #66: fixes to the install scripts itself must
+# reach machines that update via the CLI) and restarts the persistent
+# service via svc_restart (service.sh).
 #
 # No-op (exit 0) when already up to date — no unnecessary rebuilds.
 update_apply() {
@@ -144,6 +179,7 @@ update_apply() {
   step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"
   resolve_source
   build_from_source
+  refresh_installed_layer
   step "restarting the service"
   svc_restart
   ok "update applied — agentskiss now runs $(short_sha "$(git -C "$AK_SRC" rev-parse HEAD)")"
