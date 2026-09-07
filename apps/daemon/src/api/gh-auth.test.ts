@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { GhRunner } from "../github/gh.js";
 import { GhClient } from "../github/gh.js";
-import { ghAuthPayload } from "./handlers.js";
+import { ghAuthPayload } from "./gh-auth.js";
 
 function ghRunner(response: { status?: string; headers?: string; body: string } | { fail: string }): GhRunner {
   return async (args) => {

@@ -4,15 +4,15 @@ import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ProjectLayout } from "./layout.js";
 import { SessionManagerSpawner } from "../pipeline/issues/ports.js";
+import { SessionManager } from "./manager.js";
 import {
-  SessionManager,
   RESURRECT_WORKER_COMMAND,
   deserializeCommand,
   parseTmuxSessionName,
   resurrectionCommand,
   sanitizeTmuxSegment,
   serializeCommand,
-} from "./manager.js";
+} from "./tmux-commands.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { Tmux, TmuxError } from "./tmux.js";

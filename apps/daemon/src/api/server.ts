@@ -10,7 +10,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Router } from "./router.js";
-import { contractHandlers, registerCliRoutes, registerContractRoutes, registerGhAuthRoute } from "./handlers.js";
+import { contractHandlers, registerContractRoutes } from "./handlers.js";
+import { registerCliRoutes } from "./cli-handlers.js";
+import { registerGhAuthRoute } from "./gh-auth.js";
 import type { DaemonServices } from "./context.js";
 import { WS_PATH } from "./ws.js";
 import { TERMINAL_WS_PATH } from "../terminal/ws-server.js";

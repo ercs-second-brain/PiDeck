@@ -22,7 +22,8 @@ import type { Issue, KanbanUpdateEvent, PullRequest } from "@agentskiss/shared";
 
 import { testDaemon, type FakeGhRoutes, type TestDaemon } from "../api/testutil.js";
 import type { GithubAutomation } from "./wiring.js";
-import { CATCH_UP_BATCH_SIZE, watcherOptionsFromEnv } from "./wiring.js";
+import { CATCH_UP_BATCH_SIZE } from "./catchup.js";
+import { watcherOptionsFromEnv } from "./env.js";
 
 const REPO_URL = "https://github.com/octo/repo";
 const PROJECT = "octo-repo";
