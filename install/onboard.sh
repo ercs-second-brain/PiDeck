@@ -20,8 +20,20 @@
 # Also reachable post-install via: agentskiss onboard
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-. "$script_dir/lib/common.sh"
-. "$script_dir/lib/deps.sh"
+# Two layouts reach this script (issue #61):
+#   source tree:  install/onboard.sh with install/lib/*.sh as a sibling dir
+#   installed:    bootstrap.sh copies install/lib/*.sh AND install/onboard.sh
+#                 flat into ~/.agentskiss/lib/ — the libs sit next to us
+if [ -f "$script_dir/lib/common.sh" ]; then
+  . "$script_dir/lib/common.sh"
+  . "$script_dir/lib/deps.sh"
+elif [ -f "$script_dir/common.sh" ]; then
+  . "$script_dir/common.sh"
+  . "$script_dir/deps.sh"
+else
+  printf 'error: install libs (common.sh/deps.sh) not found next to %s — re-run the installer\n' "$(basename -- "$0")" >&2
+  exit 1
+fi
 
 AK_PI_PROVIDERS="anthropic openai google google-vertex openai-codex openrouter github-copilot xai groq mistral amazon-bedrock zai nvidia"
 

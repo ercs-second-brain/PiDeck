@@ -205,16 +205,20 @@ plain-shell tests in `test/cli-forwarding.sh` (service verbs,
 daemon-CLI forwarding with args + exit codes, `status` precedence, missing-
 build error path) and `test/update.sh` (update check against fake git/gh,
 `update --check` shim wiring, the apply path's reuse of the installer
-machinery + service restart) against a fake install layout — no daemons, no
-network, no systemd.
+machinery + service restart), and `test/onboard.sh` (onboarding from the
+flat installed layout — the bootstrap.sh flat copy into `lib/` — and from
+the source-tree layout, via `--dry-run --skip-pi --skip-gh`) against a fake
+install layout — no daemons, no network, no systemd.
 
 ## Tested matrix
 
 - **Tested here (Linux x64):** `shellcheck` clean on all scripts; `--dry-run`
   full-bootstrap run; `onboard.sh --dry-run`; service unit rendering;
   `agentskiss-daemon` smoke against the built daemon; shim
-  forwarding tests (`test/cli-forwarding.sh`) and self-update tests
-  (`test/update.sh`, mock git/gh); live smoke of the installed
+  forwarding tests (`test/cli-forwarding.sh`), self-update tests
+  (`test/update.sh`, mock git/gh), and onboarding layout tests
+  (`test/onboard.sh`, flat installed + source-tree `lib/` sourcing); live
+  smoke of the installed
   shim forwarding to the real built daemon CLI (its errors and exit codes
   surface unchanged).
 - **Untested (needs hardware/VMs):** the real fresh-machine runs — macOS
