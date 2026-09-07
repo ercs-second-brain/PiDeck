@@ -17,7 +17,7 @@ agentskiss send [flags]
 
 ## Daemon behavior
 
-- Backing endpoint: finalized in issue #9 (CLI implementation). Delivery goes into the session's tmux pane so the agent sees the message in its conversation.
+- Backing endpoint: `POST /api/sessions/:sessionId/send` (`{ message }` body). Delivery goes into the session's tmux pane so the agent sees the message in its conversation.
 - Session ids come from `agentskiss sessions --project <id> --json` (`packages/shared/src/domain.ts` → `Session`).
 
 ## Examples

@@ -1,6 +1,6 @@
 # agentskiss agent integration
 
-Prompts and pi skills for agentskiss orchestration. The daemon (issue #4) loads the prompts into orchestrator/worker pi sessions; the installer (issue #8) installs this directory's skills and prompts into pi's skill locations; the CLI invoked by the skills ships in issue #9.
+Prompts and pi skills for agentskiss orchestration. The daemon loads `prompts/` into orchestrator/worker pi sessions at session start; the installer symlinks `skills/` into pi's skill location (`~/.pi/agent/skills/`); the `agentskiss` CLI the skills call is implemented in `apps/daemon/src/cli`.
 
 ## Layout
 
@@ -58,10 +58,10 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `agentskiss workers --project <id>` | `--json` | `GET /api/projects/:projectId/workers` | Returns `Worker[]` |
 | `agentskiss pulls --project <id>` | `--json` | `GET /api/projects/:projectId/pulls` | Returns `PullRequest[]` (incl. `ciStatus`, `reviewState`) |
 | `agentskiss diff --project <id> <pr>` | — | `GET /api/projects/:projectId/pulls/:prNumber/diff` | Returns `PullRequestDiff` |
-| `agentskiss spawn` | `--project <id>`, `--issue <number>`, `--name <label ≤20>`, `--prompt <task>` | Finalized in #9 | Daemon action; emits `worker.spawned` (`packages/shared/src/ws.ts`) |
-| `agentskiss send` | `--session <id>`, `--message <text>` | Finalized in #9 | Delivers into the session's tmux pane |
+| `agentskiss spawn` | `--project <id>`, `--issue <number>`, `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`) |
+| `agentskiss send` | `--session <id>`, `--message <text>` | `POST /api/sessions/:sessionId/send` | Delivers into the session's tmux pane (typed, then Enter) |
 
-Project mutation endpoints (`POST`/`PATCH`/`DELETE /api/projects...`) and `GET`/`PUT /api/settings` are webapp/owner operations — no skill invokes them.
+`GET /api/status` (daemon liveness, the `status` backing), project mutation endpoints (`POST`/`PATCH`/`DELETE /api/projects...`), `GET`/`PUT /api/settings`, and `GET /api/gh-auth` (onboarding wizard) are webapp/owner operations — no skill invokes them.
 
 ### Contract consistency
 
@@ -80,8 +80,8 @@ Project mutation endpoints (`POST`/`PATCH`/`DELETE /api/projects...`) and `GET`/
 | all other `agentskiss` read commands | `skills/using-agentskiss/commands/state.md`, `commands/project.md` |
 | `agentskiss send ...` | `skills/using-agentskiss/commands/send.md` |
 
-## Installer notes (issue #8)
+## Installer notes
 
-- Copy `agent/skills/*` into a pi skill discovery location (`~/.pi/agent/skills/` or `.pi/skills/` of the managed checkout); each subdirectory is a self-contained skill.
-- `agent/prompts/*` are daemon assets, not skills — install them wherever the daemon expects prompt templates (issue #4/#12), not into pi's skill paths.
-- Runtime prerequisites for the skills: `gh` (authed during onboarding) and `agentskiss` on `PATH` (issue #9).
+- `install/lib/assets.sh` symlinks each `agent/<kind>/<name>` (kinds: `skills`, `extensions`, `commands`, `prompt-templates`, `themes`) into `~/.pi/agent/<kind>/`; each skill subdirectory is self-contained.
+- `agent/prompts/*` are daemon assets, not skills — they stay in the checkout; the daemon resolves them at runtime (repo walk-up from its own module path, or `AGENTSKISS_AGENT_DIR` when set) and renders them per project/session.
+- Runtime prerequisites for the skills: `gh` (authed during onboarding) and `agentskiss` on `PATH` (the install shim forwards these commands to the daemon CLI).

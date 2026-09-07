@@ -19,9 +19,9 @@ agentskiss spawn [flags]
 
 ## Daemon behavior
 
-- Backing endpoint: finalized in issue #9 (CLI implementation). The daemon emits a `worker.spawned` event (`packages/shared/src/ws.ts`) and reports the worker via `GET /api/projects/:projectId/workers`.
+- Backing endpoint: `POST /api/projects/:projectId/spawn`. The daemon creates the tmux session and git worktree, emits a `worker.spawned` event (`packages/shared/src/ws.ts`), and reports the worker via `GET /api/projects/:projectId/workers`.
 - The new worker starts with status `spawning` (`packages/shared/src/domain.ts` → `workerStatusSchema`).
-- Spawns are capped by the project's `settings.workerConcurrency`.
+- Spawns are capped by the project's `settings.workerConcurrency`: past the cap the daemon rejects the spawn with 409 (the auto-spawn pipeline queues instead of rejecting).
 
 ## Examples
 

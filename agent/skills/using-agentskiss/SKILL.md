@@ -24,7 +24,7 @@ trigger: "Using the agentskiss CLI: spawning workers, messaging sessions, inspec
 
 - Read commands accept `--json` for machine-readable output matching the shared zod schemas in `packages/shared`.
 - `--project <id>` scopes a command to one project; project ids come from `agentskiss project get` / the webapp.
-- Every command accepts `-h / --help` for the full flag list (authoritative once the CLI ships in issue #9).
+- `agentskiss --help` (or `agentskiss help`) prints the full command list; per-subcommand `-h` is not supported — each command's usage line is shown in its error output when flags are wrong.
 
 ## Task skills
 

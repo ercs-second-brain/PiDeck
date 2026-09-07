@@ -36,8 +36,9 @@ stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
    `--ignore-scripts`, user prefix) if not already present.
 5. Links the agentskiss pi skills/extensions from `agent/` — whatever exists
    there at install time (`skills/`, `extensions/`, `commands/`,
-   `prompt-templates/`, `themes/`) is symlinked into `~/.pi/agent/`. Empty
-   today (assets land in a separate issue); the step needs no changes then.
+   `prompt-templates/`, `themes/`) is symlinked into `~/.pi/agent/`. The five
+   orchestration skills in `agent/skills/` are what land there today;
+   `agent/prompts/` are daemon assets and stay in the checkout.
 6. Writes config/state to `~/.agentskiss/` (see layout below) — the daemon
    reads this later; results survive restarts.
 7. Registers the persistent service:
@@ -124,7 +125,7 @@ by the installed shim itself; **every other subcommand is forwarded verbatim
 agentskiss service start|stop|restart|status
 agentskiss start|stop|restart        bare shortcuts, same as `service ...`
 agentskiss addr                      webapp URL for this machine
-agentskiss onboard [--dry-run|--skip-pi|--skip-gh]
+agentskiss onboard [--dry-run|--noninteractive|--skip-pi|--skip-gh]
 agentskiss logs [-f]
 agentskiss help
 
@@ -135,7 +136,6 @@ agentskiss kanban|sessions|workers|pulls --project <id> [--json]
 agentskiss diff --project <id> <pr-number>
 agentskiss spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]
 agentskiss send --session <id> --message <text>
-agentskiss issue create ...
 ```
 
 ### Command precedence

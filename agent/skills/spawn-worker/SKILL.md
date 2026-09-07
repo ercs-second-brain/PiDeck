@@ -6,7 +6,7 @@ trigger: "Spawning or starting a agentskiss worker."
 
 # Request a Worker Spawn
 
-Spawns are the daemon's job: the CLI asks the daemon, the daemon creates the tmux session and git worktree and reports the worker. The one canonical invocation lives here so the CLI implementation (issue #9) and these skills stay in lockstep.
+Spawns are the daemon's job: the CLI asks the daemon, the daemon creates the tmux session and git worktree and reports the worker. The one canonical invocation lives here so the CLI implementation and these skills stay in lockstep.
 
 ## The invocation
 

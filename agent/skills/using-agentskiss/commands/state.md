@@ -1,6 +1,6 @@
 # State commands: status, kanban, sessions, workers, pulls, diff
 
-Read-only commands for project and daemon state. All accept `--json`; JSON shapes are the shared zod schemas in `packages/shared` (`Settings`, `KanbanBoard`, `Session`, `Worker`, `PullRequest`, `PullRequestDiff`).
+Read-only commands for project and daemon state. All accept `--json`; JSON shapes are the shared zod schemas in `packages/shared` (`KanbanBoard`, `Session`, `Worker`, `PullRequest`, `PullRequestDiff`).
 
 ## agentskiss status
 
