@@ -20,6 +20,7 @@ import {
   type PiAuth,
   type RegisterProjectRequest,
   type UpdateProjectRequest,
+  type UpdateSettingsRequest,
 } from "@agentskiss/shared";
 
 import { shareInFlight, type InFlight } from "./in-flight";
@@ -108,6 +109,13 @@ export const apiGetPullRequestDiff = (
   projectId: string,
   prNumber: number,
 ): Promise<EndpointResponse<"getPullRequestDiff">> => request("getPullRequestDiff", { projectId, prNumber });
+
+// --- Daemon-wide settings (issue #106) ----------------------------------------
+
+export const apiGetSettings = (): Promise<EndpointResponse<"getSettings">> => request("getSettings", {});
+
+export const apiUpdateSettings = (body: UpdateSettingsRequest): Promise<EndpointResponse<"updateSettings">> =>
+  request("updateSettings", {}, body);
 
 // --- Self-update (issues #55, #76) ----------------------------------------------
 

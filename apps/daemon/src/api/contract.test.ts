@@ -7,23 +7,22 @@
  * (unrouted endpoint, 400/404 on the old request shape, or 500 on response
  * validation), which is exactly the "contract mismatches surface as test
  * failures" acceptance criterion.
+ *
+ * Split by endpoint theme (shared fixtures in `contract-fixtures.ts`):
+ * settings, self-update, and the CLI action routes live in their own
+ * `contract-*.test.ts` files.
  */
 
-import { createServer, type Server } from "node:http";
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   endpoints,
   formatPath,
   kanbanBoardSchema,
-  piAuthSchema,
   projectSchema,
   pullRequestDiffSchema,
   pullRequestSchema,
   sessionSchema,
-  settingsSchema,
-  updateStatusResponseSchema,
   workerSchema,
   type EndpointName,
 } from "@agentskiss/shared";
@@ -31,132 +30,35 @@ import {
 import { createDaemonServer } from "./server.js";
 import { registerContractRoutes } from "./handlers.js";
 import { Router } from "./router.js";
-import { testDaemon, type TestDaemon } from "./testutil.js";
+import { startContractServer, type ContractServer } from "./contract-fixtures.js";
 
-const UPDATED_AT = "2026-01-01T00:00:00.000Z";
-/** Local source HEAD used by the /api/update contract test (issue #55). */
-const LOCAL_SHA = "a".repeat(40);
-
-const ghRoutes = {
-  graphql: {
-    "pullRequests(first: $first": {
-      repository: {
-        pullRequests: {
-          nodes: [
-            {
-              number: 9,
-              title: "Fix the flaky test",
-              url: "https://github.com/o/r/pull/9",
-              updatedAt: UPDATED_AT,
-              author: { login: "auto-agent" },
-              headRefName: "ao/fix-flaky",
-              baseRefName: "main",
-              headRefOid: "abc123",
-              reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
-            },
-          ],
-        },
-      },
-    },
-    "issues(first: $first": {
-      repository: {
-        issues: {
-          pageInfo: { hasNextPage: false, endCursor: null },
-          nodes: [
-            {
-              number: 5,
-              title: "Fix the flaky test",
-              url: "https://github.com/o/r/issues/5",
-              updatedAt: UPDATED_AT,
-              assignees: { nodes: [] },
-              blockedBy: { nodes: [] },
-            },
-            {
-              number: 7,
-              title: "Assigned work",
-              url: "https://github.com/o/r/issues/7",
-              updatedAt: UPDATED_AT,
-              assignees: { nodes: [{ login: "auto-agent" }] },
-              blockedBy: { nodes: [{ number: 5, state: "OPEN", repository: { nameWithOwner: "o/r" } }] },
-            },
-          ],
-        },
-      },
-    },
-  },
-  api: {
-    "/repos/o/r/pulls/9": {
-      number: 9,
-      title: "Fix the flaky test",
-      state: "open",
-      merged_at: null,
-      user: { login: "auto-agent" },
-      head: { ref: "ao/fix-flaky", sha: "abc123" },
-      base: { ref: "main" },
-      html_url: "https://github.com/o/r/pull/9",
-      updated_at: UPDATED_AT,
-    },
-  },
-  prDiff: [
-    "diff --git a/src/a.ts b/src/a.ts",
-    "index 111..222 100644",
-    "--- a/src/a.ts",
-    "+++ b/src/a.ts",
-    "@@ -1,3 +1,4 @@",
-    " const a = 1;",
-    "+const b = 2;",
-    "-const c = 3;",
-    "diff --git a/src/new.ts b/src/new.ts",
-    "new file mode 100644",
-    "--- /dev/null",
-    "+++ b/src/new.ts",
-    "@@ -0,0 +1 @@",
-    "+export {};",
-    "",
-  ].join("\n"),
-};
-
-let daemon: TestDaemon;
-let server: Server;
-let base: string;
+let server: ContractServer;
+let daemon: ContractServer["daemon"];
+let api: ContractServer["api"];
 
 beforeAll(async () => {
   // /api/update (issue #55) with mock gh/git runners — the local checkout
   // matches the "upstream" head, so the shared daemon reports up to date.
-  daemon = testDaemon(ghRoutes, {
+  server = await startContractServer({
     updateRepoUrl: "https://github.com/o/r",
     updateGh: async (args) => {
       if (args[0] === "api" && args[1] === "repos/o/r/commits/main") {
-        return { stdout: JSON.stringify({ sha: LOCAL_SHA }), stderr: "" };
+        return { stdout: JSON.stringify({ sha: "a".repeat(40) }), stderr: "" };
       }
       throw new Error(`fake gh: unmatched invocation: gh ${args.join(" ")}`);
     },
     updateGit: async (args) => {
-      if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: `${LOCAL_SHA}\n`, stderr: "" };
+      if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: `${"a".repeat(40)}\n`, stderr: "" };
       throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
     },
   });
-  const created = createDaemonServer({ services: daemon.services, webDist: null });
-  server = created.server;
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const addr = server.address();
-  base = `http://127.0.0.1:${typeof addr === "object" && addr !== null ? addr.port : 0}`;
+  daemon = server.daemon;
+  api = server.api;
 });
 
 afterAll(async () => {
-  daemon.services.hub.close();
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await server?.close();
 });
-
-async function api(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
-  const res = await fetch(`${base}${path}`, {
-    method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
-  return { status: res.status, json: text.length > 0 ? (JSON.parse(text) as unknown) : undefined };
-}
 
 describe("contract endpoint coverage", () => {
   it("routes every endpoint in the shared endpoint map", () => {
@@ -360,169 +262,5 @@ describe("pull requests", () => {
     expect(parsedDiff.files[1]).toMatchObject({ filename: "src/new.ts", status: "added", additions: 1, deletions: 0 });
     expect(parsedDiff.patch).toContain("diff --git a/src/a.ts");
     expect(parsedDiff.headBranch).toBe("ao/fix-flaky");
-  });
-});
-
-describe("settings", () => {
-  it("gets and updates daemon-wide settings", async () => {
-    const got = await api("GET", endpoints.getSettings.path);
-    expect(got.status).toBe(200);
-    expect(settingsSchema.parse(got.json)).toEqual({ autoAgentUsername: null, defaultWorkerConcurrency: 1 });
-
-    const updated = await api("PUT", endpoints.updateSettings.path, { autoAgentUsername: "auto-agent" });
-    expect(updated.status).toBe(200);
-    expect(settingsSchema.parse(updated.json)).toEqual({ autoAgentUsername: "auto-agent", defaultWorkerConcurrency: 1 });
-
-    // invalid values → 400 (contract validation)
-    expect((await api("PUT", endpoints.updateSettings.path, { defaultWorkerConcurrency: 99 })).status).toBe(400);
-
-    // reset
-    await api("PUT", endpoints.updateSettings.path, { autoAgentUsername: null });
-  });
-});
-
-describe("self-update (issues #55, #76)", () => {
-  /** Dedicated daemon: the shared one accumulates pipeline auto-spawned
-   * workers from the projects tests, which would make the gate counts
-   * nondeterministic. Its `apply` spawn is recorded, never executed (the
-   * real shim restarts the daemon, which no test can survive). */
-  const updateSpawns: Array<{ file: string; args: readonly string[] }> = [];
-  let ghCalls = 0;
-  let upd: TestDaemon;
-  let updServer: Server;
-  let updBase: string;
-
-  beforeAll(async () => {
-    upd = testDaemon(ghRoutes, {
-      updateRepoUrl: "https://github.com/o/r",
-      updateGh: async (args) => {
-        ghCalls += 1;
-        if (args[0] === "api" && args[1] === "repos/o/r/commits/main") return { stdout: JSON.stringify({ sha: LOCAL_SHA }), stderr: "" };
-        throw new Error(`fake gh: unmatched invocation: gh ${args.join(" ")}`);
-      },
-      updateGit: async (args) => {
-        if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: `${LOCAL_SHA}\n`, stderr: "" };
-        throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
-      },
-      updateSpawn: (file, args) => {
-        updateSpawns.push({ file, args });
-        return { unref() {} };
-      },
-    });
-    mkdirSync(path.join(upd.stateDir, "bin"), { recursive: true });
-    writeFileSync(path.join(upd.stateDir, "bin", "agentskiss"), "#!/bin/sh\n");
-    const created = createDaemonServer({ services: upd.services, webDist: null });
-    updServer = created.server;
-    await new Promise<void>((resolve) => updServer.listen(0, "127.0.0.1", resolve));
-    const addr = updServer.address();
-    updBase = `http://127.0.0.1:${typeof addr === "object" && addr !== null ? addr.port : 0}`;
-  });
-
-  afterAll(async () => {
-    upd.services.hub.close();
-    await new Promise<void>((resolve) => updServer.close(() => resolve()));
-  });
-
-  async function updApi(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
-    const res = await fetch(`${updBase}${path}`, {
-      method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
-    return { status: res.status, json: text.length > 0 ? (JSON.parse(text) as unknown) : undefined };
-  }
-
-  it("exposes the update status (plus the active-worker gate count) through the contract endpoint", async () => {
-    const res = await updApi("GET", endpoints.getUpdateStatus.path);
-    expect(res.status).toBe(200);
-    // runningSha (issue #89): the build the answering daemon runs — the banner resolves when it equals the target SHA.
-    expect(updateStatusResponseSchema.parse(res.json)).toMatchObject({
-      repo: "o/r", ref: "main", localSha: LOCAL_SHA, remoteSha: LOCAL_SHA, runningSha: LOCAL_SHA, applyProgress: null,
-      updateAvailable: false, error: null, activeWorkers: 0,
-    });
-  });
-
-  it("serves repeat GETs from the ~5 min cache but refresh=1 forces a re-check (issue #82)", async () => {
-    const before = ghCalls;
-    await updApi("GET", endpoints.getUpdateStatus.path); // cached from the previous test
-    expect(ghCalls).toBe(before);
-    const res = await updApi("GET", `${endpoints.getUpdateStatus.path}?refresh=1`); // bypasses the cache
-    expect(res.status).toBe(200);
-    expect(ghCalls).toBe(before + 1);
-  });
-
-  it("applies when idle: spawns the installed shim detached and returns immediately", async () => {
-    const res = await updApi("POST", endpoints.applyUpdate.path);
-    expect(res.status).toBe(200);
-    expect(res.json).toEqual({ ok: true });
-    expect(updateSpawns).toEqual([{ file: path.join(upd.stateDir, "bin", "agentskiss"), args: ["update"] }]);
-  });
-
-  it("rejects the apply server-side while any worker is active (issue #76)", async () => {
-    await updApi("POST", "/api/projects", { mode: "clone", repoUrl: "https://github.com/sp/gate" });
-    const spawned = await updApi("POST", "/api/projects/sp-gate/spawn", { issueNumber: 1, name: "gater" });
-    expect(spawned.status).toBe(201);
-    const res = await updApi("POST", endpoints.applyUpdate.path);
-    expect(res.status).toBe(409);
-    expect((res.json as { error: string }).error).toMatch(/still active/);
-    expect((res.json as { error: string }).error).toMatch(/every agent is idle/);
-  });
-});
-
-describe("CLI action routes", () => {
-  it("exposes /api/status with the pi auth fields (issue #57)", async () => {
-    const res = await api("GET", "/api/status");
-    expect(res.status).toBe(200);
-    expect(res.json).toMatchObject({ ok: true, name: "agentskiss-daemon", piReady: true });
-    expect((res.json as { piProviders: unknown }).piProviders).toBeInstanceOf(Array);
-  });
-
-  it("exposes /api/pi-auth with the shared PiAuth shape (issue #57)", async () => {
-    const res = await api("GET", "/api/pi-auth");
-    expect(res.status).toBe(200);
-    const parsed = piAuthSchema.parse(res.json);
-    expect(parsed.ready).toBe(true);
-    expect(parsed.providers.length).toBeGreaterThan(0);
-  });
-
-  it("spawns a worker with an issue, freeform via prompt, and validates the cap", async () => {
-    const { services } = daemon;
-    services.projects.register({ mode: "clone", repoUrl: "https://github.com/sp/rp", settings: { workerConcurrency: 2 } });
-
-    const spawned = await api("POST", "/api/projects/sp-rp/spawn", { issueNumber: 5, name: "worker-one" });
-    expect(spawned.status).toBe(201);
-    expect(workerSchema.parse(spawned.json).issueNumber).toBe(5);
-
-    // spawn without issue or prompt → 400
-    expect((await api("POST", "/api/projects/sp-rp/spawn", { name: "worker-x" })).status).toBe(400);
-
-    // freeform spawn (prompt only) → issueNumber 0 (documented freeform marker)
-    const freeform = await api("POST", "/api/projects/sp-rp/spawn", { name: "freeform", prompt: "Investigate flaky CI" });
-    expect(freeform.status).toBe(201);
-    expect((freeform.json as { issueNumber: number }).issueNumber).toBe(0);
-
-    // workers endpoint lists both, contract-valid: freeform (0) + issue-backed (5)
-    const listed = await api("GET", formatPath("listProjectWorkers", { projectId: "sp-rp" }));
-    expect(listed.status).toBe(200);
-    const listedIssues = (listed.json as unknown[]).map((w) => workerSchema.parse(w).issueNumber).sort();
-    expect(listedIssues).toEqual([0, 5]);
-
-    // concurrency cap: 2 active workers (spawning/running) on a cap of 2
-    const third = await api("POST", "/api/projects/sp-rp/spawn", { issueNumber: 8, name: "worker-three" });
-    expect(third.status).toBe(409);
-    expect((third.json as { error: string }).error).toContain("concurrency cap");
-  });
-
-  it("delivers messages to a session's pane and 404s unknown sessions", async () => {
-    const { services } = daemon;
-    const session = services.sessions.listSessions()[0];
-    expect(session).toBeDefined();
-    const res = await api("POST", `/api/sessions/${session?.id}/send`, { message: "hello agent" });
-    expect(res.status).toBe(200);
-    expect(res.json).toMatchObject({ ok: true });
-
-    const missing = await api("POST", "/api/sessions/sess-missing/send", { message: "hi" });
-    expect(missing.status).toBe(404);
   });
 });

@@ -9,7 +9,7 @@
  * Endpoints: projects CRUD/register, per-project kanban state, sessions and
  * workers lists, per-project orchestrator start (issue #53), worker
  * terminate (issue #64), PR diffs, and daemon settings (auto-agent
- * username, concurrency).
+ * username, concurrency, worker-pipeline toggles #106).
  */
 
 import { z } from "zod";
@@ -58,12 +58,23 @@ export const updateProjectRequestSchema = z.object({
 });
 export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
 
-/** Daemon-wide settings. */
+/**
+ * Daemon-wide settings (all projects; issue #106). The three worker-pipeline
+ * toggles gate the PR loop's always-on behaviors and default ON: OFF means
+ * the pipeline skips that step. Read fresh on every pipeline decision, so a
+ * toggle takes effect without a daemon restart.
+ */
 export const settingsSchema = z.object({
   /** Default auto-agent username applied to new projects; `null` disables auto-spawn by default. */
   autoAgentUsername: z.string().min(1).nullable(),
   /** Default worker concurrency applied to new projects. */
   defaultWorkerConcurrency: z.number().int().min(1).max(16),
+  /** Terminate (archive) a worker's pane when its PR merges. */
+  terminateOnMerge: z.boolean().default(true),
+  /** Let the PR loop drive workers to fix their PRs' failing CI. */
+  autoFixCi: z.boolean().default(true),
+  /** Let the PR loop deliver new review comments to workers for addressing. */
+  autoFixReviewComments: z.boolean().default(true),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

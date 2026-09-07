@@ -28,6 +28,7 @@ import { GhBlockerResolver } from "./issues/blockers.js";
 import type { BlockerResolver, RegisteredProject } from "./issues/ports.js";
 import type { ProjectService } from "../api/projects.js";
 import { PullRequestPipeline, type PRSessionControl } from "./prs/pipeline.js";
+import type { WorkerPipelineSettings } from "./prs/settings.js";
 import { PRTracker } from "./prs/tracker.js";
 import { IssueWatcher, PollLoop, PullRequestWatcher, type GithubWatcherEvent } from "../github/watch.js";
 import type { PRPipelineEvent } from "./prs/events.js";
@@ -106,6 +107,8 @@ export interface UnitBuilderDeps {
   stateDir: string;
   pollIntervalMs: number;
   sessionControl: PRSessionControl;
+  /** Worker-pipeline toggles (issue #106), read fresh on each decision. */
+  workerSettings?: () => WorkerPipelineSettings;
   /** Routes a watcher event into the automation (the shared event router). */
   onWatcherEvent: (projectId: string, event: GithubWatcherEvent) => void;
   /** Routes a PR pipeline event onto the kanban broadcast bridge. */
@@ -165,6 +168,7 @@ export function buildUnit(deps: UnitBuilderDeps, projectId: string, repoUrl: str
     tracker,
     emit: (event) => deps.onPrEvent(projectId, event),
     pollIntervalMs: deps.pollIntervalMs,
+    workerSettings: deps.workerSettings,
     onError: (err) => deps.onError(err, `pr-pipeline:${projectId}`),
   });
   return {
