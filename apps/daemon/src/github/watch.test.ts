@@ -3,44 +3,11 @@ import { type PullRequest } from "@agentskiss/shared";
 
 import { GhClient } from "./gh.js";
 import type { IssueRecord } from "./issues.js";
+import { makeIssueRecord, makePullRequest } from "../testing/fixtures.js";
 import { DEFAULT_POLL_INTERVAL_MS, IssueWatcher, PollLoop, PullRequestWatcher, type GithubWatcherEvent } from "./watch.js";
 
 const PROJECT = "proj";
 const REPO = { owner: "o", repo: "r" };
-
-function makeIssueRecord(number: number, overrides: Partial<{ author: string | null; assignees: string[]; title: string }> = {}): IssueRecord {
-  return {
-    issue: {
-      projectId: PROJECT,
-      number,
-      title: overrides.title ?? `Issue ${number}`,
-      state: "open",
-      blockedBy: [],
-      assignee: overrides.assignees?.[0] ?? null,
-      url: `https://github.com/o/r/issues/${number}`,
-      updatedAt: "2026-09-06T12:00:00Z",
-    },
-    author: overrides.author ?? "eric",
-    assignees: overrides.assignees ?? [],
-  };
-}
-
-function makePullRequest(number: number, overrides: Partial<PullRequest> = {}): PullRequest {
-  return {
-    projectId: PROJECT,
-    number,
-    title: `PR ${number}`,
-    state: "open",
-    ciStatus: "unknown",
-    reviewState: "none",
-    headBranch: "feature",
-    baseBranch: "main",
-    author: "eric",
-    url: `https://github.com/o/r/pull/${number}`,
-    updatedAt: "2026-09-06T12:00:00Z",
-    ...overrides,
-  };
-}
 
 // REST-shaped payloads as the gh api endpoints would return them.
 function restIssue(rec: IssueRecord): Record<string, unknown> {

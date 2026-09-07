@@ -20,6 +20,8 @@ import {
   type WsServerEvent,
 } from "@agentskiss/shared";
 
+import { nextBackoffMs } from "../lib/backoff";
+
 export type TerminalStatus =
   | "connecting"
   | "attached"
@@ -38,17 +40,6 @@ export interface TerminalCallbacks {
    * reconnect) — the client must reset its terminal before writing.
    */
   onReplay: () => void;
-}
-
-/** Base delay for reconnect attempt `n` (1-based), capped at 8s. */
-export function backoffDelayMs(attempt: number): number {
-  return Math.min(500 * 2 ** Math.max(0, attempt - 1), 8000);
-}
-
-/** Jittered backoff: ±25% around the base so reconnect storms spread out. */
-export function nextBackoffMs(attempt: number): number {
-  const base = backoffDelayMs(attempt);
-  return Math.round(base * (0.75 + Math.random() * 0.5));
 }
 
 /** Default WebSocket URL: same origin, terminal path. */

@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { backoffDelayMs } from "./connection";
+import { backoffDelayMs } from "../lib/backoff";
 
 describe("backoffDelayMs", () => {
   it("doubles from 500ms", () => {
