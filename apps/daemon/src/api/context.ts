@@ -179,6 +179,9 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     hub,
     gh,
     stateDir,
+    // Issue #106: the PR loop reads the toggles fresh on every decision, so
+    // a settings change takes effect without a daemon restart.
+    workerSettings: () => settings.get(),
     ...watcherOptions,
   });
   automationRef.current = automation;

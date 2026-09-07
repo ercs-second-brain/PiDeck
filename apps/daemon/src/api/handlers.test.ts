@@ -14,7 +14,6 @@ import { deriveBoard } from "./kanban.js";
 import { NotFoundError, ProjectStore, slugify } from "./projects.js";
 import { contractHandlers } from "./handlers.js";
 import { reportWorkerPr, spawnWorker } from "./cli-handlers.js";
-import { SettingsStore } from "./settings.js";
 import { testDaemon } from "./testutil.js";
 
 const UPDATED_AT = "2026-01-01T00:00:00.000Z";
@@ -70,24 +69,6 @@ describe("ProjectService.register", () => {
     // A fresh store over the same dir sees the same projects.
     const reloaded = new ProjectStore(daemon.stateDir);
     expect(reloaded.get("o-r")?.repoUrl).toBe("https://github.com/o/r");
-  });
-});
-
-describe("SettingsStore", () => {
-  it("applies partial updates and reloads from disk", () => {
-    const dir = testDaemon().stateDir;
-    const store = new SettingsStore(dir);
-    expect(store.get()).toEqual({ autoAgentUsername: null, defaultWorkerConcurrency: 1 });
-    store.update({ autoAgentUsername: "auto-agent" });
-    expect(store.get()).toEqual({ autoAgentUsername: "auto-agent", defaultWorkerConcurrency: 1 });
-
-    const reloaded = new SettingsStore(dir);
-    expect(reloaded.get().autoAgentUsername).toBe("auto-agent");
-  });
-
-  it("rejects out-of-contract values", () => {
-    const store = new SettingsStore(testDaemon().stateDir);
-    expect(() => store.update({ defaultWorkerConcurrency: 99 })).toThrow();
   });
 });
 

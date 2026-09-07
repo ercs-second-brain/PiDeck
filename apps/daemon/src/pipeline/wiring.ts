@@ -32,6 +32,7 @@ import { IssueSpawnPipeline } from "./issues/pipeline.js";
 import type { ProjectSource, WorkerSpawner } from "./issues/ports.js";
 import { SessionManagerSpawner } from "./issues/ports.js";
 import type { PRSessionControl } from "./prs/pipeline.js";
+import type { WorkerPipelineSettings } from "./prs/settings.js";
 import type { PRPipelineEvent } from "./prs/events.js";
 import { DEFAULT_POLL_INTERVAL_MS, type GithubWatcherEvent } from "../github/watch.js";
 import type { ProjectService } from "../api/projects.js";
@@ -54,6 +55,11 @@ export interface GithubAutomationOptions {
   gh: (repoUrl: string) => GhClient;
   /** Daemon state dir (PR tracker persistence lives under `<stateDir>/pr-tracker/`). */
   stateDir: string;
+  /**
+   * Worker-pipeline toggles (issue #106), read fresh on every pipeline
+   * decision so a toggle lands without a daemon restart. Default: all ON.
+   */
+  workerSettings?: () => WorkerPipelineSettings;
   /** Master switch. Default: resolved from the environment (on). */
   enabled?: boolean;
   /** Poll interval for watchers and the PR loop. Default: 30s or env. */
@@ -135,6 +141,24 @@ export class GithubAutomation {
         return worker;
       },
       sendKeys: (sessionId, keys, sendOptions) => options.sessions.sendKeys(sessionId, keys, sendOptions),
+      // Issue #106: terminate-on-merge archives the owning worker (kills its
+      // pane); the wiring announces the terminal status like a manual terminate.
+      archiveWorker: async (workerId, message) => {
+        const worker = await options.sessions.archiveWorker(workerId, message);
+        if (worker !== null) {
+          this.bridge.broadcast(
+            {
+              type: "worker.status.changed",
+              at: this.now().toISOString(),
+              projectId: worker.projectId,
+              workerId: worker.id,
+              status: worker.status,
+            },
+            `worker-status:${workerId}`,
+          );
+        }
+        return worker;
+      },
     };
 
     const projectSource: ProjectSource = {
@@ -301,6 +325,7 @@ export class GithubAutomation {
           stateDir: this.options.stateDir,
           pollIntervalMs: this.pollIntervalMs,
           sessionControl: this.sessionControl,
+          workerSettings: this.options.workerSettings,
           onWatcherEvent: (projectId, event) => this.handleWatcherEvent(projectId, event),
           onPrEvent: (projectId, event) => {
             if (this.units.get(projectId) !== undefined) this.broadcastPrEvent(projectId, event);

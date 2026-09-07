@@ -8,20 +8,15 @@
  * worker owns which PR; `SessionManager.setWorkerPr` records it).
  *
  * Loop, per tracked PR (poll-driven; watcher events only accelerate
- * discovery):
+ * discovery) — the state machine itself lives in `drive.ts`:
  *
- * - CI failing and the worker idle → send a fix prompt via tmux
- *   sendKeys (`fixing_ci`), bounded by `maxFixAttempts` consecutive
- *   attempts (reset whenever CI goes green). Exhausted → `kanban.pr.failed`
- *   and the PR stops being driven — no infinite fix-push cycles.
- * - A prompt is never re-sent while the worker is still on the same head
- *   SHA; a push (new head) re-arms evaluation ("re-watch on push"). A
- *   prompt older than `fixPromptTimeoutMs` is treated as unanswered.
- * - New review comments (watermarked by comment id) → delivered to the
- *   worker for addressing (`addressing_review`), including comments that
- *   arrive after fixes.
- * - Merged (or closed) → card `done`; settled CI or any review decision →
- *   card `in_review` (the shared kanban mapping, `pullRequestColumn`).
+ * - CI failing and the worker idle → fix prompt (`fixing_ci`), bounded by
+ *   `maxFixAttempts` (gated by the `autoFixCi` toggle, issue #106).
+ * - New review comments → delivered to the worker (`addressing_review`;
+ *   gated by `autoFixReviewComments`, issue #106).
+ * - Merged → card `done`; with `terminateOnMerge` (issue #106) the owning
+ *   worker's pane is archived, otherwise the pane keeps running as `done`.
+ * - Settled CI or any review decision → card `in_review`.
  *
  * Re-watch resilience: tracker state is persisted, so after a daemon
  * restart {@link reconcile} prunes PRs whose worker vanished and the poll
@@ -33,10 +28,11 @@ import { ACTIVE_WORKER_STATUSES, type KanbanCard, type KanbanColumn, type PullRe
 
 import type { GhClient, RepoRef } from "../../github/gh.js";
 import { pullRequestColumn } from "../../api/kanban.js";
-import { enrichPullRequest, fetchReviewComments, listPullRequests, mapRestPull, type PRReviewComment } from "../../github/pulls.js";
+import { enrichPullRequest, fetchReviewComments, listPullRequests, mapRestPull } from "../../github/pulls.js";
 import { DEFAULT_POLL_INTERVAL_MS, PollLoop, type GithubWatcherEvent } from "../../github/watch.js";
-import { type PRPipelineEvent, type PRPipelineEventEmitter } from "./events.js";
-import { buildCiFixPrompt, buildReviewCommentsPrompt } from "./prompts.js";
+import type { PRPipelineEvent, PRPipelineEventEmitter } from "./events.js";
+import { driveLoop } from "./drive.js";
+import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import { prCardId, PRTracker, type TrackedPR } from "./tracker.js";
 
 /** Default bound on consecutive CI-fix attempts per PR. */
@@ -55,6 +51,12 @@ export interface PRSessionControl {
   getWorker(workerId: string): Worker | undefined;
   updateWorkerStatus(workerId: string, status: WorkerStatus, statusMessage?: string): Worker;
   sendKeys(sessionId: string, keys: string, options?: { enter?: boolean }): Promise<void>;
+  /**
+   * Terminates a worker (kills its tmux pane, marks `archived`) — used when
+   * its PR merges and `terminateOnMerge` is on (issue #106). Optional: the
+   * all-`done` legacy behavior applies when absent.
+   */
+  archiveWorker?(workerId: string, message?: string): Promise<Worker | null>;
 }
 
 export interface PullRequestPipelineOptions {
@@ -66,6 +68,11 @@ export interface PullRequestPipelineOptions {
   tracker: PRTracker;
   /** Kanban event sink for the API layer (#9). */
   emit: PRPipelineEventEmitter;
+  /**
+   * Worker-pipeline toggles (issue #106), read fresh on every decision.
+   * Default: all ON.
+   */
+  workerSettings?: () => WorkerPipelineSettings;
   /** Max consecutive CI-fix prompts per red streak. Default: {@link DEFAULT_MAX_FIX_ATTEMPTS}. */
   maxFixAttempts?: number;
   /** Age at which an unanswered fix/address prompt is treated as stale. Default: 15 min. */
@@ -189,14 +196,12 @@ export class PullRequestPipeline {
     const raw = await this.gh.apiJson<unknown>(`/repos/${this.repo.owner}/${this.repo.repo}/pulls/${tracked.prNumber}`);
     const record = mapRestPull(tracked.projectId, raw);
     const pr = await enrichPullRequest(this.gh, this.repo, record);
-    const at = this.now().toISOString();
-    tracked.updatedAt = at;
+    tracked.updatedAt = this.now().toISOString();
     tracked.title = pr.title;
 
     if (pr.state === "merged") {
-      tracked.state = "done";
-      this.setWorkerStatusQuietly(tracked.workerId, "done", `PR #${tracked.prNumber} merged`);
-      this.pushCard(events, tracked, pr, at);
+      await this.settleMerged(tracked);
+      this.pushCard(events, tracked, pr, tracked.updatedAt);
       return events;
     }
     if (pr.state === "closed") {
@@ -204,94 +209,26 @@ export class PullRequestPipeline {
       // worker is done, the card is reported failed for the API layer to present.
       tracked.state = "failed";
       this.setWorkerStatusQuietly(tracked.workerId, "done", `PR #${tracked.prNumber} closed without merging`);
-      const card = this.buildCard(tracked, pullRequestColumn(pr), at);
-      events.push({ type: "kanban.pr.card", at, card });
-      events.push({ type: "kanban.pr.failed", at, projectId: tracked.projectId, prNumber: tracked.prNumber, workerId: tracked.workerId, card, reason: "pr_closed_without_merge" });
+      const card = this.buildCard(tracked, pullRequestColumn(pr), tracked.updatedAt);
+      events.push({ type: "kanban.pr.card", at: tracked.updatedAt, card });
+      events.push({ type: "kanban.pr.failed", at: tracked.updatedAt, projectId: tracked.projectId, prNumber: tracked.prNumber, workerId: tracked.workerId, card, reason: "pr_closed_without_merge" });
       return events;
     }
 
     const comments = await fetchReviewComments(this.gh, this.repo, tracked.prNumber);
-    await this.driveLoop(tracked, pr, record.headSha, comments, at, events);
+    events.push(
+      ...(await driveLoop(tracked, pr, record.headSha, comments, {
+        sessions: this.sessions,
+        settings: this.options.workerSettings ?? (() => undefined),
+        maxFixAttempts: this.maxFixAttempts,
+        fixPromptTimeoutMs: this.fixPromptTimeoutMs,
+        now: this.now,
+        fail: (t, reason, workerStatus, workerMessage) => this.failTracked(t, reason, workerStatus, workerMessage),
+      })),
+    );
     tracked.headSha = record.headSha;
-    this.pushCard(events, tracked, pr, at);
+    this.pushCard(events, tracked, pr, tracked.updatedAt);
     return events;
-  }
-
-  private async driveLoop(
-    tracked: TrackedPR,
-    pr: PullRequest,
-    headSha: string,
-    comments: PRReviewComment[],
-    at: string,
-    events: PRPipelineEvent[],
-  ): Promise<void> {
-    const newComments = comments.filter((c) => tracked.lastSeenCommentId === null || c.id > tracked.lastSeenCommentId);
-    const headChangedSincePrompt = tracked.lastPromptedHeadSha !== null && headSha !== tracked.lastPromptedHeadSha;
-    const promptedAt = tracked.lastPromptedAt === null ? null : Date.parse(tracked.lastPromptedAt);
-    const promptStale = promptedAt !== null && this.now().getTime() - promptedAt > this.fixPromptTimeoutMs;
-
-    // A worker stuck on a prompt for too long is considered idle again;
-    // the branches below then re-prompt (CI red) or deliver deferred comments.
-    if ((tracked.state === "fixing" || tracked.state === "addressing") && promptStale) {
-      tracked.state = "watching";
-    }
-
-    if (pr.ciStatus === "failure") {
-      const waitingForWorker = tracked.state === "fixing" && !headChangedSincePrompt;
-      if (!waitingForWorker) {
-        if (tracked.fixAttempts >= this.maxFixAttempts) {
-          events.push(
-            ...this.failTracked(
-              tracked,
-              `fix_attempt_limit_exhausted (${tracked.fixAttempts} attempts)`,
-              "failed",
-              `PR #${tracked.prNumber}: fix attempt limit (${this.maxFixAttempts}) exhausted — manual intervention required`,
-            ),
-          );
-          return;
-        }
-        const attempt = tracked.fixAttempts + 1;
-        await this.sendPrompt(
-          tracked.sessionId,
-          buildCiFixPrompt(pr, { attempt, maxAttempts: this.maxFixAttempts, comments: newComments }),
-        );
-        tracked.fixAttempts = attempt;
-        tracked.state = "fixing";
-        tracked.lastPromptedAt = at;
-        tracked.lastPromptedHeadSha = headSha;
-        this.markCommentsSeen(tracked, newComments);
-        this.setWorkerStatusQuietly(
-          tracked.workerId,
-          "fixing_ci",
-          `PR #${tracked.prNumber}: CI failed — fix attempt ${attempt}/${this.maxFixAttempts}`,
-        );
-      }
-      return;
-    }
-
-    if (pr.ciStatus === "success") {
-      tracked.fixAttempts = 0; // the previous red streak ended green
-    }
-    if (tracked.state === "watching" && newComments.length > 0) {
-      await this.sendPrompt(tracked.sessionId, buildReviewCommentsPrompt(pr, newComments));
-      tracked.state = "addressing";
-      tracked.lastPromptedAt = at;
-      tracked.lastPromptedHeadSha = headSha;
-      this.markCommentsSeen(tracked, newComments);
-      this.setWorkerStatusQuietly(
-        tracked.workerId,
-        "addressing_review",
-        `PR #${tracked.prNumber}: addressing ${newComments.length} review comment(s)`,
-      );
-    } else if (
-      (tracked.state === "fixing" || tracked.state === "addressing") &&
-      tracked.lastPromptedHeadSha !== null &&
-      headSha !== tracked.lastPromptedHeadSha
-    ) {
-      // The worker pushed after being prompted — back to watching.
-      tracked.state = "watching";
-      this.setWorkerStatusQuietly(tracked.workerId, "awaiting_ci", `PR #${tracked.prNumber}: watching CI`);
-    }
   }
 
   // -- helpers ---------------------------------------------------------------
@@ -351,16 +288,24 @@ export class PullRequestPipeline {
     return workers.find((w) => ACTIVE_WORKER_STATUSES.has(w.status)) ?? workers[0];
   }
 
-  private async sendPrompt(sessionId: string, prompt: string): Promise<void> {
-    await this.sessions.sendKeys(sessionId, prompt, { enter: true });
-  }
-
-  private markCommentsSeen(tracked: TrackedPR, comments: PRReviewComment[]): void {
-    for (const comment of comments) {
-      if (tracked.lastSeenCommentId === null || comment.id > tracked.lastSeenCommentId) {
-        tracked.lastSeenCommentId = comment.id;
+  /**
+   * Merge settlement (issue #106): `terminateOnMerge` archives the owning
+   * worker (pane killed, terminal `archived` status); otherwise the pane
+   * keeps running under the legacy `done` status.
+   */
+  private async settleMerged(tracked: TrackedPR): Promise<void> {
+    tracked.state = "done";
+    const message = `PR #${tracked.prNumber} merged`;
+    const terminateOnMerge = this.options.workerSettings?.().terminateOnMerge ?? DEFAULT_WORKER_PIPELINE_SETTINGS.terminateOnMerge;
+    if (terminateOnMerge && this.sessions.archiveWorker !== undefined) {
+      try {
+        await this.sessions.archiveWorker(tracked.workerId, `${message} — terminated on merge`);
+        return;
+      } catch {
+        // Fall through to the quiet status update below.
       }
     }
+    this.setWorkerStatusQuietly(tracked.workerId, "done", message);
   }
 
   /** Terminal failure: stops driving the PR, emits card + failed event. */

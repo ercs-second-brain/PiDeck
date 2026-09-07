@@ -910,6 +910,37 @@ code {
   max-width: 460px;
 }
 
+/* --- Global worker settings (issue #106) ------------------------------------------- */
+
+.global-worker-settings {
+  margin-top: 20px;
+  max-width: 460px;
+}
+
+.global-worker-settings .section-title {
+  font-size: 14px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+}
+
+.global-worker-settings .settings-form {
+  margin-top: 8px;
+}
+
+.global-worker-settings .toggle-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.global-worker-settings .toggle-row input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
 /* --- Card diff link ---------------------------------------------------------------- */
 
 .card-diff-link {

@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import type { Project } from "@agentskiss/shared";
-import { apiUpdateProject, errorMessage } from "../lib/api";
+import type { Project, Settings } from "@agentskiss/shared";
+import { apiGetSettings, apiUpdateProject, apiUpdateSettings, errorMessage } from "../lib/api";
 import { PiAuthBanner } from "../components/PiAuthBanner";
 import { boardStore, useAppState } from "../store/store";
 
 /**
  * Project settings surface: auto-agent username, the worker concurrency
- * cap, and the persistent pi auth status banner (issue #57).
+ * cap, the persistent pi auth status banner (issue #57), and the daemon-
+ * wide worker-pipeline toggles (issue #106).
  * `workerConcurrency` unset means unbounded (issue #14 semantics: every
  * unblocked issue spawns a worker immediately).
  */
@@ -37,11 +38,92 @@ export function SettingsPage() {
       <h1 className="page-title">{project.name} — settings</h1>
       <p className="project-repo">{project.repoUrl}</p>
       <PiAuthBanner />
+      <GlobalWorkerSettings />
       <SettingsForm key={project.id} project={project} />
       <Link to={`/projects/${project.id}`} className="back-link">
         ← Board
       </Link>
     </main>
+  );
+}
+
+/** The three worker-pipeline toggles (issue #106): what they gate, in the PR loop. */
+const WORKER_TOGGLES: Array<{ key: "terminateOnMerge" | "autoFixCi" | "autoFixReviewComments"; label: string; hint: string }> = [
+  {
+    key: "terminateOnMerge",
+    label: "Terminate workers on merge",
+    hint: "When a worker's PR merges, its terminal pane is killed and it is archived. Off: the worker stays as done.",
+  },
+  {
+    key: "autoFixCi",
+    label: "Automatically fix CI failures",
+    hint: "Workers are driven to fix failing CI on their PRs. Off: the pipeline skips the CI-fix step.",
+  },
+  {
+    key: "autoFixReviewComments",
+    label: "Automatically fix review comments",
+    hint: "New review comments are delivered to the PR's worker for addressing. Off: the pipeline skips delivery.",
+  },
+];
+
+/**
+ * Daemon-wide worker-pipeline toggles (issue #106): global for all projects,
+ * persisted by the daemon, read fresh on every pipeline decision — a change
+ * here takes effect without a daemon restart. Each toggle saves immediately.
+ */
+function GlobalWorkerSettings() {
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGetSettings()
+      .then((loaded) => {
+        if (!cancelled) setSettings(loaded);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setLoadError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggle = (key: (typeof WORKER_TOGGLES)[number]["key"], value: boolean): void => {
+    setSavingKey(key);
+    setError(null);
+    apiUpdateSettings({ [key]: value })
+      .then(setSettings)
+      .catch((err: unknown) => setError(errorMessage(err)))
+      .finally(() => setSavingKey(null));
+  };
+
+  return (
+    <section className="global-worker-settings">
+      <h2 className="section-title">Worker pipeline (all projects)</h2>
+      {loadError !== null && <p className="error-note">Failed to load global settings: {loadError}</p>}
+      {settings !== null && (
+        <div className="settings-form">
+          {WORKER_TOGGLES.map((toggleDef) => (
+            <label key={toggleDef.key} className="toggle-row">
+              <input
+                type="checkbox"
+                checked={settings[toggleDef.key]}
+                disabled={savingKey !== null}
+                onChange={(e) => toggle(toggleDef.key, e.target.checked)}
+              />
+              <span>
+                {toggleDef.label}
+                <small className="field-hint"> {toggleDef.hint}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+      {error !== null && <p className="error-note">{error}</p>}
+    </section>
   );
 }
 
