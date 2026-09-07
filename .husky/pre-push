@@ -1,0 +1,3 @@
+# Local CI parity: same checks CI runs (.github/workflows/ci.yml runs `pnpm check`).
+# Bypass with `git push --no-verify` if you really must.
+pnpm check

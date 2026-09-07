@@ -145,15 +145,27 @@ pnpm test
 pnpm lint
 pnpm typecheck
 
+# Everything CI runs (lint, typecheck, build, test, kiss) in one go
+pnpm check
+
 # KISS hygiene ratchet (dead code, complexity budgets, duplication)
 pnpm kiss
 ```
 
-The same steps run in CI (`.github/workflows/ci.yml`) on every pull request.
+The same steps run in CI (`.github/workflows/ci.yml`) on every pull request — CI calls `pnpm check`, the same script the pre-push hook below uses.
 
-## KISS hygiene (CI "kiss" job)
+## Git hooks
 
-The `kiss` CI job enforces the KISS principle mechanically, so it doesn't rely on discipline. It runs three tools, each with a **ratchet baseline** checked into `kiss-baseline/`: every violation present on today's main is listed there, and the checks **fail on any violation not in the baseline** (and on baseline entries that no longer apply, so baselines may only shrink):
+Husky hooks are installed automatically by `pnpm install` (the `prepare` script) and live in the source checkout under `.husky/` — installed copies created by the one-line installer are unaffected.
+
+- **`pre-push`** runs `pnpm check` (lint, typecheck, build, test, kiss) — the exact same script CI runs, so what passes locally passes in CI. Bypass it with `git push --no-verify` when you really must; CI is the backstop.
+- **`pre-commit`** is cheap-only: [lint-staged](https://github.com/lint-staged/lint-staged) runs `eslint --fix` on staged files only (sub-second). The expensive checks deliberately stay on push.
+
+Full suite runtime is well under two minutes; if it ever grows past that, split `pre-push` into a documented subset rather than silently slowing every push.
+
+## KISS hygiene (CI "kiss" checks)
+
+The `kiss` checks in CI enforce the KISS principle mechanically, so it doesn't rely on discipline. They run three tools, each with a **ratchet baseline** checked into `kiss-baseline/`: every violation present on today's main is listed there, and the checks **fail on any violation not in the baseline** (and on baseline entries that no longer apply, so baselines may only shrink):
 
 | Check        | Tool                                                     | What it fails on                                                        | Baseline                    |
 | ------------ | -------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------- |
