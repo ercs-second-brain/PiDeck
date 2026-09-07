@@ -94,6 +94,31 @@ export type PullRequestDiff = z.infer<typeof pullRequestDiffSchema>;
 export const pullRequestSummarySchema = pullRequestSchema;
 export type PullRequestSummary = PullRequest;
 
+/**
+ * Result of a self-update check (issue #55): the daemon's local source
+ * revision (`git rev-parse HEAD` at `$AK_HOME/src`) compared against the
+ * upstream repo/ref via `gh api repos/:owner/:repo/commits/<ref>` — the same
+ * repo/ref the installer used (see install/lib/source.sh), so private repos
+ * and dev refs check like public ones.
+ */
+export const updateStatusSchema = z.object({
+  /** Upstream repository as `owner/name` (or the configured URL when it has no GitHub slug). */
+  repo: z.string().min(1),
+  /** Upstream ref (branch/tag) the installer tracks; usually `main`. */
+  ref: z.string().min(1),
+  /** Full SHA of the local source checkout; `null` when missing/not a git repo. */
+  localSha: z.string().min(1).nullable(),
+  /** Full SHA of the upstream ref head; `null` when the check failed. */
+  remoteSha: z.string().min(1).nullable(),
+  /** `true` only when both revisions resolved and differ (→ `agentskiss update`). */
+  updateAvailable: z.boolean(),
+  /** When the check ran (ISO timestamp). */
+  checkedAt: z.iso.datetime(),
+  /** Human-readable failure detail (`null` when the check succeeded). */
+  error: z.string().nullable(),
+});
+export type UpdateStatus = z.infer<typeof updateStatusSchema>;
+
 // ---------------------------------------------------------------------------
 // Endpoint map
 // ---------------------------------------------------------------------------
@@ -194,6 +219,15 @@ export const endpoints = {
     params: z.object({ projectId: z.string().min(1), prNumber: z.number().int().positive() }),
     request: null,
     response: pullRequestDiffSchema,
+  },
+
+  // Self-update (issue #55)
+  getUpdateStatus: {
+    method: "GET",
+    path: "/api/update",
+    params: z.object({}),
+    request: null,
+    response: updateStatusSchema,
   },
 
   // Settings

@@ -408,6 +408,22 @@ code {
   font-size: 13px;
 }
 
+/* Self-update banner (issue #55): quiet strip above the page title when a
+   newer upstream revision exists. Applying is `agentskiss update` (CLI). */
+.update-banner {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--amber) 12%, var(--bg-raised));
+  color: var(--text);
+  font-size: 14px;
+}
+
+.update-banner code {
+  color: var(--amber);
+}
+
 .inline-link {
   color: var(--issue);
 }

@@ -10,6 +10,7 @@ import path from "node:path";
 import type { Project, Worker } from "@agentskiss/shared";
 
 import { GhClient } from "../github/index.js";
+import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
 import { GithubAutomation, watcherOptionsFromEnv } from "../pipeline/wiring.js";
 import { ProjectLayout } from "../sessions/layout.js";
@@ -22,6 +23,7 @@ import { KanbanService } from "./kanban.js";
 import { PullListingService } from "./pull-listing.js";
 import { ProjectService, ProjectStore } from "./projects.js";
 import { SettingsStore } from "./settings.js";
+import { UpdateChecker } from "./update.js";
 import { WsHub } from "./ws.js";
 
 export interface DaemonServices {
@@ -44,6 +46,8 @@ export interface DaemonServices {
    * session reconciliation and `stop()` first on shutdown.
    */
   automation: GithubAutomation;
+  /** Self-update check: local source vs upstream via gh (issue #55, `GET /api/update`). */
+  update: UpdateChecker;
   /** Injectable clock (ISO timestamps for events). */
   now: () => Date;
 }
@@ -63,6 +67,14 @@ export interface DaemonContextOptions {
   watcherEnabled?: boolean;
   /** Watcher/PR-loop poll interval in ms (tests; env: `AGENTSKISS_WATCHER_POLL_INTERVAL_MS`). */
   watcherPollIntervalMs?: number;
+  /** Override the gh runner used by the update checker (tests; issue #55). */
+  updateGh?: GhRunner;
+  /** Override the git runner used by the update checker (tests; issue #55). */
+  updateGit?: GitRunner;
+  /** Explicit upstream repo URL for the update checker (tests; env override). */
+  updateRepoUrl?: string;
+  /** Explicit upstream ref for the update checker (tests; env override). */
+  updateRepoRef?: string;
 }
 
 /** Resolves the daemon state dir honoring `AGENTSKISS_HOME`. */
@@ -127,6 +139,18 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   });
   automationRef.current = automation;
 
+  // Self-update check (issue #55): the installed checkout is either the
+  // service-configured AGENTSKISS_SRC or the installer's <stateDir>/src;
+  // upstream repo/ref come from the installer's config.json unless overridden.
+  const update = new UpdateChecker({
+    srcDir: process.env["AGENTSKISS_SRC"] ?? path.join(stateDir, "src"),
+    stateDir,
+    ...(options.updateRepoUrl !== undefined ? { repoUrl: options.updateRepoUrl } : {}),
+    ...(options.updateRepoRef !== undefined ? { repoRef: options.updateRepoRef } : {}),
+    ...(options.updateGh !== undefined ? { gh: options.updateGh } : {}),
+    ...(options.updateGit !== undefined ? { git: options.updateGit } : {}),
+  });
+
   return {
     projects,
     projectStore,
@@ -139,6 +163,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     tmux,
     registry,
     automation,
+    update,
     now: () => new Date(),
   };
 }

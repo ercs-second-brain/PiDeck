@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { boardStore, useAppState } from "../store/store";
+import { UpdateBanner } from "../components/UpdateBanner";
 import { OnboardingPage } from "./OnboardingPage";
 
 /**
@@ -27,6 +28,7 @@ export function ProjectsPage() {
   if (state.loadError !== null) {
     return (
       <main className="page">
+        <UpdateBanner />
         <h1 className="page-title">Projects</h1>
         <p className="error-note">Could not reach the daemon: {state.loadError}</p>
         <button type="button" className="button" onClick={() => void boardStore.refresh().catch(() => {})}>
@@ -43,6 +45,7 @@ export function ProjectsPage() {
 
   return (
     <main className="page">
+      <UpdateBanner />
       <h1 className="page-title">Projects</h1>
       <ul className="project-list">
         {state.projects.map((project) => (

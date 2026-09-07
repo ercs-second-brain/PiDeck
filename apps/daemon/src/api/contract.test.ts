@@ -20,6 +20,7 @@ import {
   pullRequestSchema,
   sessionSchema,
   settingsSchema,
+  updateStatusSchema,
   workerSchema,
   type EndpointName,
 } from "@agentskiss/shared";
@@ -30,6 +31,8 @@ import { Router } from "./router.js";
 import { testDaemon, type TestDaemon } from "./testutil.js";
 
 const UPDATED_AT = "2026-01-01T00:00:00.000Z";
+/** Local source HEAD used by the /api/update contract test (issue #55). */
+const LOCAL_SHA = "a".repeat(40);
 
 const ghRoutes = {
   graphql: {
@@ -116,7 +119,21 @@ let server: Server;
 let base: string;
 
 beforeAll(async () => {
-  daemon = testDaemon(ghRoutes);
+  // /api/update (issue #55) with mock gh/git runners — the local checkout
+  // matches the "upstream" head, so the shared daemon reports up to date.
+  daemon = testDaemon(ghRoutes, {
+    updateRepoUrl: "https://github.com/o/r",
+    updateGh: async (args) => {
+      if (args[0] === "api" && args[1] === "repos/o/r/commits/main") {
+        return { stdout: JSON.stringify({ sha: LOCAL_SHA }), stderr: "" };
+      }
+      throw new Error(`fake gh: unmatched invocation: gh ${args.join(" ")}`);
+    },
+    updateGit: async (args) => {
+      if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: `${LOCAL_SHA}\n`, stderr: "" };
+      throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
+    },
+  });
   const created = createDaemonServer({ services: daemon.services, webDist: null });
   server = created.server;
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -328,6 +345,21 @@ describe("settings", () => {
 
     // reset
     await api("PUT", endpoints.updateSettings.path, { autoAgentUsername: null });
+  });
+});
+
+describe("self-update (issue #55)", () => {
+  it("exposes the update status through the contract endpoint", async () => {
+    const res = await api("GET", endpoints.getUpdateStatus.path);
+    expect(res.status).toBe(200);
+    expect(updateStatusSchema.parse(res.json)).toMatchObject({
+      repo: "o/r",
+      ref: "main",
+      localSha: LOCAL_SHA,
+      remoteSha: LOCAL_SHA,
+      updateAvailable: false,
+      error: null,
+    });
   });
 });
 
