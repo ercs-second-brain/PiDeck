@@ -13,6 +13,7 @@
  * - `GET  /api/status` — daemon liveness
  * - `POST /api/projects/:projectId/spawn` — spawn a worker
  * - `POST /api/sessions/:sessionId/send` — deliver a message into a tmux pane
+ * - `POST /api/sessions/report-pr` — worker session self-reports its PR (issue #49)
  */
 
 import type { z } from "zod";
@@ -29,7 +30,7 @@ import {
 import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";
 import type { DaemonServices } from "./context.js";
-import { projectSpawnSchema, sessionSendSchema } from "./cli-routes.js";
+import { projectSpawnSchema, sessionReportPrSchema, sessionSendSchema } from "./cli-routes.js";
 import { GhClient, getAuthStatus, getRepoCreationPermissions } from "../github/index.js";
 
 // ---------------------------------------------------------------------------
@@ -252,6 +253,32 @@ export function registerGhAuthRoute(router: Router): void {
   router.add("GET", "/api/gh-auth", () => ghAuthPayload().then((body) => ({ body })));
 }
 
+/**
+ * Explicit PR→worker report (`agentskiss report-pr`, issue #49): the calling
+ * worker session reports the PR it opened. The CLI self-identifies the tmux
+ * session from its own pane context, so the daemon resolves the worker
+ * behind that session — no session id to guess or mistype.
+ *
+ * Precedence (issue #49): an explicit report **wins**. The wiring's
+ * title/branch heuristic (`associateWorkerPr`) stays as the fallback and
+ * only ever fills workers whose `prNumber` is still null; `setWorkerPr`
+ * overwrites any stale heuristic value, and the heuristic never re-claims a
+ * worker that already has a PR recorded.
+ */
+export async function reportWorkerPr(
+  services: DaemonServices,
+  input: { tmuxSession: string; prNumber: number },
+): Promise<Worker> {
+  const session = services.sessions.listSessions().find((s) => s.tmuxSession === input.tmuxSession);
+  if (session === undefined) throw new NotFoundError(`unknown tmux session: ${input.tmuxSession}`);
+  if (session.role !== "worker" || session.workerId === null) {
+    throw new HttpError(403, `session ${session.id} is not a worker session; report-pr is worker-only`);
+  }
+  const worker = services.sessions.getWorker(session.workerId);
+  if (worker === undefined) throw new NotFoundError(`worker ${session.workerId} (session ${session.id}) not found`);
+  return workerSchema.parse(services.sessions.setWorkerPr(worker.id, input.prNumber));
+}
+
 /** Delivers a message into a session's tmux pane (typed, then Enter). */
 export async function sendToSession(services: DaemonServices, sessionId: string, message: string): Promise<void> {
   const session = services.sessions.listSessions().find((s) => s.id === sessionId);
@@ -285,6 +312,14 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
     return sendToSession(services, ctx.params["sessionId"] as string, body.message).then(() => ({
       status: 200,
       body: { ok: true },
+    }));
+  });
+
+  router.add("POST", "/api/sessions/report-pr", (ctx) => {
+    const body = sessionReportPrSchema.parse(ctx.body);
+    return reportWorkerPr(services, body).then((worker) => ({
+      status: 200,
+      body: worker,
     }));
   });
 }
