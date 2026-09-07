@@ -33,6 +33,7 @@ import {
 } from "@agentskiss/shared";
 
 import { apiGetKanban, apiListPullRequests, apiListProjects, apiListWorkers, errorMessage } from "../lib/api";
+import { shareInFlight, type InFlight } from "../lib/in-flight";
 import { nextBackoffMs } from "../lib/backoff";
 
 // ---------------------------------------------------------------------------
@@ -150,6 +151,10 @@ class LiveBoardStore implements BoardStore {
   private listeners = new Set<() => void>();
   private state: AppState = INITIAL_STATE;
   private readonly loadedProjects = new Set<string>();
+  /** Single-flight per project (#88): concurrent loads share one fetch round. */
+  private readonly projectLoads: InFlight<void> = new Map();
+  /** Single-flight refresh (#88): poll ticks, events, and retries share one. */
+  private readonly refreshes: InFlight<void> = new Map();
   private ws: WebSocket | null = null;
   private wsAttempt = 0;
   private wsTimer: number | undefined;
@@ -183,6 +188,11 @@ class LiveBoardStore implements BoardStore {
   getState = (): AppState => this.state;
 
   async refresh(): Promise<void> {
+    await shareInFlight(this.refreshes, "refresh", () => this.runRefresh());
+  }
+
+  /** One refresh round: project list, then reload every already-loaded project. */
+  private async runRefresh(): Promise<void> {
     try {
       const projects = await apiListProjects();
       this.setState({ projects, loaded: true, loadError: null });
@@ -194,7 +204,14 @@ class LiveBoardStore implements BoardStore {
     }
   }
 
-  async loadProject(projectId: string): Promise<void> {
+  loadProject(projectId: string): Promise<void> {
+    // Single-flight (#88): a poll reload, a board mount, and a websocket
+    // event hitting the same project share one fetch round instead of
+    // stacking three requests each per caller.
+    return shareInFlight(this.projectLoads, projectId, () => this.runProjectLoad(projectId));
+  }
+
+  private async runProjectLoad(projectId: string): Promise<void> {
     const [board, workers, pullRequests] = await Promise.all([
       apiGetKanban(projectId),
       apiListWorkers(projectId),
@@ -265,15 +282,19 @@ class LiveBoardStore implements BoardStore {
   }
 }
 
+function createBoardStore(): BoardStore & {
+  apply(event: KanbanUpdateEvent): void;
+  start(): void;
+  stop(): void;
+} {
+  return new LiveBoardStore();
+}
+
 /**
  * Single app-wide store instance. Connection/REST side effects start only
  * in a browser context, so importing this module in node tests stays inert.
  */
-export const boardStore: BoardStore & {
-  apply(event: KanbanUpdateEvent): void;
-  start(): void;
-  stop(): void;
-} = new LiveBoardStore();
+export const boardStore = createBoardStore();
 
 if (typeof window !== "undefined" && typeof WebSocket !== "undefined") {
   boardStore.start();
