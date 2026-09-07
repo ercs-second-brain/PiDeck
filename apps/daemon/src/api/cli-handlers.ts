@@ -97,7 +97,7 @@ export async function reportWorkerPr(
 }
 
 /** Delivers a message into a session's tmux pane (typed, then Enter). */
-export async function sendToSession(services: DaemonServices, sessionId: string, message: string): Promise<void> {
+async function sendToSession(services: DaemonServices, sessionId: string, message: string): Promise<void> {
   const session = services.sessions.listSessions().find((s) => s.id === sessionId);
   if (session === undefined) throw new NotFoundError(`unknown session: ${sessionId}`);
   await services.sessions.sendKeys(sessionId, message, { enter: true });
@@ -110,7 +110,7 @@ export async function sendToSession(services: DaemonServices, sessionId: string,
  * resource API. The shape is still contracted in the shared package
  * (`piAuthSchema`) so the webapp cannot drift from the daemon.
  */
-export function registerPiAuthRoute(router: Router, services: DaemonServices): void {
+function registerPiAuthRoute(router: Router, services: DaemonServices): void {
   router.add("GET", "/api/pi-auth", () => services.piAuth.payload().then((body) => ({ body })));
 }
 

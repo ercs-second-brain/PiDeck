@@ -24,7 +24,7 @@ const PR_OWNABLE_STATUSES = new Set<WorkerStatus>([
 ]);
 
 /** Issue numbers referenced in free text: `#46`, `issue 46`, `issue-46`, `Issue_46`. */
-export function referencedIssueNumbers(text: string): Set<number> {
+function referencedIssueNumbers(text: string): Set<number> {
   const refs = new Set<number>();
   for (const match of text.matchAll(/#(\d+)\b/g)) refs.add(Number(match[1]));
   for (const match of text.matchAll(/\bissue[-_ ]?(\d+)\b/gi)) refs.add(Number(match[1]));

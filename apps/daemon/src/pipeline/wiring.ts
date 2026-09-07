@@ -43,10 +43,8 @@ import { watcherOptionsFromEnv } from "./env.js";
 import { associateWorkerPr } from "./issue-refs.js";
 import { buildUnit, registeredProject, RoutingBlockerResolver, type ProjectUnit } from "./unit-builder.js";
 
-/** Default poll interval for all watchers/loops (30s — see the budget in `pipeline/env.ts`). */
-export { DEFAULT_POLL_INTERVAL_MS as DEFAULT_WATCHER_POLL_INTERVAL_MS } from "../github/watch.js";
-export { CATCH_UP_BATCH_SIZE } from "./catchup.js";
 export { watcherOptionsFromEnv };
+export { CATCH_UP_BATCH_SIZE } from "./catchup.js";
 
 export interface GithubAutomationOptions {
   projects: ProjectService;

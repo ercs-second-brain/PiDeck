@@ -18,10 +18,7 @@
 
 import { DEFAULT_POLL_INTERVAL_MS } from "../github/watch.js";
 
-export { DEFAULT_POLL_INTERVAL_MS as DEFAULT_WATCHER_POLL_INTERVAL_MS } from "../github/watch.js";
-
-/** Resolves the watcher knobs from the environment (options win over env). */
-export function watcherOptionsFromEnv(
+/** Resolves the watcher knobs from the environment (options win over env). */export function watcherOptionsFromEnv(
   env: NodeJS.ProcessEnv,
   overrides: { enabled?: boolean; pollIntervalMs?: number } = {},
 ): { enabled: boolean; pollIntervalMs: number } {

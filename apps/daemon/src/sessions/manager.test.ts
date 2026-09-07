@@ -12,7 +12,7 @@ import {
   resurrectionCommand,
   sanitizeTmuxSegment,
   serializeCommand,
-} from "./tmux-commands.js";
+} from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { Tmux, TmuxError } from "./tmux.js";

@@ -58,13 +58,9 @@ export function deserializeCommand(command: string): string[] {
       }
       continue;
     }
-    if (quote === "'") {
-      if (ch === "'") quote = null;
-      else current += ch;
-      continue;
-    }
-    if (quote === '"') {
-      if (ch === '"') quote = null;
+    if (quote !== null) {
+      // Inside a quoted word: only the matching closing quote ends it.
+      if (ch === quote) quote = null;
       else current += ch;
       continue;
     }
