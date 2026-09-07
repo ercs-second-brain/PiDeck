@@ -9,7 +9,7 @@ import { renderToString } from "react-dom/server";
 import type { UpdateStatusResponse } from "@agentskiss/shared";
 import { updateStatusResponseSchema } from "@agentskiss/shared";
 
-import { UpdateBannerView, type UpdateBannerViewProps } from "./UpdateBanner";
+import { UpdateBannerView, formatElapsed, updatingText, type UpdateBannerViewProps } from "./UpdateBanner";
 
 function status(overrides: Partial<UpdateStatusResponse> = {}): UpdateStatusResponse {
   return updateStatusResponseSchema.parse({
@@ -17,6 +17,8 @@ function status(overrides: Partial<UpdateStatusResponse> = {}): UpdateStatusResp
     ref: "main",
     localSha: "a".repeat(40),
     remoteSha: "b".repeat(40),
+    runningSha: "a".repeat(40),
+    applyProgress: null,
     updateAvailable: true,
     checkedAt: "2026-01-02T03:04:05.000Z",
     error: null,
@@ -30,10 +32,13 @@ function view(overrides: Partial<UpdateBannerViewProps> = {}): string {
     <UpdateBannerView
       status={status()}
       phase="idle"
-      targetSha={null}
-      downMs={null}
+      updating={null}
+      reloading={false}
+      reloadSha={null}
+      reconnecting={false}
       error={null}
       onApply={() => {}}
+      onReload={() => {}}
       {...overrides}
     />,
   );
@@ -85,24 +90,80 @@ describe("UpdateBannerView — update available (idle)", () => {
 });
 
 describe("UpdateBannerView — updating (apply accepted)", () => {
-  it("shows the updating state with the target short SHA", () => {
-    const html = view({ phase: "updating", targetSha: "b".repeat(40) });
+  function updating(overrides: Partial<UpdateBannerViewProps["updating"]> = {}): NonNullable<UpdateBannerViewProps["updating"]> {
+    return { targetSha: "b".repeat(40), startedAt: 0, elapsedMs: 5_000, stage: null, apiUp: true, downMs: 0, ...overrides };
+  }
+
+  it("shows the updating state with the target short SHA and an elapsed clock", () => {
+    const html = view({ phase: "updating", updating: updating() });
     expect(html).toContain("update-banner updating");
     expect(html).toContain("Updating agentsKISS");
     expect(html).toContain("b".repeat(7));
-    expect(html).toContain("restarts as part of the update");
+    expect(html).toContain("5s</strong> elapsed");
+    expect(html).toContain("applying the update");
     expect(html).not.toContain("Update now");
   });
 
+  it("shows the shim's rebuild stage while the daemon is up (issue #89)", () => {
+    const html = view({ phase: "updating", updating: updating({ stage: "building", elapsedMs: 185_000 }) });
+    expect(html).toContain("rebuilding");
+    expect(html).toContain("3m 05s");
+  });
+
+  it("says the daemon is restarting once the API is unreachable (issue #89)", () => {
+    const html = view({ phase: "updating", updating: updating({ apiUp: false, downMs: 10_000 }) });
+    expect(html).toContain("daemon restarting");
+    expect(html).not.toContain("update-banner-hint");
+  });
+
   it("stays quiet about recovery while the daemon outage is short", () => {
-    const html = view({ phase: "updating", targetSha: "b".repeat(40), downMs: 5_000 });
+    const html = view({ phase: "updating", updating: updating({ apiUp: false, downMs: 5_000 }) });
     expect(html).not.toContain("update-banner-hint");
   });
 
   it("surfaces the recovery hint when the daemon has been down for a while", () => {
-    const html = view({ phase: "updating", targetSha: "b".repeat(40), downMs: 120_000 });
+    const html = view({ phase: "updating", updating: updating({ apiUp: false, downMs: 120_000 }) });
     expect(html).toContain("update-banner-hint");
     expect(html).toContain("agentskiss update");
     expect(html).toContain("agentskiss service status");
+  });
+});
+
+describe("UpdateBannerView — reload affordances (issue #89)", () => {
+  it("shows the one-click reload when a CLI update landed under an open page", () => {
+    const html = view({ reloadSha: "c".repeat(40) });
+    expect(html).toContain("update-banner");
+    expect(html).toContain("c".repeat(7));
+    expect(html).toContain("Reload new build");
+    expect(html).toContain("while this page was open");
+  });
+
+  it("shows the completion state while a banner-initiated apply reloads the page", () => {
+    const html = view({ reloading: true });
+    expect(html).toContain("Update complete");
+    expect(html).not.toContain("Reload new build");
+  });
+
+  it("says it is waiting for the daemon while an idle page lost the API", () => {
+    const html = view({ reconnecting: true });
+    expect(html).toContain("Connection to the daemon was lost");
+    expect(html).not.toContain("Reload new build");
+  });
+});
+
+describe("formatElapsed / updatingText (issue #89)", () => {
+  it("formats the elapsed clock compactly", () => {
+    expect(formatElapsed(0)).toBe("0s");
+    expect(formatElapsed(42_000)).toBe("42s");
+    expect(formatElapsed(185_000)).toBe("3m 05s");
+    expect(formatElapsed(3_723_000)).toBe("1h 02m");
+    expect(formatElapsed(-5)).toBe("0s");
+  });
+
+  it("maps known shim stages, passes unknown ones through, and falls back honestly", () => {
+    expect(updatingText("building", true)).toContain("rebuilding");
+    expect(updatingText("mystery", true)).toBe("update stage: mystery");
+    expect(updatingText(null, false)).toContain("daemon restarting");
+    expect(updatingText(null, true)).toBe("applying the update");
   });
 });

@@ -113,6 +113,22 @@ export const pullRequestDiffSchema = z.object({
 });
 export type PullRequestDiff = z.infer<typeof pullRequestDiffSchema>;
 
+/**
+ * Live progress of a running `agentskiss update` (issue #89): the update shim
+ * (install/lib/update.sh) rewrites a small state file at each stage, and the
+ * daemon serves it so the webapp banner can show real progress during the
+ * multi-minute fetch/rebuild. Written by the shim, so `stage` is one of its
+ * known values (checking/fetching/building/installing/restarting/done/failed)
+ * — kept a free string so shim and daemon cannot drift into a parse failure.
+ */
+export const updateApplyProgressSchema = z.object({
+  /** Stage label written by the update shim (see install/lib/update.sh). */
+  stage: z.string().min(1),
+  /** When the shim last rewrote the state file (ISO timestamp). */
+  updatedAt: z.iso.datetime(),
+});
+export type UpdateApplyProgress = z.infer<typeof updateApplyProgressSchema>;
+
 /** PR summary for lists/views; diff bodies are fetched separately. */
 export const pullRequestSummarySchema = pullRequestSchema;
 export type PullRequestSummary = PullRequest;
@@ -139,6 +155,20 @@ export const updateStatusSchema = z.object({
   checkedAt: z.iso.datetime(),
   /** Human-readable failure detail (`null` when the check succeeded). */
   error: z.string().nullable(),
+  /**
+   * Full SHA of the build the *answering daemon process* runs (captured once
+   * at daemon startup, issue #89): the source checkout (`localSha`) moves to
+   * the new commit mid-update — before the rebuild/restart — so the webapp's
+   * updating-state may only resolve when `runningSha` equals the target SHA.
+   * `null` when it could not be captured (no git repo at startup).
+   */
+  runningSha: z.string().min(1).nullable(),
+  /**
+   * Live progress of a running `agentskiss update` shim (issue #89), served
+   * fresh even when the gh check itself is cached; `null` when no update has
+   * run recently (staleness window in apps/daemon/src/api/update.ts).
+   */
+  applyProgress: updateApplyProgressSchema.nullable(),
 });
 export type UpdateStatus = z.infer<typeof updateStatusSchema>;
 

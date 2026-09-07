@@ -58,7 +58,7 @@ AK_SRC="$AK_HOME/src"
 mkdir -p "$AK_HOME/lib" "$AK_HOME/bin" "$AK_SRC/.git"
 cp "$INSTALL_DIR/lib/common.sh" "$INSTALL_DIR/lib/source.sh" "$INSTALL_DIR/lib/update.sh" "$AK_HOME/lib/"
 cat > "$AK_HOME/lib/service.sh" <<'EOF'
-svc_restart() { printf 'SVC restart\n'; }
+svc_restart() { printf 'SVC restart\n'; cp "$AK_HOME/var/update-state.json" "$AK_HOME/var/restart-stage.snapshot" 2>/dev/null; }
 register_service() { printf 'REGISTER service\n'; }
 EOF
 
@@ -179,6 +179,7 @@ out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
 check_eq 'apply when up to date exits 0' '0' "$rc"
 check_no_grep 'apply when up to date does not restart the service' 'SVC restart' "$out"
 check_grep 'apply when up to date says so' 'up to date' "$out"
+check_grep 'apply when up to date records done progress (issue #89)' '"stage":"done"' "$(cat "$AK_HOME/var/update-state.json")"
 
 # --- apply path (update available → fetch, build, restart) ------------------
 # Stub the installer machinery here: the real resolve_source/build_from_source
@@ -186,13 +187,28 @@ check_grep 'apply when up to date says so' 'up to date' "$out"
 # order, with the configured ref, and that svc_restart runs after them.
 cat > "$AK_HOME/lib/source.sh" <<'EOF'
 resolve_source() { printf 'RESOLVE fetch %s\n' "$AK_REPO_REF"; }
-build_from_source() { printf 'BUILD\n'; }
+build_from_source() { printf 'BUILD\n'; cp "$AK_HOME/var/update-state.json" "$AK_HOME/var/build-stage.snapshot" 2>/dev/null; }
 EOF
+rm -f "$AK_HOME/var/update-state.json"
 out=$(run_shim "$LOCAL_SHA" "$REMOTE_NEW" update); rc=$?
 check_eq 'apply with update available exits 0' '0' "$rc"
 check_grep 'apply fetches the configured ref' 'RESOLVE fetch dev-branch' "$out"
 check_grep 'apply rebuilds via build_from_source' 'BUILD' "$out"
 check_grep 'apply restarts the service' 'SVC restart' "$out"
+check_grep 'apply records the build stage for the webapp banner (issue #89)' '"stage":"building"' "$(cat "$AK_HOME/var/build-stage.snapshot")"
+check_grep 'apply records the restart stage' '"stage":"restarting"' "$(cat "$AK_HOME/var/restart-stage.snapshot")"
+check_grep 'apply ends with done progress (issue #89)' '"stage":"done"' "$(cat "$AK_HOME/var/update-state.json")"
+
+# --- apply path: build failure records failed progress (issue #89) ----------
+# A failed rebuild must never leave the webapp banner waiting on a phantom
+# stage: the shim's EXIT trap records `failed` for /api/update to serve.
+cat > "$AK_HOME/lib/source.sh" <<'EOF'
+resolve_source() { :; }
+build_from_source() { die 'build failed'; }
+EOF
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_NEW" update 2>&1); rc=$?
+check_eq 'apply with a failing build exits nonzero' '1' "$rc"
+check_grep 'failing build records failed progress (issue #89)' '"stage":"failed"' "$(cat "$AK_HOME/var/update-state.json")"
 cp "$INSTALL_DIR/lib/source.sh" "$AK_HOME/lib/"
 
 # --- apply path: installed shell layer refresh (issue #66) -------------------

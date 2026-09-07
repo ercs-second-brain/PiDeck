@@ -1,6 +1,8 @@
 /**
  * Unit tests for the self-update check (issue #55): local source revision vs
- * upstream head via mock gh/git runners — no subprocess, no network.
+ * upstream head via mock gh/git runners — no subprocess, no network. Also the
+ * #89 updating-state machinery: boot-captured `runningSha` (source HEAD moves
+ * mid-update, the running build does not) + the shim's live progress file.
  */
 
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -65,6 +67,8 @@ describe("UpdateChecker", () => {
       ref: "main",
       localSha: "a".repeat(40),
       remoteSha: "a".repeat(40),
+      runningSha: "a".repeat(40),
+      applyProgress: null,
       updateAvailable: false,
       checkedAt: "2026-01-02T03:04:05.000Z",
       error: null,
@@ -150,6 +154,86 @@ describe("UpdateChecker", () => {
     expect(status.ref).toBe("main");
     expect(status.error).toContain("upstream check for https://example.com/some/repo.git@main failed");
   });
+
+  it("survives a missing git repo at construction (runningSha null)", async () => {
+    const status = await checker({ git: fakeGit({ failRevParse: true }) }).check();
+    expect(status.runningSha).toBeNull();
+  });
+});
+
+describe("UpdateChecker.runningSha (issue #89)", () => {
+  it("is captured at construction and survives a mid-update source reset", async () => {
+    // The update shim resets the source checkout to the new commit BEFORE
+    // rebuilding/restarting — a check-time HEAD read would mistake the new
+    // commit for the running build and falsely resolve the webapp banner.
+    const OLD = "1".repeat(40);
+    const NEW = "2".repeat(40);
+    let head = OLD;
+    const git: GitRunner = async (args) => {
+      if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: `${head}\n`, stderr: "" };
+      throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
+    };
+    const instance = checker({ git, gh: fakeGh({ remoteSha: NEW }) });
+    const before = await instance.check();
+    expect(before.runningSha).toBe(OLD);
+    expect(before.localSha).toBe(OLD);
+    // Simulate the shim's `git reset --hard`: HEAD moved, daemon unchanged.
+    head = NEW;
+    const after = await instance.check({ force: true });
+    expect(after.runningSha).toBe(OLD);
+    expect(after.localSha).toBe(NEW);
+    expect(after.updateAvailable).toBe(false); // the very false-resolve trap
+  });
+});
+
+describe("UpdateChecker.applyProgress (issue #89)", () => {
+  /** Real tmp state dir so the shim's progress file can actually be written. */
+  function progressState(): { dir: string; write: (stage: string, updatedAt?: string) => void; file: string } {
+    const dir = mkdtempSync(path.join(tmpdir(), "ak-progress-"));
+    const file = path.join(dir, "var", "update-state.json");
+    return {
+      dir,
+      file,
+      write: (stage, updatedAt = "2026-01-02T03:00:00Z") => {
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, JSON.stringify({ stage, updatedAt }));
+      },
+    };
+  }
+
+  it("serves the shim's progress file fresh even on a cache hit", async () => {
+    const state = progressState();
+    let nowMs = 1_000;
+    const instance = checker({ stateDir: state.dir, now: () => new Date(nowMs), cacheTtlMs: 5 * 60 * 1000 });
+    state.write("fetching");
+    const first = await instance.check();
+    expect(first.applyProgress).toEqual({ stage: "fetching", updatedAt: "2026-01-02T03:00:00Z" });
+    nowMs += 60_000; // still inside the TTL — gh is not re-hit
+    state.write("building");
+    const second = await instance.check();
+    expect(second.applyProgress).toEqual({ stage: "building", updatedAt: "2026-01-02T03:00:00Z" });
+  });
+
+  it("ignores missing and malformed progress files", async () => {
+    const state = progressState();
+    expect((await checker({ stateDir: state.dir }).check()).applyProgress).toBeNull();
+    mkdirSync(path.dirname(state.file), { recursive: true });
+    writeFileSync(state.file, "not json at all");
+    expect((await checker({ stateDir: state.dir }).check()).applyProgress).toBeNull();
+    writeFileSync(state.file, JSON.stringify({ stage: "building", updatedAt: "yesterday" }));
+    expect((await checker({ stateDir: state.dir }).check()).applyProgress).toBeNull();
+    writeFileSync(state.file, JSON.stringify({ updatedAt: "2026-01-02T03:00:00Z" }));
+    expect((await checker({ stateDir: state.dir }).check()).applyProgress).toBeNull();
+  });
+
+  it("ignores stale progress (crashed shim) instead of pinning a phantom stage", async () => {
+    const state = progressState();
+    // checker()'s now() is 2026-01-02T03:04:05Z; 31 min old progress is stale.
+    state.write("building", "2026-01-02T02:33:00Z");
+    expect((await checker({ stateDir: state.dir }).check()).applyProgress).toBeNull();
+    state.write("building", "2026-01-02T03:04:00Z"); // 5s old — fresh
+    expect((await checker({ stateDir: state.dir }).check()).applyProgress?.stage).toBe("building");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -180,7 +264,7 @@ describe("UpdateChecker caching (issue #76)", () => {
     const first = await instance.check();
     nowMs += 60_000; // 1 minute later — still fresh
     const second = await instance.check();
-    expect(second).toBe(first); // same object: served from cache
+    expect(second).toEqual(first); // served from cache: same gh result, same instant
     expect(counted.calls()).toBe(1);
     nowMs += 5 * 60 * 1000; // past the TTL — re-checks
     const third = await instance.check();
@@ -214,7 +298,7 @@ describe("UpdateChecker caching (issue #76)", () => {
     expect(forced.checkedAt).toBe(new Date(nowMs).toISOString());
     // The forced result becomes the new cache entry.
     const second = await instance.check();
-    expect(second).toBe(forced);
+    expect(second).toEqual(forced);
     expect(counted.calls()).toBe(2);
   });
 });

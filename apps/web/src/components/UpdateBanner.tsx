@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { UpdateStatusResponse } from "@agentskiss/shared";
-import { apiApplyUpdate, apiGetUpdateStatus, errorMessage } from "../lib/api";
+import { apiApplyUpdate, errorMessage } from "../lib/api";
+import {
+  RELOAD_DELAY_MS,
+  RECOVERY_HINT_MS,
+  startApplyPolling,
+  startIdleStatusPolling,
+} from "./update-polling";
 
 /**
- * Self-update banner (issues #55, #76, #82): polls the daemon's update status
- * and, when a newer upstream revision exists, offers click-to-update.
+ * Self-update banner (issues #55, #76, #82, #89): polls the daemon's update
+ * status and, when a newer upstream revision exists, offers click-to-update.
  *
  * - Polling is cheap for gh: the daemon serves a cached check (~5 min
  *   re-check, apps/daemon/src/api/update.ts), and the banner forces a fresh
@@ -16,100 +22,139 @@ import { apiApplyUpdate, apiGetUpdateStatus, errorMessage } from "../lib/api";
  *   active status; the count comes from the daemon (same
  *   `ACTIVE_WORKER_STATUSES` gate the apply endpoint enforces server-side).
  *   Orchestrator sessions are not workers and never block.
+ *
+ * Updating state machine (issue #89 — survives the daemon restart; the
+ * polling/backoff machines live in update-polling.ts):
  * - Applying POSTs `/api/update/apply`, which spawns `agentskiss update`
- *   detached and returns immediately — the daemon restarts mid-apply, so the
- *   banner flips to an 'updating…' state and polls until the daemon
- *   reappears reporting the new SHA. If it stays down for a while, a
- *   recovery hint points at the CLI.
+ *   detached and returns immediately; the daemon restarts mid-apply, so the
+ *   banner flips to an 'updating…' state and polls until the daemon is
+ *   *actually running the new build* — resolution keys on `runningSha`
+ *   (captured at daemon boot) equalling the target SHA, never on
+ *   `updateAvailable`, which flips false mid-update while the source
+ *   checkout is already reset but the old daemon still runs.
+ * - During the (multi-minute) rebuild the shim writes a live stage file the
+ *   daemon serves as `applyProgress`; the banner shows that stage plus an
+ *   honest elapsed timer instead of a silent wait.
+ * - When the update is done, polling stops and the page reloads into the
+ *   new build. A page that merely had the daemon restart under it (CLI
+ *   update path) detects the new `runningSha` after the API returns and
+ *   offers a one-click reload instead of auto-navigating mid-work.
  */
 
-/**
- * Idle polling fallback: slow — the daemon serves a cached gh check (~5 min
- * TTL) and fresh checks are forced on page load / window focus instead.
- */
-const POLL_MS = 5 * 60_000;
-/** Minimum spacing between forced (`?refresh=1`) checks (focus storms). */
-const FORCE_DEBOUNCE_MS = 30_000;
-/** While updating: wait for the daemon to come back with the new build. */
-const APPLY_POLL_MS = 2_000;
-/** Down longer than this → surface the recovery hint (but keep polling). */
-const RECOVERY_HINT_MS = 90_000;
+/** Live state of a banner-initiated apply while the daemon rebuilds. */
+export interface UpdatingState {
+  /** Full SHA the apply is moving to. */
+  targetSha: string;
+  /** `Date.now()` when the apply was accepted. */
+  startedAt: number;
+  /** Elapsed since `startedAt` (re-rendered ~1/s by the polling heartbeat). */
+  elapsedMs: number;
+  /** Last stage the update shim reported (`null` before the first poll). */
+  stage: string | null;
+  /** Whether the last poll reached the daemon. */
+  apiUp: boolean;
+  /** While the API is down: ms since the last successful poll. */
+  downMs: number;
+}
+
+/** Human text for a shim stage; honest fallbacks when nothing is known yet. */
+const STAGE_TEXT: Record<string, string> = {
+  checking: "checking for updates",
+  fetching: "fetching the new source",
+  building: "rebuilding — installing dependencies and building (usually the longest step)",
+  installing: "installing the new build",
+  restarting: "restarting the daemon",
+};
+
+export function updatingText(stage: string | null, apiUp: boolean): string {
+  if (stage !== null && STAGE_TEXT[stage] !== undefined) return STAGE_TEXT[stage];
+  if (stage !== null) return `update stage: ${stage}`;
+  if (!apiUp) return "daemon restarting — it will come back with the new build";
+  return "applying the update";
+}
+
+/** Compact elapsed clock for the updating banner ("42s", "3m 05s", "1h 02m"). */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m ${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
 
 export function UpdateBanner() {
   const [status, setStatus] = useState<UpdateStatusResponse | null>(null);
   const [phase, setPhase] = useState<"idle" | "updating">("idle");
-  const [targetSha, setTargetSha] = useState<string | null>(null);
-  const [downMs, setDownMs] = useState<number | null>(null);
+  const [updating, setUpdating] = useState<UpdatingState | null>(null);
+  /** Right after a banner-initiated apply resolves: reload into the new build. */
+  const [reloading, setReloading] = useState(false);
+  /** CLI-path detection: a build is live whose SHA differs from the page's. */
+  const [reloadSha, setReloadSha] = useState<string | null>(null);
+  /** Idle page, API unreachable (e.g. a CLI update restarted the daemon). */
+  const [reconnecting, setReconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The build SHA this page was loaded with; `null` until the first status. */
+  const bootShaRef = useRef<string | null>(null);
 
-  // Idle: force a fresh check on page load and window focus (debounced —
-  // no polling loops), plus a slow background poll of the daemon-cached
-  // status as a fallback.
-  useEffect(() => {
-    if (phase !== "idle") return;
-    let alive = true;
-    let lastForce = 0;
-    const load = (refresh: boolean) => {
-      if (refresh) {
-        const now = Date.now();
-        if (now - lastForce < FORCE_DEBOUNCE_MS) return;
-        lastForce = now;
-      }
-      apiGetUpdateStatus(refresh)
-        .then((result) => {
-          if (alive) setStatus(result);
-        })
-        .catch(() => {
-          /* transient (daemon restarting) — keep the last status */
-        });
-    };
-    load(true);
-    const onFocus = () => load(true);
-    window.addEventListener("focus", onFocus);
-    const timer = setInterval(() => load(false), POLL_MS);
-    return () => {
-      alive = false;
-      window.removeEventListener("focus", onFocus);
-      clearInterval(timer);
-    };
-  }, [phase]);
+  const targetSha = updating?.targetSha ?? null;
+  const startedAt = updating?.startedAt ?? 0;
 
-  // Updating: poll until the daemon returns reporting the new build.
+  // Adopt every successful status fetch: first one anchors the boot SHA; a
+  // later different runningSha means a new build is live (CLI update path).
+  const adopt = useCallback((result: UpdateStatusResponse): void => {
+    setStatus(result);
+    setReconnecting(false);
+    if (bootShaRef.current === null) {
+      bootShaRef.current = result.runningSha;
+    } else if (result.runningSha !== null && result.runningSha !== bootShaRef.current) {
+      setReloadSha(result.runningSha);
+    } else {
+      setReloadSha(null);
+    }
+  }, []);
+
+  // Idle: fresh check on load/focus, slow cached fallback, and a backoff
+  // reconnect loop whenever the API is unreachable (CLI-update restart).
   useEffect(() => {
-    if (phase !== "updating") return;
-    let alive = true;
-    let lastOk = Date.now();
-    setDownMs(0);
-    const tick = () => {
-      apiGetUpdateStatus()
-        .then((result) => {
-          if (!alive) return;
-          lastOk = Date.now();
-          setDownMs(0);
-          if (!result.updateAvailable) {
-            // New build confirmed (or the check now says up to date).
-            setStatus(result);
-            setTargetSha(null);
-            setPhase("idle");
-          }
-        })
-        .catch(() => {
-          if (alive) setDownMs(Date.now() - lastOk);
-        });
-    };
-    tick();
-    const timer = setInterval(tick, APPLY_POLL_MS);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [phase]);
+    if (phase !== "idle" || reloading) return;
+    return startIdleStatusPolling({ onStatus: adopt, onUnreachable: () => setReconnecting(true) });
+  }, [phase, reloading, adopt]);
+
+  // Updating: poll until the daemon runs the target build (see docblock).
+  useEffect(() => {
+    if (phase !== "updating" || targetSha === null) return;
+    return startApplyPolling(targetSha, startedAt, {
+      onProgress: (result) =>
+        setUpdating((u) =>
+          u === null ? u : { ...u, stage: result.applyProgress?.stage ?? null, apiUp: true, downMs: 0 },
+        ),
+      onApiDown: (downMs) => setUpdating((u) => (u === null ? u : { ...u, apiUp: false, downMs })),
+      onTick: (elapsedMs) => setUpdating((u) => (u === null ? u : { ...u, elapsedMs })),
+      onResolved: (result) => {
+        setStatus(result);
+        setUpdating(null);
+        setReloadSha(null);
+        setReloading(true); // the view says "Update complete", then we reload
+        setPhase("idle");
+        setTimeout(() => window.location.reload(), RELOAD_DELAY_MS);
+      },
+      onFailed: (message) => {
+        setUpdating(null);
+        setPhase("idle");
+        setError(message);
+      },
+    });
+  }, [phase, targetSha, startedAt]);
 
   const apply = useCallback(async () => {
     setError(null);
     try {
       await apiApplyUpdate();
-      setTargetSha(status?.remoteSha ?? null);
+      const sha = status?.remoteSha ?? null;
+      if (sha === null) return; // nothing tracked to move to — quiet no-op
+      setUpdating({ targetSha: sha, startedAt: Date.now(), elapsedMs: 0, stage: null, apiUp: true, downMs: 0 });
       setPhase("updating");
     } catch (err) {
       // 409 (a worker went active between poll and click) and spawn failures
@@ -118,39 +163,98 @@ export function UpdateBanner() {
     }
   }, [status]);
 
+  const onReload = useCallback((): void => {
+    window.location.reload();
+  }, []);
+
   return (
-    <UpdateBannerView status={status} phase={phase} targetSha={targetSha} downMs={downMs} error={error} onApply={() => void apply()} />
+    <UpdateBannerView
+      status={status}
+      phase={phase}
+      updating={updating}
+      reloading={reloading}
+      reloadSha={reloadSha}
+      reconnecting={reconnecting}
+      error={error}
+      onApply={() => void apply()}
+      onReload={onReload}
+    />
   );
 }
 
 export interface UpdateBannerViewProps {
   status: UpdateStatusResponse | null;
   phase: "idle" | "updating";
-  /** Short SHA the apply is moving to (`null` until accepted). */
-  targetSha: string | null;
-  /** How long the daemon has been unreachable during apply (`null` while reachable). */
-  downMs: number | null;
-  /** Failure from the apply click (gate conflict, spawn error). */
+  /** Live apply state (`null` while not banner-initiated-updating). */
+  updating: UpdatingState | null;
+  /** Banner-initiated apply resolved — the page is about to reload. */
+  reloading: boolean;
+  /** New build's SHA detected after a CLI-update daemon restart. */
+  reloadSha: string | null;
+  /** The daemon is unreachable from the idle page (CLI-update restart). */
+  reconnecting: boolean;
+  /** Failure from the apply click (gate conflict, spawn error) or the apply run. */
   error: string | null;
   onApply: () => void;
+  onReload: () => void;
 }
 
 /**
  * Pure view for the banner states — kept separate so tests exercise the
  * rendering without React effects/fetch.
  */
-export function UpdateBannerView({ status, phase, targetSha, downMs, error, onApply }: UpdateBannerViewProps) {
-  if (phase === "updating") {
+export function UpdateBannerView({
+  status,
+  phase,
+  updating,
+  reloading,
+  reloadSha,
+  reconnecting,
+  error,
+  onApply,
+  onReload,
+}: UpdateBannerViewProps) {
+  // Banner-initiated apply resolved: say so for a beat, then reload (the
+  // wrapper schedules it — this render is the last thing the user sees).
+  if (reloading) {
+    return <div className="update-banner updating" role="status">Update complete — reloading into the new build&hellip;</div>;
+  }
+
+  if (phase === "updating" && updating !== null) {
     return (
       <div className="update-banner updating" role="status">
-        Updating agentsKISS{targetSha !== null ? <> to <code>{targetSha.slice(0, 7)}</code></> : null}&hellip; the daemon
-        restarts as part of the update.
-        {downMs !== null && downMs > RECOVERY_HINT_MS && (
+        Updating agentsKISS to <code>{updating.targetSha.slice(0, 7)}</code>&hellip;{" "}
+        <strong>{formatElapsed(updating.elapsedMs)}</strong> elapsed — {updatingText(updating.stage, updating.apiUp)}.
+        {updating.downMs > RECOVERY_HINT_MS && (
           <span className="update-banner-hint">
             {" "}Still waiting — if this page doesn't recover within a few minutes, run <code>agentskiss update</code> in a
             terminal or check <code>agentskiss service status</code>.
           </span>
         )}
+      </div>
+    );
+  }
+
+  // Idle page lost the daemon (e.g. a CLI update restarted it): say so, the
+  // reconnect poll picks the daemon's return up and offers the reload below.
+  if (reconnecting) {
+    return (
+      <div className="update-banner updating" role="status">
+        Connection to the daemon was lost — waiting for it to come back&hellip;
+      </div>
+    );
+  }
+
+  // CLI-path completion: a build with a different SHA is live; reload into it
+  // on click (auto-navigating mid-work — e.g. an attached terminal — is rude).
+  if (reloadSha !== null) {
+    return (
+      <div className="update-banner" role="status">
+        agentsKISS was updated to <code>{reloadSha.slice(0, 7)}</code> while this page was open — reload to switch to the
+        new build.
+        <button className="update-apply" type="button" onClick={onReload}>
+          Reload new build
+        </button>
       </div>
     );
   }
