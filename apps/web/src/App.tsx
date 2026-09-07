@@ -96,9 +96,6 @@ function Shell() {
         <Link to="/" className="brand">
           agents<span className="brand-accent">KISS</span>
         </Link>
-        <Link to="/terminal" className="nav-link">
-          Terminals
-        </Link>
         <span className="brand-tag">agent orchestration, self-hosted</span>
       </header>
       <UpdateBanner />
