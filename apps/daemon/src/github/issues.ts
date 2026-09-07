@@ -72,6 +72,69 @@ export interface ListIssuesOptions {
   state?: "open" | "closed" | "all";
 }
 
+/** Options for {@link listIssuesCreatedAfter}. */
+export interface ListIssuesCreatedAfterOptions {
+  /** Only issues with a number strictly greater than this are returned. */
+  afterNumber: number;
+  /** Max records returned (the caller's batch size). Default 25. */
+  first?: number;
+  /** Max REST pages fetched per call. Default 10. */
+  maxPages?: number;
+}
+
+/** REST page size used while paging toward the cursor boundary. */
+const CREATED_AFTER_PAGE_SIZE = 100;
+
+/**
+ * Fetches the **oldest open issues numbered strictly after** `afterNumber`,
+ * in ascending issue order, bounded: at most `first` records are returned
+ * and at most `maxPages` REST pages are fetched per call.
+ *
+ * The catch-up sweep (issue #50) uses this to fetch the issues created while
+ * the daemon was down. Paging runs **newest-first** (`sort=created`,
+ * `direction=desc`) so the records after the cursor sit near page 1 even in
+ * a repo with a huge old backlog; paging stops as soon as a record at or
+ * before the cursor appears — issue numbers are assigned in creation order,
+ * so everything after it in a newest-first page is older. Because the sweep
+ * must process the **oldest** issues above the cursor first, the whole
+ * window above the cursor (≤ `maxPages` pages) is collected and sliced.
+ * Closed issues and PR entries are absent from / skipped in the
+ * open-issues list, which keeps the number monotonicity the early-stop
+ * relies on. Records repeated across pages (or by a fake gh that ignores
+ * the page param) are deduplicated.
+ */
+export async function listIssuesCreatedAfter(
+  gh: GhClient,
+  projectId: string,
+  repo: RepoRef,
+  options: ListIssuesCreatedAfterOptions,
+): Promise<IssueRecord[]> {
+  const { afterNumber, first = 25, maxPages = 10 } = options;
+  const collected = new Map<number, IssueRecord>();
+  outer: for (let page = 1; page <= maxPages; page++) {
+    const path =
+      `/repos/${repo.owner}/${repo.repo}/issues?state=open&sort=created&direction=desc` +
+      `&per_page=${CREATED_AFTER_PAGE_SIZE}&page=${page}`;
+    const raw = await gh.apiJson<unknown[]>(path);
+    let sawNewRecord = false;
+    for (const item of raw) {
+      const number = (item as { number?: unknown }).number;
+      if (typeof number === "number" && number <= afterNumber) break outer; // passed the cursor boundary
+      const record = mapRestIssue(projectId, item);
+      if (record === null) continue; // PR entry (or malformed)
+      if (!collected.has(record.issue.number)) {
+        collected.set(record.issue.number, record);
+        sawNewRecord = true;
+      }
+    }
+    // Short page (end of list) or nothing new on this page: stop paging.
+    if (!sawNewRecord || raw.length < CREATED_AFTER_PAGE_SIZE) break;
+  }
+  return [...collected.values()]
+    .sort((a, b) => a.issue.number - b.issue.number) // oldest first
+    .slice(0, first);
+}
+
 /** Lists repository issues (excluding PRs) via REST. */
 export async function listIssues(gh: GhClient, projectId: string, repo: RepoRef, options: ListIssuesOptions = {}): Promise<IssueRecord[]> {
   const state = options.state ?? "open";

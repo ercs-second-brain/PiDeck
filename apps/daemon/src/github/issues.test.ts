@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { issueSchema, type Issue } from "@agentskiss/shared";
 
 import { GhClient } from "./gh.js";
-import { fetchIssuesWithBlockedBy, listIssues, mapRestIssue, resolveBlockedBy } from "./issues.js";
+import { fetchIssuesWithBlockedBy, listIssues, listIssuesCreatedAfter, mapRestIssue, resolveBlockedBy } from "./issues.js";
 
 const PROJECT = "proj";
 const REPO = { owner: "ercs-second-brain", repo: "agentsKISS" };
@@ -202,5 +202,54 @@ describe("fetchIssuesWithBlockedBy", () => {
         updatedAt: "2026-09-06T12:00:00Z",
       },
     ]);
+  });
+});
+
+describe("listIssuesCreatedAfter", () => {
+  function restIssue(number: number, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return { ...REST_ISSUE, number, ...extra };
+  }
+
+  /** GhClient answering each `page=N` request with `pages[N-1]`. */
+  function pageGh(pages: unknown[][]): GhClient {
+    return new GhClient(async (args) => {
+      const page = Number(/[?&]page=(\d+)/.exec(args[1] ?? "")?.[1] ?? 1);
+      return { stdout: JSON.stringify(pages[page - 1] ?? []), stderr: "" };
+    });
+  }
+
+  it("returns the oldest issues above the cursor, ascending, stopping at the boundary", async () => {
+    // GitHub returns `sort=created&direction=desc`: newest issue first.
+    const page = [restIssue(8), restIssue(7), restIssue(6), restIssue(5), restIssue(4), restIssue(3), restIssue(1)];
+    const records = await listIssuesCreatedAfter(pageGh([page]), PROJECT, REPO, { afterNumber: 4 });
+    expect(records.map((r) => r.issue.number)).toEqual([5, 6, 7, 8]);
+  });
+
+  it("returns nothing when the newest issue is already at or below the cursor", async () => {
+    const page = [restIssue(8), restIssue(7)];
+    const records = await listIssuesCreatedAfter(pageGh([page]), PROJECT, REPO, { afterNumber: 8 });
+    expect(records).toEqual([]);
+  });
+
+  it("skips PR entries and caps the batch at `first` (oldest kept)", async () => {
+    const page = [restIssue(9), restIssue(8, { pull_request: {} }), restIssue(7), restIssue(6), restIssue(5)];
+    const records = await listIssuesCreatedAfter(pageGh([page]), PROJECT, REPO, { afterNumber: 1, first: 3 });
+    expect(records.map((r) => r.issue.number)).toEqual([5, 6, 7]);
+  });
+
+  it("pages past full pages until the cursor boundary", async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) => restIssue(200 - i)); // 200..101, full page
+    const page2 = [restIssue(100), restIssue(99)];
+    const records = await listIssuesCreatedAfter(pageGh([page1, page2]), PROJECT, REPO, { afterNumber: 100, first: 150 });
+    expect(records).toHaveLength(100);
+    expect(records[0]?.issue.number).toBe(101);
+    expect(records[99]?.issue.number).toBe(200);
+  });
+
+  it("deduplicates records repeated across pages", async () => {
+    const page = [restIssue(5), restIssue(4), restIssue(3)];
+    // Both pages return the same records (a fake gh that ignores `page=`).
+    const records = await listIssuesCreatedAfter(pageGh([page, page]), PROJECT, REPO, { afterNumber: 1, first: 10 });
+    expect(records.map((r) => r.issue.number)).toEqual([3, 4, 5]);
   });
 });

@@ -63,11 +63,21 @@ export class PollLoop {
     private readonly onError: (err: unknown) => void,
   ) {}
 
-  /** Starts the loop with an immediate first tick. No-op when already running. */
-  start(): void {
+  /**
+   * Starts the loop. By default the first tick is immediate; pass
+   * `{ immediate: false }` to schedule the first tick after one interval
+   * (used by the catch-up sweep, whose first batch runs at activation).
+   * No-op when already running.
+   */
+  start(options: { immediate?: boolean } = {}): void {
     if (!this.stopped) return;
     this.stopped = false;
     this.running = true;
+    if (options.immediate === false) {
+      this.timer = setTimeout(() => void this.run(), this.intervalMs);
+      this.timer.unref?.();
+      return;
+    }
     void this.run();
   }
 
@@ -168,6 +178,19 @@ export class IssueWatcher {
     const { username } = this.options;
     if (username === null) return true;
     return record.author === username || record.assignees.includes(username);
+  }
+
+  /**
+   * Highest issue number in the current snapshot (`null` when nothing has
+   * been seen yet). The daemon wiring uses this to persist the issue cursor
+   * after a baseline poll (issue #50).
+   */
+  get highestSeenIssueNumber(): number | null {
+    let highest: number | null = null;
+    for (const number of this.seen.keys()) {
+      if (highest === null || number > highest) highest = number;
+    }
+    return highest;
   }
 }
 

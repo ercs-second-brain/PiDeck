@@ -38,9 +38,20 @@
  *
  * Start ordering (daemon entry point): session reconciliation →
  * orchestrator bootstrap → `automation.start()`. `start()` first runs a
- * **baseline sweep** of each new issue watcher and discards its events, so
- * a daemon (re)start does not mass-spawn workers for the existing backlog;
- * only issues that appear or change *while the watcher is running* spawn.
+ * **baseline sweep** of each new issue watcher — seeding the watcher's
+ * snapshot and discarding its events — so the live watcher only spawns for
+ * issues that appear or change *while it is running*. The baseline alone
+ * would silently miss issues created while the daemon was down, so each
+ * project also persists an **issue cursor** (issue #50,
+ * `<stateDir>/issue-cursor/<projectId>.json`): on start, issues numbered
+ * strictly above the cursor are swept through the normal spawn matrix in
+ * bounded batches (oldest first, {@link CATCH_UP_BATCH_SIZE} per poll — a
+ * huge catch-up spreads across polls instead of bursting), and the cursor
+ * advances only after a batch is processed. First-ever start of a project
+ * (no cursor) keeps the pure baseline behavior — a brand-new project must
+ * not spawn its entire existing backlog. Live `issue.created`/`assigned`
+ * events advance the cursor too, so issues handled by the running daemon
+ * are not re-swept on the next restart.
  * (PR discovery needs no baseline: the PR loop's own poll re-discovers
  * worker-owned PRs, and watcher events accelerate association only.)
  *
@@ -69,14 +80,22 @@ import { workerSchema } from "@agentskiss/shared";
 
 import type { GhClient, RepoRef } from "../github/gh.js";
 import { formatRepoRef, parseRepoUrl } from "../github/gh.js";
+import { listIssuesCreatedAfter } from "../github/issues.js";
 import { GhBlockerResolver } from "./issues/blockers.js";
+import { IssueCursor } from "./issues/cursor.js";
 import { IssueSpawnPipeline } from "./issues/pipeline.js";
 import type { BlockerResolver, ProjectSource, RegisteredProject, WorkerSpawner } from "./issues/ports.js";
 import { SessionManagerSpawner } from "./issues/ports.js";
 import { PullRequestPipeline, type PRSessionControl } from "./prs/pipeline.js";
 import type { PRPipelineEvent } from "./prs/events.js";
 import { PRTracker } from "./prs/tracker.js";
-import { DEFAULT_POLL_INTERVAL_MS, IssueWatcher, PullRequestWatcher, type GithubWatcherEvent } from "../github/watch.js";
+import {
+  DEFAULT_POLL_INTERVAL_MS,
+  IssueWatcher,
+  PollLoop,
+  PullRequestWatcher,
+  type GithubWatcherEvent,
+} from "../github/watch.js";
 import type { ProjectService } from "../api/projects.js";
 import type { SessionManager } from "../sessions/manager.js";
 import type { WsHub } from "../api/ws.js";
@@ -112,6 +131,19 @@ export function watcherOptionsFromEnv(
 function trackerFilePath(stateDir: string, projectId: string): string {
   return path.join(stateDir, "pr-tracker", `${projectId}.json`);
 }
+
+/** Issue-cursor file for a project (`<stateDir>/issue-cursor/<projectId>.json`). */
+function cursorFilePath(stateDir: string, projectId: string): string {
+  return path.join(stateDir, "issue-cursor", `${projectId}.json`);
+}
+
+/**
+ * Max issues processed per catch-up batch (issue #50): on start, the sweep
+ * of downtime-created issues processes at most this many per poll tick,
+ * advances the cursor, and continues on the next tick — a huge backlog is
+ * caught up over multiple polls instead of bursting.
+ */
+export const CATCH_UP_BATCH_SIZE = 25;
 
 /** The registered project for an id, with its parsed repo ref. */
 function registeredProject(projects: ProjectService, projectId: string): RegisteredProject | undefined {
@@ -165,6 +197,10 @@ interface ProjectUnit {
   /** Identity of the settings that produced this unit — change ⇒ rebuild. */
   configKey: string;
   issueWatcher: IssueWatcher | null;
+  /** Persisted high-water mark of processed issue numbers (issue #50). */
+  issueCursor: IssueCursor;
+  /** Catch-up sweep loop (`null` when no catch-up is in progress). */
+  catchUpLoop: PollLoop | null;
   prWatcher: PullRequestWatcher;
   tracker: PRTracker;
   prPipeline: PullRequestPipeline;
@@ -338,6 +374,12 @@ export class GithubAutomation {
     if (!this.running) return; // stopped: watchers are halted; late events are dropped
     if (event.type === "issue.created" || event.type === "issue.assigned") {
       this.issuePipeline.handleEvent(event);
+      // The event went through the spawn matrix (acceptance is the sync
+      // contract; blocked/dup/cap decisions are the pipeline's), so the
+      // cursor may advance past it — otherwise the next restart would
+      // re-sweep issues the running daemon already handled (issue #50).
+      const unit = this.units.get(projectId);
+      if (unit !== undefined) unit.issueCursor.set(event.issue.number);
       return;
     }
     const unit = this.units.get(projectId);
@@ -361,6 +403,25 @@ export class GithubAutomation {
       for (const prEvent of await unit.prPipeline.pollOnce()) {
         this.broadcastPrEvent(unit, prEvent);
       }
+    }
+  }
+
+  /**
+   * Runs one catch-up batch per project (or for one project) — the bounded
+   * sweep of issues numbered above the persisted cursor (issue #50). Test/
+   * ops hook: the running catch-up loop sweeps by itself, one batch per
+   * poll tick. Returns after the batch is processed (spawn matrix included);
+   * safe to call when no catch-up is pending (the fetch finds nothing above
+   * the cursor and the batch is a no-op).
+   */
+  async pollCatchUp(projectId?: string): Promise<void> {
+    const targets =
+      projectId === undefined
+        ? [...this.units.values()]
+        : [this.units.get(projectId)].filter((unit): unit is ProjectUnit => unit !== undefined);
+    for (const unit of targets) {
+      if (unit.issueWatcher === null || unit.issueCursor.lastSeenIssueNumber === null) continue;
+      if (await this.runCatchUpBatch(unit)) this.stopCatchUpLoop(unit);
     }
   }
 
@@ -427,6 +488,7 @@ export class GithubAutomation {
       onError: (err) => this.onError(err, `pr-watcher:${projectId}`),
     });
     const tracker = new PRTracker(trackerFilePath(this.options.stateDir, projectId));
+    const issueCursor = new IssueCursor(cursorFilePath(this.options.stateDir, projectId));
     const prPipeline = new PullRequestPipeline({
       gh,
       projectId,
@@ -445,6 +507,8 @@ export class GithubAutomation {
       repoUrl,
       configKey,
       issueWatcher,
+      issueCursor,
+      catchUpLoop: null,
       prWatcher,
       tracker,
       prPipeline,
@@ -453,13 +517,16 @@ export class GithubAutomation {
   }
 
   /**
-   * Baselines a new unit's issue watcher (discarding the first poll's
-   * backlog events) and starts its loops. Safe against concurrent stop().
+   * Baselines a new unit's issue watcher (seeding the snapshot, discarding
+   * the backlog replay), reconciles the issue cursor (first-start baseline
+   * vs. bounded catch-up sweep — issue #50), then starts its loops. Safe
+   * against concurrent stop().
    */
   private async activateUnit(unit: ProjectUnit): Promise<void> {
     if (unit.issueWatcher !== null) {
       try {
         await unit.issueWatcher.pollOnce(); // baseline: seed the snapshot, discard the backlog replay
+        await this.reconcileIssueCursor(unit);
       } catch (err) {
         this.onError(err, `issue-watcher-baseline:${unit.projectId}`);
       }
@@ -473,7 +540,95 @@ export class GithubAutomation {
     }
   }
 
+  /**
+   * Cursor reconciliation after the baseline poll (issue #50):
+   *
+   * - **No cursor** (first-ever start of this project): persist the current
+   *   backlog's high-water mark — pure baseline, no retro-spawn.
+   * - **Cursor behind the snapshot**: issues were created while the daemon
+   *   was down — run the first bounded catch-up batch now and, if more
+   *   remain, spread the rest across the poll ticks.
+   */
+  private async reconcileIssueCursor(unit: ProjectUnit): Promise<void> {
+    const highest = unit.issueWatcher?.highestSeenIssueNumber ?? null;
+    const cursor = unit.issueCursor.lastSeenIssueNumber;
+    if (cursor === null) {
+      // First-ever start: baseline today's backlog instead of spawning it.
+      if (highest !== null) unit.issueCursor.set(highest);
+      return;
+    }
+    if (highest === null || highest <= cursor) return; // nothing to catch up
+    try {
+      if (!(await this.runCatchUpBatch(unit))) return;
+    } catch (err) {
+      this.onError(err, `issue-catchup:${unit.projectId}`);
+    }
+    this.startCatchUpLoop(unit); // more remain (or the batch failed): retry on the next poll tick
+  }
+
+  /** Starts (once) the per-poll loop that continues a catch-up sweep. */
+  private startCatchUpLoop(unit: ProjectUnit): void {
+    if (unit.catchUpLoop !== null) return;
+    const loop = new PollLoop(
+      async () => {
+        if (await this.runCatchUpBatch(unit)) this.stopCatchUpLoop(unit);
+      },
+      this.pollIntervalMs,
+      (err) => this.onError(err, `issue-catchup:${unit.projectId}`),
+    );
+    unit.catchUpLoop = loop;
+    // First tick delayed: the sweep's first batch already ran at activation;
+    // subsequent batches spread one per poll tick (issue #50).
+    loop.start({ immediate: false });
+  }
+
+  private stopCatchUpLoop(unit: ProjectUnit): void {
+    unit.catchUpLoop?.stop();
+    unit.catchUpLoop = null;
+  }
+
+  /**
+   * Runs one bounded catch-up batch for a unit (issue #50): fetches the
+   * oldest open issues numbered above the cursor ({@link CATCH_UP_BATCH_SIZE}
+   * max), feeds each username-matching one through the normal spawn matrix
+   * (blocked/duplicate/cap semantics identical to the live path), then —
+   * only after the batch has been processed — advances the cursor past it.
+   * Issues ≤ the cursor are never spawned. Returns `true` when the sweep is
+   * complete (fewer than a full batch remained).
+   */
+  private async runCatchUpBatch(unit: ProjectUnit): Promise<boolean> {
+    const cursor = unit.issueCursor.lastSeenIssueNumber;
+    if (cursor === null) return true; // no cursor: nothing to sweep
+    const records = await listIssuesCreatedAfter(
+      this.options.gh(unit.repoUrl),
+      unit.projectId,
+      parseRepoUrl(unit.repoUrl),
+      { afterNumber: cursor, first: CATCH_UP_BATCH_SIZE },
+    );
+    const username = this.options.projects.get(unit.projectId)?.settings.autoAgentUsername ?? null;
+    let highest = cursor;
+    for (const record of records) {
+      // Same username rule as the live watcher (`IssueWatcher.matches`):
+      // created by or assigned to the auto-agent username.
+      if (username !== null && (record.author === username || record.assignees.includes(username))) {
+        this.handleWatcherEvent(unit.projectId, {
+          type: "issue.created",
+          at: this.now().toISOString(),
+          issue: record.issue,
+        });
+      }
+      if (record.issue.number > highest) highest = record.issue.number;
+    }
+    // Advance only after the batch went through the spawn matrix, and only
+    // while this unit is still the live one (a stopped unit re-sweeps).
+    if (highest > cursor && this.running && this.units.get(unit.projectId) === unit) {
+      unit.issueCursor.set(highest);
+    }
+    return records.length < CATCH_UP_BATCH_SIZE;
+  }
+
   private stopUnit(unit: ProjectUnit): void {
+    this.stopCatchUpLoop(unit);
     unit.issueWatcher?.stop();
     unit.prWatcher.stop();
     unit.prPipeline.stop();
