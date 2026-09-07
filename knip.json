@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "ignore": [".pi/**"],
+  "ignoreBinaries": ["pi"],
+  "workspaces": {
+    "apps/daemon": {
+      "entry": ["src/terminal/standalone.ts"]
+    }
+  }
+}

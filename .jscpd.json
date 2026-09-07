@@ -1,0 +1,6 @@
+{
+  "reporters": ["json"],
+  "output": "./node_modules/.cache/jscpd",
+  "ignore": ["**/*.test.ts", "**/*.test.tsx", "**/dist/**", "**/coverage/**"],
+  "silent": true
+}
