@@ -147,6 +147,17 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
       return services.sessions.listWorkers({ projectId: params.projectId });
     },
 
+    /**
+     * Start (or reuse) the project's orchestrator session (issue #53): a
+     * thin wrapper over `SessionManager.ensureOrchestrator`, so the webapp
+     * terminal sidebar can bring up an orchestrator and attach to its pane.
+     * Idempotent: returns the live session when one already exists.
+     */
+    ensureProjectOrchestrator: async ({ params }) => {
+      requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
+      return services.sessions.ensureOrchestrator(params.projectId);
+    },
+
     listProjectPullRequests: async ({ params }) => {
       const project = requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
       return services.diffs.listPullRequests(project.id, project.repoUrl);

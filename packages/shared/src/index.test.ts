@@ -271,6 +271,7 @@ describe("REST endpoint map", () => {
       ["getProjectKanban", "GET", "/api/projects/:projectId/kanban"],
       ["listProjectSessions", "GET", "/api/projects/:projectId/sessions"],
       ["listProjectWorkers", "GET", "/api/projects/:projectId/workers"],
+      ["ensureProjectOrchestrator", "POST", "/api/projects/:projectId/orchestrator"],
       ["listProjectPullRequests", "GET", "/api/projects/:projectId/pulls"],
       ["getPullRequestDiff", "GET", "/api/projects/:projectId/pulls/:prNumber/diff"],
       ["getSettings", "GET", "/api/settings"],

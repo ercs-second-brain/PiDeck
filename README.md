@@ -9,7 +9,7 @@ See [docs/agentskiss-prd.md](docs/agentskiss-prd.md) for the PRD and [docs/agent
 One daemon process serves everything on a single port (default `8321`) at the machine's own address — no auth, by design, for a trusted private network:
 
 - **`apps/daemon/`** — the orchestration backend. It serves the REST API (`/api/...`), the kanban websocket hub (`/api/ws`), the browser-terminal bridge (`/ws`, streaming tmux panes), and the built webapp as static files. It owns tmux session control, the session registry (persistent across restarts, with resurrect-on-startup), per-project orchestrator sessions (booted automatically with the rendered orchestrator prompt), GitHub reads (issues, PRs with CI/review metadata, diffs, blocked-by links), and worker spawning into fresh git worktrees.
-- **`apps/web/`** — the webapp the daemon serves: project list → onboarding wizard (pi/gh status, clone-or-create repo with private-by-default, auto-agent settings) → per-project kanban board, PR diff review, settings — plus the browser terminal page for orchestrator and worker tmux sessions.
+- **`apps/web/`** — the webapp the daemon serves: project list → onboarding wizard (pi/gh status, clone-or-create repo with private-by-default, auto-agent settings) → per-project kanban board, PR diff review, settings — plus the browser terminal page, whose sidebar lists every registered project with its orchestrator and worker sessions nested beneath (projects without an orchestrator get a one-click start affordance, issue #53).
 - **`agent/`** — pi coding agent integration: the orchestrator/worker system prompts (assembled by the daemon) and the pi skills the agents use to drive the `agentskiss` and `gh` CLIs.
 - **`install/`** — the one-line installer, service registration (launchd / systemd user unit, which is also the WSL path), guided onboarding, and the `agentskiss` CLI shim.
 - **`packages/shared/`** — the zod contracts shared by daemon and webapp (domain model, REST endpoint map, WS events).
@@ -33,7 +33,7 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 
 The installer installs git/Node 22/pnpm/gh as needed (user-level, no sudo), fetches and builds the monorepo, installs the pi coding agent, links the agentskiss pi skills, registers the persistent service, and runs guided onboarding: pi auth + model selection, then gh CLI auth (a PAT from `~/.env` is used when present, else `gh auth login`). Details, flags, and the `--dry-run` mode: [install/README.md](install/README.md).
 
-When onboarding finishes, open the webapp at the printed address (`agentskiss addr`) and walk the onboarding wizard to connect a repo: clone from git or create a new GitHub repo (private by default, toggle for public), and choose whether issues auto-create agents. Then head to **Terminals** to talk to the project's orchestrator.
+When onboarding finishes, open the webapp at the printed address (`agentskiss addr`) and walk the onboarding wizard to connect a repo: clone from git or create a new GitHub repo (private by default, toggle for public), and choose whether issues auto-create agents. Then head to **Terminals** to talk to the project's orchestrator (if the project doesn't have one yet, hit **Start orchestrator** in the sidebar and it comes up immediately).
 
 ## Everyday commands
 

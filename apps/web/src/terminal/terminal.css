@@ -130,6 +130,32 @@
   color: var(--text-dim);
 }
 
+.picker-workers {
+  margin-top: 4px;
+}
+
+.picker-start-orchestrator {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.picker-start-orchestrator:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.picker-start-orchestrator:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .picker-error {
   margin-top: 12px;
   font-size: 12px;

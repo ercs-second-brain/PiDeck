@@ -259,6 +259,34 @@ describe("sessions & workers", () => {
   });
 });
 
+describe("orchestrator (issue #53)", () => {
+  it("starts a project's orchestrator, is idempotent, and 404s unknown projects", async () => {
+    const { services } = daemon;
+    if (services.projects.get("orch-rep") === undefined) {
+      services.projects.register({ mode: "clone", repoUrl: "https://github.com/orch/rep" });
+    }
+
+    const first = await api("POST", formatPath("ensureProjectOrchestrator", { projectId: "orch-rep" }));
+    expect(first.status).toBe(200);
+    const session = sessionSchema.parse(first.json);
+    expect(session.projectId).toBe("orch-rep");
+    expect(session.role).toBe("orchestrator");
+
+    // Idempotent: a second call reuses the live orchestrator session.
+    const again = await api("POST", formatPath("ensureProjectOrchestrator", { projectId: "orch-rep" }));
+    expect(again.status).toBe(200);
+    expect(sessionSchema.parse(again.json).id).toBe(session.id);
+
+    // The orchestrator shows up in the project's session list.
+    const sessions = await api("GET", formatPath("listProjectSessions", { projectId: "orch-rep" }));
+    expect((sessions.json as unknown[]).map((s) => sessionSchema.parse(s).id)).toContain(session.id);
+
+    // Unknown project → 404.
+    const missing = await api("POST", formatPath("ensureProjectOrchestrator", { projectId: "ghost-orch" }));
+    expect(missing.status).toBe(404);
+  });
+});
+
 describe("pull requests", () => {
   it("lists enriched PRs and serves a PR diff", async () => {
     const { services } = daemon;
