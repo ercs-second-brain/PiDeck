@@ -10,10 +10,15 @@ function formatTimestamp(iso: string): string {
 /**
  * Workers panel for one project. Freeform workers (`issueNumber: 0`, spawned
  * from a plain task prompt) have no kanban card of their own — this panel is
- * where they (and every other worker) are visible, with a jump into the
+ * where they (and every other live worker) are visible, with a jump into the
  * worker's browser terminal session.
+ *
+ * Archived workers (issue #102) are filtered out here: terminated workers
+ * disappear from the kanban panel and live only in the terminal sidebar's
+ * archived section (the workers endpoint still serves them for history).
  */
-export function WorkersPanel({ projectId, workers }: { projectId: string; workers: Worker[] }) {
+export function WorkersPanel({ projectId, workers: allWorkers }: { projectId: string; workers: Worker[] }) {
+  const workers = allWorkers.filter((worker) => worker.status !== "archived");
   return (
     <section className="workers-panel">
       <header className="panel-header">

@@ -67,8 +67,12 @@ export function deriveBoard(
   pullRequests: readonly PullRequest[],
   workers: readonly Worker[],
 ): KanbanBoard {
+  // Archived workers (issue #102) no longer drive their issue: they must not
+  // pull it into `in_progress` or show as the card's worker — the issue falls
+  // back to the assignee-based column rules.
   const workerByIssue = new Map<number, Worker>();
   for (const worker of workers) {
+    if (worker.status === "archived") continue;
     if (worker.prNumber === null) workerByIssue.set(worker.issueNumber, worker);
   }
 
