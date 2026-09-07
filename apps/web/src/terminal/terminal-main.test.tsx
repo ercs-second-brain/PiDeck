@@ -48,6 +48,7 @@ function renderMain(path: string, context: Partial<SidebarContextValue>) {
     startingProjectId: null,
     reload: () => {},
     startOrchestrator: () => {},
+    terminateWorker: () => {},
     openOnboarding: () => {},
     ...context,
   };

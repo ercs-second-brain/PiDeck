@@ -200,8 +200,130 @@
   color: var(--text-dim);
 }
 
+/* Issue #63: worker sessions indent beneath their project's orchestrator —
+   the orchestrator renders first, the worker list follows with a tree-line
+   connecting it to the row above. */
 .picker-workers {
+  margin: 4px 0 0 22px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+/* Issue #64: a worker row is the session button + (active workers only) a
+   terminate affordance. */
+.picker-worker-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.picker-worker-row .picker-session {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-terminate {
+  flex: none;
+  width: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.picker-terminate:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: var(--bg-hover);
+}
+
+.picker-terminate-confirm {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.picker-terminate-confirm-yes,
+.picker-terminate-confirm-no {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.picker-terminate-confirm-yes {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.picker-terminate-confirm-yes:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.picker-terminate-confirm-yes:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.picker-terminate-confirm-no {
+  color: var(--text-dim);
+}
+
+.picker-terminate-confirm-no:hover {
+  background: var(--bg-hover);
+}
+
+/* Issue #64: collapsed per-project archive for terminated workers. */
+.picker-archived {
+  margin-top: 6px;
+}
+
+.picker-archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.picker-archived-toggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.picker-archived-chevron {
+  font-size: 10px;
+}
+
+.picker-archived-list {
   margin-top: 4px;
+}
+
+.picker-archived-session {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.worker-badge.archived {
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-style: italic;
 }
 
 .picker-start-orchestrator {

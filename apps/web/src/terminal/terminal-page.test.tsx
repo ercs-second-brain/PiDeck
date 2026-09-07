@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { Project, Session, Worker } from "@agentskiss/shared";
-import { SessionPicker } from "./SessionPicker";
+import { SessionPicker, TerminateWorkerButton } from "./SessionPicker";
 
 const project: Project = {
   id: "agentskiss",
@@ -65,11 +65,14 @@ function renderPicker(overrides: Partial<PickerProps> = {}) {
       selectedSessionId={overrides.selectedSessionId ?? null}
       selectedProjectId={overrides.selectedProjectId}
       startingProjectId={overrides.startingProjectId}
+      terminatingWorkerId={overrides.terminatingWorkerId}
+      defaultArchivedOpen={overrides.defaultArchivedOpen}
       onSelectSession={overrides.onSelectSession ?? (() => {})}
       onSelectProject={overrides.onSelectProject ?? (() => {})}
       onSelectAllProjects={overrides.onSelectAllProjects ?? (() => {})}
       onStartOnboarding={overrides.onStartOnboarding ?? (() => {})}
       onStartOrchestrator={overrides.onStartOrchestrator ?? (() => {})}
+      onTerminateWorker={overrides.onTerminateWorker}
     />,
   );
 }
@@ -102,13 +105,24 @@ describe("SessionPicker", () => {
     expect(html).toContain("running");
   });
 
-  it("nests workers beneath the project with the orchestrator first", () => {
+  it("nests workers beneath the project with the orchestrator first (issue #63)", () => {
     const html = renderPicker();
     const orchestrator = html.indexOf("agentskiss-agentskiss-orchestrator-1");
     const project = html.indexOf("agentsKISS");
     const worker = html.indexOf("agentskiss-agentskiss-worker-1");
     expect(project).toBeLessThan(orchestrator);
     expect(orchestrator).toBeLessThan(worker);
+    // The worker list is a tree-indented list under the orchestrator.
+    expect(html).toContain("picker-workers");
+    expect(html).toContain("picker-worker-row");
+  });
+
+  it("keeps worker status badges and selection on indented worker rows (issue #63)", () => {
+    const html = renderPicker({ selectedSessionId: "sess-worker-1" });
+    // Worker rows keep the live status badge and the selected class.
+    expect(html).toContain("worker-badge active");
+    expect(html).toContain("picker-session selected");
+    expect(html).toContain("role-worker");
   });
 
   it("shows the start-orchestrator affordance when the project has no orchestrator", () => {
@@ -157,5 +171,90 @@ describe("SessionPicker", () => {
     const html = renderPicker({ entries: [], error: "connection refused" });
     expect(html).toContain("Daemon unreachable");
     expect(html).toContain("connection refused");
+  });
+
+  // -- terminate / archive (issue #64) ---------------------------------------
+
+  it("shows the terminate affordance on active worker rows only", () => {
+    const html = renderPicker({ onTerminateWorker: () => {} });
+    // ✕ on the worker row, nothing on the orchestrator row.
+    expect(html).toContain("picker-terminate");
+    expect(html).toContain('title="Terminate worker"');
+    const orchestratorRow = html.slice(html.indexOf("agentskiss-agentskiss-orchestrator-1"), html.indexOf("picker-worker-row"));
+    expect(orchestratorRow).not.toContain("picker-terminate");
+  });
+
+  it("shows no terminate affordance when no handler is wired", () => {
+    const html = renderPicker();
+    expect(html).not.toContain("picker-terminate");
+  });
+
+  it("TerminateWorkerButton asks for confirmation before terminating", () => {
+    const idle = renderToString(
+      <TerminateWorkerButton confirming={false} pending={false} onAsk={() => {}} onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(idle).toContain("picker-terminate");
+    expect(idle).toContain("✕");
+    expect(idle).not.toContain("Terminate?");
+
+    const confirming = renderToString(
+      <TerminateWorkerButton confirming={true} pending={false} onAsk={() => {}} onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(confirming).toContain("Terminate?");
+    expect(confirming).toContain("picker-terminate-confirm-yes");
+    // The explicit keep-alive way out.
+    expect(confirming).toContain("keep");
+    expect(confirming).toContain("picker-terminate-confirm-no");
+  });
+
+  it("shows the in-flight terminate as pending", () => {
+    const pending = renderToString(
+      <TerminateWorkerButton confirming={true} pending={true} onAsk={() => {}} onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(pending).toContain("Terminating…");
+    expect(pending).toContain("disabled");
+  });
+
+  it("moves archived workers into a collapsed per-project archive section", () => {
+    const archivedWorker: Worker = { ...workers[0]!, status: "archived", statusMessage: "archived: terminated from the webapp" };
+    const html = renderPicker({
+      entries: [{ project, sessions, workers: [archivedWorker] }],
+    });
+    // Collapsed by default: the toggle with the count is there, the archived
+    // session itself is not rendered.
+    expect(html).toContain("picker-archived");
+    expect(html).toMatch(/Archived \(<!-- -->1<!-- -->\)/);
+    expect(html).toContain("picker-archived-toggle");
+    expect(html).not.toContain("agentskiss-agentskiss-worker-1");
+    // No active workers section anymore.
+    expect(html).not.toContain("picker-workers");
+  });
+
+  it("renders archived workers dimmed with the archived badge and no terminate affordance when expanded", () => {
+    const archivedWorker: Worker = { ...workers[0]!, status: "archived" };
+    const html = renderPicker({
+      entries: [{ project, sessions, workers: [archivedWorker] }],
+      defaultArchivedOpen: true,
+    });
+    expect(html).toContain("picker-archived-list");
+    expect(html).toContain("agentskiss-agentskiss-worker-1");
+    expect(html).toContain("worker-badge archived");
+    expect(html).toContain("picker-archived-session");
+    // History only: archived rows are not attachable buttons, not terminable.
+    expect(html).not.toContain('title="Terminate worker"');
+    const archivedRow = html.slice(html.indexOf("picker-archived-list"));
+    expect(archivedRow).not.toContain("picker-session selected");
+  });
+
+  it("keeps live and archived workers apart in the same project", () => {
+    const archivedWorker: Worker = { ...workers[0]!, id: "worker-2", status: "archived" };
+    const secondWorkerSession: Session = { ...sessions[1]!, id: "sess-worker-2", tmuxSession: "agentskiss-agentskiss-worker-2", workerId: "worker-2" };
+    const html = renderPicker({
+      entries: [{ project, sessions: [...sessions, secondWorkerSession], workers: [...workers, archivedWorker] }],
+      defaultArchivedOpen: true,
+    });
+    expect(html).toContain("picker-workers"); // live worker under the orchestrator
+    expect(html).toMatch(/Archived \(<!-- -->1<!-- -->\)/);
+    expect(html).toContain("agentskiss-agentskiss-worker-2");
   });
 });

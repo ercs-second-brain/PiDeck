@@ -10,7 +10,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { Worker } from "@agentskiss/shared";
-import { fetchProjects, fetchSessions, fetchWorkers, startOrchestrator as apiStartOrchestrator } from "./api";
+import {
+  fetchProjects,
+  fetchSessions,
+  fetchWorkers,
+  startOrchestrator as apiStartOrchestrator,
+  terminateWorker as apiTerminateWorker,
+} from "./api";
 import type { ProjectEntry } from "./SessionPicker";
 
 export interface SidebarContextValue {
@@ -22,6 +28,8 @@ export interface SidebarContextValue {
   reload: () => void;
   /** Starts the project's orchestrator, then navigates to its terminal. */
   startOrchestrator: (projectId: string) => void;
+  /** Terminates a worker (issue #64): daemon kills the pane, worker archived; refreshes after. */
+  terminateWorker: (workerId: string) => void;
   /** Opens the project onboarding wizard (sidebar "+" / empty states). */
   openOnboarding: () => void;
 }
@@ -35,6 +43,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
   startingProjectId: string | null;
   reload: () => void;
   startOrchestrator: (projectId: string) => void;
+  terminateWorker: (workerId: string) => void;
 } {
   const [entries, setEntries] = useState<ProjectEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +93,17 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     [onStartOrchestratorNavigate],
   );
 
-  return { entries, error, startingProjectId, reload, startOrchestrator };
+  /** Terminates a worker (issue #64) and refreshes so the archive shows immediately. */
+  const terminateWorker = useCallback(
+    (workerId: string) => {
+      apiTerminateWorker(workerId)
+        .then(() => reload())
+        .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+    },
+    [reload],
+  );
+
+  return { entries, error, startingProjectId, reload, startOrchestrator, terminateWorker };
 }
 
 /** Context through which the shell shares sidebar data with main-pane routes. */

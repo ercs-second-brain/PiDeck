@@ -7,8 +7,9 @@
  * the map, so schemas cannot drift from the types.
  *
  * Endpoints: projects CRUD/register, per-project kanban state, sessions and
- * workers lists, per-project orchestrator start (issue #53), PR diffs, and
- * daemon settings (auto-agent username, concurrency).
+ * workers lists, per-project orchestrator start (issue #53), worker
+ * terminate (issue #64), PR diffs, and daemon settings (auto-agent
+ * username, concurrency).
  */
 
 import { z } from "zod";
@@ -225,6 +226,23 @@ export const endpoints = {
     params: z.object({ projectId: z.string().min(1) }),
     request: null,
     response: sessionSchema,
+  },
+
+  /**
+   * Terminate a worker (issue #64): kills its tmux session (which ends the
+   * pi process), marks the worker `archived` — a terminal status — and
+   * keeps the registry records (session + worker) for history. Idempotent
+   * and safe on already-dead panes: a missing tmux session is not an
+   * error, and re-terminating an archived worker succeeds. Archived
+   * workers are never resurrected by reconcile and never count as active
+   * (badges / concurrency cap).
+   */
+  terminateWorker: {
+    method: "POST",
+    path: "/api/workers/:workerId/terminate",
+    params: z.object({ workerId: z.string().min(1) }),
+    request: null,
+    response: workerSchema,
   },
 
   // Pull requests

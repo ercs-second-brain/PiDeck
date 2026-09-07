@@ -158,6 +158,25 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
       return services.sessions.ensureOrchestrator(params.projectId);
     },
 
+    /**
+     * Terminate a worker (issue #64): kills its tmux session, marks the
+     * worker `archived`, and keeps the registry records for history. The
+     * new status is announced on the hub so open sidebars update live.
+     */
+    terminateWorker: async ({ params }) => {
+      const worker = await services.sessions.archiveWorker(params.workerId);
+      if (worker === null) throw new NotFoundError(`unknown worker: ${params.workerId}`);
+      const parsed = workerSchema.parse(worker);
+      services.hub.broadcast({
+        type: "worker.status.changed",
+        at: services.now().toISOString(),
+        projectId: parsed.projectId,
+        workerId: parsed.id,
+        status: parsed.status,
+      });
+      return parsed;
+    },
+
     listProjectPullRequests: async ({ params }) => {
       const project = requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
       return services.diffs.listPullRequests(project.id, project.repoUrl);

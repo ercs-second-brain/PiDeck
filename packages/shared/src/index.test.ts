@@ -26,6 +26,7 @@ import {
   type Project,
   type SessionRole,
   type WsServerEvent,
+  type Worker,
 } from "./index.js";
 
 const NOW = "2025-06-01T12:00:00.000Z";
@@ -200,10 +201,35 @@ describe("domain: session and worker", () => {
       "done",
       "failed",
       "stopped",
+      "archived",
     ] as const) {
       expect(workerStatusSchema.safeParse(status).success).toBe(true);
     }
     expect(workerStatusSchema.safeParse("meditating").success).toBe(false);
+  });
+
+  it("accepts the archived terminal status (issue #64)", () => {
+    const worker = workerSchema.parse({
+      id: "w1",
+      projectId: "p",
+      sessionId: "s2",
+      issueNumber: 2,
+      prNumber: null,
+      status: "archived",
+      statusMessage: "terminated from the webapp",
+      startedAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(worker.status).toBe("archived");
+  });
+
+  it("contracts the worker terminate endpoint (issue #64)", () => {
+    const endpoint = endpoints.terminateWorker;
+    expect(endpoint.method).toBe("POST");
+    expect(endpoint.path).toBe("/api/workers/:workerId/terminate");
+    expect(formatPath("terminateWorker", { workerId: "w1" })).toBe("/api/workers/w1/terminate");
+    expectTypeOf<EndpointRequest<"terminateWorker">>().toEqualTypeOf<undefined>();
+    expectTypeOf<EndpointResponse<"terminateWorker">>().toEqualTypeOf<Worker>();
   });
 
   it("accepts freeform workers with issueNumber 0 and rejects negatives", () => {

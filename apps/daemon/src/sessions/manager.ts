@@ -306,6 +306,9 @@ export class SessionManager {
     const live = new Set(await this.tmux.listSessions());
 
     for (const session of this.registry.listSessions()) {
+      // Issue #64: a terminated worker stays terminated — never resurrect
+      // (or report lost) an archived worker session across restarts.
+      if (this.isArchivedWorkerSession(session)) continue;
       if (live.has(session.tmuxSession)) {
         result.alive.push(session);
         continue;
@@ -374,6 +377,33 @@ export class SessionManager {
   }
 
   /**
+   * Archives a worker (issue #64): kills its tmux session — which ends the
+   * pi process — and marks the worker `archived`, a terminal status. The
+   * registry records (session + worker) are **kept** for history; archived
+   * sessions are skipped by {@link reconcile} so a daemon restart never
+   * resurrects a terminated worker.
+   *
+   * Idempotent and safe on already-dead panes: a missing tmux session is
+   * not an error, and re-terminating an archived worker just refreshes the
+   * archived status. Returns `null` for an unknown worker id.
+   */
+  async archiveWorker(workerId: string, message = "archived: terminated from the webapp"): Promise<Worker | null> {
+    const worker = this.registry.getWorker(workerId);
+    if (!worker) return null;
+    const session = this.registry.getSession(worker.sessionId);
+    if (session && (await this.tmux.hasSession(session.tmuxSession))) {
+      await this.tmux.killSession(session.tmuxSession);
+    }
+    return this.registry.updateWorkerStatus(worker.id, "archived", message);
+  }
+
+  /** Whether the session is a worker session whose worker was archived (issue #64). */
+  private isArchivedWorkerSession(session: Session): boolean {
+    if (session.role !== "worker" || session.workerId === null) return false;
+    return this.registry.getWorker(session.workerId)?.status === "archived";
+  }
+
+  /**
    * Kills a registered session's tmux session and removes it from the
    * registry. Any worker attached to it is marked `stopped`. Returns the
    * removed session, or `null` for an unknown id.
@@ -386,7 +416,7 @@ export class SessionManager {
     }
     if (session.workerId !== null) {
       const worker = this.registry.getWorker(session.workerId);
-      if (worker && worker.status !== "done" && worker.status !== "failed") {
+      if (worker && worker.status !== "done" && worker.status !== "failed" && worker.status !== "archived") {
         this.registry.updateWorkerStatus(worker.id, "stopped", "tmux session killed");
       }
     }
