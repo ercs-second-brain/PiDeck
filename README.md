@@ -144,6 +144,38 @@ pnpm test
 # Lint and typecheck
 pnpm lint
 pnpm typecheck
+
+# KISS hygiene ratchet (dead code, complexity budgets, duplication)
+pnpm kiss
 ```
 
 The same steps run in CI (`.github/workflows/ci.yml`) on every pull request.
+
+## KISS hygiene (CI "kiss" job)
+
+The `kiss` CI job enforces the KISS principle mechanically, so it doesn't rely on discipline. It runs three tools, each with a **ratchet baseline** checked into `kiss-baseline/`: every violation present on today's main is listed there, and the checks **fail on any violation not in the baseline** (and on baseline entries that no longer apply, so baselines may only shrink):
+
+| Check        | Tool                                                     | What it fails on                                                        | Baseline                    |
+| ------------ | -------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------- |
+| Dead code    | [knip](https://knip.dev)                                 | Unused files, exports, types, dependencies, duplicate exports           | `kiss-baseline/knip.json`   |
+| Complexity   | ESLint (`max-lines`, `max-lines-per-function`, `complexity`, `max-depth`) | New oversized or convoluted files/functions (rules run as warnings locally, ratcheted in CI) | `kiss-baseline/eslint.json` |
+| Duplication  | [jscpd](https://github.com/kucherenko/jscpd)             | Copy-pasted blocks over `apps/ packages/ install/` (tests and fixtures ignored) | `kiss-baseline/jscpd.json`  |
+
+Run the checks locally with:
+
+```sh
+pnpm kiss             # all three checks (what CI runs)
+pnpm kiss:knip        # just dead code
+pnpm kiss:complexity  # just complexity budgets
+pnpm kiss:dup         # just duplication (new clones)
+```
+
+### Paying down the baseline
+
+Baselines only shrink. When you delete an unused export, split an oversized file, or refactor a copy-pasted block, CI will fail with the exact stale baseline entries — trim them by regenerating:
+
+```sh
+pnpm kiss:baseline    # rewrites kiss-baseline/ from the current repo state
+```
+
+Commit the trimmed baseline together with your fix. Never add entries to a baseline to make a check pass for *new* code — new violations must be fixed. If some debt is genuinely tracked, it is baselined only while an open refactor issue owns it (currently #70–#73).

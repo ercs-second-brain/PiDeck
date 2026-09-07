@@ -14,11 +14,19 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm -r run typecheck",
+    "kiss:knip": "node scripts/kiss-knip.mjs",
+    "kiss:complexity": "node scripts/kiss-complexity.mjs",
+    "kiss:dup": "jscpd --baseline kiss-baseline/jscpd.json --fail-on-new-clones 0 apps packages install",
+    "kiss:dup:trim": "node scripts/kiss-dup-trim.mjs",
+    "kiss": "pnpm run kiss:knip && pnpm run kiss:complexity && pnpm run kiss:dup && pnpm run kiss:dup:trim",
+    "kiss:baseline": "node scripts/kiss-baseline.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
     "eslint": "^9.39.0",
+    "jscpd": "^5.1.2",
+    "knip": "^6.34.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.69.0",
     "vitest": "^5.0.0"
