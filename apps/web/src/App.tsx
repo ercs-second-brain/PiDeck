@@ -9,7 +9,7 @@ import { OnboardingModal } from "./routes/OnboardingWizard";
 import { SettingsPage } from "./routes/SettingsPage";
 import { TerminalPage } from "./terminal/TerminalPage";
 import { SessionPicker } from "./terminal/SessionPicker";
-import { SidebarContext, useSidebarData } from "./terminal/sidebar";
+import { shouldAutoOpenOnboarding, SidebarContext, useSidebarData } from "./terminal/sidebar";
 
 /**
  * The whole app is one page (issue #62): the terminals page. The sidebar
@@ -46,7 +46,7 @@ function Shell() {
   // /projects/:projectId) are merged in, so the sidebar can mark the
   // currently attached session / open project.
   const { sessionId, projectId } = useParams();
-  const { entries, error, startingProjectId, reload, startOrchestrator, terminateWorker } = useSidebarData((sessionId) =>
+  const { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker } = useSidebarData((sessionId) =>
     navigate(`/terminal/${sessionId}`),
   );
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -54,16 +54,19 @@ function Shell() {
 
   // First run with zero projects: lead into onboarding once (the sidebar
   // "+" and the empty-state CTA stay available for every later need).
+  // Issue #90: "zero projects" only counts after the project list actually
+  // loaded — the pre-load empty state must not open the wizard.
   useEffect(() => {
-    if (!autoOpened.current && !error && entries.length === 0) {
+    if (!autoOpened.current && shouldAutoOpenOnboarding({ loaded, error, entryCount: entries.length })) {
       autoOpened.current = true;
       setOnboardingOpen(true);
     }
-  }, [error, entries.length]);
+  }, [loaded, error, entries.length]);
 
   const sidebar = {
     entries,
     error,
+    loaded,
     startingProjectId,
     reload,
     startOrchestrator: (projectId: string) => startOrchestrator(projectId),
@@ -88,6 +91,7 @@ function Shell() {
           <SessionPicker
             entries={entries}
             error={error}
+            loading={!loaded}
             selectedSessionId={sessionId ?? null}
             selectedProjectId={projectId ?? null}
             startingProjectId={startingProjectId}

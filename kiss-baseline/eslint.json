@@ -21,8 +21,6 @@
     "max-lines-per-function::apps/daemon/src/sessions/registry.test.ts::Arrow function has too many lines (183). Maximum allowed is 100.",
     "max-lines-per-function::apps/web/src/lib/render.test.tsx::Arrow function has too many lines (102). Maximum allowed is 100.",
     "max-lines-per-function::apps/web/src/routes/OnboardingWizard.tsx::Function 'OnboardingWizard' has too many lines (293). Maximum allowed is 100.",
-    "max-lines-per-function::apps/web/src/terminal/SessionPicker.tsx::Function 'SessionPicker' has too many lines (182). Maximum allowed is 100.",
-    "max-lines-per-function::apps/web/src/terminal/terminal-page.test.tsx::Arrow function has too many lines (160). Maximum allowed is 100.",
     "max-lines-per-function::packages/shared/src/index.test.ts::Arrow function has too many lines (109). Maximum allowed is 100.",
     "max-lines-per-function::packages/shared/src/index.test.ts::Arrow function has too many lines (156). Maximum allowed is 100.",
     "max-lines::apps/daemon/src/api/contract.test.ts::File has too many lines (433). Maximum allowed is 300.",
