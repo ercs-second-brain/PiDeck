@@ -246,6 +246,20 @@ export const workerStatusSchema = z.enum([
 ]);
 export type WorkerStatus = z.infer<typeof workerStatusSchema>;
 
+/**
+ * Worker statuses that count as "actively working" (non-terminal): spawning,
+ * running, and the CI/review loop states. The single source of truth for
+ * concurrency caps, spawn dedupe, and pipeline ownership checks. Terminal
+ * statuses are the complement: `done` / `failed` / `stopped` / `archived`.
+ */
+export const ACTIVE_WORKER_STATUSES: ReadonlySet<WorkerStatus> = new Set([
+  "spawning",
+  "running",
+  "awaiting_ci",
+  "fixing_ci",
+  "addressing_review",
+] as const);
+
 export const workerSchema = z.object({
   id: idSchema,
   projectId: idSchema,

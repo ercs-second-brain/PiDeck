@@ -22,6 +22,7 @@ import { ProjectLayout } from "../sessions/layout.js";
 import { Tmux, type TmuxRunner } from "../sessions/tmux.js";
 
 import { OrchestratorBootstrap, orchestratorLaunchCommand, paneCommandProbe } from "./bootstrap.js";
+import { shQuote } from "../sessions/manager.js";
 
 /** Prompt template fixture carrying the documented placeholders (#12). */
 const TEMPLATE = [
@@ -90,7 +91,7 @@ describe("OrchestratorBootstrap.ensureForProject", () => {
       orchestratorLaunchCommand({ sessionId: session.id, promptFile: h.promptFile }),
     ]);
     expect(pane?.paneLines[0]).toContain("--append-system-prompt");
-    expect(pane?.paneLines[0]).toContain(`AGENTSKISS_SESSION_ID='${session.id}'`);
+    expect(pane?.paneLines[0]).toContain(`AGENTSKISS_SESSION_ID=${shQuote(session.id)}`);
     expect(pane?.paneLines[0]).toContain("pi");
   });
 

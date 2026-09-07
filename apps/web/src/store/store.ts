@@ -5,7 +5,7 @@
  * {@link BoardStore} interface — `subscribe()` + `getState()` — via
  * `useSyncExternalStore`, so no component knows where state comes from.
  *
- * Data source (replacing Phase 1's mock store):
+ * Data source:
  * - REST bootstrap: project list; per-project kanban board, workers, and
  *   pull requests, fetched lazily when a board page mounts.
  * - WebSocket fan-out on `/api/ws`: `KanbanUpdateEvent`s (card moved,

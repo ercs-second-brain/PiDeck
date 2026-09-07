@@ -18,6 +18,7 @@
 
 import type { z } from "zod";
 import {
+  ACTIVE_WORKER_STATUSES,
   endpoints,
   registerProjectRequestSchema,
   updateProjectRequestSchema,
@@ -206,9 +207,6 @@ function requireOr404<T>(value: T | undefined, message: string): T {
 // CLI action routes (agent/README.md: spawn / send / status, finalized in #9)
 // ---------------------------------------------------------------------------
 
-/** Terminal (non-failed) worker statuses counted against the concurrency cap. */
-const ACTIVE_STATUSES = new Set(["spawning", "running", "awaiting_ci", "fixing_ci", "addressing_review"]);
-
 /**
  * Spawns a worker via the SessionManager: `--issue` workers carry the issue
  * number; freeform (`--prompt` only) workers record `issueNumber: 0` (the
@@ -229,7 +227,7 @@ export async function spawnWorker(
   input: { issueNumber?: number; name: string; prompt?: string },
 ): Promise<Worker> {
   const project = requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
-  const active = services.sessions.listWorkers({ projectId }).filter((worker) => ACTIVE_STATUSES.has(worker.status));
+  const active = services.sessions.listWorkers({ projectId }).filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status));
   // `workerConcurrency` unset = unbounded (issue #14); when set, manual spawns
   // beyond the cap are rejected (the auto-spawn pipeline queues instead).
   const cap = project.settings.workerConcurrency;

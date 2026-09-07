@@ -215,11 +215,14 @@ describe("PullRequestPipeline", () => {
     h.sessions.control.listWorkers()[0]!.prNumber = 12;
 
     const events = prEvents(await h.poll());
-    expect(events).toHaveLength(1);
+    // Discovery card (CI not yet enriched → in_progress), then the enriched
+    // red-CI card moves to in_review via the shared kanban mapping.
+    expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({
       type: "kanban.pr.card",
-      card: { kind: "pull_request", number: 12, column: "in_review", workerId: "worker-1", projectId: PROJECT },
+      card: { kind: "pull_request", number: 12, column: "in_progress", workerId: "worker-1", projectId: PROJECT },
     });
+    expect(events[1]).toMatchObject({ card: { number: 12, column: "in_review" } });
     // A red PR is prompted in the same pass it is tracked.
     expect(h.sessions.prompts).toHaveLength(1);
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ state: "fixing", fixAttempts: 1 });
@@ -254,11 +257,12 @@ describe("PullRequestPipeline", () => {
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ state: "watching", fixAttempts: 0 });
     expect(h.sessions.statuses.at(-1)).toMatchObject({ status: "awaiting_ci" });
 
-    // Poll 4: approved → card done (CI-green + approved), no further prompts.
+    // Poll 4: approved → the card already sits in in_review (settled CI) per
+    // the shared kanban mapping — no new card event, no further prompts.
+    // (Under the unified mapping only a merge moves a PR card to done.)
     fake.reviews = [{ user: { login: "alice" }, state: "APPROVED", submitted_at: "2026-09-06T12:10:00Z" }];
     const events4 = prEvents(await h.poll());
-    expect(events4).toHaveLength(1);
-    expect(events4[0]).toMatchObject({ type: "kanban.pr.card", card: { number: 12, column: "done" } });
+    expect(events4).toHaveLength(0);
     expect(h.sessions.prompts).toHaveLength(1);
   });
 
@@ -366,13 +370,15 @@ describe("PullRequestPipeline", () => {
     h.sessions.control.listWorkers()[0]!.prNumber = 12;
 
     const first = prEvents(await h.poll());
-    expect(first.at(-1)).toMatchObject({ card: { column: "done" } });
+    expect(first.at(-1)).toMatchObject({ card: { column: "in_review" } });
 
     // Merge → done card + worker done; merged PRs drop out of the open list.
     h.prs.get(12)!.pull = restPull(12, { merged: true, closed: true });
     h.openList.length = 0;
     const events = await h.poll();
-    expect(events.filter((e) => e.type === "kanban.pr.card")).toHaveLength(0); // column already done
+    const mergeCards = events.filter((e) => e.type === "kanban.pr.card");
+    expect(mergeCards).toHaveLength(1);
+    expect(mergeCards[0]).toMatchObject({ card: { column: "done" } });
     expect(h.tracker.get(PROJECT, 12)!.state).toBe("done");
     expect(h.sessions.statuses.at(-1)).toMatchObject({ status: "done" });
     expect(await h.poll()).toEqual([]);

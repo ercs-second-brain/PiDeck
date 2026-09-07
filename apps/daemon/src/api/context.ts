@@ -7,7 +7,7 @@
 import os from "node:os";
 import path from "node:path";
 
-import type { Project, Worker } from "@agentskiss/shared";
+import type { Project } from "@agentskiss/shared";
 
 import { PiAuthProbe, type PiRunner } from "../agent/pi-auth.js";
 import { PromptGate } from "../agent/prompt-gate.js";
@@ -204,11 +204,6 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     promptGate,
     now: () => new Date(),
   };
-}
-
-/** Live (non-terminal) workers of a project — helper for pipelines/tests. */
-export function activeWorkers(services: DaemonServices, projectId: string): Worker[] {
-  return services.sessions.listWorkers({ projectId }).filter((worker) => worker.status !== "done" && worker.status !== "failed" && worker.status !== "stopped");
 }
 
 export type { Project };

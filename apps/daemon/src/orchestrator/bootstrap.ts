@@ -26,7 +26,7 @@ import path from "node:path";
 import type { DaemonServices } from "../api/context.js";
 import type { ProjectService } from "../api/projects.js";
 import { ProjectLayout } from "../sessions/layout.js";
-import type { SessionManager } from "../sessions/manager.js";
+import { shQuote, type SessionManager } from "../sessions/manager.js";
 import type { Project, Session } from "@agentskiss/shared";
 import type { Tmux } from "../sessions/tmux.js";
 
@@ -40,11 +40,6 @@ export const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
  * pi is a node program, so tmux reports `node` (or `pi` via a wrapper).
  */
 const AGENT_PANE_COMMANDS = new Set(["pi", "node"]);
-
-/** Single-quotes a word for a POSIX shell command line. */
-function shQuote(word: string): string {
-  return `'${word.replaceAll("'", `'\\''`)}'`;
-}
 
 /**
  * Builds the shell line typed into a fresh orchestrator pane: run pi with

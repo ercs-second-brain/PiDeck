@@ -25,7 +25,7 @@ import { Tmux } from "./tmux.js";
 const SH_BARE_WORD = /^[A-Za-z0-9_./:=,+@%^-]+$/;
 
 /** Single-quotes a word for the POSIX shell unless it is safe bare. */
-function shQuote(word: string): string {
+export function shQuote(word: string): string {
   return SH_BARE_WORD.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`;
 }
 

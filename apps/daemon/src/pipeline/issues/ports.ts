@@ -10,7 +10,7 @@
  *   `SessionManager` (sessions/ interface).
  */
 
-import type { Issue, IssueBlocker, Project } from "@agentskiss/shared";
+import { ACTIVE_WORKER_STATUSES, type Issue, type IssueBlocker, type Project } from "@agentskiss/shared";
 import type { SpawnedWorker } from "../../sessions/manager.js";
 import type { RepoRef } from "../../github/gh.js";
 import type { SessionManager } from "../../sessions/manager.js";
@@ -60,16 +60,13 @@ export interface WorkerSpawner {
   spawnWorker(projectId: string, issueNumber: number): Promise<SpawnedWorker>;
   /**
    * Issue numbers in the project that currently have a **non-terminal**
-   * worker (`spawning`/`running`/CI/review states — not done/failed/stopped).
+   * worker (`spawning`/`running`/CI/review states — any non-terminal status).
    */
   listActiveWorkerIssueNumbers(projectId: string): Promise<Set<number>>;
 }
 
 /** Adapter over the sessions facade (`SessionManager`). */
 export class SessionManagerSpawner implements WorkerSpawner {
-  /** Worker statuses that count as "actively working on an issue". */
-  private static readonly ACTIVE_STATUSES = new Set(["spawning", "running", "awaiting_ci", "fixing_ci", "addressing_review"]);
-
   constructor(private readonly sessions: SessionManager) {}
 
   spawnWorker(projectId: string, issueNumber: number): Promise<SpawnedWorker> {
@@ -79,7 +76,7 @@ export class SessionManagerSpawner implements WorkerSpawner {
   async listActiveWorkerIssueNumbers(projectId: string): Promise<Set<number>> {
     const active = new Set<number>();
     for (const worker of this.sessions.listWorkers({ projectId })) {
-      if (SessionManagerSpawner.ACTIVE_STATUSES.has(worker.status)) active.add(worker.issueNumber);
+      if (ACTIVE_WORKER_STATUSES.has(worker.status)) active.add(worker.issueNumber);
     }
     return active;
   }
