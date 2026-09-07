@@ -7,6 +7,8 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  /* Small-viewport browsers (phones) resize with the URL bar — dvh matches. */
+  height: 100dvh;
 }
 
 .app .app-header {
@@ -415,4 +417,138 @@
 
 .terminal-hint {
   font-size: 12px;
+}
+
+/* --- Mobile / responsive (issue #93) -----------------------------------------
+
+   Small viewports: the sidebar slides in over the main pane as a drawer
+   (opened by the header hamburger, closed by navigating or tapping the
+   backdrop); the main pane takes the full width. Desktop layout above 768px
+   is untouched. */
+
+.menu-toggle {
+  display: none;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.menu-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .brand-tag {
+    display: none;
+  }
+
+  .app-header .brand,
+  .app-header .nav-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+
+  .app-header .nav-link {
+    padding: 0 6px;
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .app-body {
+    grid-template-columns: 1fr;
+    position: relative;
+  }
+
+  /* The drawer is positioned inside .app-body, so it stays below the header
+     and the update banner (whose heights vary). */
+  .session-picker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: min(320px, 86vw);
+    padding: 16px 16px 24px;
+    box-shadow: 0 0 28px rgba(0, 0, 0, 0.55);
+    transform: translateX(-105%);
+    visibility: hidden;
+    transition: transform 0.18s ease, visibility 0.18s;
+  }
+
+  .app.sidebar-open .session-picker {
+    transform: none;
+    visibility: visible;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+  }
+
+  .app.sidebar-open .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Finger-sized targets for the picker's small controls. */
+  .picker-add,
+  .picker-terminate {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .picker-session {
+    padding: 12px;
+  }
+
+  .picker-project-name {
+    padding: 10px 4px;
+    font-size: 15px;
+  }
+
+  .picker-terminate-confirm-yes,
+  .picker-terminate-confirm-no {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .picker-archived-toggle {
+    padding: 10px 6px;
+    font-size: 12px;
+  }
+
+  .picker-start-orchestrator {
+    padding: 12px 10px;
+    font-size: 13px;
+  }
 }

@@ -47,10 +47,17 @@ function Shell() {
   // currently attached session / open project.
   const { sessionId, projectId } = useParams();
   const { entries, error, startingProjectId, reload, startOrchestrator, terminateWorker } = useSidebarData((sessionId) =>
-    navigate(`/terminal/${sessionId}`),
+    navigateFromSidebar(`/terminal/${sessionId}`),
   );
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  // Issue #93: on small viewports the sidebar collapses into a drawer; the
+  // hamburger (header) opens it, navigating or tapping the backdrop closes it.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const autoOpened = useRef(false);
+  const navigateFromSidebar = (to: string) => {
+    setSidebarOpen(false);
+    navigate(to);
+  };
 
   // First run with zero projects: lead into onboarding once (the sidebar
   // "+" and the empty-state CTA stay available for every later need).
@@ -72,8 +79,17 @@ function Shell() {
   };
 
   return (
-    <div className="app">
+    <div className={`app${sidebarOpen ? " sidebar-open" : ""}`}>
       <header className="app-header">
+        <button
+          type="button"
+          className="menu-toggle"
+          aria-label="Toggle the project sidebar"
+          title="Projects"
+          onClick={() => setSidebarOpen((open) => !open)}
+        >
+          ☰
+        </button>
         <Link to="/" className="brand">
           agents<span className="brand-accent">KISS</span>
         </Link>
@@ -91,9 +107,9 @@ function Shell() {
             selectedSessionId={sessionId ?? null}
             selectedProjectId={projectId ?? null}
             startingProjectId={startingProjectId}
-            onSelectSession={(id) => navigate(`/terminal/${id}`)}
-            onSelectProject={(projectId) => navigate(`/projects/${projectId}`)}
-            onSelectAllProjects={() => navigate("/")}
+            onSelectSession={(id) => navigateFromSidebar(`/terminal/${id}`)}
+            onSelectProject={(projectId) => navigateFromSidebar(`/projects/${projectId}`)}
+            onSelectAllProjects={() => navigateFromSidebar("/")}
             onStartOnboarding={() => setOnboardingOpen(true)}
             onStartOrchestrator={(projectId) => startOrchestrator(projectId)}
             onTerminateWorker={terminateWorker}
@@ -103,6 +119,7 @@ function Shell() {
           </main>
         </SidebarContext.Provider>
       </div>
+      <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
       {onboardingOpen && (
         <OnboardingModal
           onClose={() => setOnboardingOpen(false)}
