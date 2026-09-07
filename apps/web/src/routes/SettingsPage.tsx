@@ -3,12 +3,14 @@ import { Link, useParams } from "react-router";
 import type { Project } from "@agentskiss/shared";
 import { apiUpdateProject, errorMessage } from "../lib/api";
 import { UpdateBanner } from "../components/UpdateBanner";
+import { PiAuthBanner } from "../components/PiAuthBanner";
 import { boardStore, useAppState } from "../store/store";
 
 /**
- * Project settings surface: auto-agent username and the worker concurrency
- * cap. `workerConcurrency` unset means unbounded (issue #14 semantics:
- * every unblocked issue spawns a worker immediately).
+ * Project settings surface: auto-agent username, the worker concurrency
+ * cap, and the persistent pi auth status banner (issue #57).
+ * `workerConcurrency` unset means unbounded (issue #14 semantics: every
+ * unblocked issue spawns a worker immediately).
  */
 export function SettingsPage() {
   const { projectId } = useParams();
@@ -36,6 +38,7 @@ export function SettingsPage() {
       <UpdateBanner />
       <h1 className="page-title">{project.name} — settings</h1>
       <p className="project-repo">{project.repoUrl}</p>
+      <PiAuthBanner />
       <SettingsForm key={project.id} project={project} />
       <Link to={`/projects/${project.id}`} className="back-link">
         ← Board

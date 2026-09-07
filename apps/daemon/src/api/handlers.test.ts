@@ -12,7 +12,7 @@ import type { Project } from "@agentskiss/shared";
 import { deriveBoard } from "./kanban.js";
 import { NotFoundError } from "./projects.js";
 import { ProjectStore, slugify } from "./projects.js";
-import { contractHandlers, reportWorkerPr } from "./handlers.js";
+import { contractHandlers, reportWorkerPr, spawnWorker } from "./handlers.js";
 import { SettingsStore } from "./settings.js";
 import { testDaemon } from "./testutil.js";
 
@@ -211,6 +211,84 @@ describe("ensureProjectOrchestrator (issue #53)", () => {
     await expect(handlers.ensureProjectOrchestrator({ params: { projectId: "ghost" }, body: undefined })).rejects.toThrow(
       NotFoundError,
     );
+  });
+});
+
+/**
+ * The spawn-time pi-auth readiness gate (issue #56): the initial prompt is
+ * typed into the worker pane only when pi auth is ready; an unauthenticated
+ * spawn keeps its prompt queued and its status truthful, and delivery
+ * happens once auth completes. The pi probe is faked via the context's
+ * `piRunner` (same hermetic pattern as the fake gh runner).
+ */
+describe("spawnWorker pi-auth readiness gate (issue #56)", () => {
+  /** Flippable fake pi CLI + daemon with the gate in manual-delivery mode. */
+  function gatedDaemon() {
+    const pi = { ready: false };
+    const daemon = testDaemon({}, {
+      piRunner: async () => {
+        if (!pi.ready) throw new Error("pi: not authenticated");
+        return { stdout: '{"status":"ready"}', stderr: "" };
+      },
+      piAuthTtlMs: 0,
+      promptGatePollIntervalMs: 0,
+    });
+    return { pi, daemon };
+  }
+
+  it("does not send the prompt into an unauthenticated pane and reports a truthful status", async () => {
+    const { daemon } = gatedDaemon();
+    await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
+    const worker = await spawnWorker(daemon.services, "o-r", { issueNumber: 3, name: "w1", prompt: "fix the flaky test" });
+    // Truthful: held at `spawning`, never `running`, with the fix spelled out.
+    expect(worker.status).toBe("spawning");
+    expect(worker.statusMessage).toContain("waiting for pi auth");
+    expect(worker.statusMessage).toContain("agentskiss onboard");
+    expect(worker.statusMessage).toContain("initial prompt queued");
+    // The prompt was not swallowed: it never reached the pane.
+    const pane = await daemon.services.sessions.capturePane(worker.sessionId);
+    expect(pane).not.toContain("fix the flaky test");
+    expect(daemon.services.promptGate.size).toBe(1);
+  });
+
+  it("delivers the queued prompt once auth completes and flips the worker to running", async () => {
+    const { pi, daemon } = gatedDaemon();
+    await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
+    const worker = await spawnWorker(daemon.services, "o-r", { issueNumber: 3, name: "w1", prompt: "fix the flaky test" });
+
+    pi.ready = true; // auth completes (e.g. after `pi /login` on the daemon host)
+    await daemon.services.promptGate.deliverPending();
+
+    const delivered = daemon.services.sessions.getWorker(worker.id);
+    expect(delivered?.status).toBe("running");
+    expect(delivered?.statusMessage).toContain("initial prompt delivered");
+    const pane = await daemon.services.sessions.capturePane(worker.sessionId);
+    expect(pane).toContain("fix the flaky test");
+    expect(daemon.services.promptGate.size).toBe(0);
+  });
+
+  it("holds prompt-less (issue-backed) spawns too, then releases them on auth", async () => {
+    const { pi, daemon } = gatedDaemon();
+    await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
+    const worker = await spawnWorker(daemon.services, "o-r", { issueNumber: 4, name: "w2" });
+    expect(worker.status).toBe("spawning");
+    expect(worker.statusMessage).toContain("waiting for pi auth");
+
+    pi.ready = true;
+    await daemon.services.promptGate.deliverPending();
+    const released = daemon.services.sessions.getWorker(worker.id);
+    expect(released?.status).toBe("running");
+    expect(released?.statusMessage).toBe("agent running in tmux session");
+  });
+
+  it("types the prompt immediately when pi auth is ready (unchanged ready path)", async () => {
+    const daemon = testDaemon(); // default hermetic testDaemon: pi ready
+    await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
+    const worker = await spawnWorker(daemon.services, "o-r", { issueNumber: 5, name: "w3", prompt: "ship it" });
+    expect(worker.status).toBe("running");
+    expect(worker.statusMessage).toContain("initial prompt delivered");
+    const pane = await daemon.services.sessions.capturePane(worker.sessionId);
+    expect(pane).toContain("ship it");
   });
 });
 

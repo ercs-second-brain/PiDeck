@@ -73,8 +73,16 @@ export class DaemonClient {
 
   // -- CLI-specific daemon actions (agent/README.md, finalized in #9) -------
 
-  /** `agentskiss status --json` — daemon liveness. */
-  async status(): Promise<{ ok: boolean; name: string; projects: number; sessions: number; at: string }> {
+  /** `agentskiss status --json` — daemon liveness (+ pi auth fields, issue #57). */
+  async status(): Promise<{
+    ok: boolean;
+    name: string;
+    projects: number;
+    sessions: number;
+    piReady?: boolean;
+    piProviders?: string[];
+    at: string;
+  }> {
     return this.request("GET", "/api/status");
   }
 

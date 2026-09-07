@@ -196,6 +196,15 @@ else
   run sh "$AK_HOME/lib/onboard.sh"
 fi
 
+# Onboarding can legitimately end with pi auth incomplete (skipped flags,
+# non-interactive runs, an aborted /login). Never let that pass silently:
+# workers spawned before pi auth is ready hold at `spawning` with their
+# initial prompt queued (the daemon warns at startup and reflects the state
+# in /api/status and the webapp).
+if [ -f "$AK_HOME/onboarding.json" ] && grep -q '"authStatus": "none"' "$AK_HOME/onboarding.json"; then
+  warn "onboarding incomplete (pi and/or gh auth missing) — run 'agentskiss onboard' to finish; until pi auth is ready, spawned workers hold at 'spawning' with their initial prompt queued"
+fi
+
 # --- summary --------------------------------------------------------------
 printf '\n'
 info "agentsKISS installed"

@@ -67,6 +67,18 @@ Results are recorded in `~/.agentskiss/onboarding.json` +
 `AGENTSKISS_MODEL` in `~/.agentskiss/env` and remembered across restarts.
 Re-run any time with `agentskiss onboard`.
 
+### pi auth gating after install
+
+Onboarding can end with pi auth incomplete (skipped flags, non-interactive
+runs, an aborted `/login`); `bootstrap.sh` prints a warning when
+`onboarding.json` records it. The running daemon never treats that as
+healthy either (issue #57): it logs a warning at startup, reports the ready
+providers via `GET /api/pi-auth` (same `pi auth check` detection onboard.sh
+uses), exposes `piReady` in `GET /api/status` / `agentskiss status`, shows a
+persistent banner in the webapp settings, and gates worker spawns (issue
+#56): a spawn made before any provider is ready holds at `spawning` with its
+initial prompt queued and delivers it automatically once auth completes.
+
 ## WSL: reaching the webapp from Windows
 
 Under WSL2, the daemon runs inside the Linux distro and is reached from the

@@ -12,10 +12,12 @@ import { z } from "zod";
 import {
   endpoints,
   formatPath,
+  piAuthSchema,
   type EndpointName,
   type EndpointParams,
   type EndpointRequest,
   type EndpointResponse,
+  type PiAuth,
   type RegisterProjectRequest,
   type UpdateProjectRequest,
 } from "@agentskiss/shared";
@@ -112,11 +114,24 @@ export const ghAuthSchema = z.object({
   detail: z.string(),
 });
 export type GhAuth = z.infer<typeof ghAuthSchema>;
+export type { PiAuth };
 
 export async function apiGetGhAuth(): Promise<GhAuth> {
   const response = await fetch("/api/gh-auth", { headers: { accept: "application/json" } });
   if (!response.ok) throw new ApiError(response.status, "GET", "/api/gh-auth", response.statusText);
   return ghAuthSchema.parse(await response.json());
+}
+
+// --- pi auth probe (onboarding wizard + settings banner, issue #57) ----------
+//
+// `GET /api/pi-auth` mirrors `/api/gh-auth`: a non-contract daemon route
+// whose *shape* is contracted in the shared package (`piAuthSchema`), so
+// webapp and daemon cannot drift.
+
+export async function apiGetPiAuth(): Promise<PiAuth> {
+  const response = await fetch("/api/pi-auth", { headers: { accept: "application/json" } });
+  if (!response.ok) throw new ApiError(response.status, "GET", "/api/pi-auth", response.statusText);
+  return piAuthSchema.parse(await response.json());
 }
 
 /** Error message extraction shared by all callers. */

@@ -79,10 +79,18 @@ export async function run(
     case "status": {
       const status = await client.status();
       if (json) out(status);
-      else
+      else {
         console.log(
           `agentskiss daemon: up (${status.projects} project(s), ${status.sessions} session(s))`,
         );
+        // Surface pi auth honestly (issue #57): an unauthenticated daemon
+        // must never read as fully healthy.
+        if (status.piReady === false) {
+          console.warn(
+            "warning: pi auth not ready — run 'agentskiss onboard' (or pi /login); worker prompts are queued until a provider is ready",
+          );
+        }
+      }
       return 0;
     }
 

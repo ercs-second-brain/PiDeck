@@ -195,6 +195,13 @@ const ACTIVE_STATUSES = new Set(["spawning", "running", "awaiting_ci", "fixing_c
  * number; freeform (`--prompt` only) workers record `issueNumber: 0` (the
  * shared `workerSchema` documents 0 as the freeform-worker marker).
  *
+ * Initial-prompt readiness gate (issue #56): the prompt is typed into the
+ * pane only when the pi auth probe reports a ready provider. When it does
+ * not, the worker is held at the truthful `spawning` status with a precise
+ * `statusMessage`, and the prompt is queued on the {@link PromptGate} —
+ * delivered automatically once auth becomes ready. An unauthenticated
+ * worker never reports `running`, and its prompt is never swallowed.
+ *
  * Emits `worker.spawned` on the hub.
  */
 export async function spawnWorker(
@@ -215,12 +222,19 @@ export async function spawnWorker(
   }
   const { worker } = await services.sessions.spawnWorker(projectId, {
     issueNumber: input.issueNumber ?? 0,
-    statusMessage: input.prompt !== undefined ? "agent running; initial prompt queued" : undefined,
+    ...(input.prompt !== undefined ? { statusMessage: "agent running; initial prompt queued" } : {}),
   });
-  if (input.prompt !== undefined) {
+  const piAuth = await services.piAuth.payload();
+  if (!piAuth.ready) {
+    // Issue #56: never type a prompt into an agent that cannot run, and
+    // never leave an unauthenticated worker at `running` — the gate holds
+    // the worker at `spawning` with the precise fix in `statusMessage`.
+    services.promptGate.queue(worker, input.prompt);
+  } else if (input.prompt !== undefined) {
     await services.sessions.sendKeys(worker.sessionId, input.prompt, { enter: true });
+    services.sessions.updateWorkerStatus(worker.id, "running", "agent running; initial prompt delivered");
   }
-  const workerParsed = workerSchema.parse(worker);
+  const workerParsed = workerSchema.parse(services.sessions.getWorker(worker.id) ?? worker);
   services.hub.broadcast({ type: "worker.spawned", at: services.now().toISOString(), worker: workerParsed });
   return workerParsed;
 }
@@ -268,6 +282,21 @@ export function registerGhAuthRoute(router: Router): void {
   router.add("GET", "/api/gh-auth", () => ghAuthPayload().then((body) => ({ body })));
 }
 
+// ---------------------------------------------------------------------------
+// pi auth probe (webapp onboarding wizard + spawn readiness gate, issue #57)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mounts `GET /api/pi-auth` on the router. Non-contract route like
+ * `/api/gh-auth`: a daemon-side capability probe (which pi providers have
+ * ready credentials, and which startup model pi is configured with), not a
+ * resource API. The shape is still contracted in the shared package
+ * (`piAuthSchema`) so the webapp cannot drift from the daemon.
+ */
+export function registerPiAuthRoute(router: Router, services: DaemonServices): void {
+  router.add("GET", "/api/pi-auth", () => services.piAuth.payload().then((body) => ({ body })));
+}
+
 /**
  * Explicit PR→worker report (`agentskiss report-pr`, issue #49): the calling
  * worker session reports the PR it opened. The CLI self-identifies the tmux
@@ -301,17 +330,27 @@ export async function sendToSession(services: DaemonServices, sessionId: string,
   await services.sessions.sendKeys(sessionId, message, { enter: true });
 }
 
-/** Mounts the CLI action routes (status, spawn, send) on the router. */
+/** Mounts the CLI action routes (status, spawn, send, pi-auth) on the router. */
 export function registerCliRoutes(router: Router, services: DaemonServices): void {
-  router.add("GET", "/api/status", () => ({
-    body: {
-      ok: true,
-      name: "agentskiss-daemon",
-      projects: services.projects.list().length,
-      sessions: services.sessions.listSessions().length,
-      at: services.now().toISOString(),
-    },
-  }));
+  router.add("GET", "/api/status", async () => {
+    // pi auth readiness in the status payload (issue #57): an unauthenticated
+    // daemon says so here (and warns at startup) instead of failing silently
+    // when the first worker spawn queues its prompt.
+    const pi = await services.piAuth.payload();
+    return {
+      body: {
+        ok: true,
+        name: "agentskiss-daemon",
+        projects: services.projects.list().length,
+        sessions: services.sessions.listSessions().length,
+        piReady: pi.ready,
+        piProviders: pi.providers,
+        at: services.now().toISOString(),
+      },
+    };
+  });
+
+  registerPiAuthRoute(router, services);
 
   router.add("POST", "/api/projects/:projectId/spawn", (ctx) =>
     Promise.resolve(projectSpawnSchema.parse(ctx.body)).then((input) =>

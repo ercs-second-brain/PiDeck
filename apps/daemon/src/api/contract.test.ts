@@ -15,6 +15,7 @@ import {
   endpoints,
   formatPath,
   kanbanBoardSchema,
+  piAuthSchema,
   projectSchema,
   pullRequestDiffSchema,
   pullRequestSchema,
@@ -364,10 +365,19 @@ describe("self-update (issue #55)", () => {
 });
 
 describe("CLI action routes", () => {
-  it("exposes /api/status", async () => {
+  it("exposes /api/status with the pi auth fields (issue #57)", async () => {
     const res = await api("GET", "/api/status");
     expect(res.status).toBe(200);
-    expect(res.json).toMatchObject({ ok: true, name: "agentskiss-daemon" });
+    expect(res.json).toMatchObject({ ok: true, name: "agentskiss-daemon", piReady: true });
+    expect((res.json as { piProviders: unknown }).piProviders).toBeInstanceOf(Array);
+  });
+
+  it("exposes /api/pi-auth with the shared PiAuth shape (issue #57)", async () => {
+    const res = await api("GET", "/api/pi-auth");
+    expect(res.status).toBe(200);
+    const parsed = piAuthSchema.parse(res.json);
+    expect(parsed.ready).toBe(true);
+    expect(parsed.providers.length).toBeGreaterThan(0);
   });
 
   it("spawns a worker with an issue, freeform via prompt, and validates the cap", async () => {

@@ -69,6 +69,28 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const updateSettingsRequestSchema = settingsSchema.partial();
 export type UpdateSettingsRequest = z.infer<typeof updateSettingsRequestSchema>;
 
+/**
+ * Response body of the daemon's pi-auth probe (`GET /api/pi-auth`, mirroring
+ * `GET /api/gh-auth`): which pi providers have ready credentials and which
+ * model pi would start with. Deliberately **not** an entry in the
+ * `endpoints` map — like gh-auth it is a daemon-side capability probe, not
+ * a resource API — but the shape is contracted here so the webapp cannot
+ * drift from the daemon.
+ */
+export const piAuthSchema = z.object({
+  /** At least one provider has ready credentials. */
+  ready: z.boolean(),
+  /** Providers whose `pi auth check` reports `"status":"ready"`. */
+  providers: z.array(z.string()),
+  /** pi's saved startup default provider, when configured. */
+  defaultProvider: z.string().nullable(),
+  /** pi's saved startup default model, when configured. */
+  defaultModel: z.string().nullable(),
+  /** Human-readable explanation, suitable for surfacing in the UI. */
+  detail: z.string(),
+});
+export type PiAuth = z.infer<typeof piAuthSchema>;
+
 /** A single file within a PR diff. */
 export const diffFileSchema = z.object({
   filename: z.string().min(1),
