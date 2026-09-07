@@ -189,7 +189,7 @@ update_apply() {
   fi
   update_report || return 1
   if [ "$UPDATE_LOCAL_SHA" = "$UPDATE_REMOTE_SHA" ]; then
-    update_progress done
+    update_progress "done"
     trap - EXIT
     return 0
   fi
@@ -208,7 +208,7 @@ update_apply() {
   update_progress restarting
   step "restarting the service"
   svc_restart
-  update_progress done
+  update_progress "done"
   trap - EXIT
   ok "update applied — agentskiss now runs $(short_sha "$(git -C "$AK_SRC" rev-parse HEAD)")"
 }
