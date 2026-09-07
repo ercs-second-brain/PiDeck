@@ -14,6 +14,7 @@ agent/
     ├── using-agentskiss/      # daemon CLI catalog (SKILL.md + commands/)
     ├── create-issue/          # file a GitHub issue via gh
     ├── spawn-worker/          # request a worker spawn via the daemon CLI
+    ├── report-pr/             # worker self-report of an opened PR (issue #49)
     ├── ci-status/             # CI status lookup
     └── review-comments/       # review-comment retrieval
 ```
@@ -60,6 +61,7 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `agentskiss diff --project <id> <pr>` | — | `GET /api/projects/:projectId/pulls/:prNumber/diff` | Returns `PullRequestDiff` |
 | `agentskiss spawn` | `--project <id>`, `--issue <number>`, `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`) |
 | `agentskiss send` | `--session <id>`, `--message <text>` | `POST /api/sessions/:sessionId/send` | Delivers into the session's tmux pane (typed, then Enter) |
+| `agentskiss report-pr <pr>` | — | `POST /api/sessions/report-pr` | Worker session self-reports its PR (resolved from its tmux pane context); explicit report wins over the title/branch heuristic, which stays as fallback (issue #49) |
 
 `GET /api/status` (daemon liveness, the `status` backing), project mutation endpoints (`POST`/`PATCH`/`DELETE /api/projects...`), `GET`/`PUT /api/settings`, and `GET /api/gh-auth` (onboarding wizard) are webapp/owner operations — no skill invokes them.
 
@@ -79,6 +81,7 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `gh pr checks ...`, `gh run view ...`, `gh api .../pulls/<n>/comments`, `gh pr view --comments` | `skills/review-comments/SKILL.md` |
 | all other `agentskiss` read commands | `skills/using-agentskiss/commands/state.md`, `commands/project.md` |
 | `agentskiss send ...` | `skills/using-agentskiss/commands/send.md` |
+| `agentskiss report-pr <pr>` | `skills/report-pr/SKILL.md` |
 
 ## Installer notes
 

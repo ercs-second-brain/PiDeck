@@ -12,6 +12,7 @@ trigger: "Using the agentskiss CLI: spawning workers, messaging sessions, inspec
 |---|---|---|---|
 | `agentskiss spawn` | Spawn a worker agent in a fresh git worktree | Starting a new task or issue | [commands/spawn.md](commands/spawn.md) |
 | `agentskiss send` | Send a message to a running agent session | Correcting or directing a live agent | [commands/send.md](commands/send.md) |
+| `agentskiss report-pr <pr>` | Report your PR to the daemon (worker panes only) | Right after opening a PR in a worker session | worker skill: `report-pr` |
 | `agentskiss project` | Inspect registered projects | Looking up repo, branch, or settings | [commands/project.md](commands/project.md) |
 | `agentskiss status` | Show daemon status | Verifying the daemon is up | [commands/state.md](commands/state.md) |
 | `agentskiss kanban` | Read a project's kanban board | Checking card columns | [commands/state.md](commands/state.md) |
@@ -32,6 +33,7 @@ The command catalog above is generic. Task-oriented orchestration skills build o
 
 - `create-issue` — file a GitHub issue via `gh`.
 - `spawn-worker` — request a worker spawn (pre-flight checks + invocation).
+- `report-pr` — a worker session reports the PR it opened (`agentskiss report-pr`).
 - `ci-status` — CI status lookup and CI-fix routing.
 - `review-comments` — review-comment retrieval and addressing workflow.
 

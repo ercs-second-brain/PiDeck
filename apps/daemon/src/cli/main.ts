@@ -13,6 +13,7 @@
  *   agentskiss diff --project <id> <pr-number>
  *   agentskiss spawn --project <id> [--issue <number>] --name <label ≤20> [--prompt <task>]
  *   agentskiss send --session <id> --message <text>
+ *   agentskiss report-pr <pr-number>   (worker panes only: self-identifies via tmux)
  *
  * (Service control — `agentskiss start|stop|...` — is the installer shim in
  * install/bin/agentskiss, which forwards agent commands here.)
@@ -23,6 +24,13 @@ import { pathToFileURL } from "node:url";
 
 import { CliError, optionalFlag, parseArgs, positional, requireFlag } from "./args.js";
 import { DaemonClient } from "./client.js";
+import { currentTmuxSession } from "./tmux-context.js";
+
+/** Injectables for tests (defaults: the live tmux context). */
+export interface RunDeps {
+  /** Resolves the calling tmux session's name (issue #49 report path). */
+  tmuxSession?: () => Promise<string>;
+}
 
 const USAGE = `agentskiss — talk to the agentsKISS daemon
 
@@ -37,12 +45,17 @@ Usage:
   agentskiss diff --project <id> <pr-number>
   agentskiss spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]
   agentskiss send --session <id> --message <text>
+  agentskiss report-pr <pr-number>
 
 Environment:
   AGENTSKISS_DAEMON_URL   daemon base URL (default http://127.0.0.1:$AGENTSKISS_WEB_PORT or :8321)
 `;
 
-export async function run(argv: string[], client: DaemonClient = new DaemonClient()): Promise<number> {
+export async function run(
+  argv: string[],
+  client: DaemonClient = new DaemonClient(),
+  deps: RunDeps = {},
+): Promise<number> {
   const parsed = parseArgs(argv);
   const cmd = positional(parsed, 0);
   const sub = positional(parsed, 1);
@@ -195,6 +208,21 @@ export async function run(argv: string[], client: DaemonClient = new DaemonClien
       await client.send(sessionId, message);
       if (json) out({ ok: true, sessionId });
       else console.log(`delivered to ${sessionId}`);
+      return 0;
+    }
+
+    case "report-pr": {
+      // Worker self-report of an opened PR (issue #49). The tmux session
+      // name is resolved from the calling pane's own context, not from a
+      // flag — the daemon associates the worker behind that session.
+      const prRaw = rest[0] ?? optionalFlag(parsed.flags, "pr");
+      if (prRaw === undefined || !/^\d+$/.test(prRaw)) {
+        throw new CliError("usage: agentskiss report-pr <pr-number>");
+      }
+      const tmuxSession = await (deps.tmuxSession ?? currentTmuxSession)();
+      const worker = await client.reportPr(tmuxSession, Number(prRaw));
+      if (json) out(worker);
+      else console.log(`worker ${worker.id} now owns PR #${worker.prNumber}`);
       return 0;
     }
 
