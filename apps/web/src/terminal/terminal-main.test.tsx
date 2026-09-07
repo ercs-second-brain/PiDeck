@@ -45,6 +45,7 @@ function renderMain(path: string, context: Partial<SidebarContextValue>) {
   const value: SidebarContextValue = {
     entries: context.entries ?? [entry],
     error: context.error ?? null,
+    loaded: context.loaded ?? true,
     startingProjectId: null,
     reload: () => {},
     startOrchestrator: () => {},
@@ -79,6 +80,18 @@ describe("TerminalPage (main pane)", () => {
   it("shows the onboarding CTA on the first run with zero projects", () => {
     const html = renderMain("/terminal", { entries: [] });
     expect(html).toContain("Connect your first project");
+  });
+
+  it("shows a loading placeholder (not the CTA) while the project list loads (issue #90)", () => {
+    const html = renderMain("/terminal", { entries: [], loaded: false });
+    expect(html).toContain("Loading projects…");
+    expect(html).not.toContain("Connect your first project");
+  });
+
+  it("keeps the loading placeholder while loading even on a deep link (issue #90)", () => {
+    const html = renderMain("/terminal/sess-orch-1", { entries: [], loaded: false });
+    expect(html).toContain("Loading projects…");
+    expect(html).not.toContain("terminal-pane");
   });
 
   it("keeps the attach hint when the daemon is unreachable (no CTA)", () => {

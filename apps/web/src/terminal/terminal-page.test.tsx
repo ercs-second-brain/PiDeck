@@ -62,6 +62,7 @@ function renderPicker(overrides: Partial<PickerProps> = {}) {
     <SessionPicker
       entries={overrides.entries ?? [{ project, sessions, workers }]}
       error={overrides.error ?? null}
+      loading={overrides.loading}
       selectedSessionId={overrides.selectedSessionId ?? null}
       selectedProjectId={overrides.selectedProjectId}
       startingProjectId={overrides.startingProjectId}
@@ -167,14 +168,20 @@ describe("SessionPicker", () => {
     expect(html).toContain("No projects yet");
   });
 
+  it("shows a loading state instead of the empty state while the project list loads (issue #90)", () => {
+    const html = renderPicker({ entries: [], loading: true });
+    expect(html).toContain("Loading projects…");
+    expect(html).not.toContain("No projects yet");
+  });
+
   it("shows the daemon-unreachable error state", () => {
     const html = renderPicker({ entries: [], error: "connection refused" });
     expect(html).toContain("Daemon unreachable");
     expect(html).toContain("connection refused");
   });
+});
 
-  // -- terminate / archive (issue #64) ---------------------------------------
-
+describe("SessionPicker (worker termination + archive, issue #64)", () => {
   it("shows the terminate affordance on active worker rows only", () => {
     const html = renderPicker({ onTerminateWorker: () => {} });
     // ✕ on the worker row, nothing on the orchestrator row.
