@@ -7,8 +7,8 @@
  * the map, so schemas cannot drift from the types.
  *
  * Endpoints: projects CRUD/register, per-project kanban state, sessions and
- * workers lists, PR diffs, and daemon settings (auto-agent username,
- * concurrency).
+ * workers lists, per-project orchestrator start (issue #53), PR diffs, and
+ * daemon settings (auto-agent username, concurrency).
  */
 
 import { z } from "zod";
@@ -165,6 +165,19 @@ export const endpoints = {
     params: z.object({ projectId: z.string().min(1) }),
     request: null,
     response: z.array(workerSchema),
+  },
+
+  /**
+   * Start (or attach to the existing) per-project orchestrator session
+   * (issue #53): wraps `SessionManager.ensureOrchestrator` — idempotent, so
+   * the daemon returns the live orchestrator session when one exists.
+   */
+  ensureProjectOrchestrator: {
+    method: "POST",
+    path: "/api/projects/:projectId/orchestrator",
+    params: z.object({ projectId: z.string().min(1) }),
+    request: null,
+    response: sessionSchema,
   },
 
   // Pull requests

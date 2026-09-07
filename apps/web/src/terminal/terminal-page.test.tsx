@@ -1,7 +1,8 @@
 /**
- * Tests for the terminal session picker: role/worker badges, selection
- * state, and empty/error handling. The page shell is pure once the fetched
- * data arrives, so the picker is exercised directly.
+ * Tests for the terminal session picker: per-project IA (orchestrator nested
+ * above workers, start-orchestrator affordance when absent), role/worker
+ * badges, selection state, and empty/error handling. The page shell is pure
+ * once the fetched data arrives, so the picker is exercised directly.
  */
 
 import { describe, expect, it } from "vitest";
@@ -58,7 +59,9 @@ function renderPicker(overrides: Partial<Parameters<typeof SessionPicker>[0]> = 
       entries={overrides.entries ?? [{ project, sessions, workers }]}
       error={overrides.error ?? null}
       selectedId={overrides.selectedId ?? null}
+      startingProjectId={overrides.startingProjectId}
       onSelect={overrides.onSelect ?? (() => {})}
+      onStartOrchestrator={overrides.onStartOrchestrator ?? (() => {})}
     />,
   );
 }
@@ -78,15 +81,50 @@ describe("SessionPicker", () => {
     expect(html).toContain("running");
   });
 
+  it("nests workers beneath the project with the orchestrator first", () => {
+    const html = renderPicker();
+    const orchestrator = html.indexOf("agentskiss-agentskiss-orchestrator-1");
+    const project = html.indexOf("agentsKISS");
+    const worker = html.indexOf("agentskiss-agentskiss-worker-1");
+    expect(project).toBeLessThan(orchestrator);
+    expect(orchestrator).toBeLessThan(worker);
+  });
+
+  it("shows the start-orchestrator affordance when the project has no orchestrator", () => {
+    const html = renderPicker();
+    expect(html).not.toContain("Start orchestrator");
+    const withoutOrchestrator = renderPicker({
+      entries: [{ project, sessions: sessions.filter((s) => s.role === "worker"), workers }],
+    });
+    expect(withoutOrchestrator).toContain("picker-start-orchestrator");
+    expect(withoutOrchestrator).toContain("Start orchestrator");
+  });
+
+  it("shows the start affordance for projects with no sessions at all", () => {
+    const html = renderPicker({ entries: [{ project, sessions: [], workers: [] }] });
+    expect(html).toContain("picker-start-orchestrator");
+    expect(html).toContain("Start orchestrator");
+    expect(html).not.toContain("No active sessions.");
+  });
+
+  it("marks the starting orchestrator as pending", () => {
+    const html = renderPicker({
+      entries: [{ project, sessions: [], workers: [] }],
+      startingProjectId: project.id,
+    });
+    expect(html).toContain("Starting…");
+    expect(html).toContain("disabled");
+  });
+
   it("marks the selected session", () => {
     const html = renderPicker({ selectedId: "sess-worker-1" });
     const selected = html.match(/picker-session selected/g) ?? [];
     expect(selected).toHaveLength(1);
   });
 
-  it("shows a per-project empty state", () => {
-    const html = renderPicker({ entries: [{ project, sessions: [], workers: [] }] });
-    expect(html).toContain("No active sessions.");
+  it("shows the no-projects empty state", () => {
+    const html = renderPicker({ entries: [] });
+    expect(html).toContain("No projects registered yet.");
   });
 
   it("shows the daemon-unreachable error state", () => {

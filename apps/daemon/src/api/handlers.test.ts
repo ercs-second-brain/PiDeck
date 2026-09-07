@@ -12,7 +12,7 @@ import type { Project } from "@agentskiss/shared";
 import { deriveBoard } from "./kanban.js";
 import { NotFoundError } from "./projects.js";
 import { ProjectStore, slugify } from "./projects.js";
-import { reportWorkerPr } from "./handlers.js";
+import { contractHandlers, reportWorkerPr } from "./handlers.js";
 import { SettingsStore } from "./settings.js";
 import { testDaemon } from "./testutil.js";
 
@@ -183,6 +183,34 @@ describe("reportWorkerPr (explicit PR→worker report, issue #49)", () => {
     await expect(
       reportWorkerPr(daemon.services, { tmuxSession: "agentskiss-x-worker-99", prNumber: 1 }),
     ).rejects.toThrow(NotFoundError);
+  });
+});
+
+describe("ensureProjectOrchestrator (issue #53)", () => {
+  it("creates the orchestrator once and reuses it on subsequent calls", async () => {
+    const daemon = testDaemon();
+    await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
+    const handlers = contractHandlers(daemon.services);
+
+    const first = (await handlers.ensureProjectOrchestrator({ params: { projectId: "o-r" }, body: undefined })) as {
+      id: string;
+      role: string;
+      projectId: string;
+    };
+    expect(first.role).toBe("orchestrator");
+    expect(first.projectId).toBe("o-r");
+
+    const second = (await handlers.ensureProjectOrchestrator({ params: { projectId: "o-r" }, body: undefined })) as {
+      id: string;
+    };
+    expect(second.id).toBe(first.id);
+  });
+
+  it("404s unknown projects", async () => {
+    const handlers = contractHandlers(testDaemon().services);
+    await expect(handlers.ensureProjectOrchestrator({ params: { projectId: "ghost" }, body: undefined })).rejects.toThrow(
+      NotFoundError,
+    );
   });
 });
 
