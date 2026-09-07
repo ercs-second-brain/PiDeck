@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { GhClient, ghErrorFromExecError, parseRepoUrl, type GhRunResult } from "./gh.js";
-import { fakeGhRunner } from "./testutil.js";
 
 describe("parseRepoUrl", () => {
   it("parses https URLs with and without .git", () => {
@@ -21,7 +20,10 @@ describe("parseRepoUrl", () => {
 
 describe("GhClient", () => {
   it("apiJson parses the JSON body", async () => {
-    const gh = new GhClient(fakeGhRunner(1, { "/repos/o/r": { stdout: '{"hello":"world"}' } }));
+    const gh = new GhClient(async (args) => {
+      expect(args).toEqual(["api", "/repos/o/r"]);
+      return { stdout: '{"hello":"world"}', stderr: "" };
+    });
     await expect(gh.apiJson("/repos/o/r")).resolves.toEqual({ hello: "world" });
   });
 
@@ -54,7 +56,10 @@ describe("GhClient", () => {
       "",
       '{"login":"eric"}',
     ].join("\r\n");
-    const gh = new GhClient(fakeGhRunner(2, { "/user": { stdout: raw } }));
+    const gh = new GhClient(async (args) => {
+      expect(args).toEqual(["api", "-i", "/user"]);
+      return { stdout: raw, stderr: "" };
+    });
     const res = await gh.apiWithHeaders<{ login: string }>("/user");
     expect(res.data).toEqual({ login: "eric" });
     expect(res.headers["x-oauth-scopes"]).toBe("repo, workflow");

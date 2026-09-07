@@ -21,16 +21,19 @@
 
 import { useSyncExternalStore } from "react";
 import {
+  terminalServerEventSchema,
   wsServerEventSchema,
   type KanbanBoard,
   type KanbanColumnSummary,
   type KanbanUpdateEvent,
   type Project,
   type PullRequest,
+  type TerminalServerEvent,
   type Worker,
 } from "@agentskiss/shared";
 
 import { apiGetKanban, apiListPullRequests, apiListProjects, apiListWorkers, errorMessage } from "../lib/api";
+import { nextBackoffMs } from "../lib/backoff";
 
 // ---------------------------------------------------------------------------
 // State shape
@@ -72,17 +75,16 @@ const INITIAL_STATE: AppState = {
   pullRequests: {},
 };
 
-// ---------------------------------------------------------------------------
-// Reconnect backoff (same schedule as the terminal bridge client: exponential
-// from 500ms, capped at 8s, ±25% jitter to spread reconnect storms)
-// ---------------------------------------------------------------------------
+/**
+ * Terminal event types, derived from the schema so the /ws bridge (which owns
+ * them) and this store cannot drift.
+ */
+const TERMINAL_EVENT_TYPES: ReadonlySet<string> = new Set(
+  terminalServerEventSchema.options.map((option) => option.shape.type.value),
+);
 
-export function backoffDelayMs(attempt: number): number {
-  return Math.min(500 * 2 ** Math.max(0, attempt - 1), 8000);
-}
-
-export function nextBackoffMs(attempt: number): number {
-  return Math.round(backoffDelayMs(attempt) * (0.75 + Math.random() * 0.5));
+function isTerminalEvent(event: { type: string }): event is TerminalServerEvent {
+  return TERMINAL_EVENT_TYPES.has(event.type);
 }
 
 // ---------------------------------------------------------------------------
@@ -247,11 +249,7 @@ class LiveBoardStore implements BoardStore {
     const parsed = wsServerEventSchema.safeParse(json);
     if (!parsed.success) return;
     const event = parsed.data;
-    if (
-      event.type === "terminal.attached" ||
-      event.type === "terminal.data" ||
-      event.type === "terminal.exited"
-    ) {
+    if (isTerminalEvent(event)) {
       return; // terminal events: the /ws bridge, not this store
     }
     this.apply(event);

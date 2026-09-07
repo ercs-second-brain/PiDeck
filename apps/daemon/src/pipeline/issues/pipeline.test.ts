@@ -11,6 +11,7 @@ import { Emitter } from "./emitter.js";
 import { QueueingScheduler, UnboundedScheduler } from "./scheduler.js";
 import { IssueSpawnPipeline, issueCardId } from "./pipeline.js";
 import type { BlockerResolver, RegisteredProject, WorkerSpawner } from "./ports.js";
+import { makeIssue } from "../../testing/fixtures.js";
 import type { SpawnedWorker } from "../../sessions/manager.js";
 
 // ---------------------------------------------------------------------------
@@ -30,20 +31,6 @@ function makeProject(overrides: Partial<Project["settings"]> = {}): Project {
     settings: { autoAgentUsername: "kiss-bot", workerConcurrency: 1, ...overrides },
     createdAt: now,
     updatedAt: now,
-  };
-}
-
-function makeIssue(number: number, overrides: Partial<Issue> = {}): Issue {
-  return {
-    projectId: PROJECT_ID,
-    number,
-    title: `Issue ${number}`,
-    state: "open",
-    blockedBy: [],
-    assignee: null,
-    url: `https://github.com/o/r/issues/${number}`,
-    updatedAt: "2026-09-06T12:00:00Z",
-    ...overrides,
   };
 }
 

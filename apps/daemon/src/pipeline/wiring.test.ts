@@ -21,6 +21,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Issue, KanbanUpdateEvent, PullRequest } from "@agentskiss/shared";
 
 import { testDaemon, type FakeGhRoutes, type TestDaemon } from "../api/testutil.js";
+import { makeIssue as sharedMakeIssue, makePullRequest as sharedMakePullRequest, restPull as sharedRestPull } from "../testing/fixtures.js";
 import type { GithubAutomation } from "./wiring.js";
 import { CATCH_UP_BATCH_SIZE, watcherOptionsFromEnv } from "./wiring.js";
 
@@ -49,58 +50,40 @@ function emptyRoutes(): FakeGhRoutes & { api: Record<string, unknown>; graphql: 
       // blocker detail, so the pipeline resolves blockedBy via GraphQL.
       "blockedBy(first:": {
         repository: {
-          issue: { blockedBy: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } },
+          issue: { blockedBy: { totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } },
         },
       },
     },
   };
 }
 
+// Thin bindings of the shared fixtures (apps/daemon/src/testing/fixtures.ts)
+// to this file's constants — octo/repo under project "octo-repo" at NOW.
 function makeIssue(number: number, overrides: Partial<Issue> = {}): Issue {
-  return {
+  return sharedMakeIssue(number, {
     projectId: PROJECT,
-    number,
-    title: `Issue ${number}`,
-    state: "open",
-    blockedBy: [],
-    blockers: [], // inline detail: the spawn pipeline never calls the blocker resolver
-    assignee: null,
     url: `https://github.com/octo/repo/issues/${number}`,
     updatedAt: NOW,
+    // Inline detail: the spawn pipeline never calls the blocker resolver.
+    blockers: [],
     ...overrides,
-  };
+  });
 }
 
 function makePullRequest(number: number, overrides: Partial<PullRequest> = {}): PullRequest {
-  return {
+  return sharedMakePullRequest(number, {
     projectId: PROJECT,
-    number,
-    title: `PR ${number}`,
-    state: "open",
-    ciStatus: "unknown",
-    reviewState: "none",
-    headBranch: `feature-${number}`,
-    baseBranch: "main",
     author: AUTO_USER,
+    headBranch: `feature-${number}`,
     url: `https://github.com/octo/repo/pull/${number}`,
     updatedAt: NOW,
     ...overrides,
-  };
+  });
 }
 
 /** REST pull payload (mapRestPull shape) for the PR pipeline's polls. */
 function restPull(number: number, sha: string): Record<string, unknown> {
-  return {
-    number,
-    title: `PR ${number}`,
-    state: "open",
-    merged_at: null,
-    user: { login: AUTO_USER },
-    head: { ref: `feature-${number}`, sha },
-    base: { ref: "main" },
-    html_url: `https://github.com/octo/repo/pull/${number}`,
-    updated_at: NOW,
-  };
+  return sharedRestPull(number, { sha, author: AUTO_USER, headBranch: `feature-${number}`, updatedAt: NOW });
 }
 
 async function registeredDaemon(ghRoutes: FakeGhRoutes = emptyRoutes()): Promise<TestDaemon & { automation: GithubAutomation }> {
@@ -401,13 +384,11 @@ describe("GithubAutomation issue catch-up (issue #50)", () => {
     expect(daemon.services.registry.listWorkers({ projectId: PROJECT })).toHaveLength(0);
     // First-ever start baselines: the cursor is persisted at the high-water mark.
     expect(cursorState(daemon.stateDir)).toBe(45);
-
     // Daemon down: issue #46 is created (route arrays are newest-first).
     routes.api["/repos/octo/repo/issues"] = issuesNewestFirst(46, 45);
     daemon.automation.stop();
     await daemon.automation.start(); // restart with the persisted cursor
     await flush();
-
     const workers = daemon.services.registry.listWorkers({ projectId: PROJECT });
     expect(workers).toHaveLength(1);
     expect(workers[0]).toMatchObject({ issueNumber: 46, status: "running" });
@@ -491,6 +472,7 @@ describe("GithubAutomation issue catch-up (issue #50)", () => {
           repository: {
             issue: {
               blockedBy: {
+                totalCount: 1,
                 pageInfo: { hasNextPage: false, endCursor: null },
                 nodes: [{ number: 40, state: "OPEN", repository: { nameWithOwner: "octo/repo" } }],
               },
@@ -548,8 +530,7 @@ describe("GithubAutomation issue catch-up (issue #50)", () => {
     await flush();
 
     // Cap 1: the batch of three downtime-created issues yields one running
-    // worker now; the rest queue FIFO through the scheduler (identical to
-    // the live path) instead of bursting.
+    // worker now; the rest queue FIFO through the scheduler, not a burst.
     const workers = daemon.services.registry.listWorkers({ projectId: PROJECT });
     expect(workers).toHaveLength(1);
     expect(workers[0]?.issueNumber).toBe(41);

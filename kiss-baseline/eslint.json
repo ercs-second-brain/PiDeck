@@ -28,10 +28,10 @@
     "max-lines-per-function::packages/shared/src/index.test.ts::Arrow function has too many lines (156). Maximum allowed is 100.",
     "max-lines::apps/daemon/src/api/contract.test.ts::File has too many lines (433). Maximum allowed is 300.",
     "max-lines::apps/daemon/src/api/handlers.test.ts::File has too many lines (304). Maximum allowed is 300.",
-    "max-lines::apps/daemon/src/pipeline/issues/pipeline.test.ts::File has too many lines (471). Maximum allowed is 300.",
-    "max-lines::apps/daemon/src/pipeline/prs/pipeline.test.ts::File has too many lines (388). Maximum allowed is 300.",
+    "max-lines::apps/daemon/src/pipeline/issues/pipeline.test.ts::File has too many lines (459). Maximum allowed is 300.",
+    "max-lines::apps/daemon/src/pipeline/prs/pipeline.test.ts::File has too many lines (373). Maximum allowed is 300.",
     "max-lines::apps/daemon/src/pipeline/prs/pipeline.ts::File has too many lines (305). Maximum allowed is 300.",
-    "max-lines::apps/daemon/src/pipeline/wiring.test.ts::File has too many lines (437). Maximum allowed is 300.",
+    "max-lines::apps/daemon/src/pipeline/wiring.test.ts::File has too many lines (418). Maximum allowed is 300.",
     "max-lines::apps/daemon/src/sessions/manager.test.ts::File has too many lines (527). Maximum allowed is 300.",
     "max-lines::apps/web/src/routes/OnboardingWizard.tsx::File has too many lines (355). Maximum allowed is 300.",
     "max-lines::packages/shared/src/index.test.ts::File has too many lines (490). Maximum allowed is 300."

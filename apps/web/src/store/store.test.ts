@@ -13,7 +13,8 @@ import {
   type KanbanColumn,
   type KanbanUpdateEvent,
 } from "@agentskiss/shared";
-import { applyKanbanEvent, backoffDelayMs, nextBackoffMs, type AppState } from "./store";
+import { applyKanbanEvent, type AppState } from "./store";
+import { backoffDelayMs, nextBackoffMs } from "../lib/backoff";
 
 const PROJECT_ID = "demo";
 

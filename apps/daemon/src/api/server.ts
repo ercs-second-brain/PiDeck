@@ -54,12 +54,20 @@ export function createDaemonServer(options: DaemonServerOptions): { server: Serv
         await router.dispatch(req, res);
         return;
       }
-      if (webDist !== null && webDist !== undefined && webDist.length > 0) {
+      const webDistConfigured = webDist !== null && webDist !== undefined && webDist.length > 0;
+      if (webDistConfigured) {
         if (serveStatic(webDist, url.pathname, res)) return;
       }
-      res.statusCode = req.url?.startsWith("/api") === true ? 404 : 200;
+      // Reaching this point means nothing could be served: either an API-ish
+      // path the router does not claim ("/api" without the trailing slash,
+      // "/api<unknown>"), or a configured webDist whose static serving fell
+      // through (traversal guard, or no index.html to fall back to) — both
+      // are 404s. Only with no webapp build at all does "/" double as the
+      // daemon's plain-text status page.
+      const notFound = webDistConfigured || url.pathname.startsWith("/api");
+      res.statusCode = notFound ? 404 : 200;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.end(webDist !== null && webDist !== undefined && webDist.length > 0 ? "not found" : "agentskiss daemon");
+      res.end(notFound ? "not found" : "agentskiss daemon");
     })().catch((err) => {
       if (!res.headersSent) {
         res.statusCode = 500;

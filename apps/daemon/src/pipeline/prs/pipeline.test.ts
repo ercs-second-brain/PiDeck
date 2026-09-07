@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { PullRequest, Worker, WorkerStatus } from "@agentskiss/shared";
 
 import { GhClient } from "../../github/gh.js";
+import { restPull } from "../../testing/fixtures.js";
 import type { PRPipelineEvent } from "./events.js";
 import { DEFAULT_MAX_FIX_ATTEMPTS, PullRequestPipeline, type PRSessionControl } from "./pipeline.js";
 import { PRTracker } from "./tracker.js";
@@ -22,23 +23,6 @@ interface FakePR {
   checkRuns: unknown;
   reviews: unknown[];
   comments: unknown[];
-}
-
-function restPull(
-  number: number,
-  overrides: Partial<{ sha: string; title: string; merged: boolean; closed: boolean; headBranch: string }> = {},
-): Record<string, unknown> {
-  return {
-    number,
-    title: overrides.title ?? `PR ${number}`,
-    state: overrides.closed === true ? "closed" : "open",
-    merged_at: overrides.merged === true ? "2026-09-06T12:30:00Z" : null,
-    user: { login: "worker" },
-    head: { ref: overrides.headBranch ?? `agent/issue-7`, sha: overrides.sha ?? "sha-1" },
-    base: { ref: "main" },
-    html_url: `https://github.com/o/r/pull/${number}`,
-    updated_at: "2026-09-06T12:00:00Z",
-  };
 }
 
 function checkRuns(conclusion: "failure" | "success"): unknown {
@@ -397,7 +381,7 @@ describe("PullRequestPipeline", () => {
       state: "open",
       ciStatus: "failure",
       reviewState: "none",
-      headBranch: "agent/issue-7",
+      headBranch: "agent/issue-12",
       baseBranch: "main",
       author: "worker",
       url: "https://github.com/o/r/pull/12",

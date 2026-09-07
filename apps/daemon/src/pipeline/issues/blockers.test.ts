@@ -1,24 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@agentskiss/shared";
 
 import type { GhRunner } from "../../github/gh.js";
 import { GhClient } from "../../github/gh.js";
+import { makeIssue } from "../../testing/fixtures.js";
 import { GhBlockerResolver } from "./blockers.js";
 
 const REPO = { owner: "o", repo: "r" };
-
-function makeIssue(number: number): Issue {
-  return {
-    projectId: "proj",
-    number,
-    title: `Issue ${number}`,
-    state: "open",
-    blockedBy: [],
-    assignee: null,
-    url: `https://github.com/o/r/issues/${number}`,
-    updatedAt: "2026-09-06T12:00:00Z",
-  };
-}
 
 interface BlockedByNode {
   number: number;
@@ -65,6 +52,7 @@ function fakeGh(pages: Map<number, ScriptedPage[]>): { runner: GhRunner; queries
           repository: {
             issue: {
               blockedBy: {
+                totalCount: page.nodes.length,
                 nodes: page.nodes,
                 pageInfo: { hasNextPage: page.hasNextPage ?? false, endCursor: page.endCursor ?? null },
               },

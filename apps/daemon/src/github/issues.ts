@@ -230,14 +230,14 @@ export async function fetchIssuesWithBlockedBy(gh: GhClient, projectId: string, 
 }
 
 // ---------------------------------------------------------------------------
-// Blocked-by resolution (single issue)
+// Blocked-by resolution (single issue) — the one GraphQL query + schema;
+// every consumer maps the raw nodes it returns.
 // ---------------------------------------------------------------------------
 
 const blockedByQuery = `
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     issue(number: $number) {
-      number
       blockedBy(first: 100, after: $after) {
         totalCount
         pageInfo { hasNextPage endCursor }
@@ -253,7 +253,6 @@ const blockedByResponseSchema = z.object({
     .object({
       issue: z
         .object({
-          number: z.number().int().positive(),
           blockedBy: z.object({
             totalCount: z.number().int(),
             pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
@@ -261,7 +260,7 @@ const blockedByResponseSchema = z.object({
               z.object({
                 number: z.number().int().positive(),
                 state: z.enum(["OPEN", "CLOSED"]),
-                repository: z.object({ nameWithOwner: z.string() }),
+                repository: z.object({ nameWithOwner: z.string() }).nullable(),
               }),
             ),
           }),
@@ -270,6 +269,54 @@ const blockedByResponseSchema = z.object({
     })
     .nullable(),
 });
+
+/** One raw `Issue.blockedBy` node, exactly as GitHub reports it. */
+interface BlockedByNode {
+  number: RefNumber;
+  state: "OPEN" | "CLOSED";
+  /** `owner/name` of the repository holding the blocker (`null` if GitHub omits it). */
+  repository: string | null;
+}
+
+/** Raw paginated `Issue.blockedBy` detail for one issue. */
+export interface BlockedByDetail {
+  issueNumber: RefNumber;
+  /** Every native blocker node — any state, any repository, in API order. */
+  blockers: BlockedByNode[];
+  /** GitHub's `totalCount` for the connection, regardless of state or repository. */
+  totalBlockers: number;
+}
+
+/**
+ * Fetches the raw `Issue.blockedBy` connection for one issue via GraphQL
+ * (paginated). See the module docblock for the verified API shape. This is
+ * the single source of the blocked-by query + schema; callers filter/map the
+ * raw nodes (e.g. {@link resolveBlockedBy} for open same-repo numbers, the
+ * pipeline's `GhBlockerResolver` for full closed/cross-repo detail).
+ */
+export async function fetchBlockedByDetail(gh: GhClient, repo: RepoRef, issueNumber: RefNumber): Promise<BlockedByDetail> {
+  const owner = repo.owner;
+  const name = repo.repo;
+  let totalBlockers = 0;
+  const blockers: BlockedByNode[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const data = blockedByResponseSchema.parse(
+      await gh.graphql(blockedByQuery, { owner, name, number: issueNumber, ...(after ? { after } : {}) }),
+    );
+    const issue = data.repository?.issue;
+    if (issue === null || issue === undefined) {
+      throw new Error(`Issue #${issueNumber} not found in ${formatRepoRef(repo)}`);
+    }
+    totalBlockers = issue.blockedBy.totalCount;
+    for (const node of issue.blockedBy.nodes) {
+      blockers.push({ number: node.number, state: node.state, repository: node.repository?.nameWithOwner ?? null });
+    }
+    if (!issue.blockedBy.pageInfo.hasNextPage || issue.blockedBy.pageInfo.endCursor === null) break;
+    after = issue.blockedBy.pageInfo.endCursor;
+  }
+  return { issueNumber, blockers, totalBlockers };
+}
 
 export interface BlockedByResolution {
   issueNumber: RefNumber;
@@ -285,31 +332,14 @@ export interface BlockedByResolution {
 }
 
 /**
- * Resolves GitHub's native "blocked by" relationships for one issue via
- * GraphQL (paginated). See the module docblock for the verified API shape.
+ * Resolves GitHub's native "blocked by" relationships for one issue as
+ * open-same-repo blocker numbers, on top of {@link fetchBlockedByDetail}.
  */
 export async function resolveBlockedBy(gh: GhClient, repo: RepoRef, issueNumber: RefNumber): Promise<BlockedByResolution> {
-  const owner = repo.owner;
-  const name = repo.repo;
-  let totalBlockers = 0;
-  const openSameRepo: RefNumber[] = [];
-  let after: string | undefined;
-  for (;;) {
-    const data = blockedByResponseSchema.parse(
-      await gh.graphql(blockedByQuery, { owner, name, number: issueNumber, ...(after ? { after } : {}) }),
-    );
-    const issue = data.repository?.issue;
-    if (issue === null || issue === undefined) {
-      throw new Error(`Issue #${issueNumber} not found in ${formatRepoRef(repo)}`);
-    }
-    totalBlockers = issue.blockedBy.totalCount;
-    for (const node of issue.blockedBy.nodes) {
-      if (node.state === "OPEN" && node.repository.nameWithOwner === formatRepoRef(repo)) {
-        openSameRepo.push(node.number);
-      }
-    }
-    if (!issue.blockedBy.pageInfo.hasNextPage || issue.blockedBy.pageInfo.endCursor === null) break;
-    after = issue.blockedBy.pageInfo.endCursor;
-  }
-  return { issueNumber, blockedBy: openSameRepo, blocked: openSameRepo.length > 0, totalBlockers };
+  const detail = await fetchBlockedByDetail(gh, repo, issueNumber);
+  const ownRepo = formatRepoRef(repo);
+  const blockedBy = detail.blockers
+    .filter((node) => node.state === "OPEN" && node.repository === ownRepo)
+    .map((node) => node.number);
+  return { issueNumber, blockedBy, blocked: blockedBy.length > 0, totalBlockers: detail.totalBlockers };
 }

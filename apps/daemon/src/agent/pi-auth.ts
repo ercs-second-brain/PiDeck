@@ -25,6 +25,8 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { z } from "zod";
+
 import { piAuthSchema, type PiAuth } from "@agentskiss/shared";
 
 /**
@@ -85,13 +87,24 @@ export class PiNotInstalledError extends Error {
 
 /**
  * Decides whether one provider's `pi auth check --json` output reports
- * ready. Tolerates the two JSON spacings the installer matches (`"status":
- * "ready"` and `"status":"ready"`) so a provider whose JSON we cannot parse
- * still counts when it carries the ready marker.
+ * ready: the stdout must parse as a JSON object carrying `"status":
+ * "ready"` (any spacing — JSON parsing is spacing-agnostic), mirroring the
+ * marker the installer matches. Unparseable or non-ready output is not
+ * ready.
  */
 export function providerAuthReady(stdout: string): boolean {
-  const compact = stdout.replaceAll(" ", "");
-  return compact.includes('"status":"ready"');
+  const parsed = readyAuthSchema.safeParse(parseJson(stdout));
+  return parsed.success;
+}
+
+const readyAuthSchema = z.object({ status: z.literal("ready") }).loose();
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 /** Result of probing every provider: the ready ones (ordered like {@link PI_PROVIDERS}). */
