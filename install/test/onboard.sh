@@ -41,8 +41,10 @@ AK_HOME="$tmp/home"
 mkdir -p "$AK_HOME/lib"
 cp "$INSTALL_DIR/lib/"*.sh "$AK_HOME/lib/"
 cp "$INSTALL_DIR/onboard.sh" "$AK_HOME/lib/"
-[ -f "$AK_HOME/lib/onboard.sh" ] && [ -f "$AK_HOME/lib/common.sh" ] && [ ! -d "$AK_HOME/lib/lib" ] ||
-  { printf 'not ok - test setup: flat copy of install/ into %s/lib\n' "$AK_HOME"; exit 1; }
+if [ -f "$AK_HOME/lib/onboard.sh" ] && [ -f "$AK_HOME/lib/common.sh" ] && [ ! -d "$AK_HOME/lib/lib" ]; then :; else
+  printf 'not ok - test setup: flat copy of install/ into %s/lib\n' "$AK_HOME"
+  exit 1
+fi
 
 # Isolate from the real ~/.agentskiss (common.sh honors AGENTSKISS_HOME).
 AGENTSKISS_HOME="$AK_HOME"
