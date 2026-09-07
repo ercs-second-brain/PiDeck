@@ -4,10 +4,15 @@
  * navigates to `/terminal/:sessionId` so terminals are deep-linkable; the
  * sidebar data comes from the shell via context. With no projects at all
  * (first run) the empty state offers the onboarding wizard.
+ *
+ * Issue #104: selecting an **archived** worker's session renders the
+ * read-only archived log (captured scrollback + final metadata) instead of
+ * a dead terminal pane.
  */
 
 import { useParams } from "react-router";
 import { TerminalPane } from "./TerminalPane";
+import { ArchivedLogView } from "./ArchivedLogView";
 import { useSidebar } from "./sidebar";
 import "./terminal.css";
 
@@ -16,10 +21,15 @@ export function TerminalPage() {
   const { entries, error, loaded, openOnboarding } = useSidebar();
 
   const selected = entries.flatMap((entry) => entry.sessions).find((session) => session.id === sessionId);
+  const selectedWorker =
+    selected?.workerId != null ? entries.flatMap((entry) => entry.workers).find((worker) => worker.id === selected.workerId) : undefined;
+  const prUrl = selected ? entries.find((entry) => entry.project.id === selected.projectId)?.project.repoUrl : undefined;
 
   return (
     <div className="terminal-main">
-      {selected ? (
+      {selected && selectedWorker?.status === "archived" ? (
+        <ArchivedLogView workerId={selectedWorker.id} prUrl={prUrl ?? null} />
+      ) : selected ? (
         <TerminalPane key={selected.id} sessionId={selected.id} />
       ) : !loaded && !error ? (
         // Issue #90: not-loaded ≠ no-projects — don't offer onboarding while

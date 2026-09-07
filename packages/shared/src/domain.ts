@@ -288,3 +288,35 @@ export const workerSchema = z.object({
   updatedAt: isoDateTimeSchema,
 });
 export type Worker = z.infer<typeof workerSchema>;
+
+// ---------------------------------------------------------------------------
+// Archived worker session log (issue #104)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read-only archived session log for a terminated worker (issue #104): the
+ * tmux scrollback captured when the pane was killed plus the worker's final
+ * metadata. Served by `GET /api/workers/:workerId/log`.
+ */
+export const archivedWorkerLogSchema = z.object({
+  workerId: idSchema,
+  projectId: idSchema,
+  /** Task the worker ran (`0` = freeform prompt worker). */
+  issueNumber: z.number().int().min(0),
+  /** PR the worker had opened, if any. */
+  prNumber: refNumberSchema.nullable(),
+  finalStatus: workerStatusSchema,
+  /** Last status message at termination. */
+  finalStatusMessage: z.string().nullable(),
+  startedAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+  /**
+   * When the scrollback was captured (termination time). `null` for workers
+   * archived before capture existed, or when the pane was already gone at
+   * terminate time.
+   */
+  capturedAt: isoDateTimeSchema.nullable(),
+  /** Captured pane scrollback (plain text). Empty when nothing was captured. */
+  scrollback: z.string(),
+});
+export type ArchivedWorkerLog = z.infer<typeof archivedWorkerLogSchema>;

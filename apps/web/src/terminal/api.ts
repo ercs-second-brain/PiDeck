@@ -6,10 +6,12 @@
 
 import { z } from "zod";
 import {
+  archivedWorkerLogSchema,
   formatPath,
   projectSchema,
   sessionSchema,
   workerSchema,
+  type ArchivedWorkerLog,
   type Project,
   type Session,
   type Worker,
@@ -69,4 +71,12 @@ export function startOrchestrator(projectId: string): Promise<Session> {
  */
 export function terminateWorker(workerId: string): Promise<Worker> {
   return post(workerSchema, formatPath("terminateWorker", { workerId }));
+}
+
+/**
+ * Fetches an archived worker's log (issue #104): the scrollback captured at
+ * termination plus the worker's final metadata.
+ */
+export function fetchArchivedWorkerLog(workerId: string): Promise<ArchivedWorkerLog> {
+  return get(archivedWorkerLogSchema, formatPath("getArchivedWorkerLog", { workerId }));
 }
