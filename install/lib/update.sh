@@ -138,7 +138,7 @@ update_apply() {
   fi
 
   [ -f "$AK_LIB/source.sh" ] || die "install broken: $AK_LIB/source.sh missing (re-run the installer)"
-  # shellcheck disable=SC1090 # sourced from the installed lib dir on purpose
+  # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
   . "$AK_LIB/source.sh"
   AK_SRC=$UPDATE_SRC
   step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"

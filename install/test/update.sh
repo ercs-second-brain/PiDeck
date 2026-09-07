@@ -4,6 +4,10 @@
 # shim wiring for `update --check` and the apply path's reuse of the installer
 # machinery (resolve_source/build_from_source + svc_restart). No network, no
 # real git/gh, no real service.
+#
+# SC2016: the run_update snippets are single-quoted ON PURPOSE — they must
+# expand inside the test shell that sources update.sh, not here.
+# shellcheck shell=sh disable=SC2016
 set -u
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
