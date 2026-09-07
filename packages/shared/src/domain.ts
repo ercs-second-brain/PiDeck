@@ -17,7 +17,6 @@ import { z } from "zod";
 
 /** ISO-8601 UTC date-time string, e.g. `2025-01-01T12:00:00.000Z`. */
 export const isoDateTimeSchema = z.iso.datetime();
-export type IsoDateTime = z.infer<typeof isoDateTimeSchema>;
 
 /** Non-empty identifier (project id, session id, worker id, card id...). */
 export const idSchema = z.string().min(1);
@@ -74,7 +73,7 @@ export type Project = z.infer<typeof projectSchema>;
 // Issue
 // ---------------------------------------------------------------------------
 
-export const issueStateSchema = z.enum(["open", "closed"]);
+const issueStateSchema = z.enum(["open", "closed"]);
 
 /**
  * One native blocker of an issue, as reported by GitHub's GraphQL
@@ -87,7 +86,7 @@ export const issueStateSchema = z.enum(["open", "closed"]);
  * - Blockers may be **cross-repository**; `repository` carries the
  *   `owner/repo` of a foreign blocker and is `null` for same-repo ones.
  */
-export const issueBlockerSchema = z.object({
+const issueBlockerSchema = z.object({
   /** Blocker issue number (unique per blocker repository). */
   number: refNumberSchema,
   state: issueStateSchema,
@@ -157,7 +156,7 @@ export type PullRequest = z.infer<typeof pullRequestSchema>;
 // Kanban
 // ---------------------------------------------------------------------------
 
-export const cardKindSchema = z.enum(["issue", "pull_request"]);
+const cardKindSchema = z.enum(["issue", "pull_request"]);
 
 export const kanbanCardSchema = z.object({
   id: idSchema,
@@ -174,7 +173,7 @@ export const kanbanCardSchema = z.object({
 export type KanbanCard = z.infer<typeof kanbanCardSchema>;
 
 /** One column of a project board with its cards (ordered within the column). */
-export const kanbanColumnSummarySchema = z.object({
+const kanbanColumnSummarySchema = z.object({
   column: kanbanColumnSchema,
   cards: z.array(kanbanCardSchema),
 });
@@ -193,7 +192,7 @@ export type KanbanBoard = z.infer<typeof kanbanBoardSchema>;
 // Session (tmux-backed terminal sessions)
 // ---------------------------------------------------------------------------
 
-export const sessionRoleSchema = z.enum(["orchestrator", "worker"]);
+const sessionRoleSchema = z.enum(["orchestrator", "worker"]);
 /** Role of a tmux-backed session (parity with `WorkerStatus`). */
 export type SessionRole = z.infer<typeof sessionRoleSchema>;
 

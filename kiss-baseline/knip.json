@@ -31,8 +31,6 @@
     "export:apps/web/src/terminal/connection.ts:nextBackoffMs",
     "file:apps/daemon/src/pipeline/issues/index.ts",
     "file:apps/daemon/src/pipeline/prs/index.ts",
-    "file:apps/daemon/src/sessions/index.ts",
-    "file:apps/daemon/src/terminal/index.ts",
     "type:apps/daemon/src/api/context.ts:Project",
     "type:apps/daemon/src/api/projects.ts:ProjectSettingsPatch",
     "type:apps/daemon/src/api/router.ts:RequestContext",

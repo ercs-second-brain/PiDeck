@@ -99,7 +99,7 @@ export class IssueSpawnPipeline {
     this.now = options.now ?? (() => new Date());
     this.onError = options.onError ?? ((err) => console.error("[agentskiss/pipeline] issue pipeline error:", err));
     // Cap-aware by default: with no `workerConcurrency` set, queueing is
-    // bypassed entirely and behavior matches the old UnboundedScheduler.
+    // bypassed entirely and uncapped issues spawn immediately.
     this.scheduler =
       options.scheduler ?? new QueueingScheduler({ spawner: this.spawner, onError: (err) => this.onError(err) });
   }

@@ -1,16 +1,13 @@
 /**
  * Spawn scheduling.
  *
- * Every spawn funnels through a {@link SpawnScheduler}. Two implementations:
- *
- * - {@link UnboundedScheduler} — starts each task immediately (the original
- *   default; kept for callers that want plain fire-and-forget).
- * - {@link QueueingScheduler} — honors a per-project concurrency cap
- *   (`Project.settings.workerConcurrency`, issue #14): at most N workers run
- *   concurrently per project; further tasks queue FIFO and start as slots
- *   free (a worker reaching a terminal state — done/failed/stopped — frees
- *   its slot). Issues whose project has **no cap spawn immediately**, so the
- *   default stays unbounded per #14's planning decision.
+ * Every spawn funnels through the {@link QueueingScheduler}: it honors a
+ * per-project concurrency cap (`Project.settings.workerConcurrency`, issue
+ * #14) — at most N workers run concurrently per project; further tasks
+ * queue FIFO and start as slots free (a worker reaching a terminal state —
+ * done/failed/stopped — frees its slot). Issues whose project has **no cap
+ * spawn immediately**, so the default stays unbounded per #14's planning
+ * decision.
  *
  * Slot accounting combines two sources per project, keyed by issue number so
  * a task and the worker it spawned count as one slot:
@@ -48,19 +45,7 @@ export interface SpawnScheduler {
 }
 
 // ---------------------------------------------------------------------------
-// Unbounded (fire-and-forget)
-// ---------------------------------------------------------------------------
-
-export class UnboundedScheduler implements SpawnScheduler {
-  constructor(private readonly onError: (err: unknown) => void = defaultOnError) {}
-
-  schedule(task: () => Promise<void>, _request?: SpawnRequest): void {
-    void task().catch((err: unknown) => this.onError(err));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Queueing (per-project concurrency cap)
+// Queueing (per-project concurrency cap; uncapped projects spawn immediately)
 // ---------------------------------------------------------------------------
 
 /** Options for {@link QueueingScheduler}. */
