@@ -11,7 +11,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { terminalServerEventSchema, type TerminalServerEvent } from "@agentskiss/shared";
-import { afterAll, beforeAll, describe, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { SessionRegistry } from "../sessions/registry.js";
 import { Tmux } from "../sessions/tmux.js";
@@ -87,112 +87,96 @@ function connect(): Promise<ClientEvents> {
   });
 }
 
+/** All terminal.data payloads received so far, joined in order. */
+async function dataJoined(client: ClientEvents): Promise<string> {
+  return (await client.events())
+    .filter((event) => event.type === "terminal.data")
+    .map((event) => (event.type === "terminal.data" ? event.data : ""))
+    .join("");
+}
+
+/** Waits until a server event of the given type has been received. */
+async function awaitEvent(client: ClientEvents, type: string, timeoutMs = 5000): Promise<void> {
+  await pollUntil(async () => (await client.events()).some((event) => event.type === type), timeoutMs);
+}
+
+/** Waits until the pane output stream contains the given marker text. */
+async function awaitEcho(client: ClientEvents, marker: string, timeoutMs = 5000): Promise<void> {
+  await pollUntil(async () => (await dataJoined(client)).includes(marker), timeoutMs);
+}
+
+/** Creates a tmux session running an echoing `cat` pane + its registry entry. */
+async function seedCatSession(role: "orchestrator" | "worker", marker?: string) {
+  const tmuxName = `agentskiss-term-it-${role}`;
+  const command = marker === undefined ? ["bash", "-c", "exec cat"] : ["bash", "-c", `echo ${marker}; exec cat`];
+  await tmux.newSession(tmuxName, { cwd: stateDir, command });
+  return registry.createSession({ projectId: "term-it", role, tmuxSession: tmuxName, workerId: null });
+}
+
+/** Attaches a client and waits for the attach + first data frame. */
+async function attachAndWait(client: ClientEvents, sessionId: string): Promise<void> {
+  client.attach(sessionId);
+  await awaitEvent(client, "terminal.attached");
+  await pollUntil(async () => (await dataJoined(client)).length > 0);
+}
+
 describe.skipIf(!tmuxAvailable)("terminal bridge against a real tmux server", () => {
-  it(
-    "streams output, forwards input, resizes, and reports exit over WebSocket",
-    async () => {
-      // A session whose pane echoes everything typed (classic `cat`).
-      await tmux.newSession("agentskiss-term-it-1", {
-        cwd: stateDir,
-        command: ["bash", "-c", "exec cat"],
-      });
-      const session = registry.createSession({
-        projectId: "term-it",
-        role: "orchestrator",
-        tmuxSession: "agentskiss-term-it-1",
-        workerId: null,
-      });
+  it("streams output, forwards input, resizes, and reports exit over WebSocket", async () => {
+    const session = await seedCatSession("orchestrator");
+    const client = await connect();
+    await attachAndWait(client, session.id);
 
-      const client = await connect();
-      client.attach(session.id);
-      await pollUntil(async () =>
-        (await client.events()).some((event) => event.type === "terminal.attached"),
-      );
-      await pollUntil(async () =>
-        (await client.events()).some((event) => event.type === "terminal.data"),
-      );
+    // Input reaches the pane; `cat` echoes it back into a data frame.
+    client.sendInput("bridge echo OK\r");
+    await awaitEcho(client, "bridge echo OK");
 
-      // Input reaches the pane; `cat` echoes it back into a data frame.
-      client.sendInput("bridge echo OK\r");
-      await pollUntil(async () => {
-        const data = (await client.events())
-          .filter((event) => event.type === "terminal.data")
-          .map((event) => (event.type === "terminal.data" ? event.data : ""))
-          .join("");
-        return data.includes("bridge echo OK");
-      });
+    // Resize propagates to the tmux window.
+    client.resize(110, 33);
+    await pollUntil(async () => {
+      const size = await tmux.run([
+        "display-message",
+        "-p",
+        "-t",
+        `${session.tmuxSession}:`,
+        "#{window_width}x#{window_height}",
+      ]);
+      return size.stdout.trim() === "110x33";
+    });
 
-      // Resize propagates to the tmux window.
-      client.resize(110, 33);
-      await pollUntil(async () => {
-        const size = await tmux.run([
-          "display-message",
-          "-p",
-          "-t",
-          "agentskiss-term-it-1:",
-          "#{window_width}x#{window_height}",
-        ]);
-        return size.stdout.trim() === "110x33";
-      });
+    // Killing the tmux session surfaces as terminal.exited.
+    await tmux.killSession(session.tmuxSession);
+    await awaitEvent(client, "terminal.exited");
 
-      // Killing the tmux session surfaces as terminal.exited.
-      await tmux.killSession("agentskiss-term-it-1");
-      await pollUntil(async () =>
-        (await client.events()).some((event) => event.type === "terminal.exited"),
-      );
+    client.close();
+  }, 20_000);
 
-      client.close();
-    },
-    20_000,
-  );
+  it("streams event-driven pipe-pane output within milliseconds of a keystroke", async () => {
+    const session = await seedCatSession("orchestrator");
+    const client = await connect();
+    await attachAndWait(client, session.id);
 
-  it(
-    "reconnect replays the pane scrollback after a drop",
-    async () => {
-      await tmux.newSession("agentskiss-term-it-2", {
-        cwd: stateDir,
-        command: ["bash", "-c", 'echo MARKER-ONE; exec cat'],
-      });
-      const session = registry.createSession({
-        projectId: "term-it",
-        role: "worker",
-        tmuxSession: "agentskiss-term-it-2",
-        workerId: null,
-      });
+    // A keystroke's echo must reach the client quickly (event-driven via
+    // the pipe-pane stream, not waiting for the idle poll).
+    const t0 = Date.now();
+    client.sendInput("PING-EVENT\r");
+    await awaitEcho(client, "PING-EVENT", 4000);
+    // Generous bound keeps this stable on loaded CI runners.
+    expect(Date.now() - t0).toBeLessThan(2000);
 
-      const first = await connect();
-      first.attach(session.id);
-      await pollUntil(async () =>
-        (await first.events()).some((event) => event.type === "terminal.attached"),
-      );
-      await pollUntil(async () => {
-        const joined = (await first.events())
-          .filter((event) => event.type === "terminal.data")
-          .map((event) => (event.type === "terminal.data" ? event.data : ""))
-          .join("");
-        return joined.includes("MARKER-ONE");
-      });
-      first.close();
+    client.close();
+  }, 20_000);
 
-      // "Network drop" → new socket → reconnect: replay includes the marker.
-      const second = await connect();
-      second.attach(session.id);
-      await pollUntil(async () =>
-        (await second.events()).some(
-          (event) => event.type === "terminal.attached",
-        ),
-      );
-      await pollUntil(async () => {
-        const joined = (await second.events())
-          .filter((event) => event.type === "terminal.data")
-          .map((event) => (event.type === "terminal.data" ? event.data : ""))
-          .join("");
-        return joined.includes("MARKER-ONE");
-      });
-      second.close();
-    },
-    20_000,
-  );
+  it("reconnect replays the pane scrollback after a drop", async () => {
+    const session = await seedCatSession("worker", "MARKER-ONE");
+    const first = await connect();
+    await attachAndWait(first, session.id);
+    first.close();
+
+    // "Network drop" → new socket → reconnect: replay includes the marker.
+    const second = await connect();
+    await attachAndWait(second, session.id);
+    second.close();
+  }, 20_000);
 });
 
 /** Polls `probe` until truthy or timeout (avoids depending on vi beyond vitest). */

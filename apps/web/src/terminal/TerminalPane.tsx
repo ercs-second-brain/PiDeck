@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { InputBatcher } from "./input-batcher";
 import { TerminalConnection, type TerminalStatus } from "./connection";
 
 const STATUS_LABELS: Record<TerminalStatus, string> = {
@@ -53,7 +54,9 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
       },
       onReplay: () => term.reset(),
     });
-    term.onData((data) => connection.sendInput(data));
+    // Coalesce keystroke bursts into fewer, larger WS frames (issue #67).
+    const batcher = new InputBatcher((data) => connection.sendInput(data));
+    term.onData((data) => batcher.add(data));
 
     let lastSent = { cols: term.cols, rows: term.rows };
     const propagateResize = () => {
@@ -79,6 +82,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
 
     return () => {
       observer.disconnect();
+      batcher.close();
       connection.detach();
       term.dispose();
     };

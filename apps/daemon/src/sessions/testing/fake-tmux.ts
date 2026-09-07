@@ -1,12 +1,25 @@
 /**
  * In-memory fake `TmuxRunner` simulating a tmux server.
  *
- * Used by the daemon's unit tests (and reusable by later phases, e.g. the
- * terminal bridge) to exercise tmux-dependent logic without a real tmux
- * binary. Only implements the subset of commands the daemon uses.
+ * Used by the daemon's unit tests to exercise tmux-dependent logic without
+ * a real tmux binary. Covers the session-management commands (issue #4)
+ * and the terminal bridge commands (issues #7/#67):
+ * - `send-keys -l <text>` / `send-keys -H <hex>...` — literal text or
+ *   hex-encoded bytes (one byte per argument) are appended to the pane.
+ * - `capture-pane` tolerates `-e` (escape-sequence capture) and honors the
+ *   `-S` history bound (exactly the trailing N lines — the visible-screen
+ *   capture mode of the bridge's poll loop).
+ * - `pipe-pane` records the target and the notification path from the
+ *   command (`cat >> <path>`), so tests can emit output into the watched
+ *   file exactly like a real pipe-pane does (see `notifyOutput`).
+ *
+ * Only implements the subset of commands the daemon uses.
  */
 
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { TmuxError, type CommandResult, type TmuxRunner } from "../tmux.js";
+
 export interface FakePaneState {
   command: string[];
   cwd: string | undefined;
@@ -23,8 +36,21 @@ export interface FakeTmuxRunnerOptions {
   initialRows?: number;
 }
 
+export interface FakeInvocation {
+  /** The full argument vector (excluding the `-L <socket>` prefix). */
+  args: string[];
+}
+
 export class FakeTmuxRunner {
   readonly sessions = new Map<string, FakePaneState>();
+  /** Every invocation, in order (for input-coalescing assertions). */
+  readonly invocations: FakeInvocation[] = [];
+
+  /** Active pipes: pane target → `{ command, notifyPath }`. */
+  private readonly pipes = new Map<
+    string,
+    { command: string; notifyPath: string | undefined }
+  >();
 
   private readonly initialPaneLines: string[] | undefined;
   private readonly initialCols: number;
@@ -57,71 +83,168 @@ export class FakeTmuxRunner {
     });
   }
 
+  /** The notification path of the pane's active pipe, if one is running. */
+  pipeStreamPath(target: string): string | undefined {
+    return this.pipes.get(target)?.notifyPath;
+  }
+
+  /** Whether a pipe-pane is active for the target (start/stop bookkeeping). */
+  pipeActive(target: string): boolean {
+    return this.pipes.has(target);
+  }
+
+  /**
+   * Emits pane output: appends the lines to the pane (so subsequent
+   * `capture-pane` calls see them) and, when a pipe-pane is active, appends
+   * the raw text to the pipe's stream file — the same effect the real
+   * `cat >> <file>` pipe command has. Files are created on demand.
+   */
+  notifyOutput(target: string, text: string): void {
+    const pane = this.sessions.get(target);
+    if (!pane) this.fail(`can't find session ${target}`, []);
+    pane.paneLines.push(...splitLines(text));
+    const pipe = this.pipes.get(target);
+    if (pipe?.notifyPath !== undefined) appendTo(pipe.notifyPath, text);
+  }
+
   private execute(args: string[]): string {
     // Skip a private-socket prefix (`-L <name>`) if present.
     let rest = args;
     if (rest[0] === "-L") rest = rest.slice(2);
+    this.invocations.push({ args: [...rest] });
     const [cmd, ...cmdArgs] = rest;
     switch (cmd) {
       case "-V":
         return "tmux 3.4";
-      case "has-session": {
-        const name = this.target(cmdArgs, args);
-        if (!this.sessions.has(name)) this.fail("can't find session", args);
-        return "";
-      }
-      case "new-session": {
-        const parsed = this.parseNewSession(cmdArgs);
-        if (this.sessions.has(parsed.name)) {
-          this.fail("duplicate session", args);
-        }
-        this.sessions.set(parsed.name, {
-          command: parsed.command,
-          cwd: parsed.cwd,
-          paneLines: this.initialPaneLines ? [...this.initialPaneLines] : [],
-          cols: this.initialCols,
-          rows: this.initialRows,
-        });
-        return "";
-      }
-      case "list-sessions": {
+      case "has-session":
+        return this.hasSession(cmdArgs, args);
+      case "new-session":
+        return this.newSession(cmdArgs, args);
+      case "list-sessions":
         return [...this.sessions.keys()].join("\n");
-      }
-      case "kill-session": {
-        const name = this.target(cmdArgs, args);
-        if (!this.sessions.delete(name)) this.fail("can't find session", args);
-        return "";
-      }
-      case "capture-pane": {
-        const name = this.target(cmdArgs, args);
-        const pane = this.sessions.get(name);
-        if (!pane) this.fail("can't find session", args);
-        return pane.paneLines.join("\n");
-      }
-      case "resize-window": {
-        const name = this.target(cmdArgs, args);
-        const pane = this.sessions.get(name);
-        if (!pane) this.fail("can't find session", args);
-        const x = cmdArgs.indexOf("-x");
-        const y = cmdArgs.indexOf("-y");
-        if (x !== -1) pane.cols = Number(cmdArgs[x + 1]);
-        if (y !== -1) pane.rows = Number(cmdArgs[y + 1]);
-        return "";
-      }
-      case "send-keys": {
-        const name = this.target(cmdArgs, args);
-        const pane = this.sessions.get(name);
-        if (!pane) this.fail("can't find session", args);
-        const literal = cmdArgs.indexOf("-l");
-        if (literal !== -1) {
-          const text = cmdArgs[literal + 1];
-          if (text !== undefined) pane.paneLines.push(text);
-        }
-        return "";
-      }
+      case "kill-session":
+        return this.killSession(cmdArgs, args);
+      case "capture-pane":
+        return this.capturePane(cmdArgs, args);
+      case "resize-window":
+        return this.resizeWindow(cmdArgs, args);
+      case "send-keys":
+        return this.sendKeys(cmdArgs, args);
+      case "pipe-pane":
+        return this.pipePane(cmdArgs, args);
       default:
         return this.fail(`unknown command: ${cmd ?? "(none)"}`, args);
     }
+  }
+
+  private hasSession(cmdArgs: string[], originalArgs: string[]): string {
+    const name = this.target(cmdArgs, originalArgs);
+    if (!this.sessions.has(name)) this.fail("can't find session", originalArgs);
+    return "";
+  }
+
+  private newSession(cmdArgs: string[], originalArgs: string[]): string {
+    const parsed = this.parseNewSession(cmdArgs);
+    if (this.sessions.has(parsed.name)) this.fail("duplicate session", originalArgs);
+    this.sessions.set(parsed.name, {
+      command: parsed.command,
+      cwd: parsed.cwd,
+      paneLines: this.initialPaneLines ? [...this.initialPaneLines] : [],
+      cols: this.initialCols,
+      rows: this.initialRows,
+    });
+    return "";
+  }
+
+  private killSession(cmdArgs: string[], originalArgs: string[]): string {
+    const name = this.target(cmdArgs, originalArgs);
+    if (!this.sessions.delete(name)) this.fail("can't find session", originalArgs);
+    this.pipes.delete(name);
+    return "";
+  }
+
+  private capturePane(cmdArgs: string[], originalArgs: string[]): string {
+    const pane = this.paneOf(cmdArgs, originalArgs);
+    // `-p`/`-e` are output-mode flags the fake renders the same way. `-S`
+    // bounds are honored as "exactly the trailing N lines", matching the
+    // visible-screen capture mode of the bridge's poll loop (issue #67).
+    const sIdx = cmdArgs.indexOf("-S");
+    const bound = sIdx !== -1 ? Number(cmdArgs[sIdx + 1]) : Number.NaN;
+    if (!Number.isFinite(bound) || bound < 0) return pane.paneLines.join("\n");
+    const keep = pane.paneLines.slice(-bound);
+    return keep.length > 0 ? keep.join("\n") : "";
+  }
+
+  private resizeWindow(cmdArgs: string[], originalArgs: string[]): string {
+    const pane = this.paneOf(cmdArgs, originalArgs);
+    const x = cmdArgs.indexOf("-x");
+    const y = cmdArgs.indexOf("-y");
+    if (x !== -1) pane.cols = Number(cmdArgs[x + 1]);
+    if (y !== -1) pane.rows = Number(cmdArgs[y + 1]);
+    return "";
+  }
+
+  private sendKeys(cmdArgs: string[], originalArgs: string[]): string {
+    const pane = this.paneOf(cmdArgs, originalArgs);
+    const literal = cmdArgs.indexOf("-l");
+    if (literal !== -1) {
+      const text = cmdArgs[literal + 1];
+      if (text !== undefined) pane.paneLines.push(text);
+    }
+    const hex = cmdArgs.indexOf("-H");
+    if (hex !== -1) pane.paneLines.push(this.decodeHex(cmdArgs.slice(hex + 1), originalArgs));
+    return "";
+  }
+
+  private pipePane(cmdArgs: string[], originalArgs: string[]): string {
+    const name = this.target(cmdArgs, originalArgs);
+    if (!this.sessions.has(name)) this.fail("can't find session", originalArgs);
+    // Command is the first non-flag argument (the fake never passes
+    // `-I`/`-O`); no command stops the pipe.
+    const command = this.pipeCommand(cmdArgs);
+    if (command === undefined) {
+      this.pipes.delete(name);
+      return "";
+    }
+    // Match the real pipe command shape: `cat >> <path>` — extract the
+    // stream file path so `notifyOutput` can mirror the append.
+    const match = />>\s*(\S+)/.exec(command);
+    this.pipes.set(name, { command, notifyPath: match?.[1] });
+    // The real pipe shell creates/truncates the stream file at startup.
+    if (match?.[1] !== undefined) createFile(match[1]);
+    return "";
+  }
+
+  /** The first non-flag argument (the pipe command), if any. */
+  private pipeCommand(cmdArgs: string[]): string | undefined {
+    for (let i = 0; i < cmdArgs.length; i++) {
+      const arg = cmdArgs[i];
+      if (arg === undefined || arg === "-o") continue;
+      if (arg === "-t") {
+        i++; // skip the target value
+        continue;
+      }
+      return arg;
+    }
+    return undefined;
+  }
+
+  /** Resolves the pane for the command target, failing like tmux if absent. */
+  private paneOf(cmdArgs: string[], originalArgs: string[]): FakePaneState {
+    const name = this.target(cmdArgs, originalArgs);
+    const pane = this.sessions.get(name);
+    if (!pane) this.fail("can't find session", originalArgs);
+    return pane;
+  }
+
+  /** Decodes `send-keys -H` hex byte arguments into literal text (1 byte/arg). */
+  private decodeHex(hexArgs: string[], originalArgs: string[]): string {
+    let text = "";
+    for (const arg of hexArgs) {
+      if (!/^[0-9a-fA-F]{2}$/.test(arg)) this.fail(`bad hex byte: ${arg}`, originalArgs);
+      text += String.fromCharCode(Number.parseInt(arg, 16));
+    }
+    return text;
   }
 
   private target(cmdArgs: string[], originalArgs: string[]): string {
@@ -165,4 +288,22 @@ export class FakeTmuxRunner {
     if (name === undefined) return this.fail("new-session: no name", []);
     return { name, cwd, command };
   }
+}
+
+/** Splits emitted text into pane lines (trailing newline dropped). */
+function splitLines(text: string): string[] {
+  const lines = text.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+function appendTo(file: string, text: string): void {
+  createFile(file);
+  appendFileSync(file, text);
+}
+
+function createFile(file: string): void {
+  const dir = path.dirname(file);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (!existsSync(file)) writeFileSync(file, "");
 }
