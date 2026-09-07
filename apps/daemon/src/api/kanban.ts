@@ -3,8 +3,9 @@
  * GitHub entities (issues + PRs with CI/review metadata, via the github
  * module) and the session registry's workers.
  *
- * Column rules mirror apps/web's `deriveBoard` (issue #13 renders whatever
- * this produces):
+ * Column placement is **server-derived**: this module owns the issue/PR →
+ * column rules and pushes card moves over `/api/ws`; the webapp renders
+ * whatever board it receives (apps/web/src/lib/kanban.ts).
  * - issues: closed → `done`; has an assignee or a live worker → `in_progress`; else `backlog`.
  * - PRs: merged/closed → `done`; settled CI or any review decision → `in_review`; else `in_progress`.
  */
@@ -21,10 +22,12 @@ import {
 } from "@agentskiss/shared";
 
 import { fetchIssuesWithBlockedBy, listPullRequestsWithMeta, parseRepoUrl, type GhClient } from "../github/index.js";
+import { issueCardId } from "../pipeline/issues/pipeline.js";
+import { prCardId } from "../pipeline/prs/tracker.js";
 import { NotFoundError } from "./projects.js";
 
 // ---------------------------------------------------------------------------
-// Column derivation (mirror of apps/web/src/lib/kanban.ts — keep in lockstep)
+// Column derivation (single source of truth — the PR pipeline reuses these)
 // ---------------------------------------------------------------------------
 
 export function issueColumn(issue: Issue, worker: Worker | undefined): KanbanColumn {
@@ -32,6 +35,10 @@ export function issueColumn(issue: Issue, worker: Worker | undefined): KanbanCol
   return worker !== undefined || issue.assignee !== null ? "in_progress" : "backlog";
 }
 
+/**
+ * PR → kanban column: the one rule set, also used by the PR pipeline when
+ * emitting card events (pipeline/prs/pipeline.ts).
+ */
 export function pullRequestColumn(pr: PullRequest): KanbanColumn {
   if (pr.state === "merged" || pr.state === "closed") return "done";
   const ciSettled = pr.ciStatus === "success" || pr.ciStatus === "failure";
@@ -62,7 +69,7 @@ export function deriveBoard(
   for (const issue of issues) {
     const worker = workerByIssue.get(issue.number);
     cards.push({
-      id: `issue-${project.id}-${issue.number}`,
+      id: issueCardId(project.id, issue.number),
       projectId: project.id,
       kind: "issue",
       number: issue.number,
@@ -74,7 +81,7 @@ export function deriveBoard(
   }
   for (const pr of pullRequests) {
     cards.push({
-      id: `pull_request-${project.id}-${pr.number}`,
+      id: prCardId(project.id, pr.number),
       projectId: project.id,
       kind: "pull_request",
       number: pr.number,

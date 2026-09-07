@@ -11,8 +11,8 @@
  * timeout loop for long-running daemon use.
  */
 
-import { type Issue } from "@agentskiss/shared";
-import type { PullRequest } from "@agentskiss/shared";
+import { githubWatcherEventSchema, type PullRequest } from "@agentskiss/shared";
+import type { GithubWatcherEvent } from "@agentskiss/shared";
 
 import type { GhClient, RepoRef } from "./gh.js";
 import { listIssues, type IssueRecord } from "./issues.js";
@@ -22,12 +22,18 @@ import { listOpenPullRequestsBatched } from "./pulls.js";
 // Events
 // ---------------------------------------------------------------------------
 
-/** Typed events emitted by the watchers. */
-export type GithubWatcherEvent =
-  | { type: "issue.created"; at: string; issue: Issue }
-  | { type: "issue.assigned"; at: string; issue: Issue }
-  | { type: "pull_request.opened"; at: string; pullRequest: PullRequest }
-  | { type: "pull_request.updated"; at: string; pullRequest: PullRequest };
+/**
+ * Typed events emitted by the watchers — the shared contract
+ * (`githubWatcherEventSchema` in @agentskiss/shared), re-exported for
+ * consumers. Emitted values are validated against the schema at the emit
+ * boundary.
+ */
+export type { GithubWatcherEvent };
+
+/** Validates one watcher event against the shared contract before emission. */
+function validated(event: GithubWatcherEvent): GithubWatcherEvent {
+  return githubWatcherEventSchema.parse(event);
+}
 
 export type WatcherEventEmitter = (event: GithubWatcherEvent) => void;
 
@@ -157,7 +163,7 @@ export class IssueWatcher {
       const { pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, emit, onError = defaultOnError } = this.options;
       this.loop = new PollLoop(
         async () => {
-          for (const event of await this.pollOnce()) emit(event);
+          for (const event of await this.pollOnce()) emit(validated(event));
         },
         pollIntervalMs,
         onError,
@@ -250,7 +256,7 @@ export class PullRequestWatcher {
       const { pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, emit, onError = defaultOnError } = this.options;
       this.loop = new PollLoop(
         async () => {
-          for (const event of await this.pollOnce()) emit(event);
+          for (const event of await this.pollOnce()) emit(validated(event));
         },
         pollIntervalMs,
         onError,

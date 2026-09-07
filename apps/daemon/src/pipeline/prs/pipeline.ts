@@ -20,8 +20,8 @@
  * - New review comments (watermarked by comment id) → delivered to the
  *   worker for addressing (`addressing_review`), including comments that
  *   arrive after fixes.
- * - Merged (or CI-green + approved) → card `done`; merged also completes
- *   the worker.
+ * - Merged (or closed) → card `done`; settled CI or any review decision →
+ *   card `in_review` (the shared kanban mapping, `pullRequestColumn`).
  *
  * Re-watch resilience: tracker state is persisted, so after a daemon
  * restart {@link reconcile} prunes PRs whose worker vanished and the poll
@@ -29,9 +29,10 @@
  * resumes the loop where it left off.
  */
 
-import type { KanbanCard, KanbanColumn, PullRequest, Worker, WorkerStatus } from "@agentskiss/shared";
+import { ACTIVE_WORKER_STATUSES, type KanbanCard, type KanbanColumn, type PullRequest, type Worker, type WorkerStatus } from "@agentskiss/shared";
 
 import type { GhClient, RepoRef } from "../../github/gh.js";
+import { pullRequestColumn } from "../../api/kanban.js";
 import { enrichPullRequest, fetchReviewComments, listPullRequests, mapRestPull, type PRReviewComment } from "../../github/pulls.js";
 import { DEFAULT_POLL_INTERVAL_MS, PollLoop, type GithubWatcherEvent } from "../../github/watch.js";
 import { type PRPipelineEvent, type PRPipelineEventEmitter } from "./events.js";
@@ -203,7 +204,7 @@ export class PullRequestPipeline {
       // worker is done, the card is reported failed for the API layer to present.
       tracked.state = "failed";
       this.setWorkerStatusQuietly(tracked.workerId, "done", `PR #${tracked.prNumber} closed without merging`);
-      const card = this.buildCard(tracked, cardColumn(pr), at);
+      const card = this.buildCard(tracked, pullRequestColumn(pr), at);
       events.push({ type: "kanban.pr.card", at, card });
       events.push({ type: "kanban.pr.failed", at, projectId: tracked.projectId, prNumber: tracked.prNumber, workerId: tracked.workerId, card, reason: "pr_closed_without_merge" });
       return events;
@@ -338,7 +339,7 @@ export class PullRequestPipeline {
     const event: PRPipelineEvent = {
       type: "kanban.pr.card",
       at,
-      card: this.buildCard(tracked, cardColumn(pr), at),
+      card: this.buildCard(tracked, pullRequestColumn(pr), at),
     };
     tracked.cardSignature = cardSignature(pr.title, event.card.column);
     return event;
@@ -347,11 +348,7 @@ export class PullRequestPipeline {
   private findOwner(pr: PullRequest): Worker | undefined {
     const workers = this.sessions.listWorkers({ projectId: pr.projectId }).filter((w) => w.prNumber === pr.number);
     if (workers.length === 0) return undefined;
-    return (
-      workers.find(
-        (w) => w.status !== "done" && w.status !== "failed" && w.status !== "stopped" && w.status !== "archived",
-      ) ?? workers[0]
-    );
+    return workers.find((w) => ACTIVE_WORKER_STATUSES.has(w.status)) ?? workers[0];
   }
 
   private async sendPrompt(sessionId: string, prompt: string): Promise<void> {
@@ -387,7 +384,7 @@ export class PullRequestPipeline {
   }
 
   private pushCard(events: PRPipelineEvent[], tracked: TrackedPR, pr: PullRequest, at: string): void {
-    const column = cardColumn(pr);
+    const column = pullRequestColumn(pr);
     const signature = cardSignature(pr.title, column);
     if (tracked.cardSignature === signature) return;
     tracked.cardSignature = signature;
@@ -415,17 +412,6 @@ export class PullRequestPipeline {
       // loop keeps running and reconcile() cleans up if it stays gone.
     }
   }
-}
-
-/**
- * Card column for a PR: `done` once merged or CI-green + approved,
- * `in_review` while open. (Failure has no column — it is signalled via
- * the `kanban.pr.failed` event.)
- */
-function cardColumn(pr: PullRequest): KanbanColumn {
-  if (pr.state === "merged") return "done";
-  if (pr.ciStatus === "success" && pr.reviewState === "approved") return "done";
-  return "in_review";
 }
 
 function cardSignature(title: string, column: KanbanColumn): string {

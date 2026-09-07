@@ -309,7 +309,7 @@ describe("GithubAutomation (issue #46 wiring)", () => {
 
     expect(daemon.services.registry.getWorker(worker.id)!.prNumber).toBe(7);
     const trackedCard = events.find((e) => e.type === "kanban.card.moved" && e.cardId === `pr:${PROJECT}:7`);
-    expect(trackedCard).toMatchObject({ card: { kind: "pull_request", number: 7, column: "in_review", workerId: worker.id } });
+    expect(trackedCard).toMatchObject({ card: { kind: "pull_request", number: 7, column: "in_progress", workerId: worker.id } });
 
     // The loop drives the red PR: a CI-fix prompt goes to the worker's
     // tmux session, bounded attempts start at 1, and the worker status

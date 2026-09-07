@@ -5,8 +5,8 @@
  * - {@link attachTerminalWebSocket} — `ws` adapter for an http.Server.
  * - {@link FakeTmuxRunner} — fake tmux for tests.
  *
- * `standalone.ts` provides a runnable dev harness until the full daemon
- * HTTP server lands (issue #13).
+ * `standalone.ts` provides a runnable dev harness for the bridge without
+ * the daemon (the full daemon HTTP server landed in issue #13).
  */
 
 export * from "./bridge.js";
