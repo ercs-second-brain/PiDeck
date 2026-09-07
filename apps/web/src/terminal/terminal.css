@@ -552,3 +552,52 @@
     font-size: 13px;
   }
 }
+
+/* --- Mobile terminal key row (issue #105) ------------------------------------
+
+   Touch keyboards lack Esc/Tab/Ctrl and arrows; the key row supplies them
+   above the status bar. Hidden by default (desktop unchanged), shown only on
+   the #93 mobile breakpoint. Buttons send on pointerdown with
+   preventDefault so they never steal focus from the xterm textarea, and
+   touch-action rules keep taps from scrolling/zooming the page. */
+
+.terminal-keyrow {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .terminal-keyrow {
+    display: flex;
+    flex: none;
+    gap: 6px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--bg-raised);
+    overflow-x: auto;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .terminal-key {
+    flex: none;
+    min-width: 44px;
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 14px;
+    line-height: 1;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    user-select: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  .terminal-key:active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--bg-hover);
+  }
+}
