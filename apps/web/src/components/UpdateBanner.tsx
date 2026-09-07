@@ -3,11 +3,14 @@ import type { UpdateStatusResponse } from "@agentskiss/shared";
 import { apiApplyUpdate, apiGetUpdateStatus, errorMessage } from "../lib/api";
 
 /**
- * Self-update banner (issues #55, #76): polls the daemon's update status and,
- * when a newer upstream revision exists, offers click-to-update.
+ * Self-update banner (issues #55, #76, #82): polls the daemon's update status
+ * and, when a newer upstream revision exists, offers click-to-update.
  *
- * - Polling is cheap for gh: the daemon serves a cached check (≤ hourly
- *   re-check, apps/daemon/src/api/update.ts), so the webapp can poll freely.
+ * - Polling is cheap for gh: the daemon serves a cached check (~5 min
+ *   re-check, apps/daemon/src/api/update.ts), and the banner forces a fresh
+ *   check (`?refresh=1`) on page load and window focus (debounced — no
+ *   polling loops), so new updates show up within seconds of visiting the
+ *   page instead of up to an hour.
  * - 'Up to date' is deliberately quiet — no banner at all.
  * - The update button is disabled (with a hint) while any worker is in an
  *   active status; the count comes from the daemon (same
@@ -20,8 +23,13 @@ import { apiApplyUpdate, apiGetUpdateStatus, errorMessage } from "../lib/api";
  *   recovery hint points at the CLI.
  */
 
-/** Idle polling: frequent is fine — the daemon caches the gh check. */
-const POLL_MS = 60_000;
+/**
+ * Idle polling fallback: slow — the daemon serves a cached gh check (~5 min
+ * TTL) and fresh checks are forced on page load / window focus instead.
+ */
+const POLL_MS = 5 * 60_000;
+/** Minimum spacing between forced (`?refresh=1`) checks (focus storms). */
+const FORCE_DEBOUNCE_MS = 30_000;
 /** While updating: wait for the daemon to come back with the new build. */
 const APPLY_POLL_MS = 2_000;
 /** Down longer than this → surface the recovery hint (but keep polling). */
@@ -34,12 +42,20 @@ export function UpdateBanner() {
   const [downMs, setDownMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Idle: poll the (daemon-cached) update status.
+  // Idle: force a fresh check on page load and window focus (debounced —
+  // no polling loops), plus a slow background poll of the daemon-cached
+  // status as a fallback.
   useEffect(() => {
     if (phase !== "idle") return;
     let alive = true;
-    const load = () => {
-      apiGetUpdateStatus()
+    let lastForce = 0;
+    const load = (refresh: boolean) => {
+      if (refresh) {
+        const now = Date.now();
+        if (now - lastForce < FORCE_DEBOUNCE_MS) return;
+        lastForce = now;
+      }
+      apiGetUpdateStatus(refresh)
         .then((result) => {
           if (alive) setStatus(result);
         })
@@ -47,10 +63,13 @@ export function UpdateBanner() {
           /* transient (daemon restarting) — keep the last status */
         });
     };
-    load();
-    const timer = setInterval(load, POLL_MS);
+    load(true);
+    const onFocus = () => load(true);
+    window.addEventListener("focus", onFocus);
+    const timer = setInterval(() => load(false), POLL_MS);
     return () => {
       alive = false;
+      window.removeEventListener("focus", onFocus);
       clearInterval(timer);
     };
   }, [phase]);

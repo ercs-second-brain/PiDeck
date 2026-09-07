@@ -10,7 +10,8 @@
  * git-remote fallback for dev checkouts without a config file.
  *
  * Webapp click-to-update (issue #76): `check()` results are cached (default
- * one hour) so webapp polling never burns gh API rate limit, and `apply()`
+ * ~5 minutes, issue #82) so webapp polling never burns gh API rate limit, and
+ * `apply()`
  * spawns the installed `agentskiss update` shim **detached** — the shim
  * rebuilds and restarts the daemon service mid-apply, so the endpoint that
  * calls it returns immediately and the webapp polls until the daemon
@@ -28,8 +29,12 @@ import { HttpError } from "./router.js";
 
 import type { UpdateStatus } from "@agentskiss/shared";
 
-/** Default re-check throttle: webapp polls freely; gh is hit at most hourly. */
-const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000;
+/**
+ * Default re-check throttle (issue #82): the webapp forces fresh checks on
+ * page load / window focus (`?refresh=1`), while its background poll hits the
+ * cache — gh is still consulted at most ~every 5 minutes server-side.
+ */
+const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** Injectable detached-process spawner for {@link UpdateChecker.apply} (tests). */
 export type UpdateSpawn = (
@@ -57,7 +62,7 @@ export interface UpdateCheckerOptions {
   gh?: GhRunner;
   /** Injectable git runner (tests); default spawns the real `git`. */
   git?: GitRunner;
-  /** Re-check throttle in ms; a fresh cached status is reused within it (tests; default 1h). */
+  /** Re-check throttle in ms; a fresh cached status is reused within it (tests; default 5 min). */
   cacheTtlMs?: number;
   /** Injectable detached spawner for `apply` (tests); default node `spawn`. */
   spawn?: UpdateSpawn;
@@ -98,13 +103,20 @@ export class UpdateChecker {
 
   /**
    * Runs one check, served from cache while fresh (issue #76: the webapp
-   * polls this; gh may be consulted at most ~hourly). Never throws:
-   * failures surface in `error` with `updateAvailable: false`, so the
-   * webapp/CLI always get a well-formed status body.
+   * polls this; gh is consulted at most ~every 5 minutes — issue #82).
+   * `force: true` (the webapp's `?refresh=1` on page load / window focus)
+   * skips the cache read; the fresh result still becomes the new cache
+   * entry. Never throws: failures surface in `error` with
+   * `updateAvailable: false`, so the webapp/CLI always get a well-formed
+   * status body.
    */
-  async check(): Promise<UpdateStatus> {
+  async check(options: { force?: boolean } = {}): Promise<UpdateStatus> {
     const cached = this.cache;
-    if (cached !== undefined && this.now().getTime() - cached.at < this.cacheTtlMs) {
+    if (
+      options.force !== true &&
+      cached !== undefined &&
+      this.now().getTime() - cached.at < this.cacheTtlMs
+    ) {
       return cached.status;
     }
     const status = await this.runCheck();

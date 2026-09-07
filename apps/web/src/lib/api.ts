@@ -39,9 +39,11 @@ async function request<N extends EndpointName>(
   name: N,
   params: EndpointParams<N>,
   body?: EndpointRequest<N>,
+  /** Raw query string appended to the path (no leading `?`), e.g. `refresh=1`. */
+  query?: string,
 ): Promise<EndpointResponse<N>> {
   const endpoint = endpoints[name];
-  const path = formatPath(name, params);
+  const path = formatPath(name, params) + (query === undefined ? "" : `?${query}`);
   const response = await fetch(path, {
     method: endpoint.method,
     headers:
@@ -94,8 +96,13 @@ export const apiGetPullRequestDiff = (
 
 // --- Self-update (issues #55, #76) ----------------------------------------------
 
-export const apiGetUpdateStatus = (): Promise<EndpointResponse<"getUpdateStatus">> =>
-  request("getUpdateStatus", {});
+/**
+ * Self-update status (issues #55, #76, #82): the daemon serves a cached gh
+ * check (~5 min TTL); `refresh` bypasses it — the banner uses that on page
+ * load / window focus so new updates show up immediately.
+ */
+export const apiGetUpdateStatus = (refresh = false): Promise<EndpointResponse<"getUpdateStatus">> =>
+  request("getUpdateStatus", {}, undefined, refresh ? "refresh=1" : undefined);
 
 /** Click-to-update (issue #76): the daemon gates on active workers (409 on
  * conflict), spawns the update shim detached and returns immediately — the
