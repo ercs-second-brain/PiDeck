@@ -5,11 +5,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  cursorSequence,
   frameUpdate,
   fullRepaint,
   screenRepaint,
   splitCapture,
   withSynchronizedUpdate,
+  type CursorState,
 } from "./screen.js";
 
 describe("splitCapture", () => {
@@ -134,5 +136,29 @@ describe("fullRepaint / screenRepaint", () => {
 describe("withSynchronizedUpdate", () => {
   it("wraps the update in DECSET 2026 markers", () => {
     expect(withSynchronizedUpdate("XYZ")).toBe("\x1b[?2026hXYZ\x1b[?2026l");
+  });
+});
+
+describe("cursorSequence", () => {
+  const at = (x: number, y: number, visible = true): CursorState => ({ visible, x, y });
+
+  it("emits the full state when the client state is unknown", () => {
+    expect(cursorSequence(at(10, 3), null)).toBe("\x1b[?25h\x1b[4;11H");
+    expect(cursorSequence(at(0, 0, false), null)).toBe("\x1b[?25l");
+  });
+
+  it("returns empty when the state is already in effect", () => {
+    expect(cursorSequence(at(10, 3), at(10, 3))).toBe("");
+    expect(cursorSequence(at(10, 3, false), at(10, 3, false))).toBe("");
+  });
+
+  it("moves a visible cursor with an absolute CUP", () => {
+    expect(cursorSequence(at(0, 5), at(10, 3))).toBe("\x1b[6;1H");
+  });
+
+  it("hides and shows without relying on position while hidden", () => {
+    expect(cursorSequence(at(10, 3, false), at(10, 3))).toBe("\x1b[?25l");
+    expect(cursorSequence(at(10, 3), at(10, 3, false))).toBe("\x1b[?25h\x1b[4;11H");
+    expect(cursorSequence(at(0, 0, false), at(10, 3, false))).toBe("");
   });
 });

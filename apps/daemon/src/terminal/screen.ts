@@ -108,6 +108,44 @@ function rewriteUpdate(prev: string[], next: string[]): string {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Cursor synchronization (issue #92)
+// ---------------------------------------------------------------------------
+
+const HIDE_CURSOR = "\x1b[?25l";
+const SHOW_CURSOR = "\x1b[?25h";
+
+/** The pane cursor state tmux reports (`cursor_flag`/`cursor_x`/`cursor_y`). */
+export interface CursorState {
+  /** Whether the pane shows its cursor (DECTCEM). */
+  visible: boolean;
+  /** Cursor column on the visible screen, 0-based (may equal the pane width on a pending wrap). */
+  x: number;
+  /** Cursor row on the visible screen, 0-based. */
+  y: number;
+}
+
+/**
+ * Minimal escape sequence bringing the *client* cursor from `prev` to `next`
+ * ("" when `next` is already in effect). Frame updates only rewrite changed
+ * rows, which leaves the client cursor wherever the last rewritten row ended
+ * — without this, xterm.js draws its own blinking cursor at those arbitrary
+ * spots on top of the pane's real (painted or positioned) cursor.
+ * A `prev` of `null` (unknown client state, e.g. after the reset on replay)
+ * always emits the full state.
+ */
+export function cursorSequence(next: CursorState, prev: CursorState | null): string {
+  if (prev !== null && prev.visible === next.visible && prev.x === next.x && prev.y === next.y) {
+    return "";
+  }
+  if (!next.visible) {
+    return prev !== null && !prev.visible ? "" : HIDE_CURSOR;
+  }
+  // 1-based CUP; x may equal the pane width (pending wrap) — clients clamp.
+  const move = `\x1b[${next.y + 1};${next.x + 1}H`;
+  return prev !== null && prev.visible ? move : SHOW_CURSOR + move;
+}
+
 /**
  * Full replay (attach / reconnect): clear the screen, then stream the
  * captured scrollback followed by the screen. The lines scroll the client

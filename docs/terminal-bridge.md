@@ -38,6 +38,20 @@ appears), the bridge falls back to the adaptive timer loop (50ms active /
 250ms idle); while the stream is healthy that timer only runs as a 500ms
 safety net (`streamPollMs`).
 
+## Cursor synchronization (issue #92)
+
+`capture-pane` output has no notion of the pane cursor, and full-screen
+TUIs (like pi) hide the real cursor and paint their own — while the diff
+protocol's row rewrites leave the client cursor wherever the last
+rewritten row ended. Without explicit sync, xterm.js therefore draws its
+own blinking cursor at arbitrary spots on top of the pane's real one.
+
+Every content frame (and the attach/reconnect replay) ends with the
+pane's true cursor state, read whenever a frame is broadcast via
+`tmux display-message -p '#{cursor_flag}|#{cursor_x}|#{cursor_y}'`:
+hide (`ESC[?25l`) or show + absolute CUP, emitted only when the state
+changed.
+
 ## Benchmark
 
 ```

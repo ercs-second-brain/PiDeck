@@ -27,6 +27,10 @@ export interface FakePaneState {
   paneLines: string[];
   cols: number;
   rows: number;
+  /** Simulated pane cursor (reported via `display-message`; issue #92). */
+  cursorX?: number;
+  cursorY?: number;
+  cursorVisible?: boolean;
 }
 
 export interface FakeTmuxRunnerOptions {
@@ -132,6 +136,8 @@ export class FakeTmuxRunner {
         return this.sendKeys(cmdArgs, args);
       case "pipe-pane":
         return this.pipePane(cmdArgs, args);
+      case "display-message":
+        return this.displayMessage(cmdArgs, args);
       default:
         return this.fail(`unknown command: ${cmd ?? "(none)"}`, args);
     }
@@ -152,6 +158,9 @@ export class FakeTmuxRunner {
       paneLines: this.initialPaneLines ? [...this.initialPaneLines] : [],
       cols: this.initialCols,
       rows: this.initialRows,
+      cursorX: 0,
+      cursorY: 0,
+      cursorVisible: true,
     });
     return "";
   }
@@ -213,6 +222,31 @@ export class FakeTmuxRunner {
     // The real pipe shell creates/truncates the stream file at startup.
     if (match?.[1] !== undefined) createFile(match[1]);
     return "";
+  }
+
+  /**
+   * Renders a `display-message -p` format, substituting the cursor tokens
+   * the terminal bridge queries (issue #92). Unknown tokens pass through —
+   * callers here only ever ask for the cursor triple.
+   */
+  private displayMessage(cmdArgs: string[], originalArgs: string[]): string {
+    const pane = this.paneOf(cmdArgs, originalArgs);
+    let format: string | undefined;
+    for (let i = 0; i < cmdArgs.length; i++) {
+      const arg = cmdArgs[i];
+      if (arg === undefined || arg === "-p") continue;
+      if (arg === "-t") {
+        i++; // skip the target value
+        continue;
+      }
+      format = arg;
+      break;
+    }
+    if (format === undefined) return this.fail("display-message: no format", originalArgs);
+    return format
+      .replace(/#\{cursor_flag\}/g, (pane.cursorVisible ?? true) ? "1" : "0")
+      .replace(/#\{cursor_x\}/g, String(pane.cursorX ?? 0))
+      .replace(/#\{cursor_y\}/g, String(pane.cursorY ?? 0));
   }
 
   /** The first non-flag argument (the pipe command), if any. */

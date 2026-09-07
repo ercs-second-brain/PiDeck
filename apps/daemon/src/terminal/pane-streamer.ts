@@ -16,10 +16,12 @@ import { PaneEventSource } from "./event-source.js";
 import { InputPump } from "./input-pump.js";
 import type { TerminalSocket } from "./bridge.js";
 import {
+  cursorSequence,
   frameUpdate,
   screenRepaint,
   splitCapture,
   withSynchronizedUpdate,
+  type CursorState,
 } from "./screen.js";
 
 /** Minimal per-socket bridge state; lives in the bridge's client set. */
@@ -34,6 +36,28 @@ export function now(): string {
 
 /** Polls count as "active" for this long after the last observed change. */
 const ACTIVE_WINDOW_MS = 1500;
+
+/** tmux format string reporting the pane cursor as `flag|x|y`. */
+const CURSOR_FORMAT = "#{cursor_flag}|#{cursor_x}|#{cursor_y}";
+
+/**
+ * Reads the pane's true cursor state (issue #92), or `null` when tmux does
+ * not answer (pane mid-death; the frame is then broadcast without a cursor
+ * suffix and the next frame re-syncs).
+ */
+export async function queryCursorState(
+  tmux: Tmux,
+  paneTarget: string,
+): Promise<CursorState | null> {
+  const result = await tmux.run(["display-message", "-p", "-t", paneTarget, CURSOR_FORMAT]);
+  const match = /^(\d+)\|(\d+)\|(\d+)$/.exec(result.stdout.trim());
+  if (!match) return null;
+  return {
+    visible: match[1] === "1",
+    x: Number(match[2]),
+    y: Number(match[3]),
+  };
+}
 
 export interface PaneStreamerOptions {
   activePollMs: number;
@@ -62,6 +86,8 @@ export class PaneStreamer {
   /** Serializes captures (event + timer triggers must not interleave). */
   private capturing = false;
   private captureQueued = false;
+  /** The cursor state clients have received so far (see `cursorSequence`). */
+  private cursorSent: CursorState | null = null;
 
   constructor(
     readonly session: Session,
@@ -195,18 +221,27 @@ export class PaneStreamer {
     if (raw === null) return; // exited() handled disposal + notification
 
     const { screen } = splitCapture(raw, this.rows);
+    let frame = "";
     if (this.model.length !== screen.length) {
       // First frame after (re)start or a resize: full screen repaint.
       this.model = screen;
-      this.broadcast(screenRepaint(screen));
-      this.lastChangeAt = Date.now();
+      frame = screenRepaint(screen);
     } else {
-      const update = frameUpdate(this.model, screen);
-      if (update.length > 0) {
-        this.model = screen;
-        this.broadcast(update);
-        this.lastChangeAt = Date.now();
+      frame = frameUpdate(this.model, screen);
+      if (frame.length > 0) this.model = screen;
+    }
+    if (frame.length > 0) {
+      // Bring the client cursor to the pane's true position (issue #92):
+      // row rewrites alone leave it wherever the last rewritten row ended.
+      const cursor = await queryCursorState(this.tmux, this.session.tmuxSession).catch(
+        () => null,
+      );
+      if (cursor !== null) {
+        frame += cursorSequence(cursor, this.cursorSent);
+        this.cursorSent = cursor;
       }
+      this.broadcast(frame);
+      this.lastChangeAt = Date.now();
     }
 
     this.eventSource?.maybeTruncate();

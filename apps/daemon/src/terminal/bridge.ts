@@ -41,10 +41,11 @@ import {
 import type { SessionRegistry } from "../sessions/registry.js";
 import type { Tmux } from "../sessions/tmux.js";
 import {
+  cursorSequence,
   fullRepaint,
   splitCapture,
 } from "./screen.js";
-import { PaneStreamer, now, type ClientState } from "./pane-streamer.js";
+import { PaneStreamer, now, queryCursorState, type ClientState } from "./pane-streamer.js";
 
 /** Minimal socket surface the bridge needs; implemented by `ws` and test fakes. */
 export interface TerminalSocket {
@@ -266,6 +267,8 @@ export class TerminalBridge {
   /**
    * Full scrollback + screen replay (attach/reconnect only — the capture
    * loop is screen-only), or `null` when the capture failed (pane gone).
+   * Ends with the pane's true cursor state (issue #92): the client reset
+   * its terminal, so the cursor must be placed before the first frame.
    */
   private async buildReplay(session: Session, rows: number): Promise<string | null> {
     try {
@@ -279,7 +282,12 @@ export class TerminalBridge {
         `-${this.options.scrollbackLines}`,
       ]);
       const { history, screen } = splitCapture(result.stdout, rows);
-      return fullRepaint(history, screen);
+      let replay = fullRepaint(history, screen);
+      const cursor = await queryCursorState(this.deps.tmux, session.tmuxSession).catch(
+        () => null,
+      );
+      if (cursor !== null) replay += cursorSequence(cursor, null);
+      return replay;
     } catch {
       return null;
     }

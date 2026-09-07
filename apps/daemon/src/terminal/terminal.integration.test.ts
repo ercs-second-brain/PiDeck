@@ -130,6 +130,10 @@ describe.skipIf(!tmuxAvailable)("terminal bridge against a real tmux server", ()
     client.sendInput("bridge echo OK\r");
     await awaitEcho(client, "bridge echo OK");
 
+    // Content frames keep the client cursor synced with the pane cursor
+    // (issue #92): show-cursor + absolute CUP suffixes ride along.
+    expect(await dataJoined(client)).toContain("\x1b[?25h");
+
     // Resize propagates to the tmux window.
     client.resize(110, 33);
     await pollUntil(async () => {
