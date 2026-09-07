@@ -177,7 +177,14 @@ Notes:
   repos and non-main dev refs check and update like public ones. With an update
   available it fetches the new source with gh-authed git (the installer's
   `resolve_source`, including `_retry_with_gh_auth` semantics), rebuilds
-  (`build_from_source`), and restarts the service (`svc_restart`). Up to date →
+  (`build_from_source`), refreshes the installed shell layer — `bin/*` into
+  `$AK_HOME/bin` (the `~/.local/bin/agentskiss` symlink is preserved),
+  `lib/*.sh` + `onboard.sh` flat into `$AK_HOME/lib`, and the rendered
+  service unit files via a `register_service` pass, all copied exactly like
+  bootstrap.sh installs them (issue #66: fixes to the install scripts
+  themselves reach machines that update via the CLI; the running shim keeps
+  its in-memory copies — the refreshed files apply from the next invocation
+  on) — and restarts the service (`svc_restart`). Up to date →
   no-op. `--check` reports without touching anything. The daemon exposes the
   same check as `GET /api/update` (shared contract `getUpdateStatus`), which the
   webapp renders as an update banner on the projects/settings pages.
@@ -205,7 +212,8 @@ plain-shell tests in `test/cli-forwarding.sh` (service verbs,
 daemon-CLI forwarding with args + exit codes, `status` precedence, missing-
 build error path) and `test/update.sh` (update check against fake git/gh,
 `update --check` shim wiring, the apply path's reuse of the installer
-machinery + service restart), and `test/onboard.sh` (onboarding from the
+machinery + shell-layer refresh (installed lib/bin/onboard match the fetched
+source afterwards) + service restart), and `test/onboard.sh` (onboarding from the
 flat installed layout — the bootstrap.sh flat copy into `lib/` — and from
 the source-tree layout, via `--dry-run --skip-pi --skip-gh`) against a fake
 install layout — no daemons, no network, no systemd.
