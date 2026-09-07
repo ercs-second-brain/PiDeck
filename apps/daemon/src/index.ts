@@ -11,6 +11,11 @@
  * - `AGENTSKISS_WEB_HOST` bind host (default `127.0.0.1`; units set `0.0.0.0`)
  * - `AGENTSKISS_WEB_PORT` bind port (default `8321`)
  * - `AGENTSKISS_WEB_DIST` webapp build dir (default: `<repo>/apps/web/dist`)
+ * - `AGENTSKISS_WATCHER_ENABLED`           `0`/`false` disables the GitHub
+ *                                          watcher/pipeline loop (issue #46)
+ * - `AGENTSKISS_WATCHER_POLL_INTERVAL_MS`  watcher/PR-loop poll interval
+ *                                          (default 30s; see the API rate
+ *                                          budget note in pipeline/wiring.ts)
  */
 
 import path from "node:path";
@@ -56,6 +61,21 @@ export function main(options: { stateDir?: string; host?: string; port?: number;
     .then(() => ensureProjectOrchestrators(services))
     .catch((err: unknown) => {
       console.error("[daemon] orchestrator bootstrap failed:", err);
+    })
+    // GitHub automation (issue #46): after reconciliation + orchestrator
+    // bootstrap, start the watchers and the issue/PR pipelines. start()
+    // baselines the issue watchers so the existing backlog does not
+    // mass-spawn on daemon (re)start.
+    .then(() => services.automation.start())
+    .then(() => {
+      if (services.automation.isRunning) {
+        console.log(`[daemon] github watcher + pipelines started (${services.automation.watchedProjectIds.length} project(s) watched)`);
+      } else {
+        console.log("[daemon] github watcher + pipelines disabled (AGENTSKISS_WATCHER_ENABLED)");
+      }
+    })
+    .catch((err: unknown) => {
+      console.error("[daemon] github watcher/pipeline startup failed:", err);
     });
 
   server.listen(port, host, () => {
@@ -64,6 +84,9 @@ export function main(options: { stateDir?: string; host?: string; port?: number;
 
   const shutdown = (signal: string): void => {
     console.log(`[daemon] ${signal} received; shutting down`);
+    // Shutdown ordering (issue #46): stop the github watcher + pipelines
+    // first, so no new spawn/prompt work starts during teardown.
+    services.automation.stop();
     services.hub.close();
     closeTerminal();
     server.close(() => process.exit(0));

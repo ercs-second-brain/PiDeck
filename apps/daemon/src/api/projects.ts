@@ -124,6 +124,11 @@ export interface ProjectServiceDeps {
   gh?: (repoUrl: string) => GhClient;
   git?: GitRunner;
   now?: () => Date;
+  /**
+   * Called after every mutation (register/update/delete) so the daemon
+   * wiring can re-sync per-project watchers/pipelines (issue #46).
+   */
+  onChange?: () => void;
 }
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
@@ -137,6 +142,7 @@ export class ProjectService {
   private readonly gh: (repoUrl: string) => GhClient;
   private readonly git: GitRunner;
   private readonly now: () => Date;
+  private readonly onChange: () => void;
 
   constructor(deps: ProjectServiceDeps) {
     this.store = deps.store;
@@ -145,6 +151,7 @@ export class ProjectService {
     this.gh = deps.gh ?? (() => new GhClient());
     this.git = deps.git ?? defaultGitRunner;
     this.now = deps.now ?? (() => new Date());
+    this.onChange = deps.onChange ?? (() => {});
   }
 
   list(): Project[] {
@@ -183,6 +190,7 @@ export class ProjectService {
       updatedAt: now,
     };
     this.store.put(project);
+    this.onChange();
     return project;
   }
 
@@ -197,11 +205,14 @@ export class ProjectService {
       updatedAt: now,
     };
     this.store.put(updated);
+    this.onChange();
     return updated;
   }
 
   delete(id: string): boolean {
-    return this.store.delete(id);
+    const deleted = this.store.delete(id);
+    if (deleted) this.onChange();
+    return deleted;
   }
 
   /** Creates the project's on-disk layout (clone/worktrees dirs). Idempotent. */

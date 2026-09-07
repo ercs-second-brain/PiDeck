@@ -14,7 +14,7 @@ One daemon process serves everything on a single port (default `8321`) at the ma
 - **`install/`** — the one-line installer, service registration (launchd / systemd user unit, which is also the WSL path), guided onboarding, and the `agentskiss` CLI shim.
 - **`packages/shared/`** — the zod contracts shared by daemon and webapp (domain model, REST endpoint map, WS events).
 
-**Status of the automated loop:** the interactive parts of the PRD core loop are live — orchestrator sessions, manual worker spawn (webapp / orchestrator chat / `agentskiss spawn`), kanban tracking of issues and PRs with CI/review state, diff review, browser terminals, session persistence across daemon restarts. The fully automatic steps — issue-watcher auto-spawn on unblocked issues, CI-failure auto-fix, and review-comment addressing — are implemented and tested as daemon modules but **not yet wired into the running daemon**, so they do not fire today. This is tracked in [ercs-second-brain/agentsKISS#46](https://github.com/ercs-second-brain/agentsKISS/issues/46); until it lands, workers are spawned manually and CI/review follow-up is prompted by you or the orchestrator through the terminal.
+**Status of the automated loop:** the full PRD core loop is live — orchestrator sessions, worker spawning (manual via webapp / orchestrator chat / `agentskiss spawn`, **and automatic via the GitHub issue watcher**), kanban tracking of issues and PRs with CI/review state, **CI-failure auto-fix**, **review-comment addressing**, diff review, browser terminals, session persistence across daemon restarts. For a project with auto-spawn enabled (`autoAgentUsername` set), the daemon polls GitHub and: an issue created by — or assigned to — the configured auto-agent username spawns a worker automatically (unless blocked by native blocked-by links, capped by the project's `workerConcurrency`); a worker PR that goes red gets CI-fix prompts (bounded retries); new review comments are delivered to the worker. Polling runs at a 30s default interval (API-budget notes in `apps/daemon/src/pipeline/wiring.ts`); tune or disable it with `AGENTSKISS_WATCHER_POLL_INTERVAL_MS` / `AGENTSKISS_WATCHER_ENABLED=0`.
 
 ## Quickstart
 
@@ -84,18 +84,17 @@ See "Tested matrix" in [install/README.md](install/README.md) for the itemized l
 
 ## Verifying the loop
 
-With a project connected (onboarding wizard), this is what works end to end today:
+With a project connected (onboarding wizard) and auto-spawn enabled, this is what works end to end today:
 
 1. `agentskiss status` — daemon is up.
 2. Open the webapp → your project's board; issues and open PRs (with `ciStatus`/`reviewState`) appear as kanban cards pulled live from GitHub.
 3. `agentskiss sessions --project <id>` — the project's orchestrator session exists; open **Terminals** in the webapp and hold a conversation with it. It can file issues (`create-issue` skill) and spawn workers (`spawn-worker` skill).
-4. Spawn a worker for an issue — from the orchestrator chat, or directly:
-   `agentskiss spawn --project <id> --issue <n> --name "my-worker"`.
-   The worker gets its own tmux session and git worktree; the issue's card moves to `in_progress`; watch it work in the terminal.
+4. Watcher auto-spawn — file or assign an issue on the project's repo (created by, or assigned to, the configured auto-agent username, and not blocked via native blocked-by links). Within a poll interval the daemon spawns a worker on its own: a worker tmux session appears in **Terminals** and the issue's card moves to `in_progress`. (Manual spawning still works: from the orchestrator chat, or `agentskiss spawn --project <id> --issue <n> --name "my-worker"`.)
 5. When the worker pushes a PR, it appears on the board (`in_review`, with combined CI status); read the full diff at `projects/:id/pulls/:n` in the webapp or `agentskiss diff --project <id> <n>`.
-6. All of the above survives a daemon restart: sessions are reconciled and resurrected from the persisted registry.
+6. CI auto-fix and review addressing — if the PR's CI fails, the daemon prompts the worker to fix it (bounded retries); a new review comment is delivered to the worker for a follow-up commit. Both show up in the worker's terminal and the PR card tracks state until merge (or the attempt limit is exhausted).
+7. All of the above survives a daemon restart: sessions are reconciled and resurrected from the persisted registry, and the PR loop resumes from its persisted tracker (no duplicate workers, no lost PR watch).
 
-The PRD success metric — *issue created → worker auto-spawns → PR → CI breaks → worker fixes → CI green, zero manual commands* — requires the watcher/pipeline wiring from [issue #46](https://github.com/ercs-second-brain/agentsKISS/issues/46); steps 4 and CI/review follow-up are manual until then.
+The PRD success metric — *issue created → worker auto-spawns → PR → CI breaks → worker fixes → CI green, zero manual commands* — holds for an auto-spawn-enabled project with a working `gh` login; CI/review follow-up is bounded (`maxFixAttempts`), after which a human takes over.
 
 ## Repository layout
 

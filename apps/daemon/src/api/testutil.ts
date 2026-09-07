@@ -12,7 +12,7 @@ import { FakeTmuxRunner } from "../sessions/testing/fake-tmux.js";
 import { Tmux } from "../sessions/tmux.js";
 import type { GitRunner } from "../github/repos.js";
 
-import { createDaemonContext, type DaemonServices } from "./context.js";
+import { createDaemonContext, type DaemonContextOptions, type DaemonServices } from "./context.js";
 
 export interface FakeGhRoutes {
   /** GraphQL responses keyed by a distinctive query substring. */
@@ -88,7 +88,10 @@ export interface TestDaemon {
 }
 
 /** Builds a full daemon context over a tmp state dir with fake gh/git/tmux. */
-export function testDaemon(ghRoutes: FakeGhRoutes = {}): TestDaemon {
+export function testDaemon(
+  ghRoutes: FakeGhRoutes = {},
+  contextOptions: Partial<DaemonContextOptions> = {},
+): TestDaemon {
   const stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-api-"));
   const tmux = new FakeTmuxRunner();
   const cloned = new Set<string>();
@@ -97,6 +100,7 @@ export function testDaemon(ghRoutes: FakeGhRoutes = {}): TestDaemon {
     tmux: new Tmux({ runner: tmux.asRunner() }),
     gh: fakeGh(ghRoutes),
     git: fakeGit(cloned),
+    ...contextOptions,
   });
   return { services, stateDir, tmux, cloned };
 }

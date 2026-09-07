@@ -11,6 +11,7 @@ import type { Project, Worker } from "@agentskiss/shared";
 
 import { GhClient } from "../github/index.js";
 import type { GitRunner } from "../github/repos.js";
+import { GithubAutomation, watcherOptionsFromEnv } from "../pipeline/wiring.js";
 import { ProjectLayout } from "../sessions/layout.js";
 import { SessionManager } from "../sessions/manager.js";
 import { SessionRegistry } from "../sessions/registry.js";
@@ -37,6 +38,12 @@ export interface DaemonServices {
   tmux: Tmux;
   /** Shared session registry (the terminal bridge resolves sessions through it). */
   registry: SessionRegistry;
+  /**
+   * GitHub watcher + issue/PR pipeline wiring (issue #46). Constructed but
+   * NOT started: the daemon entry point calls `automation.start()` after
+   * session reconciliation and `stop()` first on shutdown.
+   */
+  automation: GithubAutomation;
   /** Injectable clock (ISO timestamps for events). */
   now: () => Date;
 }
@@ -52,6 +59,10 @@ export interface DaemonContextOptions {
   tmux?: Tmux;
   /** Override the registry (tests). */
   registry?: SessionRegistry;
+  /** Disable the GitHub watcher/pipeline loop (tests; env: `AGENTSKISS_WATCHER_ENABLED=0`). */
+  watcherEnabled?: boolean;
+  /** Watcher/PR-loop poll interval in ms (tests; env: `AGENTSKISS_WATCHER_POLL_INTERVAL_MS`). */
+  watcherPollIntervalMs?: number;
 }
 
 /** Resolves the daemon state dir honoring `AGENTSKISS_HOME`. */
@@ -72,6 +83,9 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
   const projectStore = new ProjectStore(stateDir);
   const settings = new SettingsStore(stateDir);
+  // Forward-declared so the project service's change hook can reach the
+  // automation constructed below it (register/update/delete → resync).
+  const automationRef: { current?: GithubAutomation } = {};
   const projects = new ProjectService({
     store: projectStore,
     layout,
@@ -81,6 +95,9 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
       autoAgentUsername: settings.get().autoAgentUsername,
       workerConcurrency: settings.get().defaultWorkerConcurrency,
     }),
+    // Projects registered/updated/deleted while the daemon runs get their
+    // watchers/pipelines re-synced (issue #46 wiring).
+    onChange: () => automationRef.current?.resync(),
     ...(options.git !== undefined ? { git: options.git } : {}),
     gh,
   });
@@ -96,6 +113,20 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   });
   const diffs = new DiffService({ gh, pullListing: (projectId, repoUrl) => pullListing.list(projectId, repoUrl) });
 
+  const watcherOptions = watcherOptionsFromEnv(process.env, {
+    ...(options.watcherEnabled !== undefined ? { enabled: options.watcherEnabled } : {}),
+    ...(options.watcherPollIntervalMs !== undefined ? { pollIntervalMs: options.watcherPollIntervalMs } : {}),
+  });
+  const automation = new GithubAutomation({
+    projects,
+    sessions,
+    hub,
+    gh,
+    stateDir,
+    ...watcherOptions,
+  });
+  automationRef.current = automation;
+
   return {
     projects,
     projectStore,
@@ -107,6 +138,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     hub,
     tmux,
     registry,
+    automation,
     now: () => new Date(),
   };
 }
