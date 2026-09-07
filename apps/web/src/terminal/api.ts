@@ -15,12 +15,23 @@ import {
   type Worker,
 } from "@agentskiss/shared";
 
+import { shareInFlight, type InFlight } from "../lib/in-flight";
+
+/**
+ * In-flight coalescing for the sidebar's GETs (issue #88): concurrent
+ * identical requests share one network call, so a poll tick landing while
+ * the previous load is still pending joins it instead of stacking requests.
+ */
+const inflightGets: InFlight<unknown> = new Map();
+
 async function get<T>(schema: z.ZodType<T>, path: string): Promise<T> {
-  const response = await fetch(path, { headers: { accept: "application/json" } });
-  if (!response.ok) {
-    throw new Error(`GET ${path} failed: ${response.status} ${response.statusText}`);
-  }
-  return schema.parse(await response.json());
+  return shareInFlight(inflightGets as InFlight<T>, path, async () => {
+    const response = await fetch(path, { headers: { accept: "application/json" } });
+    if (!response.ok) {
+      throw new Error(`GET ${path} failed: ${response.status} ${response.statusText}`);
+    }
+    return schema.parse(await response.json());
+  });
 }
 
 /** POST with no body (contract endpoints with `request: null`). */

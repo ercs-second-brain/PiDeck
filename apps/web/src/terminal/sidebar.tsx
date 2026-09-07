@@ -34,7 +34,14 @@ export interface SidebarContextValue {
   openOnboarding: () => void;
 }
 
-const POLL_INTERVAL_MS = 5000;
+/**
+ * Sidebar poll interval (#88). The websocket hub keeps kanban/worker state
+ * live; this REST poll is the sidebar's fallback — fast enough for new
+ * orchestrator/worker rows to appear (starts/terminates also trigger an
+ * immediate reload), slow enough not to spam the daemon. A tick while the
+ * previous load is still running is skipped: pending requests never pile up.
+ */
+const POLL_INTERVAL_MS = 15_000;
 
 /** Polls the daemon for the sidebar's project/session/worker data. */
 export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) => void): {
@@ -52,7 +59,12 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
 
   useEffect(() => {
     let cancelled = false;
+    let pending = false;
     const load = async () => {
+      // In-flight guard (#88): never stack loads when the daemon is slow —
+      // the still-running load's result is fresher than a duplicate tick.
+      if (pending) return;
+      pending = true;
       try {
         const projects = await fetchProjects();
         const loaded = await Promise.all(
@@ -70,6 +82,8 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        pending = false;
       }
     };
     void load();
@@ -86,11 +100,17 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     (projectId: string) => {
       setStartingProjectId(projectId);
       apiStartOrchestrator(projectId)
-        .then((session) => onStartOrchestratorNavigate(session.id))
+        .then((session) => {
+          // Reload now so the new orchestrator row (and its attachable
+          // terminal) appears without waiting for the next poll tick (#88:
+          // the slower fallback poll must not slow down starting work).
+          reload();
+          onStartOrchestratorNavigate(session.id);
+        })
         .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
         .finally(() => setStartingProjectId(null));
     },
-    [onStartOrchestratorNavigate],
+    [onStartOrchestratorNavigate, reload],
   );
 
   /** Terminates a worker (issue #64) and refreshes so the archive shows immediately. */

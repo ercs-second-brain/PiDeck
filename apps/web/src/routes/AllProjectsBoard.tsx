@@ -17,17 +17,17 @@ export function AllProjectsBoard() {
   const { openOnboarding } = useSidebar();
 
   const projectIds = state.projects.map((p) => p.id).join(",");
-  const loadedBoards = state.boards;
-
   useEffect(() => {
+    // Load each project's board once when the project set changes (#88: the
+    // store's loadProject is single-flight, and depending on the boards map
+    // here would re-issue loads on every board/websocket state change).
     for (const id of projectIds.split(",").filter(Boolean)) {
-      if (loadedBoards[id] === undefined) {
+      if (boardStore.getState().boards[id] === undefined) {
         void boardStore.loadProject(id).catch(() => boardStore.refresh());
       }
     }
-    // Reload only when the set of projects changes; board data flows in via
-    // the store's websocket/poll, not via this effect.
-  }, [projectIds, loadedBoards]);
+    // Board data flows in via the store's websocket/poll, not via this effect.
+  }, [projectIds]);
 
   if (state.projects.length === 0) {
     if (!state.loaded) {

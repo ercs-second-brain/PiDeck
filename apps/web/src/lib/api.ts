@@ -22,6 +22,8 @@ import {
   type UpdateProjectRequest,
 } from "@agentskiss/shared";
 
+import { shareInFlight, type InFlight } from "./in-flight";
+
 /** HTTP failure from the daemon (4xx/5xx), with context for the UI. */
 export class ApiError extends Error {
   constructor(
@@ -35,6 +37,14 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * In-flight coalescing for GETs (issue #88): concurrent identical requests
+ * share one network call, so mount effects, poll ticks, and websocket-event
+ * refetches can never stack duplicate pending requests. Writes are never
+ * shared — every POST goes out.
+ */
+const inflightGets: InFlight<unknown> = new Map();
+
 async function request<N extends EndpointName>(
   name: N,
   params: EndpointParams<N>,
@@ -44,26 +54,31 @@ async function request<N extends EndpointName>(
 ): Promise<EndpointResponse<N>> {
   const endpoint = endpoints[name];
   const path = formatPath(name, params) + (query === undefined ? "" : `?${query}`);
-  const response = await fetch(path, {
-    method: endpoint.method,
-    headers:
-      body === undefined
-        ? { accept: "application/json" }
-        : { accept: "application/json", "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const payload = (await response.json()) as { error?: string };
-      if (typeof payload.error === "string") detail = payload.error;
-    } catch {
-      /* non-JSON error body — keep statusText */
+  const send = async (): Promise<EndpointResponse<N>> => {
+    const response = await fetch(path, {
+      method: endpoint.method,
+      headers:
+        body === undefined
+          ? { accept: "application/json" }
+          : { accept: "application/json", "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (typeof payload.error === "string") detail = payload.error;
+      } catch {
+        /* non-JSON error body — keep statusText */
+      }
+      throw new ApiError(response.status, endpoint.method, path, detail);
     }
-    throw new ApiError(response.status, endpoint.method, path, detail);
-  }
-  if (response.status === 204) return undefined as EndpointResponse<N>;
-  return (endpoint.response as z.ZodType).parse(await response.json()) as EndpointResponse<N>;
+    if (response.status === 204) return undefined as EndpointResponse<N>;
+    return (endpoint.response as z.ZodType).parse(await response.json()) as EndpointResponse<N>;
+  };
+  // Coalesce concurrent identical GETs (#88); writes always go out.
+  if (endpoint.method !== "GET") return send();
+  return shareInFlight(inflightGets as InFlight<EndpointResponse<N>>, path, send);
 }
 
 // --- Projects ---------------------------------------------------------------

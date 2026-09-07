@@ -27,6 +27,7 @@
 import type { PullRequest } from "@agentskiss/shared";
 
 import { listOpenPullRequestsBatched, parseRepoUrl, type GhClient } from "../github/index.js";
+import { TtlSwrCache } from "./swr-cache.js";
 
 export interface PullListingServiceDeps {
   /** GhClient factory keyed by repo URL; overridable in tests. */
@@ -39,63 +40,35 @@ export interface PullListingServiceDeps {
   now?: () => number;
 }
 
-interface CacheEntry {
-  value: PullRequest[];
-  /** Completion time of the fetch that produced `value` (ms epoch). */
-  fetchedAt: number;
-  /** Single-flight background refresh (stale-while-revalidate). */
-  refreshing?: Promise<void>;
-}
-
 export class PullListingService {
-  private readonly entries = new Map<string, CacheEntry>();
-  private readonly ttlMs: number;
+  private readonly cache: TtlSwrCache<PullRequest[]>;
   private readonly first: number;
-  private readonly now: () => number;
 
   constructor(private readonly deps: PullListingServiceDeps) {
-    this.ttlMs = deps.ttlMs ?? 30_000;
     this.first = deps.first ?? 100;
-    this.now = deps.now ?? Date.now;
+    this.cache = new TtlSwrCache<PullRequest[]>({ ttlMs: deps.ttlMs, now: deps.now });
   }
 
   /**
-   * The project's open PRs with CI/review metadata, batched + cached. Serves
-   * from the TTL cache when fresh; when stale, returns the cached value
-   * immediately and refreshes in the background (single-flight — at most one
-   * in-flight refresh per project). The first call for a project fetches and
-   * propagates errors to the caller; later background refresh failures keep
-   * the stale value (it is strictly better than nothing for the board).
+   * The project's open PRs with CI/review metadata, batched + cached (issue
+   * #40): fresh → 0 API calls; stale → serve immediately + at most one
+   * background refresh per project (single-flight). The first call for a
+   * project fetches and propagates errors; background refresh failures keep
+   * the stale value (strictly better than nothing for the board).
    */
   async list(projectId: string, repoUrl: string): Promise<PullRequest[]> {
-    const key = cacheKey(projectId, repoUrl);
-    const entry = this.entries.get(key);
-    if (entry === undefined) return this.refresh(key, projectId, repoUrl);
-    if (this.now() - entry.fetchedAt >= this.ttlMs && entry.refreshing === undefined) {
-      entry.refreshing = this.refresh(key, projectId, repoUrl)
-        .then(
-          () => undefined,
-          () => undefined,
-        )
-        .finally(() => {
-          entry.refreshing = undefined;
-        });
-    }
-    return entry.value;
+    return this.cache.get(cacheKey(projectId, repoUrl), () => this.fetchListing(projectId, repoUrl));
   }
 
   /** Drops cached entries (all, or one project's) — e.g. for tests. */
   invalidate(projectId?: string): void {
-    if (projectId === undefined) this.entries.clear();
-    else for (const key of this.entries.keys()) if (key.startsWith(`${projectId}\n`)) this.entries.delete(key);
+    this.cache.invalidate(projectId === undefined ? undefined : `${projectId}\n`);
   }
 
-  /** Fetches the batched listing and stores it as the fresh cache value. */
-  private async refresh(key: string, projectId: string, repoUrl: string): Promise<PullRequest[]> {
+  /** Fetches the batched listing. */
+  private async fetchListing(projectId: string, repoUrl: string): Promise<PullRequest[]> {
     const gh = this.deps.gh(repoUrl);
-    const value = await listOpenPullRequestsBatched(gh, projectId, parseRepoUrl(repoUrl), { first: this.first });
-    this.entries.set(key, { value, fetchedAt: this.now() });
-    return value;
+    return listOpenPullRequestsBatched(gh, projectId, parseRepoUrl(repoUrl), { first: this.first });
   }
 }
 

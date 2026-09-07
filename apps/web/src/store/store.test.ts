@@ -4,7 +4,7 @@
  * inert in node — see the `window` guard in store.ts.)
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   kanbanBoardSchema,
   projectSchema,
@@ -12,9 +12,29 @@ import {
   type KanbanCard,
   type KanbanColumn,
   type KanbanUpdateEvent,
+  type Project,
+  type PullRequest,
+  type Worker,
 } from "@agentskiss/shared";
-import { applyKanbanEvent, type AppState } from "./store";
+import { applyKanbanEvent, boardStore, type AppState } from "./store";
 import { backoffDelayMs, nextBackoffMs } from "../lib/backoff";
+
+// The store's REST access is mocked: single-flight coalescing tests count
+// calls instead of hitting the network (issue #88 regression tests).
+vi.mock("../lib/api", () => ({
+  apiListProjects: vi.fn(async () => [] as Project[]),
+  apiGetKanban: vi.fn(async (_projectId: string) => {
+    throw new Error("apiGetKanban not stubbed");
+  }),
+  apiListWorkers: vi.fn(async () => [] as Worker[]),
+  apiListPullRequests: vi.fn(async () => [] as PullRequest[]),
+  errorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
+}));
+
+import { apiGetKanban, apiListProjects } from "../lib/api";
+
+const mockGetKanban = vi.mocked(apiGetKanban);
+const mockListProjects = vi.mocked(apiListProjects);
 
 const PROJECT_ID = "demo";
 
@@ -197,5 +217,56 @@ describe("reconnect backoff", () => {
       expect(delay).toBeGreaterThanOrEqual(base * 0.75);
       expect(delay).toBeLessThanOrEqual(base * 1.25);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Single-flight coalescing (issue #88 regression tests)
+//
+// The store's REST side effects are inert in node (`window` guard), so these
+// drive the app-wide singleton directly with a mocked api lib. Each test
+// uses its own project id: state accumulates on the singleton across tests.
+// ---------------------------------------------------------------------------
+
+describe("boardStore single-flight coalescing (issue #88)", () => {
+  it("coalesces concurrent loadProject calls into one fetch round per project", async () => {
+    const id = "coalesce";
+    const board = stateWithBoard().boards[PROJECT_ID]!;
+    mockGetKanban.mockImplementation(async () => board);
+    await Promise.all([
+      boardStore.loadProject(id),
+      boardStore.loadProject(id),
+      boardStore.loadProject(id),
+      boardStore.loadProject(id),
+    ]);
+    expect(mockGetKanban.mock.calls.filter(([projectId]) => projectId === id)).toHaveLength(1);
+    expect(boardStore.getState().boards[id]).toEqual(board);
+  });
+
+  it("does not share loads across different projects", async () => {
+    const board = stateWithBoard().boards[PROJECT_ID]!;
+    mockGetKanban.mockImplementation(async () => board);
+    await Promise.all([boardStore.loadProject("solo-a"), boardStore.loadProject("solo-b")]);
+    expect(mockGetKanban.mock.calls.filter(([projectId]) => projectId.startsWith("solo-"))).toHaveLength(2);
+  });
+
+  it("retries a failed project load on the next call (failures are not cached)", async () => {
+    const id = "retry";
+    const board = stateWithBoard().boards[PROJECT_ID]!;
+    mockGetKanban.mockImplementationOnce(async () => {
+      throw new Error("kanban down");
+    });
+    mockGetKanban.mockImplementationOnce(async () => board);
+    await expect(boardStore.loadProject(id)).rejects.toThrow("kanban down");
+    await expect(boardStore.loadProject(id)).resolves.toBeUndefined();
+    expect(mockGetKanban.mock.calls.filter(([projectId]) => projectId === id)).toHaveLength(2);
+  });
+
+  it("coalesces concurrent refresh calls into one project-list fetch", async () => {
+    mockListProjects.mockResolvedValueOnce([project]);
+    await Promise.all([boardStore.refresh(), boardStore.refresh(), boardStore.refresh()]);
+    expect(mockListProjects).toHaveBeenCalledTimes(1);
+    expect(boardStore.getState().projects).toEqual([project]);
+    expect(boardStore.getState().loaded).toBe(true);
   });
 });
