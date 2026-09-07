@@ -24,6 +24,7 @@ import { DiffService } from "./diffs.js";
 import { KanbanService } from "./kanban.js";
 import { PullListingService } from "./pull-listing.js";
 import { ProjectService, ProjectStore } from "./projects.js";
+import { RuntimeStats } from "./runtime-stats.js";
 import { SettingsStore } from "./settings.js";
 import { UpdateChecker, type UpdateSpawn } from "./update.js";
 import { WsHub } from "./ws.js";
@@ -62,6 +63,11 @@ export interface DaemonServices {
   promptGate: PromptGate;
   /** Injectable clock (ISO timestamps for events). */
   now: () => Date;
+  /**
+   * Event-loop lag + memory + uptime sampler (issue #100): surfaced in
+   * `GET /api/status`; stopped on daemon shutdown.
+   */
+  runtimeStats: RuntimeStats;
 }
 
 export interface DaemonContextOptions {
@@ -206,6 +212,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     piAuth,
     promptGate,
     now: () => new Date(),
+    runtimeStats: new RuntimeStats(),
   };
 }
 

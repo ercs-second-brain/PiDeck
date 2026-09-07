@@ -89,6 +89,14 @@ export const piAuthSchema = z.object({
   defaultModel: z.string().nullable(),
   /** Human-readable explanation, suitable for surfacing in the UI. */
   detail: z.string(),
+  /**
+   * True when this is the last-known payload served stale-while-revalidate
+   * (issue #100): a background refresh is already running. Absent on a
+   * freshly probed payload. Status endpoints must never block on the probe
+   * (a full pass can cost one pi spawn per provider), so consumers can
+   * treat a `stale` payload as advisory.
+   */
+  stale: z.boolean().optional(),
 });
 export type PiAuth = z.infer<typeof piAuthSchema>;
 

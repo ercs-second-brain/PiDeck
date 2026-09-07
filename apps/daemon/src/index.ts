@@ -55,12 +55,22 @@ export async function main(options: { stateDir?: string; host?: string; port?: n
     services.promptGate.stop();
     services.hub.close();
     closeTerminal();
+    services.runtimeStats.stop();
     server.close(() => process.exit(0));
     // Hard-exit fallback if sockets keep the handle open.
     setTimeout(() => process.exit(0), 3000).unref();
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+  // Unhandled-rejection guard (issue #100, phase 2): a stray rejection from a
+  // background loop (pipeline, watcher, bridge capture) must not kill the
+  // daemon — the default Node behavior crash-restarts the process and every
+  // connected webapp flips to "connection lost". Log loudly instead; the
+  // rejection's own subsystem logs its operational failures.
+  process.on("unhandledRejection", (reason) => {
+    console.error("[daemon] unhandled rejection (daemon kept alive):", reason);
+  });
 }
 
 /**

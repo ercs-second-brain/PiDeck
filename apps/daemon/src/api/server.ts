@@ -51,7 +51,12 @@ export function createDaemonServer(options: DaemonServerOptions): { server: Serv
       const url = new URL(req.url ?? "/", "http://localhost");
       // API paths go through the router; everything else is the webapp SPA.
       if (url.pathname.startsWith("/api/")) {
-        await router.dispatch(req, res);
+        const startedAt = Date.now();
+        try {
+          await router.dispatch(req, res);
+        } finally {
+          logSlowEndpoint(req.method ?? "GET", url.pathname, Date.now() - startedAt);
+        }
         return;
       }
       const webDistConfigured = webDist !== null && webDist !== undefined && webDist.length > 0;
@@ -86,6 +91,15 @@ export function createDaemonServer(options: DaemonServerOptions): { server: Serv
     if (pathname !== WS_PATH && pathname !== TERMINAL_WS_PATH) socket.destroy();
   });
   return { server, router };
+}
+
+/** Requests slower than this are logged (issue #100 phase 1). */
+const SLOW_ENDPOINT_MS = 500;
+
+/** Logs one API request when it exceeded the slow-endpoint budget. */
+function logSlowEndpoint(method: string, pathname: string, durationMs: number): void {
+  if (durationMs < SLOW_ENDPOINT_MS) return;
+  console.warn(`[api] slow ${method} ${pathname} ${durationMs}ms`);
 }
 
 /** Resolves the default webapp dist dir relative to the daemon package (`apps/web/dist`). */
