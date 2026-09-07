@@ -436,8 +436,9 @@ describe("self-update (issues #55, #76)", () => {
   it("exposes the update status (plus the active-worker gate count) through the contract endpoint", async () => {
     const res = await updApi("GET", endpoints.getUpdateStatus.path);
     expect(res.status).toBe(200);
+    // runningSha (issue #89): the build the answering daemon runs — the banner resolves when it equals the target SHA.
     expect(updateStatusResponseSchema.parse(res.json)).toMatchObject({
-      repo: "o/r", ref: "main", localSha: LOCAL_SHA, remoteSha: LOCAL_SHA,
+      repo: "o/r", ref: "main", localSha: LOCAL_SHA, remoteSha: LOCAL_SHA, runningSha: LOCAL_SHA, applyProgress: null,
       updateAvailable: false, error: null, activeWorkers: 0,
     });
   });

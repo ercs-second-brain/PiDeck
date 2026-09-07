@@ -133,6 +133,21 @@ short_sha() {
   printf '%.7s' "$1"
 }
 
+# update_progress — record the apply stage for the webapp banner (issue #89).
+#
+# Writes $AK_HOME/var/update-state.json ({"stage":…,"updatedAt":…, ISO UTC});
+# the daemon serves it on /api/update so an open webapp shows real progress
+# during the multi-minute fetch/rebuild. Best effort only: a failed write
+# must never fail the update. Stages (in apply order):
+#   checking fetching building installing restarting done failed
+update_progress() {
+  _up_dir="$AK_HOME/var"
+  mkdir -p "$_up_dir" 2>/dev/null || return 0
+  printf '{"stage":"%s","updatedAt":"%s"}\n' \
+    "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$_up_dir/update-state.json.tmp" 2>/dev/null || return 0
+  mv -f "$_up_dir/update-state.json.tmp" "$_up_dir/update-state.json" 2>/dev/null || return 0
+}
+
 # update_report — print the check result for humans. Exits 1 on check errors.
 update_report() {
   if [ -n "$UPDATE_ERROR" ]; then
@@ -162,6 +177,11 @@ update_report() {
 #
 # No-op (exit 0) when already up to date — no unnecessary rebuilds.
 update_apply() {
+  # Progress file (issue #89): the webapp banner reads the stage live. On any
+  # death (die/kill of the shim), the EXIT trap records `failed` — unless we
+  # reached `done`, which clears the trap first.
+  trap 'update_progress failed' EXIT
+  update_progress checking
   step "checking for updates"
   if ! update_check; then
     warn "cannot apply an update: $UPDATE_ERROR"
@@ -169,6 +189,8 @@ update_apply() {
   fi
   update_report || return 1
   if [ "$UPDATE_LOCAL_SHA" = "$UPDATE_REMOTE_SHA" ]; then
+    update_progress "done"
+    trap - EXIT
     return 0
   fi
 
@@ -176,11 +198,17 @@ update_apply() {
   # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
   . "$AK_LIB/source.sh"
   AK_SRC=$UPDATE_SRC
+  update_progress fetching
   step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"
   resolve_source
+  update_progress building
   build_from_source
+  update_progress installing
   refresh_installed_layer
+  update_progress restarting
   step "restarting the service"
   svc_restart
+  update_progress "done"
+  trap - EXIT
   ok "update applied — agentskiss now runs $(short_sha "$(git -C "$AK_SRC" rev-parse HEAD)")"
 }

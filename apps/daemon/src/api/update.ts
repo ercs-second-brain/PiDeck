@@ -20,7 +20,7 @@
  */
 
 import { spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 import { defaultGhRunner, parseRepoUrl, type GhRunner } from "../github/gh.js";
@@ -35,6 +35,17 @@ import type { UpdateStatus } from "@agentskiss/shared";
  * cache — gh is still consulted at most ~every 5 minutes server-side.
  */
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * The update shim's live progress file (issue #89), relative to the state
+ * dir — install/lib/update.sh rewrites it at each stage of the apply
+ * (checking/fetching/building/installing/restarting/done/failed).
+ */
+const PROGRESS_FILE = "var/update-state.json";
+/** Progress older than this is stale (crashed/killed shim) — report none. */
+const PROGRESS_TTL_MS = 30 * 60 * 1000;
+/** The shim writes `date -u +%Y-%m-%dT%H:%M:%SZ` — no sub-second precision. */
+const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
 /** Injectable detached-process spawner for {@link UpdateChecker.apply} (tests). */
 export type UpdateSpawn = (
@@ -88,6 +99,14 @@ export class UpdateChecker {
   private readonly now: () => Date;
   /** Last check result within the TTL — webapp polling must not re-hit gh. */
   private cache: CachedStatus | undefined;
+  /**
+   * SHA of the build this daemon process runs (issue #89): captured exactly
+   * once, at construction (daemon boot) — the source checkout moves to the
+   * new commit mid-update, so a check-time read would mistake the new HEAD
+   * for the running build. Starts eagerly so even the first check() sees the
+   * boot-time value; `null` when git fails (no repo at the checkout).
+   */
+  private readonly runningSha: Promise<string | null>;
 
   constructor(options: UpdateCheckerOptions) {
     this.srcDir = options.srcDir;
@@ -99,6 +118,9 @@ export class UpdateChecker {
     this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.spawn = options.spawn ?? nodeSpawn;
     this.now = options.now ?? (() => new Date());
+    this.runningSha = this.git(["rev-parse", "HEAD"], { cwd: this.srcDir })
+      .then((result) => result.stdout.trim() || null)
+      .catch(() => null);
   }
 
   /**
@@ -109,19 +131,47 @@ export class UpdateChecker {
    * entry. Never throws: failures surface in `error` with
    * `updateAvailable: false`, so the webapp/CLI always get a well-formed
    * status body.
+   *
+   * Every result also carries `runningSha` (the build this daemon process
+   * runs, captured at boot — issue #89) and `applyProgress`, which is read
+   * fresh from the update shim's state file even on cache hits so the
+   * webapp's banner tracks the rebuild in real time while it polls.
    */
   async check(options: { force?: boolean } = {}): Promise<UpdateStatus> {
+    const runningSha = await this.runningSha;
+    const applyProgress = this.readProgress();
     const cached = this.cache;
     if (
       options.force !== true &&
       cached !== undefined &&
       this.now().getTime() - cached.at < this.cacheTtlMs
     ) {
-      return cached.status;
+      return { ...cached.status, runningSha, applyProgress };
     }
     const status = await this.runCheck();
     this.cache = { status, at: this.now().getTime() };
-    return status;
+    return { ...status, runningSha, applyProgress };
+  }
+
+  /**
+   * Reads the update shim's progress file (issue #89): the stage it wrote
+   * last plus when. Returns `null` when missing, malformed, or stale — a
+   * killed shim must never pin the webapp in a phantom "building" state.
+   */
+  private readProgress(): UpdateStatus["applyProgress"] {
+    try {
+      const parsed = JSON.parse(readFileSync(`${this.stateDir}/${PROGRESS_FILE}`, "utf8")) as {
+        stage?: unknown;
+        updatedAt?: unknown;
+      };
+      if (typeof parsed.stage !== "string" || parsed.stage.length === 0) return null;
+      if (typeof parsed.updatedAt !== "string" || !ISO_UTC_RE.test(parsed.updatedAt)) return null;
+      const at = Date.parse(parsed.updatedAt);
+      if (Number.isNaN(at) || this.now().getTime() - at > PROGRESS_TTL_MS) return null;
+      return { stage: parsed.stage, updatedAt: parsed.updatedAt };
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -184,6 +234,8 @@ export class UpdateChecker {
       updateAvailable: localSha !== null && remoteSha !== null && localSha !== remoteSha,
       checkedAt,
       error: errors.length > 0 ? errors.join("; ") : null,
+      runningSha: null,
+      applyProgress: null,
     };
   }
 
