@@ -192,9 +192,33 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
 
     updateSettings: ({ body }) => services.settings.update(updateSettingsRequestSchema.parse(body)),
 
-    // Self-update check (issue #55): local source vs upstream via gh. Never
-    // throws — failures come back as a status body with `error` set.
-    getUpdateStatus: () => services.update.check(),
+    // Self-update (issues #55, #76): the check result plus the live
+    // active-worker count — the webapp disables its update button on the
+    // same data the apply endpoint gates with. Cached upstream (≤ hourly
+    // gh re-check), fresh worker count every poll.
+    getUpdateStatus: async () => {
+      const status = await services.update.check();
+      return { ...status, activeWorkers: countActiveWorkers(services) };
+    },
+
+    /**
+     * Apply update (issue #76): gates server-side on zero active workers
+     * (never trust the client — a worker spawned since the last poll still
+     * aborts cleanly with 409), then spawns the `agentskiss update` shim
+     * detached and returns immediately; the daemon restarts mid-apply, so
+     * the webapp polls `GET /api/update` until the new SHA shows up.
+     */
+    applyUpdate: async () => {
+      const active = countActiveWorkers(services);
+      if (active > 0) {
+        throw new HttpError(
+          409,
+          `update blocked: ${active} worker${active === 1 ? "" : "s"} still active — updates apply only when every agent is idle`,
+        );
+      }
+      await services.update.apply();
+      return { ok: true };
+    },
   };
 }
 
@@ -206,6 +230,13 @@ function requireOr404<T>(value: T | undefined, message: string): T {
 // ---------------------------------------------------------------------------
 // CLI action routes (agent/README.md: spawn / send / status, finalized in #9)
 // ---------------------------------------------------------------------------
+
+/** Workers in an active status — the click-to-update gate (issue #76), via
+ * the shared `ACTIVE_WORKER_STATUSES` (issue #70). Orchestrator sessions are
+ * not workers (they persist across updates and never block). */
+export function countActiveWorkers(services: DaemonServices): number {
+  return services.sessions.listWorkers().filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status)).length;
+}
 
 /**
  * Spawns a worker via the SessionManager: `--issue` workers carry the issue

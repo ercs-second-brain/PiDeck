@@ -25,7 +25,7 @@ import { KanbanService } from "./kanban.js";
 import { PullListingService } from "./pull-listing.js";
 import { ProjectService, ProjectStore } from "./projects.js";
 import { SettingsStore } from "./settings.js";
-import { UpdateChecker } from "./update.js";
+import { UpdateChecker, type UpdateSpawn } from "./update.js";
 import { WsHub } from "./ws.js";
 
 export interface DaemonServices {
@@ -83,6 +83,8 @@ export interface DaemonContextOptions {
   updateGh?: GhRunner;
   /** Override the git runner used by the update checker (tests; issue #55). */
   updateGit?: GitRunner;
+  /** Override the detached spawner used by `update.apply()` (tests; issue #76). */
+  updateSpawn?: UpdateSpawn;
   /** Explicit upstream repo URL for the update checker (tests; env override). */
   updateRepoUrl?: string;
   /** Explicit upstream ref for the update checker (tests; env override). */
@@ -185,6 +187,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     ...(options.updateRepoRef !== undefined ? { repoRef: options.updateRepoRef } : {}),
     ...(options.updateGh !== undefined ? { gh: options.updateGh } : {}),
     ...(options.updateGit !== undefined ? { git: options.updateGit } : {}),
+    ...(options.updateSpawn !== undefined ? { spawn: options.updateSpawn } : {}),
   });
 
   return {

@@ -63,7 +63,7 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `agentskiss send` | `--session <id>`, `--message <text>` | `POST /api/sessions/:sessionId/send` | Delivers into the session's tmux pane (typed, then Enter) |
 | `agentskiss report-pr <pr>` | — | `POST /api/sessions/report-pr` | Worker session self-reports its PR (resolved from its tmux pane context); explicit report wins over the title/branch heuristic, which stays as fallback (issue #49) |
 
-`GET /api/status` (daemon liveness, the `status` backing), project mutation endpoints (`POST`/`PATCH`/`DELETE /api/projects...`), `POST /api/projects/:projectId/orchestrator` (start a project's orchestrator from the webapp terminals sidebar, issue #53), `GET`/`PUT /api/settings`, `GET /api/gh-auth` (onboarding wizard), and `GET /api/update` (self-update check behind the webapp banner + `agentskiss update`, issue #55) are webapp/owner operations — no skill invokes them.
+`GET /api/status` (daemon liveness, the `status` backing), project mutation endpoints (`POST`/`PATCH`/`DELETE /api/projects...`), `POST /api/projects/:projectId/orchestrator` (start a project's orchestrator from the webapp terminals sidebar, issue #53), `GET`/`PUT /api/settings`, `GET /api/gh-auth` (onboarding wizard), `GET /api/update` (self-update check behind the webapp banner, issue #55), and `POST /api/update/apply` (click-to-update, gated on all workers idle — issue #76) are webapp/owner operations — no skill invokes them.
 
 ### Contract consistency
 

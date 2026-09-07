@@ -3,6 +3,11 @@
  * upstream head via mock gh/git runners — no subprocess, no network.
  */
 
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { SpawnOptions } from "node:child_process";
+
 import { describe, expect, it } from "vitest";
 import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
@@ -144,5 +149,87 @@ describe("UpdateChecker", () => {
     expect(status.repo).toBe("https://example.com/some/repo.git");
     expect(status.ref).toBe("main");
     expect(status.error).toContain("upstream check for https://example.com/some/repo.git@main failed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Status caching + detached apply (issue #76)
+// ---------------------------------------------------------------------------
+
+describe("UpdateChecker caching (issue #76)", () => {
+  /** Counts gh invocations and remembers the last `now()` reading used. */
+  function countingGh(remoteSha: string): { gh: GhRunner; calls: () => number } {
+    let calls = 0;
+    return {
+      calls: () => calls,
+      gh: async (args) => {
+        calls += 1;
+        return fakeGh({ remoteSha })(args);
+      },
+    };
+  }
+
+  it("serves a cached status within the TTL instead of re-hitting gh", async () => {
+    const counted = countingGh("b".repeat(40));
+    let nowMs = 1_000;
+    const instance = checker({
+      gh: counted.gh,
+      now: () => new Date(nowMs),
+      cacheTtlMs: 60 * 60 * 1000,
+    });
+    const first = await instance.check();
+    nowMs += 60_000; // 1 minute later — still fresh
+    const second = await instance.check();
+    expect(second).toBe(first); // same object: served from cache
+    expect(counted.calls()).toBe(1);
+    nowMs += 60 * 60 * 1000; // past the TTL — re-checks
+    const third = await instance.check();
+    expect(third).not.toBe(first);
+    expect(counted.calls()).toBe(2);
+    expect(third.checkedAt).toBe(new Date(nowMs).toISOString());
+  });
+});
+
+describe("UpdateChecker.apply (issue #76)", () => {
+  /** An installed shim in a tmp state dir; returns its bin path. */
+  function installedStateDir(): string {
+    const dir = mkdtempSync(path.join(tmpdir(), "ak-apply-"));
+    mkdirSync(path.join(dir, "bin"), { recursive: true });
+    writeFileSync(path.join(dir, "bin", "agentskiss"), "#!/bin/sh\n");
+    return dir;
+  }
+
+  it("spawns the installed shim detached and returns immediately", async () => {
+    const stateDir = installedStateDir();
+    const spawned: Array<{ file: string; args: readonly string[]; options: SpawnOptions }> = [];
+    const instance = checker({
+      stateDir,
+      spawn: (file, args, options) => {
+        spawned.push({ file, args, options });
+        return { unref() {} };
+      },
+    });
+    await instance.apply();
+    expect(spawned).toEqual([
+      {
+        file: path.join(stateDir, "bin", "agentskiss"),
+        args: ["update"],
+        options: { detached: true, stdio: "ignore", cwd: stateDir },
+      },
+    ]);
+  });
+
+  it("rejects cleanly without an installed shim (dev checkout)", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ak-apply-"));
+    let spawned = 0;
+    const instance = checker({
+      stateDir: dir,
+      spawn: () => {
+        spawned += 1;
+        return { unref() {} };
+      },
+    });
+    await expect(instance.apply()).rejects.toThrow(/no agentskiss shim at .*bin\/agentskiss/);
+    expect(spawned).toBe(0);
   });
 });

@@ -142,6 +142,22 @@ export const updateStatusSchema = z.object({
 });
 export type UpdateStatus = z.infer<typeof updateStatusSchema>;
 
+/**
+ * Webapp-facing update status (issue #76): the check result (issue #55) plus
+ * the live active-worker count that gates click-to-apply — the server is the
+ * source of truth, so the banner button disables on the same data the apply
+ * endpoint gates with (`ACTIVE_WORKER_STATUSES`).
+ */
+export const updateStatusResponseSchema = updateStatusSchema.extend({
+  /** Workers in an `ACTIVE_WORKER_STATUSES` status; > 0 blocks applying. */
+  activeWorkers: z.number().int().min(0),
+});
+export type UpdateStatusResponse = z.infer<typeof updateStatusResponseSchema>;
+
+/** Body of `POST /api/update/apply` (issue #76): accepted → apply started. */
+export const updateApplyResponseSchema = z.object({ ok: z.boolean() });
+export type UpdateApplyResponse = z.infer<typeof updateApplyResponseSchema>;
+
 // ---------------------------------------------------------------------------
 // Endpoint map
 // ---------------------------------------------------------------------------
@@ -261,13 +277,26 @@ export const endpoints = {
     response: pullRequestDiffSchema,
   },
 
-  // Self-update (issue #55)
+  // Self-update (issues #55, #76)
   getUpdateStatus: {
     method: "GET",
     path: "/api/update",
     params: z.object({}),
     request: null,
-    response: updateStatusSchema,
+    response: updateStatusResponseSchema,
+  },
+  /**
+   * Apply a pending update (issue #76): gates server-side on zero active
+   * workers (409 otherwise), then spawns the installed `agentskiss update`
+   * shim detached and returns immediately — the daemon restarts mid-apply,
+   * so the webapp polls `GET /api/update` until it reports the new build.
+   */
+  applyUpdate: {
+    method: "POST",
+    path: "/api/update/apply",
+    params: z.object({}),
+    request: null,
+    response: updateApplyResponseSchema,
   },
 
   // Settings
