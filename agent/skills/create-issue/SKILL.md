@@ -30,5 +30,5 @@ Creates an issue in the project's GitHub repository via the `gh` CLI. agentskiss
 ## Rules
 
 - Never create issues on repositories outside the current project without the user asking.
-- Do not assign the issue to the auto-agent username yourself — assignment (or creation by the configured user) triggers auto-spawn; leave that to the user or orchestrator unless explicitly requested.
+- Do not assign the issue to the auto-agent username yourself — issue creation and assignment events are what the daemon's auto-spawn pipeline reacts to (exact trigger semantics: see the issue pipeline in `apps/daemon/src/pipeline/issues`); leave assignment to the user or orchestrator unless explicitly requested.
 - Report the issue URL back to the requester.
