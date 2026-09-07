@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { HttpError, Router } from "./router.js";
 import { serveStatic } from "./server.js";
+import { capture } from "../testing/http-capture.js";
 
 describe("router", () => {
   const router = new Router();
@@ -71,35 +72,6 @@ describe("router", () => {
     expect(res.statusCode).toBe(400);
   });
 });
-
-/** Minimal IncomingMessage/ServerResponse doubles for dispatch tests. */
-function capture(method = "GET", url = "/api/projects", body?: string) {
-  const chunks: Buffer[] = [];
-  const headers: Record<string, string | number | string[]> = {};
-  let statusCode = 0;
-  const req = {
-    method,
-    url,
-    async *[Symbol.asyncIterator]() {
-      if (body !== undefined) yield Buffer.from(body);
-    },
-  } as unknown as import("node:http").IncomingMessage;
-  const res = {
-    set statusCode(value: number) {
-      statusCode = value;
-    },
-    get statusCode() {
-      return statusCode;
-    },
-    setHeader(key: string, value: string | number | string[]) {
-      headers[key] = value;
-    },
-    end(chunk?: string) {
-      if (chunk !== undefined) chunks.push(Buffer.from(chunk));
-    },
-  } as unknown as import("node:http").ServerResponse;
-  return { req, res, text: () => Buffer.concat(chunks).toString("utf8"), headers };
-}
 
 describe("static serving", () => {
   let server: Server;

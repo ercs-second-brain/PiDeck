@@ -8,9 +8,16 @@
 import type { Server as HttpServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { TerminalBridge, type TerminalSocket } from "./bridge.js";
+import { monitorWebSocket } from "../ws-heartbeat.js";
 
 /** Path the terminal WebSocket is served on. */
 export const TERMINAL_WS_PATH = "/ws";
+
+/** Options for the terminal WebSocket endpoint. */
+export interface TerminalWsOptions {
+  /** Keepalive ping interval (ms); `0` disables the heartbeat. */
+  pingIntervalMs?: number;
+}
 
 /**
  * Attaches a terminal WebSocket endpoint to an HTTP server. Returns the
@@ -20,12 +27,16 @@ export function attachTerminalWebSocket(
   server: HttpServer,
   bridge: TerminalBridge,
   path: string = TERMINAL_WS_PATH,
+  options: TerminalWsOptions = {},
 ): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
     const { pathname } = new URL(request.url ?? "/", "http://localhost");
     if (pathname !== path) return;
     wss.handleUpgrade(request, socket, head, (ws) => {
+      // Keepalive (issue #100): pings keep half-open sockets from lingering
+      // as zombie clients holding pane streamers open.
+      monitorWebSocket(ws, { intervalMs: options.pingIntervalMs ?? 30_000 });
       bridge.handleOpen(adaptWebSocket(ws));
     });
   });

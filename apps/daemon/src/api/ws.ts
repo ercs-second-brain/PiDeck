@@ -18,18 +18,43 @@ import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { kanbanUpdateEventSchema, wsClientMessageSchema, type KanbanUpdateEvent } from "@agentskiss/shared";
 
+import { monitorWebSocket } from "../ws-heartbeat.js";
+
 export const WS_PATH = "/api/ws";
+
+export interface WsHubOptions {
+  /** Log sink for connect/disconnect lines (default `console.log`). */
+  log?: (line: string) => void;
+  /** Keepalive ping interval (ms); `0` disables the heartbeat. */
+  pingIntervalMs?: number;
+}
 
 export class WsHub {
   private readonly wss: WebSocketServer;
   private readonly clients = new Set<WebSocket>();
+  private readonly connectedAt = new Map<WebSocket, number>();
+  private readonly log: (line: string) => void;
+  private readonly pingIntervalMs: number;
 
-  constructor() {
+  constructor(options: WsHubOptions = {}) {
+    this.log = options.log ?? ((line) => console.log(line));
+    this.pingIntervalMs = options.pingIntervalMs ?? 30_000;
     this.wss = new WebSocketServer({ noServer: true });
-    this.wss.on("connection", (socket: WebSocket, _req: IncomingMessage) => {
+    this.wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
       this.clients.add(socket);
+      this.connectedAt.set(socket, Date.now());
+      // Keepalive (issue #100): terminate half-open sockets so their close
+      // cleanup actually runs instead of leaking the client entry.
+      monitorWebSocket(socket, { intervalMs: this.pingIntervalMs });
+      const remote = req.socket.remoteAddress ?? "unknown";
+      this.log(`[ws] connect path=/api/ws remote=${remote} clients=${this.clients.size}`);
       socket.on("message", (raw: unknown) => this.onMessage(socket, raw));
-      socket.on("close", () => this.clients.delete(socket));
+      socket.on("close", () => {
+        this.clients.delete(socket);
+        const durationMs = Date.now() - (this.connectedAt.get(socket) ?? Date.now());
+        this.connectedAt.delete(socket);
+        this.log(`[ws] disconnect path=/api/ws durationMs=${durationMs} clients=${this.clients.size}`);
+      });
       socket.on("error", () => {
         /* handled by close */
       });
@@ -58,7 +83,13 @@ export class WsHub {
   broadcast(event: KanbanUpdateEvent): void {
     const payload = JSON.stringify(kanbanUpdateEventSchema.parse(event));
     for (const socket of this.clients) {
-      if (socket.readyState === WebSocket.OPEN) socket.send(payload);
+      if (socket.readyState === WebSocket.OPEN) {
+        try {
+          socket.send(payload);
+        } catch {
+          // A socket that fails mid-send dies through its own close path.
+        }
+      }
     }
   }
 
@@ -71,6 +102,7 @@ export class WsHub {
   close(): void {
     for (const socket of this.clients) socket.close(1001, "daemon shutting down");
     this.clients.clear();
+    this.connectedAt.clear();
     this.wss.close();
   }
 

@@ -7,19 +7,19 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createDaemonServer } from "./server.js";
 import { testDaemon, type TestDaemon } from "./testutil.js";
 
 /** Builds a daemon server over a tmp webapp dist dir and returns its base URL. */
-async function startServer(webDist: string | null): Promise<{ base: string; daemon: TestDaemon; server: import("node:http").Server }> {
+async function startServer(webDist: string | null): Promise<{ base: string; daemon: TestDaemon; server: import("node:http").Server; router: ReturnType<typeof createDaemonServer>["router"] }> {
   const daemon = testDaemon();
-  const { server } = createDaemonServer({ services: daemon.services, webDist });
+  const { server, router } = createDaemonServer({ services: daemon.services, webDist });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const addr = server.address();
   const base = `http://127.0.0.1:${typeof addr === "object" && addr !== null ? addr.port : 0}`;
-  return { base, daemon, server };
+  return { base, daemon, server, router };
 }
 
 async function stopServer(server: import("node:http").Server, daemon: TestDaemon): Promise<void> {
@@ -78,5 +78,25 @@ describe("static serving + SPA fallback", () => {
     const res = await fetch(`${emptyDist.base}/`);
     expect(res.status).toBe(404);
     expect(await res.text()).toBe("not found");
+  });
+});
+
+describe("slow-endpoint logging (issue #100 phase 1)", () => {
+  it("logs /api requests that exceed the 500ms budget (and only those)", async () => {
+    const { base, daemon, server, router } = await startServer(null);
+    router.add("GET", "/api/slow-test", async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return { body: { ok: true } };
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await fetch(`${base}/api/slow-test`);
+      await fetch(`${base}/api/status`);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[api\] slow GET \/api\/slow-test \d{3,}ms$/));
+    } finally {
+      warn.mockRestore();
+      await stopServer(server, daemon);
+    }
   });
 });

@@ -15,9 +15,10 @@
  *   must not have its initial prompt typed into an agent that cannot run;
  * - the `/api/status` pi fields + the daemon startup warning.
  *
- * Results are cached briefly (default 30s) so polling endpoints do not burn
- * a process spawn per provider on every request; tests inject a fake runner
- * and can force fresh probes.
+ * Results are cached with stale-while-revalidate (default 5-minute TTL,
+ * issue #100): no request-critical path ever waits on a probe once one has
+ * run, and a full probe pass spawns all provider checks in parallel. Tests
+ * inject a fake runner and can force fresh probes.
  */
 
 import { spawn } from "node:child_process";
@@ -109,18 +110,24 @@ function parseJson(text: string): unknown {
 
 /** Result of probing every provider: the ready ones (ordered like {@link PI_PROVIDERS}). */
 export async function piReadyProviders(run: PiRunner): Promise<string[]> {
-  const ready: string[] = [];
-  for (const provider of PI_PROVIDERS) {
-    try {
-      const { stdout } = await run(["auth", "check", "--provider", provider, "--no-refresh", "--json"]);
-      if (providerAuthReady(stdout)) ready.push(provider);
-    } catch (err) {
-      if (err instanceof PiNotInstalledError) throw err; // no providers can be ready
-      // A failing probe for one provider (e.g. non-zero exit when
-      // unauthenticated) simply means that provider is not ready.
-    }
-  }
-  return ready;
+  // One spawn per provider, all in parallel (issue #100): a serial probe
+  // costs providers × pi-startup on every cache miss — measured at ~139s
+  // for the 13 providers on a user's Mac (~10s per pi invocation), which
+  // stacked every /api/status poll into a daemon-freezing pileup.
+  const verdicts = await Promise.all(
+    PI_PROVIDERS.map(async (provider): Promise<string | null> => {
+      try {
+        const { stdout } = await run(["auth", "check", "--provider", provider, "--no-refresh", "--json"]);
+        return providerAuthReady(stdout) ? provider : null;
+      } catch (err) {
+        if (err instanceof PiNotInstalledError) throw err; // no providers can be ready
+        // A failing probe for one provider (e.g. non-zero exit when
+        // unauthenticated) simply means that provider is not ready.
+        return null;
+      }
+    }),
+  );
+  return verdicts.filter((provider): provider is string => provider !== null);
 }
 
 /** pi's saved startup defaults, read from its own settings.json. */
@@ -173,7 +180,7 @@ export interface PiAuthProbeOptions {
   run?: PiRunner;
   /** pi settings dir override (tests). Default: `AGENTSKISS_PI_DIR` or `~/.pi/agent`. */
   piDir?: string;
-  /** Probe-result TTL in ms. Default 30_000; `0` disables caching (tests). */
+  /** Probe-result TTL in ms. Default 300_000; `0` always probes fresh (deduplicated; tests). */
   ttlMs?: number;
   /** Injectable clock for the TTL (tests). */
   now?: () => number;
@@ -184,9 +191,23 @@ export interface PiAuthProbeOptions {
   readyOverride?: boolean;
 }
 
+const DEFAULT_TTL_MS = 300_000;
+
 /**
- * Cached pi-auth readiness probe. {@link payload} returns the shared
- * `PiAuth` contract body; {@link readyProviders} the raw provider list.
+ * Cached pi-auth readiness probe with stale-while-revalidate (issue #100).
+ *
+ * A full probe costs one pi spawn per provider (parallel, but still seconds
+ * on slow hosts), so no request-critical path may wait on it once the probe
+ * has run once:
+ *
+ * - cache fresh (age < TTL): the cached payload is served — 0 spawns;
+ * - cache stale: the last-known payload is served **immediately** (with
+ *   `stale: true`) and at most 1 background refresh runs (single-flight);
+ * - cold (nothing cached yet, e.g. right after daemon start): the first
+ *   caller awaits one probe pass, deduplicated across concurrent callers.
+ *
+ * {@link payload} backs `GET /api/status`, `GET /api/pi-auth`, and the
+ * worker-spawn readiness gate; {@link readyProviders} is the raw list.
  */
 export class PiAuthProbe {
   private readonly run: PiRunner;
@@ -201,7 +222,7 @@ export class PiAuthProbe {
   constructor(options: PiAuthProbeOptions = {}) {
     this.run = options.run ?? spawnPi;
     this.piDir = options.piDir;
-    this.ttlMs = options.ttlMs ?? 30_000;
+    this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
     this.now = options.now ?? Date.now;
     this.readyOverride = options.readyOverride;
   }
@@ -217,18 +238,32 @@ export class PiAuthProbe {
     return (await this.payload()).providers;
   }
 
-  /** The shared `PiAuth` payload (cached for {@link PiAuthProbeOptions.ttlMs}). */
+  /**
+   * The shared `PiAuth` payload (stale-while-revalidate, see class docs).
+   * `ttlMs: 0` keeps the old "always probe fresh" semantics (used by tests
+   * that flip auth state mid-flight): the caller awaits a fresh, deduplicated
+   * probe instead of receiving a stale value.
+   */
   async payload(): Promise<PiAuth> {
     if (this.readyOverride !== undefined) {
       return piAuthPayloadFrom(this.readyOverride ? ["anthropic"] : [], true, readPiStartupDefaults(this.piDir));
     }
-    const now = this.now();
-    if (this.cached !== null && this.ttlMs > 0 && now - this.cachedAt < this.ttlMs) return this.cached;
-    if (this.inFlight !== null) return this.inFlight;
-    this.inFlight = this.probe().finally(() => {
+    const swr = this.ttlMs > 0;
+    if (swr && this.cached !== null && this.now() - this.cachedAt < this.ttlMs) return this.cached;
+    if (this.inFlight !== null) {
+      // Warm cache: serve the last-known payload instantly; the in-flight
+      // refresh will update it. Cold (or no-cache mode): wait for the probe.
+      return swr && this.cached !== null ? this.cached : this.inFlight;
+    }
+    const refresh = this.probe().finally(() => {
       this.inFlight = null;
     });
-    return this.inFlight;
+    this.inFlight = refresh;
+    if (swr && this.cached !== null) {
+      // Stale-while-revalidate: never block the request path on a probe.
+      return { ...this.cached, stale: true };
+    }
+    return refresh;
   }
 
   private async probe(): Promise<PiAuth> {
@@ -244,15 +279,19 @@ export class PiAuthProbe {
         this.cache(payload);
         return payload;
       }
-      // An unexpected probe failure must never read as "ready": report
-      // not-ready without poisoning the cache for longer than the TTL.
-      return piAuthSchema.parse({
+      // An unexpected probe failure must never read as "ready". Cache the
+      // not-ready verdict for the TTL (issue #100): without caching, every
+      // request past the TTL re-triggers a full probe round on a host where
+      // pi is broken — exactly the pileup this probe exists to prevent.
+      const payload = piAuthSchema.parse({
         ready: false,
         providers: [],
         defaultProvider: defaults.defaultProvider,
         defaultModel: defaults.defaultModel,
         detail: `pi auth probe failed: ${err instanceof Error ? err.message : String(err)}`,
       });
+      this.cache(payload);
+      return payload;
     }
   }
 

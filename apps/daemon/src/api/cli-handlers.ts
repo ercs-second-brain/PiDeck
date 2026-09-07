@@ -129,6 +129,9 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
         sessions: services.sessions.listSessions().length,
         piReady: pi.ready,
         piProviders: pi.providers,
+        // Runtime health (issue #100): event-loop lag, memory, uptime —
+        // first-line diagnostics for slow/unstable installs.
+        ...services.runtimeStats.snapshot(),
         at: services.now().toISOString(),
       },
     };

@@ -118,21 +118,14 @@ export class PaneEventSource {
       const stream = createWriteStream(file, { flags: "a" });
       stream.end(() => resolve());
     });
-    try {
-      this.watcher = watch(file, () => this.onChange());
-    } catch {
-      this.watcher = undefined;
-    }
+    this.watcher = this.watchStreamFile(file);
     if (this.watcher === undefined) {
       // Either fs.watch is unsupported or the open callback had not run yet:
       // retry briefly once the reservation landed before giving up.
       await reserved;
       for (let i = 0; i < 25 && this.watcher === undefined; i++) {
-        try {
-          this.watcher = watch(file, () => this.onChange());
-        } catch {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
+        this.watcher = this.watchStreamFile(file);
+        if (this.watcher === undefined) await new Promise((resolve) => setTimeout(resolve, 10));
       }
     } else {
       await reserved;
@@ -224,6 +217,30 @@ export class PaneEventSource {
   private stopWatcher(): void {
     this.watcher?.close();
     this.watcher = undefined;
+  }
+
+  /**
+   * Establishes `fs.watch` on the stream file, with an error guard. Without
+   * an `error` listener, a watcher failure (macOS FSEvents hiccup, ENOENT
+   * race after the file is truncated/removed) surfaces as an uncaught
+   * exception that kills the whole daemon (issue #100). Here a watcher
+   * error just demotes the pane to timer polling.
+   */
+  private watchStreamFile(file: string): FSWatcher | undefined {
+    try {
+      const watcher = watch(file, () => this.onChange());
+      watcher.on("error", (err) => this.onWatcherError(err));
+      return watcher;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private onWatcherError(err: Error): void {
+    this.stopWatcher();
+    console.error(
+      `[terminal] event source watcher failed for ${this.paneTarget} (${err.message}); falling back to timer polling`,
+    );
   }
 }
 

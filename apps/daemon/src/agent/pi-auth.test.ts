@@ -8,7 +8,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   PiAuthProbe,
@@ -140,8 +140,12 @@ describe("PiAuthProbe", () => {
     await probe.payload();
     expect(passes).toBe(1);
     clock += 30_001;
+    // Stale-while-revalidate (issue #100): the stale payload is served
+    // immediately; the refresh runs in the background.
     await probe.payload();
-    expect(passes).toBe(2);
+    await vi.waitFor(() => expect(passes).toBe(2));
+    // Let the background refresh fully settle before invalidating.
+    await new Promise((resolve) => setTimeout(resolve, 2));
     probe.invalidate();
     await probe.payload();
     expect(passes).toBe(3);
@@ -173,5 +177,98 @@ describe("PiAuthProbe", () => {
     expect(payload.ready).toBe(true);
     expect(payload.providers).toEqual(["anthropic"]);
     expect(calls).toBe(0);
+  });
+});
+
+describe("piReadyProviders: parallel probe (issue #100)", () => {
+  it("runs all provider checks concurrently, not serially", async () => {
+    let running = 0;
+    let maxConcurrent = 0;
+    const run: PiRunner = async () => {
+      running += 1;
+      maxConcurrent = Math.max(maxConcurrent, running);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      running -= 1;
+      return { stdout: "", stderr: "" };
+    };
+    const start = Date.now();
+    const ready = await piReadyProviders(run);
+    const elapsed = Date.now() - start;
+    expect(ready).toEqual([]);
+    expect(maxConcurrent).toBe(13); // all providers probed at once
+    // Serial probing (the pre-#100 behavior) measured ~139s on a user's Mac;
+    // parallel must cost one pi invocation, not 13.
+    expect(elapsed).toBeLessThan(13 * 50);
+  });
+});
+
+describe("PiAuthProbe: stale-while-revalidate (issue #100)", () => {
+  const SLOW_MS = 50;
+
+  /** Probe with a per-provider runner slow enough to measure against. */
+  function slowProbe(ttlMs: number, clock?: () => number): {
+    probe: PiAuthProbe;
+    counts: () => { passes: number; maxConcurrent: number };
+  } {
+    let passes = 0;
+    let running = 0;
+    let maxConcurrent = 0;
+    const run: PiRunner = async (args) => {
+      if (args[3] === "anthropic") {
+        passes += 1;
+        running += 1;
+        maxConcurrent = Math.max(maxConcurrent, running);
+      }
+      await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
+      if (args[3] === "anthropic") running -= 1;
+      return { stdout: '{"status":"ready"}', stderr: "" };
+    };
+    return {
+      probe: new PiAuthProbe({ run, ttlMs, ...(clock ? { now: clock } : {}) }),
+      counts: () => ({ passes, maxConcurrent }),
+    };
+  }
+
+  it("serves a stale payload in <10ms and refreshes in the background", async () => {
+    const { probe, counts } = slowProbe(30);
+    await probe.payload(); // cold: the one awaited probe pass
+    expect(counts().passes).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 40)); // TTL expires
+
+    const startedAt = Date.now();
+    const payload = await probe.payload();
+    const elapsed = Date.now() - startedAt;
+    expect(elapsed).toBeLessThan(10); // request path never waits on a probe
+    expect(payload.ready).toBe(true);
+    expect(payload.stale).toBe(true);
+    await vi.waitFor(() => expect(counts().passes).toBe(2)); // refresh landed
+  });
+
+  it("never stacks background refreshes (single-flight)", async () => {
+    let clock = 1_000;
+    const { probe, counts } = slowProbe(30_000, () => clock);
+    await probe.payload();
+    clock += 30_001; // stale
+    await Promise.all([probe.payload(), probe.payload(), probe.payload(), probe.payload(), probe.payload()]);
+    expect(counts().maxConcurrent).toBe(1);
+    await vi.waitFor(() => expect(counts().passes).toBe(2));
+  });
+
+  it("caches the not-ready verdict when the pi CLI fails (no re-probe storm)", async () => {
+    let calls = 0;
+    const probe = new PiAuthProbe({
+      run: async () => {
+        calls += 1;
+        throw new Error("pi exploded");
+      },
+      ttlMs: 30_000,
+    });
+    const failed = await probe.payload();
+    expect(failed.ready).toBe(false);
+    // A failing run for one provider just means that provider is not ready.
+    expect(failed.detail).toContain("no ready pi provider");
+    await probe.payload();
+    // 13 providers probed once; the verdict is served from cache after that.
+    expect(calls).toBe(13);
   });
 });

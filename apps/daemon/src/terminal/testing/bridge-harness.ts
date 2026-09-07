@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { terminalServerEventSchema, type TerminalServerEvent } from "@agentskiss/shared";
 import { SessionRegistry } from "../../sessions/registry.js";
-import { Tmux } from "../../sessions/tmux.js";
+import { Tmux, type TmuxRunner } from "../../sessions/tmux.js";
 import { TerminalBridge, type TerminalBridgeOptions, type TerminalSocket } from "../bridge.js";
 import { FakeTmuxRunner } from "../../sessions/testing/fake-tmux.js";
 
@@ -78,10 +78,13 @@ interface SeedOptions {
   lines?: string[];
 }
 
-export function setupHarness(options: TerminalBridgeOptions = {}): BridgeHarness {
+export function setupHarness(
+  options: TerminalBridgeOptions = {},
+  overrides: { tmuxRunner?: TmuxRunner } = {},
+): BridgeHarness {
   const dir = mkdtempSync(path.join(tmpdir(), "agentskiss-bridge-"));
   const fake = new FakeTmuxRunner();
-  const tmux = new Tmux({ runner: fake.asRunner() });
+  const tmux = new Tmux({ runner: overrides.tmuxRunner ?? fake.asRunner() });
   const registry = new SessionRegistry(path.join(dir, "sessions.json"));
   const bridge = new TerminalBridge(
     { tmux, registry },

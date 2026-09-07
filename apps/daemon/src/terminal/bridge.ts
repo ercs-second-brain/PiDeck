@@ -87,6 +87,8 @@ export interface TerminalBridgeOptions {
    * macrotask tick.
    */
   inputFlushMs?: number;
+  /** Log sink for connect/disconnect/diagnostic lines (default `console.log`). */
+  log?: (line: string) => void;
 }
 
 interface ResolvedOptions {
@@ -98,6 +100,7 @@ interface ResolvedOptions {
   inputChunkBytes: number;
   inputFlushMs: number;
   disableEventSource: boolean;
+  log: (line: string) => void;
 }
 
 const DEFAULTS: ResolvedOptions = {
@@ -109,6 +112,7 @@ const DEFAULTS: ResolvedOptions = {
   inputChunkBytes: 4096,
   inputFlushMs: 8,
   disableEventSource: false,
+  log: (line) => console.log(line),
 };
 
 /** WebSocket close codes (4xxx = application-defined). */
@@ -122,19 +126,24 @@ export const CLOSE_SESSION_GONE = 4005;
 export class TerminalBridge {
   private readonly clients = new Set<ClientState>();
   private readonly streamers = new Map<string, PaneStreamer>();
+  /** In-flight streamer startups, keyed by session id (serializes joins). */
+  private readonly joining = new Map<string, Promise<PaneStreamer | null>>();
   private readonly options: ResolvedOptions;
+  private readonly log: (line: string) => void;
 
   constructor(
     private readonly deps: { tmux: Tmux; registry: SessionRegistry },
     options: TerminalBridgeOptions = {},
   ) {
     this.options = { ...DEFAULTS, ...options };
+    this.log = this.options.log;
   }
 
   /** Registers a freshly opened socket and wires its lifecycle callbacks. */
   handleOpen(socket: TerminalSocket): void {
     const client: ClientState = { socket, sessionId: null };
     this.clients.add(client);
+    this.log(`[terminal] client connected total=${this.clients.size}`);
     socket.onMessage((payload) => {
       void this.handleMessage(client, payload);
     });
@@ -144,11 +153,17 @@ export class TerminalBridge {
   handleClose(client: ClientState): void {
     if (client.sessionId !== null) this.detach(client);
     this.clients.delete(client);
+    this.log(`[terminal] client disconnected total=${this.clients.size}`);
   }
 
   /** Number of clients currently attached to a session (test/diagnostics hook). */
   clientCount(sessionId: string): number {
     return this.streamers.get(sessionId)?.clients.size ?? 0;
+  }
+
+  /** Number of live pane streamers (test/diagnostics hook — leak detection). */
+  get streamerCount(): number {
+    return this.streamers.size;
   }
 
   private async handleMessage(client: ClientState, payload: string): Promise<void> {
@@ -223,12 +238,17 @@ export class TerminalBridge {
     // snapshot and the stream cannot interleave mid-frame.
     const replayData = await this.buildReplay(session, streamer.rows);
     if (replayData === null) {
+      // The pane died mid-attach: if no client made it into the streamer,
+      // dispose it — otherwise its pipe-pane stream + watcher + capture
+      // timer would leak forever (issue #100).
+      if (streamer.clients.size === 0) streamer.dispose();
       client.socket.close(CLOSE_SESSION_GONE, "tmux session no longer exists");
       return;
     }
 
     streamer.addClient(client);
     client.sessionId = sessionId;
+    this.log(`[terminal] attach session=${sessionId} clients=${streamer.clients.size} resumed=${reconnect}`);
     const attached: TerminalServerEvent = {
       type: "terminal.attached",
       at: now(),
@@ -252,15 +272,27 @@ export class TerminalBridge {
 
   /** Joins (or creates) the session's streamer, starting its event stream. */
   private async joinStreamer(session: Session, rows: number): Promise<PaneStreamer | null> {
-    let streamer = this.streamers.get(session.id);
-    if (streamer && !streamer.isDisposed) return streamer;
-    streamer = new PaneStreamer(session, this.deps.tmux, this.options, (s) => {
+    const existing = this.streamers.get(session.id);
+    if (existing && !existing.isDisposed) return existing;
+    // Serialize per session: two sockets attaching to the same session race
+    // through the async streamer startup, and the loser would overwrite (and
+    // orphan) the winner's streamer — a pipe-pane + watcher leak (issue #100).
+    const inFlight = this.joining.get(session.id);
+    if (inFlight) return inFlight;
+    const created = this.createStreamer(session, rows).finally(() => this.joining.delete(session.id));
+    this.joining.set(session.id, created);
+    return created;
+  }
+
+  private async createStreamer(session: Session, rows: number): Promise<PaneStreamer | null> {
+    const streamer = new PaneStreamer(session, this.deps.tmux, this.options, (s) => {
       const current = this.streamers.get(session.id);
       if (current === s) this.streamers.delete(session.id);
     });
     streamer.rows = rows;
     this.streamers.set(session.id, streamer);
     await streamer.startEventStream();
+    if (streamer.isDisposed) return null;
     return streamer;
   }
 
@@ -322,5 +354,6 @@ export class TerminalBridge {
     const streamer = this.streamers.get(sessionId);
     if (!streamer) return;
     streamer.removeClient(client);
+    this.log(`[terminal] detach session=${sessionId} clients=${streamer.clients.size}`);
   }
 }
