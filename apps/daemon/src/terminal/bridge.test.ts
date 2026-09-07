@@ -46,6 +46,8 @@ describe("TerminalBridge: attach and replay", () => {
 
   it("replays scrollback on attach", async () => {
     const session = await env.seedSession({ lines: ["history line", "prompt$"] });
+    env.fake.sessions.get(session.tmuxSession)!.cursorX = 2;
+    env.fake.sessions.get(session.tmuxSession)!.cursorY = 1;
     const socket = env.open();
     env.send(socket, { type: "terminal.attach", sessionId: session.id, cols: 80, rows: 24 });
 
@@ -56,6 +58,8 @@ describe("TerminalBridge: attach and replay", () => {
     expect(replay).toContain("history line");
     expect(replay).toContain("prompt$");
     expect(replay).toMatch(/^\x1b\[2J\x1b\[H/);
+    // The replay places the client cursor at the pane's true position (#92).
+    expect(replay.endsWith("\x1b[?25h\x1b[2;3H")).toBe(true);
   });
 
   it("reconnect replays scrollback and marks the attach as resumed", async () => {

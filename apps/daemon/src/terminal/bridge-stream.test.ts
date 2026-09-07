@@ -154,3 +154,67 @@ describe("TerminalBridge: event-driven output", () => {
     );
   });
 });
+
+describe("TerminalBridge: cursor synchronization (issue #92)", () => {
+  it("appends the pane's true cursor state to every content frame", async () => {
+    const session = await env.seedSession({ lines: ["one"] });
+    const socket = env.open();
+    env.send(socket, { type: "terminal.attach", sessionId: session.id, cols: 80, rows: 24 });
+    await vi.waitFor(() => expect(socket.dataEvents().length).toBeGreaterThan(0));
+
+    const pane = env.fake.sessions.get(session.tmuxSession)!;
+    pane.cursorX = 10;
+    pane.cursorY = 3;
+    pane.paneLines.push("second line");
+    await vi.waitFor(() =>
+      expect(socket.dataEvents().at(-1)?.data).toContain("second line"),
+    );
+    // The frame carries a 1-based CUP to the pane cursor (10, 3); the
+    // cursor is already shown on the client, so no re-show is needed.
+    expect(socket.dataEvents().at(-1)?.data).toContain("\x1b[4;11H");
+  });
+
+  it("hides the client cursor while the pane keeps its own hidden", async () => {
+    // Full-TUI panes (e.g. pi) hide the real cursor and paint their own —
+    // without the hide sequence xterm.js would draw a second cursor.
+    const session = await env.seedSession({ lines: ["one"] });
+    const socket = env.open();
+    env.send(socket, { type: "terminal.attach", sessionId: session.id, cols: 80, rows: 24 });
+    await vi.waitFor(() => expect(socket.dataEvents().length).toBeGreaterThan(0));
+
+    const pane = env.fake.sessions.get(session.tmuxSession)!;
+    pane.cursorVisible = false;
+    pane.paneLines.push("painted-cursor output");
+    await vi.waitFor(() =>
+      expect(socket.dataEvents().at(-1)?.data).toContain("painted-cursor output"),
+    );
+    const frame = socket.dataEvents().at(-1)?.data ?? "";
+    expect(frame).toContain("\x1b[?25l");
+    expect(frame).not.toContain("\x1b[?25h");
+  });
+
+  it("does not repeat the cursor state while it is unchanged", async () => {
+    const session = await env.seedSession({ lines: ["one"] });
+    const socket = env.open();
+    env.send(socket, { type: "terminal.attach", sessionId: session.id, cols: 80, rows: 24 });
+    await vi.waitFor(() => expect(socket.dataEvents().length).toBeGreaterThan(0));
+
+    const pane = env.fake.sessions.get(session.tmuxSession)!;
+    pane.cursorX = 4;
+    pane.cursorY = 2;
+    pane.paneLines.push("frame one");
+    await vi.waitFor(() =>
+      expect(socket.dataEvents().at(-1)?.data).toContain("frame one"),
+    );
+    expect(socket.dataEvents().at(-1)?.data).toContain("\x1b[3;5H");
+
+    pane.paneLines.push("frame two");
+    await vi.waitFor(() =>
+      expect(socket.dataEvents().at(-1)?.data).toContain("frame two"),
+    );
+    const frame = socket.dataEvents().at(-1)?.data ?? "";
+    expect(frame).not.toContain("\x1b[?25h");
+    expect(frame).not.toContain("\x1b[?25l");
+    expect(frame).not.toContain("\x1b[3;5H");
+  });
+});
