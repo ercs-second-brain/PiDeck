@@ -60,7 +60,7 @@ export interface WorkerSpawner {
   spawnWorker(projectId: string, issueNumber: number): Promise<SpawnedWorker>;
   /**
    * Issue numbers in the project that currently have a **non-terminal**
-   * worker (`spawning`/`running`/CI/review states — not done/failed/stopped).
+   * worker (`spawning`/`running`/CI/review states — any non-terminal status).
    */
   listActiveWorkerIssueNumbers(projectId: string): Promise<Set<number>>;
 }
