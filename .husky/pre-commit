@@ -1,0 +1,3 @@
+# Cheap-only: lint just the staged files (sub-second for typical commits).
+# Full checks (lint, typecheck, build, test, kiss) run on push via .husky/pre-push.
+pnpm exec lint-staged

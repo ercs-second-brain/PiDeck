@@ -7,7 +7,7 @@ on:
 
 jobs:
   ci:
-    name: Lint, typecheck, build, test
+    name: Check (lint, typecheck, build, test, kiss)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,33 +22,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Build
-        run: pnpm build
-
-      - name: Test
-        run: pnpm test
-
-  kiss:
-    name: Kiss hygiene (dead code, complexity, duplication ratchets)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Ratchet checks (knip + ESLint complexity + jscpd)
-        run: pnpm kiss
+      # Shared with the pre-push git hook (.husky/pre-push) so local CI parity
+      # is maintained by construction — one script, no duplicated step lists.
+      - name: Check
+        run: pnpm check
