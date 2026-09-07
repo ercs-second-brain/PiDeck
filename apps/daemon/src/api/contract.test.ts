@@ -52,8 +52,7 @@ const ghRoutes = {
               headRefName: "ao/fix-flaky",
               baseRefName: "main",
               headRefOid: "abc123",
-              reviewDecision: null,
-              commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
+              reviewDecision: null, commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
             },
           ],
         },
@@ -388,6 +387,7 @@ describe("self-update (issues #55, #76)", () => {
    * nondeterministic. Its `apply` spawn is recorded, never executed (the
    * real shim restarts the daemon, which no test can survive). */
   const updateSpawns: Array<{ file: string; args: readonly string[] }> = [];
+  let ghCalls = 0;
   let upd: TestDaemon;
   let updServer: Server;
   let updBase: string;
@@ -396,9 +396,8 @@ describe("self-update (issues #55, #76)", () => {
     upd = testDaemon(ghRoutes, {
       updateRepoUrl: "https://github.com/o/r",
       updateGh: async (args) => {
-        if (args[0] === "api" && args[1] === "repos/o/r/commits/main") {
-          return { stdout: JSON.stringify({ sha: LOCAL_SHA }), stderr: "" };
-        }
+        ghCalls += 1;
+        if (args[0] === "api" && args[1] === "repos/o/r/commits/main") return { stdout: JSON.stringify({ sha: LOCAL_SHA }), stderr: "" };
         throw new Error(`fake gh: unmatched invocation: gh ${args.join(" ")}`);
       },
       updateGit: async (args) => {
@@ -438,23 +437,25 @@ describe("self-update (issues #55, #76)", () => {
     const res = await updApi("GET", endpoints.getUpdateStatus.path);
     expect(res.status).toBe(200);
     expect(updateStatusResponseSchema.parse(res.json)).toMatchObject({
-      repo: "o/r",
-      ref: "main",
-      localSha: LOCAL_SHA,
-      remoteSha: LOCAL_SHA,
-      updateAvailable: false,
-      error: null,
-      activeWorkers: 0,
+      repo: "o/r", ref: "main", localSha: LOCAL_SHA, remoteSha: LOCAL_SHA,
+      updateAvailable: false, error: null, activeWorkers: 0,
     });
+  });
+
+  it("serves repeat GETs from the ~5 min cache but refresh=1 forces a re-check (issue #82)", async () => {
+    const before = ghCalls;
+    await updApi("GET", endpoints.getUpdateStatus.path); // cached from the previous test
+    expect(ghCalls).toBe(before);
+    const res = await updApi("GET", `${endpoints.getUpdateStatus.path}?refresh=1`); // bypasses the cache
+    expect(res.status).toBe(200);
+    expect(ghCalls).toBe(before + 1);
   });
 
   it("applies when idle: spawns the installed shim detached and returns immediately", async () => {
     const res = await updApi("POST", endpoints.applyUpdate.path);
     expect(res.status).toBe(200);
     expect(res.json).toEqual({ ok: true });
-    expect(updateSpawns).toEqual([
-      { file: path.join(upd.stateDir, "bin", "agentskiss"), args: ["update"] },
-    ]);
+    expect(updateSpawns).toEqual([{ file: path.join(upd.stateDir, "bin", "agentskiss"), args: ["update"] }]);
   });
 
   it("rejects the apply server-side while any worker is active (issue #76)", async () => {

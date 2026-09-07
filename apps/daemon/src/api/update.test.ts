@@ -175,18 +175,47 @@ describe("UpdateChecker caching (issue #76)", () => {
     const instance = checker({
       gh: counted.gh,
       now: () => new Date(nowMs),
-      cacheTtlMs: 60 * 60 * 1000,
+      cacheTtlMs: 5 * 60 * 1000,
     });
     const first = await instance.check();
     nowMs += 60_000; // 1 minute later — still fresh
     const second = await instance.check();
     expect(second).toBe(first); // same object: served from cache
     expect(counted.calls()).toBe(1);
-    nowMs += 60 * 60 * 1000; // past the TTL — re-checks
+    nowMs += 5 * 60 * 1000; // past the TTL — re-checks
     const third = await instance.check();
     expect(third).not.toBe(first);
     expect(counted.calls()).toBe(2);
     expect(third.checkedAt).toBe(new Date(nowMs).toISOString());
+  });
+
+  it("defaults to a ~5 minute TTL (issue #82)", async () => {
+    const counted = countingGh("b".repeat(40));
+    let nowMs = 1_000;
+    const instance = checker({ gh: counted.gh, now: () => new Date(nowMs) });
+    await instance.check();
+    nowMs += 5 * 60 * 1000 - 1; // just inside the default TTL — still cached
+    await instance.check();
+    expect(counted.calls()).toBe(1);
+    nowMs += 1; // past it — re-checks
+    await instance.check();
+    expect(counted.calls()).toBe(2);
+  });
+
+  it("force bypasses the cache (webapp ?refresh=1, issue #82)", async () => {
+    const counted = countingGh("b".repeat(40));
+    let nowMs = 1_000;
+    const instance = checker({ gh: counted.gh, now: () => new Date(nowMs) });
+    const first = await instance.check();
+    nowMs += 1_000; // well within the TTL
+    const forced = await instance.check({ force: true });
+    expect(forced).not.toBe(first);
+    expect(counted.calls()).toBe(2);
+    expect(forced.checkedAt).toBe(new Date(nowMs).toISOString());
+    // The forced result becomes the new cache entry.
+    const second = await instance.check();
+    expect(second).toBe(forced);
+    expect(counted.calls()).toBe(2);
   });
 });
 

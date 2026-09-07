@@ -36,7 +36,7 @@ import type { DaemonServices } from "./context.js";
 // ---------------------------------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- params/body are validated against the shared zod schemas in handleEndpoint before reaching a handler; the registry is endpoint-typed via EndpointRegistry
-type AnyHandler = (args: { params: any; body: any }) => Promise<unknown> | unknown;
+type AnyHandler = (args: { params: any; body: any; query?: string }) => Promise<unknown> | unknown;
 
 type EndpointRegistry = {
   [N in EndpointName]: AnyHandler;
@@ -74,12 +74,12 @@ async function handleEndpoint(
   requestSchema: z.ZodType | null,
   responseSchema: z.ZodType,
   handler: AnyHandler,
-  ctx: { params: Record<string, string>; body: unknown },
+  ctx: { params: Record<string, string>; body: unknown; query?: string },
 ): Promise<{ status?: number; body?: unknown }> {
   const params = parsePathParams(paramsSchema, ctx.params, name);
   // Request validation failures propagate as ZodError → 400 (router).
   const body = requestSchema === null ? undefined : requestSchema.parse(ctx.body);
-  const result = await handler({ params, body });
+  const result = await handler({ params, body, query: ctx.query });
   if (result === undefined) return { status: 204 };
   try {
     return { body: responseSchema.parse(result) };
@@ -205,12 +205,14 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
 
     updateSettings: ({ body }) => services.settings.update(updateSettingsRequestSchema.parse(body)),
 
-    // Self-update (issues #55, #76): the check result plus the live
+    // Self-update (issues #55, #76, #82): the check result plus the live
     // active-worker count — the webapp disables its update button on the
-    // same data the apply endpoint gates with. Cached upstream (≤ hourly
-    // gh re-check), fresh worker count every poll.
-    getUpdateStatus: async () => {
-      const status = await services.update.check();
+    // same data the apply endpoint gates with. The gh check is cached ~5 min
+    // server-side; `?refresh=1` (webapp page load / window focus) bypasses
+    // that cache. Fresh worker count every poll.
+    getUpdateStatus: async ({ query = "" }) => {
+      const refresh = new URLSearchParams(query).get("refresh") === "1";
+      const status = await services.update.check({ force: refresh });
       return { ...status, activeWorkers: countActiveWorkers(services) };
     },
 
