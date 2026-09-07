@@ -20,11 +20,12 @@
  * through the daemon CLI/API; this module only puts the agent in the pane.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import type { DaemonServices } from "../api/context.js";
 import type { ProjectService } from "../api/projects.js";
+import { atomicWrite } from "../json-store.js";
 import { ProjectLayout } from "../sessions/layout.js";
 import { shQuote, type SessionManager } from "../sessions/manager.js";
 import type { Project, Session } from "@agentskiss/shared";
@@ -158,8 +159,7 @@ export class OrchestratorBootstrap {
     const template = readFileSync(this.promptPath, "utf8");
     const content = renderOrchestratorPrompt(template, project, this.layout.cloneDir(project.id));
     const file = path.join(this.layout.projectDir(project.id), ORCHESTRATOR_PROMPT_FILENAME);
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, content);
+    atomicWrite(file, content);
     return file;
   }
 }

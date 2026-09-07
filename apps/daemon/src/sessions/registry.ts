@@ -10,8 +10,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import {
   sessionSchema,
   workerSchema,
@@ -19,6 +17,8 @@ import {
   type Worker,
   type WorkerStatus,
 } from "@agentskiss/shared";
+
+import { JsonStore } from "../json-store.js";
 
 export type SessionRole = Session["role"];
 
@@ -60,6 +60,28 @@ interface PersistedState {
 
 const STATE_VERSION = 1;
 
+const EMPTY_STATE: PersistedState = { version: STATE_VERSION, sessions: [], workers: [] };
+
+/**
+ * Validates a parsed registry file, dropping entries that no longer match
+ * their schema (forward compatibility) instead of rejecting the whole file.
+ */
+function validatePersistedState(value: unknown): PersistedState | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Partial<PersistedState>;
+  const sessions: Session[] = [];
+  for (const entry of raw.sessions ?? []) {
+    const parsed = sessionSchema.safeParse(entry);
+    if (parsed.success) sessions.push(parsed.data);
+  }
+  const workers: Worker[] = [];
+  for (const entry of raw.workers ?? []) {
+    const parsed = workerSchema.safeParse(entry);
+    if (parsed.success) workers.push(parsed.data);
+  }
+  return { version: STATE_VERSION, sessions, workers };
+}
+
 function newId(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
@@ -67,8 +89,10 @@ function newId(prefix: string): string {
 export class SessionRegistry {
   private readonly sessions = new Map<string, Session>();
   private readonly workers = new Map<string, Worker>();
+  private readonly store: JsonStore<PersistedState>;
 
-  constructor(private readonly filePath: string) {
+  constructor(filePath: string) {
+    this.store = new JsonStore(filePath);
     this.load();
   }
 
@@ -178,41 +202,22 @@ export class SessionRegistry {
 
   // -- persistence -----------------------------------------------------------
 
-  /** Writes current state to the JSON file. */
+  /** Writes current state to the JSON file (atomic via {@link JsonStore}). */
   save(): void {
     const state: PersistedState = {
       version: STATE_VERSION,
       sessions: [...this.sessions.values()],
       workers: [...this.workers.values()],
     };
-    mkdirSync(path.dirname(this.filePath), { recursive: true });
-    writeFileSync(this.filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    this.store.save(state);
   }
 
   /** Re-reads state from the JSON file, replacing the in-memory maps. */
   load(): void {
+    const state = this.store.load(validatePersistedState, EMPTY_STATE);
     this.sessions.clear();
     this.workers.clear();
-    let raw: string;
-    try {
-      raw = readFileSync(this.filePath, "utf8");
-    } catch {
-      return; // no persisted state yet
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return; // corrupt file: start empty rather than crash the daemon
-    }
-    const state = parsed as Partial<PersistedState> | null;
-    for (const entry of state?.sessions ?? []) {
-      const session = sessionSchema.safeParse(entry);
-      if (session.success) this.sessions.set(session.data.id, session.data);
-    }
-    for (const entry of state?.workers ?? []) {
-      const worker = workerSchema.safeParse(entry);
-      if (worker.success) this.workers.set(worker.data.id, worker.data);
-    }
+    for (const session of state.sessions) this.sessions.set(session.id, session);
+    for (const worker of state.workers) this.workers.set(worker.id, worker);
   }
 }

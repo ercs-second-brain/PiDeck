@@ -159,8 +159,3 @@ export type GithubWatcherEvent = z.infer<typeof githubWatcherEventSchema>;
 /** Everything the server can send over the WebSocket. */
 export const wsServerEventSchema = z.union([terminalServerEventSchema, kanbanUpdateEventSchema]);
 export type WsServerEvent = z.infer<typeof wsServerEventSchema>;
-
-/** Type guard narrowing a parsed server payload. */
-export function isWsServerEvent(value: unknown): value is WsServerEvent {
-  return wsServerEventSchema.safeParse(value).success;
-}

@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { settingsSchema, type Settings } from "@agentskiss/shared";
 
-import { JsonStore } from "./store.js";
+import { JsonStore } from "../json-store.js";
 
 const persistedSchema = settingsSchema.extend({ version: z.literal(1) });
 

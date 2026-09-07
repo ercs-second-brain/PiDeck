@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { QueueingScheduler, UnboundedScheduler, type SpawnRequest } from "./scheduler.js";
+import { QueueingScheduler, type SpawnRequest } from "./scheduler.js";
 import type { WorkerSpawner } from "./ports.js";
 
 // ---------------------------------------------------------------------------
@@ -53,38 +53,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// UnboundedScheduler
-// ---------------------------------------------------------------------------
-
-describe("UnboundedScheduler", () => {
-  it("starts every task immediately, ignoring the request", async () => {
-    const started: number[] = [];
-    const scheduler = new UnboundedScheduler();
-    for (const n of [1, 2, 3]) {
-      scheduler.schedule(async () => {
-        started.push(n);
-      }, request("proj", n, 1));
-    }
-    await flush();
-    expect(started).toEqual([1, 2, 3]);
-  });
-
-  it("reports task errors through onError", async () => {
-    const errors: unknown[] = [];
-    const scheduler = new UnboundedScheduler((err) => errors.push(err));
-    scheduler.schedule(async () => {
-      throw new Error("boom");
-    });
-    await flush();
-    expect(errors).toHaveLength(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // QueueingScheduler
 // ---------------------------------------------------------------------------
 
-describe("QueueingScheduler", () => {
+describe("QueueingScheduler (uncapped project: fire-and-forget bypass)", () => {
   it("spawns immediately for projects without a cap (default unbounded)", async () => {
     const { spawner } = fakeRegistry();
     const started: number[] = [];
@@ -96,6 +68,21 @@ describe("QueueingScheduler", () => {
     expect(started).toEqual([1, 2, 3]);
   });
 
+  it("reports uncapped task errors through onError (fire-and-forget bypass)", async () => {
+    const { spawner } = fakeRegistry();
+    const errors: unknown[] = [];
+    const scheduler = new QueueingScheduler({ spawner, pollIntervalMs: 0, onError: (err) => errors.push(err) });
+
+    scheduler.schedule(async () => {
+      throw new Error("boom");
+    });
+
+    await flush();
+    expect(errors).toEqual([new Error("boom")]);
+  });
+});
+
+describe("QueueingScheduler (concurrency cap)", () => {
   it("respects the cap under concurrent events: at most N tasks start", async () => {
     const registry = fakeRegistry();
     const started: number[] = [];
@@ -157,7 +144,9 @@ describe("QueueingScheduler", () => {
 
     await scheduler.drain("proj"); // flush pending drains before test end
   });
+});
 
+describe("QueueingScheduler (slot accounting)", () => {
   it("counts in-flight (not yet settled) spawn tasks toward the cap", async () => {
     const registry = fakeRegistry();
     const started: number[] = [];
@@ -215,7 +204,9 @@ describe("QueueingScheduler", () => {
     await scheduler.drain("a");
     expect(started).toEqual(["a#1", "b#1", "a#2"]);
   });
+});
 
+describe("QueueingScheduler (resilience)", () => {
   it("reports task errors and keeps the queue moving", async () => {
     const registry = fakeRegistry();
     const errors: unknown[] = [];

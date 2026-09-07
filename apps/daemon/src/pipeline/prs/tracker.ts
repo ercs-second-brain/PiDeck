@@ -22,9 +22,9 @@
  * the loop (re-watch resilience).
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import { z } from "zod";
+
+import { JsonStore } from "../../json-store.js";
 
 export const trackedPrStateSchema = z.enum(["watching", "fixing", "addressing", "done", "failed"]);
 export type TrackedPRState = z.infer<typeof trackedPrStateSchema>;
@@ -78,8 +78,10 @@ function trackingKey(projectId: string, prNumber: number): string {
 
 export class PRTracker {
   private readonly prs = new Map<string, TrackedPR>();
+  private readonly store: JsonStore<PersistedState>;
 
-  constructor(private readonly filePath: string) {
+  constructor(filePath: string) {
+    this.store = new JsonStore(filePath);
     this.load();
   }
 
@@ -114,29 +116,18 @@ export class PRTracker {
     return this.list().filter((pr) => pr.state !== "done" && pr.state !== "failed");
   }
 
-  /** Writes current state to the JSON file. */
+  /** Writes current state to the JSON file (atomic via {@link JsonStore}). */
   save(): void {
     const state: PersistedState = { version: 1, prs: this.list() };
-    mkdirSync(path.dirname(this.filePath), { recursive: true });
-    writeFileSync(this.filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    this.store.save(state);
   }
 
   private load(): void {
-    let raw: string;
-    try {
-      raw = readFileSync(this.filePath, "utf8");
-    } catch {
-      return; // no persisted state yet
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return; // corrupt file: start empty rather than crash the daemon
-    }
-    const state = persistedStateSchema.safeParse(parsed);
-    if (!state.success) return;
-    for (const pr of state.data.prs) {
+    const state = this.store.load((value) => {
+      const parsed = persistedStateSchema.safeParse(value);
+      return parsed.success ? parsed.data : undefined;
+    }, { version: 1, prs: [] });
+    for (const pr of state.prs) {
       this.prs.set(trackingKey(pr.projectId, pr.prNumber), pr);
     }
   }

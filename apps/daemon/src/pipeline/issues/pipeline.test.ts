@@ -8,7 +8,7 @@ import {
 } from "@agentskiss/shared";
 
 import { Emitter } from "./emitter.js";
-import { QueueingScheduler, UnboundedScheduler } from "./scheduler.js";
+import { QueueingScheduler } from "./scheduler.js";
 import { IssueSpawnPipeline, issueCardId } from "./pipeline.js";
 import type { BlockerResolver, RegisteredProject, WorkerSpawner } from "./ports.js";
 import type { SpawnedWorker } from "../../sessions/manager.js";
@@ -27,7 +27,7 @@ function makeProject(overrides: Partial<Project["settings"]> = {}): Project {
     name: "Proj",
     repoUrl: "https://github.com/o/r",
     defaultBranch: "main",
-    settings: { autoAgentUsername: "kiss-bot", workerConcurrency: 1, ...overrides },
+    settings: { autoAgentUsername: "kiss-bot", ...overrides },
     createdAt: now,
     updatedAt: now,
   };
@@ -135,7 +135,10 @@ function makeHarness(options: {
     projects: { get: (id) => projects.get(id) },
     blockers,
     spawner,
-    scheduler: new UnboundedScheduler((err) => errors.push(err)),
+    // Uncapped project settings ⇒ the cap-aware scheduler bypasses queueing
+    // and every spawn starts immediately (same semantics the old
+    // fire-and-forget scheduler provided).
+    scheduler: new QueueingScheduler({ spawner, onError: (err) => errors.push(err) }),
     now: () => new Date("2026-09-06T12:00:00Z"),
     onError: (err) => errors.push(err),
   });

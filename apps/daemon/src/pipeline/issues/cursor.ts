@@ -18,24 +18,27 @@
  * semantics rather than a crash).
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import { z } from "zod";
+
+import { JsonStore } from "../../json-store.js";
 
 const persistedSchema = z.object({
   version: z.literal(1),
   lastSeenIssueNumber: z.number().int().nonnegative(),
 });
 
+/** In-memory representation; `null` = no cursor yet (first-ever start). */
 interface PersistedCursor {
   version: 1;
-  lastSeenIssueNumber: number;
+  lastSeenIssueNumber: number | null;
 }
 
 export class IssueCursor {
   private lastSeen: number | null;
+  private readonly store: JsonStore<PersistedCursor>;
 
-  constructor(private readonly filePath: string) {
+  constructor(filePath: string) {
+    this.store = new JsonStore(filePath);
     this.lastSeen = this.load();
   }
 
@@ -55,25 +58,20 @@ export class IssueCursor {
     this.save();
   }
 
-  /** Writes the current cursor to the JSON file. */
+  /** Writes the current cursor to the JSON file (atomic via {@link JsonStore}). */
   private save(): void {
     const state: PersistedCursor = { version: 1, lastSeenIssueNumber: this.lastSeen ?? 0 };
-    mkdirSync(path.dirname(this.filePath), { recursive: true });
-    writeFileSync(this.filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    this.store.save(state);
   }
 
+  /** Missing/corrupt file ⇒ `null` (first-ever start semantics, not a crash). */
   private load(): number | null {
-    let raw: string;
-    try {
-      raw = readFileSync(this.filePath, "utf8");
-    } catch {
-      return null; // no persisted cursor yet: first-ever start
-    }
-    try {
-      const state = persistedSchema.parse(JSON.parse(raw));
-      return state.lastSeenIssueNumber;
-    } catch {
-      return null; // corrupt file: fall back to first-ever start semantics
-    }
+    const state = this.store.load((value) => {
+      const parsed = persistedSchema.safeParse(value);
+      return parsed.success
+        ? { version: 1, lastSeenIssueNumber: parsed.data.lastSeenIssueNumber }
+        : undefined;
+    }, { version: 1, lastSeenIssueNumber: null });
+    return state.lastSeenIssueNumber;
   }
 }

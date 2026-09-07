@@ -17,7 +17,7 @@ import {
 
 import type { UpdateProjectRequest } from "@agentskiss/shared";
 
-import { JsonStore } from "./store.js";
+import { JsonStore } from "../json-store.js";
 import type { ProjectLayout } from "../sessions/layout.js";
 import {
   cloneRepo,
