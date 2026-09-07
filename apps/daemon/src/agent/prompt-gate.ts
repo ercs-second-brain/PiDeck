@@ -26,7 +26,7 @@
 import type { Worker } from "@agentskiss/shared";
 
 /** Worker statuses after which a queued prompt is meaningless. */
-const TERMINAL_STATUSES = new Set(["done", "failed", "stopped"]);
+const TERMINAL_STATUSES = new Set(["done", "failed", "stopped", "archived"]);
 
 interface PendingPrompt {
   workerId: string;

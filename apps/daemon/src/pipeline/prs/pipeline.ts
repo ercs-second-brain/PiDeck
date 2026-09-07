@@ -348,7 +348,9 @@ export class PullRequestPipeline {
     const workers = this.sessions.listWorkers({ projectId: pr.projectId }).filter((w) => w.prNumber === pr.number);
     if (workers.length === 0) return undefined;
     return (
-      workers.find((w) => w.status !== "done" && w.status !== "failed" && w.status !== "stopped") ?? workers[0]
+      workers.find(
+        (w) => w.status !== "done" && w.status !== "failed" && w.status !== "stopped" && w.status !== "archived",
+      ) ?? workers[0]
     );
   }
 

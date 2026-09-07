@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Project } from "@agentskiss/shared";
+import { workerSchema } from "@agentskiss/shared";
 
 import { deriveBoard } from "./kanban.js";
 import { NotFoundError } from "./projects.js";
@@ -183,6 +184,78 @@ describe("reportWorkerPr (explicit PR→worker report, issue #49)", () => {
     await expect(
       reportWorkerPr(daemon.services, { tmuxSession: "agentskiss-x-worker-99", prNumber: 1 }),
     ).rejects.toThrow(NotFoundError);
+  });
+});
+
+/** The terminate endpoint through the contract handler registry. */
+function terminateHandler(services: ReturnType<typeof testDaemon>["services"]) {
+  return contractHandlers(services).terminateWorker;
+}
+
+describe("terminateWorker (issue #64)", () => {
+  /** Registers the project, spawns one worker, returns daemon + worker. */
+  async function spawnedWorkerDaemon() {
+    const daemon = testDaemon();
+    await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/tw/rw" });
+    const { session, worker } = await daemon.services.sessions.spawnWorker("tw-rw", { issueNumber: 5 });
+    return { daemon, session, worker };
+  }
+
+  it("kills the tmux session, archives the worker, and keeps the registry record", async () => {
+    const { daemon, session, worker } = await spawnedWorkerDaemon();
+    expect(daemon.tmux.sessions.has(session.tmuxSession)).toBe(true);
+
+    const archived = workerSchema.parse(
+      await terminateHandler(daemon.services)({ params: { workerId: worker.id }, body: undefined }),
+    );
+
+    expect(archived.status).toBe("archived");
+    expect(archived.statusMessage).toContain("terminated");
+    expect(daemon.tmux.sessions.has(session.tmuxSession)).toBe(false); // pane (and pi) gone
+    // History preserved: session + worker records stay queryable.
+    expect(daemon.services.sessions.listSessions("tw-rw").map((s) => s.id)).toContain(session.id);
+    expect(daemon.services.sessions.getWorker(worker.id)).toBeDefined();
+  });
+
+  it("archives an already-dead worker cleanly and is idempotent", async () => {
+    const { daemon, session, worker } = await spawnedWorkerDaemon();
+    daemon.tmux.sessions.clear(); // pane died before the terminate
+    const terminate = terminateHandler(daemon.services);
+
+    const first = workerSchema.parse(await terminate({ params: { workerId: worker.id }, body: undefined }));
+    expect(first.status).toBe("archived");
+    expect(daemon.tmux.sessions.has(session.tmuxSession)).toBe(false);
+
+    const second = workerSchema.parse(await terminate({ params: { workerId: worker.id }, body: undefined }));
+    expect(second.status).toBe("archived");
+  });
+
+  it("404s unknown workers and leaves orchestrators alone (workers only)", async () => {
+    const { daemon } = await spawnedWorkerDaemon();
+    const orchestrator = await daemon.services.sessions.ensureOrchestrator("tw-rw");
+    const terminate = terminateHandler(daemon.services);
+
+    await expect(terminate({ params: { workerId: "worker-ghost" }, body: undefined })).rejects.toThrow(NotFoundError);
+    // The orchestrator session is untouched by terminate (workers-only scope).
+    expect(daemon.services.sessions.listSessions("tw-rw").map((s) => s.id)).toContain(orchestrator.id);
+  });
+
+  it("frees the worker's concurrency slot (archived is not active)", async () => {
+    const daemon = testDaemon();
+    await daemon.services.projects.register({
+      mode: "clone",
+      repoUrl: "https://github.com/tw/rw",
+      settings: { workerConcurrency: 1 },
+    });
+    const terminate = terminateHandler(daemon.services);
+    const first = await spawnWorker(daemon.services, "tw-rw", { issueNumber: 1, name: "w1" });
+    // Cap of 1: a second active spawn is rejected.
+    await expect(spawnWorker(daemon.services, "tw-rw", { issueNumber: 2, name: "w2" })).rejects.toThrow(/cap/);
+
+    await terminate({ params: { workerId: first.id }, body: undefined });
+    // Archived no longer counts as active: the slot is free again.
+    const second = await spawnWorker(daemon.services, "tw-rw", { issueNumber: 2, name: "w2" });
+    expect(second.status).toBe("running");
   });
 });
 

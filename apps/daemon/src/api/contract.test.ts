@@ -161,7 +161,13 @@ describe("contract endpoint coverage", () => {
   it("routes every endpoint in the shared endpoint map", () => {
     const { router } = createDaemonServer({ services: daemon.services, webDist: null });
     for (const [name, endpoint] of Object.entries(endpoints)) {
-      const params = endpoint.path.includes(":prNumber") ? { projectId: "x", prNumber: 1 } : endpoint.path.includes(":projectId") ? { projectId: "x" } : {};
+      const params = endpoint.path.includes(":prNumber")
+        ? { projectId: "x", prNumber: 1 }
+        : endpoint.path.includes(":workerId")
+          ? { workerId: "x" }
+          : endpoint.path.includes(":projectId")
+            ? { projectId: "x" }
+            : {};
       const path = formatPath(name as EndpointName, params as never);
       expect(router.find(endpoint.method, path), `${endpoint.method} ${endpoint.path}`).toBeDefined();
     }
@@ -274,6 +280,31 @@ describe("sessions & workers", () => {
   it("404s for unknown projects", async () => {
     expect((await api("GET", formatPath("listProjectSessions", { projectId: "ghost" }))).status).toBe(404);
     expect((await api("GET", formatPath("listProjectWorkers", { projectId: "ghost" }))).status).toBe(404);
+  });
+
+  it("terminates a worker over HTTP: archived status, pane killed, record kept (issue #64)", async () => {
+    const { services, tmux } = daemon;
+    if (services.projects.get("term-rep") === undefined) {
+      services.projects.register({ mode: "clone", repoUrl: "https://github.com/term/rep" });
+    }
+    const { session, worker } = await services.sessions.spawnWorker("term-rep", { issueNumber: 3 });
+    expect(tmux.sessions.has(session.tmuxSession)).toBe(true);
+
+    const res = await api("POST", formatPath("terminateWorker", { workerId: worker.id }));
+    expect(res.status).toBe(200);
+    const archived = workerSchema.parse(res.json);
+    expect(archived.id).toBe(worker.id);
+    expect(archived.status).toBe("archived");
+    expect(tmux.sessions.has(session.tmuxSession)).toBe(false);
+
+    // History preserved in the sessions/workers lists (archived, not gone).
+    const listedSessions = await api("GET", formatPath("listProjectSessions", { projectId: "term-rep" }));
+    expect((listedSessions.json as unknown[]).map((s) => sessionSchema.parse(s).id)).toContain(session.id);
+    const listed = await api("GET", formatPath("listProjectWorkers", { projectId: "term-rep" }));
+    expect((listed.json as unknown[]).map((w) => workerSchema.parse(w))).toContainEqual(archived);
+
+    // Unknown worker → 404.
+    expect((await api("POST", formatPath("terminateWorker", { workerId: "worker-ghost" }))).status).toBe(404);
   });
 });
 

@@ -46,7 +46,7 @@ function Shell() {
   // /projects/:projectId) are merged in, so the sidebar can mark the
   // currently attached session / open project.
   const { sessionId, projectId } = useParams();
-  const { entries, error, startingProjectId, reload, startOrchestrator } = useSidebarData((sessionId) =>
+  const { entries, error, startingProjectId, reload, startOrchestrator, terminateWorker } = useSidebarData((sessionId) =>
     navigate(`/terminal/${sessionId}`),
   );
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -67,6 +67,7 @@ function Shell() {
     startingProjectId,
     reload,
     startOrchestrator: (projectId: string) => startOrchestrator(projectId),
+    terminateWorker,
     openOnboarding: () => setOnboardingOpen(true),
   };
 
@@ -95,6 +96,7 @@ function Shell() {
             onSelectAllProjects={() => navigate("/")}
             onStartOnboarding={() => setOnboardingOpen(true)}
             onStartOrchestrator={(projectId) => startOrchestrator(projectId)}
+            onTerminateWorker={terminateWorker}
           />
           <main className="app-main">
             <Outlet />

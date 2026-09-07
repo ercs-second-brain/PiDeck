@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ProjectLayout } from "./layout.js";
+import { SessionManagerSpawner } from "../pipeline/issues/ports.js";
 import {
   SessionManager,
   RESURRECT_WORKER_COMMAND,
@@ -334,6 +335,126 @@ describe("SessionManager.reconcile (issue #15)", () => {
   });
 });
 
+describe("SessionManager.archiveWorker (issue #64)", () => {
+  it("kills the tmux session, archives the worker, and keeps the registry record", async () => {
+    const { manager, fake, layout } = makeManager();
+    const { session, worker } = await manager.spawnWorker("proj", { issueNumber: 7 });
+    expect(fake.sessions.has(session.tmuxSession)).toBe(true);
+
+    const archived = await manager.archiveWorker(worker.id);
+
+    expect(archived?.status).toBe("archived");
+    expect(archived?.statusMessage).toContain("terminated");
+    expect(fake.sessions.has(session.tmuxSession)).toBe(false); // pane (and pi process) gone
+    // History preserved: session + worker records stay in the registry.
+    expect(manager.listSessions("proj").map((s) => s.id)).toContain(session.id);
+    expect(manager.getWorker(worker.id)).toBeDefined();
+    // And on disk, so an in-process reload keeps the archived state too.
+    const reloaded = new SessionRegistry(layout.sessionsFilePath());
+    expect(reloaded.getWorker(worker.id)?.status).toBe("archived");
+    expect(reloaded.getSession(session.id)).toBeDefined();
+  });
+
+  it("archives cleanly when the tmux session is already dead", async () => {
+    const { manager, fake } = makeManager();
+    const { worker } = await manager.spawnWorker("proj", { issueNumber: 1 });
+    fake.sessions.clear(); // pane died (e.g. pi exited) before the terminate
+
+    const archived = await manager.archiveWorker(worker.id);
+    expect(archived?.status).toBe("archived");
+  });
+
+  it("is idempotent: re-terminating an archived worker succeeds", async () => {
+    const { manager } = makeManager();
+    const { worker } = await manager.spawnWorker("proj", { issueNumber: 2 });
+    await manager.archiveWorker(worker.id);
+    const again = await manager.archiveWorker(worker.id);
+    expect(again?.status).toBe("archived");
+    expect(manager.listWorkers({ projectId: "proj", status: "archived" })).toHaveLength(1);
+  });
+
+  it("returns null for an unknown worker id", async () => {
+    const { manager } = makeManager();
+    expect(await manager.archiveWorker("worker-missing")).toBeNull();
+  });
+
+  it("keeps archived workers out of the active statuses (badges/concurrency)", async () => {
+    const { manager } = makeManager();
+    const { worker } = await manager.spawnWorker("proj", { issueNumber: 3 });
+    await manager.archiveWorker(worker.id);
+
+    expect(manager.listWorkers({ projectId: "proj", status: "running" })).toEqual([]);
+    // Issue-backed double-spawn guard: the archived issue is free again.
+    const spawner = new SessionManagerSpawner(manager);
+    expect([...(await spawner.listActiveWorkerIssueNumbers("proj"))]).toEqual([]);
+  });
+});
+
+describe("reconcile skips archived sessions (issue #64)", () => {
+  it("never resurrects an archived worker after a daemon restart or reboot", async () => {
+    const { manager, layout } = makeManager();
+    const spawned = await manager.spawnWorker("proj", { issueNumber: 5 });
+    const orchestrator = await manager.ensureOrchestrator("proj");
+    await manager.archiveWorker(spawned.worker.id);
+
+    // Reboot: the tmux server is gone; only the persisted registry remains.
+    const rebooted = new FakeTmuxRunner();
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: rebooted.asRunner() }),
+      registry: new SessionRegistry(layout.sessionsFilePath()),
+      layout,
+    });
+    const result = await manager2.reconcile();
+
+    // Orchestrator resurrects; the archived worker is skipped entirely.
+    expect(result.resurrected.map((s) => s.tmuxSession)).toEqual([orchestrator.tmuxSession]);
+    expect(result.alive).toEqual([]);
+    expect(result.lost).toEqual([]);
+    expect(rebooted.sessions.has(spawned.session.tmuxSession)).toBe(false);
+    expect(manager2.getWorker(spawned.worker.id)?.status).toBe("archived");
+    expect(manager2.getWorker(spawned.worker.id)?.statusMessage).toContain("terminated");
+  });
+
+  it("skips archived worker sessions even when their tmux pane is still alive", async () => {
+    const { manager, fake, layout } = makeManager();
+    const spawned = await manager.spawnWorker("proj", { issueNumber: 6 });
+    await manager.archiveWorker(spawned.worker.id);
+    // Edge: the pane outlived the archive (e.g. tmux kill raced a reboot).
+    fake.sessions.set(spawned.session.tmuxSession, fakePaneState(["pi"], undefined));
+
+    const registry2 = new SessionRegistry(layout.sessionsFilePath());
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: fake.asRunner() }),
+      registry: registry2,
+      layout,
+    });
+    const result = await manager2.reconcile();
+
+    expect(result.alive.map((s) => s.tmuxSession)).not.toContain(spawned.session.tmuxSession);
+    expect(result.resurrected).toEqual([]);
+    expect(result.lost).toEqual([]);
+    expect(manager2.getWorker(spawned.worker.id)?.status).toBe("archived");
+  });
+
+  it("leaves non-archived worker sessions on the established reconcile paths", async () => {
+    const { manager, layout } = makeManager();
+    const stopped = await manager.spawnWorker("proj", { issueNumber: 7 });
+    await manager.updateWorkerStatus(stopped.worker.id, "stopped", "pane died");
+
+    const rebooted = new FakeTmuxRunner();
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: rebooted.asRunner() }),
+      registry: new SessionRegistry(layout.sessionsFilePath()),
+      layout,
+    });
+    const result = await manager2.reconcile();
+
+    // Only archived workers are skipped: a stopped worker still resurrects.
+    expect(result.resurrected.map((s) => s.tmuxSession)).toEqual([stopped.session.tmuxSession]);
+    expect(rebooted.sessions.has(stopped.session.tmuxSession)).toBe(true);
+  });
+});
+
 describe("SessionManager with a fake tmux server", () => {
   it("creates a named orchestrator session per project, once", async () => {
     const { manager, fake } = makeManager();
@@ -450,6 +571,17 @@ describe("SessionManager with a fake tmux server", () => {
     expect(manager.listSessions("proj")).toEqual([]);
 
     expect(await manager.killSession("sess-missing")).toBeNull();
+  });
+
+  it("killSession leaves archived workers archived (issue #64)", async () => {
+    const { manager, fake } = makeManager();
+    const { session, worker } = await manager.spawnWorker("proj", { issueNumber: 4 });
+    await manager.archiveWorker(worker.id);
+
+    // Re-kill via tmux re-attach simulating an external cleanup path.
+    fake.sessions.set(session.tmuxSession, fakePaneState(["pi"], undefined));
+    await manager.killSession(session.id);
+    expect(manager.getWorker(worker.id)?.status).toBe("archived");
   });
 
   it("marks workers failed and cleans up when tmux launch fails", async () => {

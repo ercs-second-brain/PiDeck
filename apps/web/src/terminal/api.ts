@@ -51,3 +51,11 @@ export function fetchWorkers(projectId: string): Promise<Worker[]> {
 export function startOrchestrator(projectId: string): Promise<Session> {
   return post(sessionSchema, formatPath("ensureProjectOrchestrator", { projectId }));
 }
+
+/**
+ * Terminates a worker (issue #64): the daemon kills its tmux session (which
+ * ends the pi process) and archives the worker record; history is kept.
+ */
+export function terminateWorker(workerId: string): Promise<Worker> {
+  return post(workerSchema, formatPath("terminateWorker", { workerId }));
+}

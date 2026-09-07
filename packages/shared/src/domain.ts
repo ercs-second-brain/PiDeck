@@ -227,6 +227,11 @@ export type Session = z.infer<typeof sessionSchema>;
  * Worker lifecycle:
  * `spawning` → `running` → (`awaiting_ci` → `fixing_ci` | `addressing_review`)* → `done`
  * with `failed` / `stopped` as terminal failure states.
+ *
+ * `archived` is a terminal status set only by an explicit terminate (issue
+ * #64): the worker's tmux session was killed from the webapp and its
+ * registry record is kept for history. Archived workers are never
+ * resurrected by reconcile and never count as active.
  */
 export const workerStatusSchema = z.enum([
   "spawning",
@@ -237,6 +242,7 @@ export const workerStatusSchema = z.enum([
   "done",
   "failed",
   "stopped",
+  "archived",
 ]);
 export type WorkerStatus = z.infer<typeof workerStatusSchema>;
 
