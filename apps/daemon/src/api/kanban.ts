@@ -24,7 +24,6 @@ import {
 import { fetchIssuesWithBlockedBy, listPullRequestsWithMeta, parseRepoUrl, type GhClient } from "../github/index.js";
 import { issueCardId } from "../pipeline/issues/pipeline.js";
 import { prCardId } from "../pipeline/prs/tracker.js";
-import { NotFoundError } from "./projects.js";
 
 // ---------------------------------------------------------------------------
 // Column derivation (single source of truth — the PR pipeline reuses these)
@@ -137,11 +136,4 @@ export class KanbanService {
     const issues = await fetchIssuesWithBlockedBy(gh, project.id, repo);
     return deriveBoard(project, issues, pullRequests, this.listWorkers());
   }
-}
-
-/** Shared 404 for missing projects across handlers. */
-export function requireProject(get: (id: string) => Project | undefined, id: string): Project {
-  const project = get(id);
-  if (project === undefined) throw new NotFoundError(`unknown project: ${id}`);
-  return project;
 }

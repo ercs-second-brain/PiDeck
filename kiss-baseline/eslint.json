@@ -8,7 +8,6 @@
     "complexity::apps/daemon/src/github/integration.test.ts::Async arrow function has a complexity of 16. Maximum allowed is 15.",
     "complexity::apps/daemon/src/pipeline/prs/pipeline.ts::Async method 'driveLoop' has a complexity of 18. Maximum allowed is 15.",
     "complexity::apps/daemon/src/sessions/manager.ts::Async method 'reconcile' has a complexity of 16. Maximum allowed is 15.",
-    "complexity::apps/daemon/src/sessions/manager.ts::Function 'deserializeCommand' has a complexity of 17. Maximum allowed is 15.",
     "complexity::apps/daemon/src/sessions/testing/fake-tmux.ts::Method 'execute' has a complexity of 22. Maximum allowed is 15.",
     "complexity::apps/daemon/src/terminal/testing/fake-tmux.ts::Method 'execute' has a complexity of 23. Maximum allowed is 15.",
     "complexity::apps/web/src/routes/OnboardingWizard.tsx::Function 'OnboardingWizard' has a complexity of 31. Maximum allowed is 15.",
@@ -36,9 +35,7 @@
     "max-lines::apps/daemon/src/pipeline/prs/pipeline.test.ts::File has too many lines (388). Maximum allowed is 300.",
     "max-lines::apps/daemon/src/pipeline/prs/pipeline.ts::File has too many lines (305). Maximum allowed is 300.",
     "max-lines::apps/daemon/src/pipeline/wiring.test.ts::File has too many lines (437). Maximum allowed is 300.",
-    "max-lines::apps/daemon/src/pipeline/wiring.ts::File has too many lines (440). Maximum allowed is 300.",
     "max-lines::apps/daemon/src/sessions/manager.test.ts::File has too many lines (527). Maximum allowed is 300.",
-    "max-lines::apps/daemon/src/sessions/manager.ts::File has too many lines (311). Maximum allowed is 300.",
     "max-lines::apps/daemon/src/terminal/bridge.ts::File has too many lines (334). Maximum allowed is 300.",
     "max-lines::apps/web/src/routes/OnboardingWizard.tsx::File has too many lines (355). Maximum allowed is 300.",
     "max-lines::packages/shared/src/index.test.ts::File has too many lines (490). Maximum allowed is 300."

@@ -11,9 +11,9 @@ import type { Project } from "@agentskiss/shared";
 import { workerSchema } from "@agentskiss/shared";
 
 import { deriveBoard } from "./kanban.js";
-import { NotFoundError } from "./projects.js";
-import { ProjectStore, slugify } from "./projects.js";
-import { contractHandlers, reportWorkerPr, spawnWorker } from "./handlers.js";
+import { NotFoundError, ProjectStore, slugify } from "./projects.js";
+import { contractHandlers } from "./handlers.js";
+import { reportWorkerPr, spawnWorker } from "./cli-handlers.js";
 import { SettingsStore } from "./settings.js";
 import { testDaemon } from "./testutil.js";
 
