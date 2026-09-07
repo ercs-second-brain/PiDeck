@@ -1,22 +1,35 @@
-/* Web terminal — picker + full-height xterm pane. */
+/* Web terminal — sidebar + main pane. The app shell is full-height: the
+   terminals page is the whole app now (issue #62), so every main-pane view
+   (terminal, boards, settings, diff) renders inside the sidebar + main
+   layout below. */
 
-/* Make the app shell full-height when the terminal page is shown, so the
-   terminal fills the viewport without touching the global stylesheet. */
-.app:has(.terminal-page) {
+.app {
   display: flex;
   flex-direction: column;
   height: 100vh;
 }
 
-.app:has(.terminal-page) .app-header {
+.app .app-header {
   flex: none;
 }
 
-.terminal-page {
+.app-body {
   display: grid;
   grid-template-columns: 280px 1fr;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+
+/* Main pane: scrolls for page-like content, clipped for the xterm pane. */
+.app-main {
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main:has(.terminal-pane) {
   overflow: hidden;
 }
 
@@ -27,6 +40,46 @@
   background: var(--bg-raised);
   overflow-y: auto;
   padding: 16px;
+}
+
+.picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.picker-title-button {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+
+.picker-title-button:hover .picker-title {
+  color: var(--accent);
+}
+
+.picker-add {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.picker-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-hover);
 }
 
 .picker-title {
@@ -43,9 +96,26 @@
 }
 
 .picker-project-name {
+  display: block;
+  width: 100%;
   margin: 0 0 6px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
   font-size: 14px;
   font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-project-name:hover {
+  background: var(--bg-hover);
+}
+
+.picker-project-name.selected {
+  color: var(--accent);
 }
 
 .picker-list {
@@ -165,6 +235,7 @@
 /* --- Terminal pane ---------------------------------------------------------- */
 
 .terminal-main {
+  flex: 1;
   min-width: 0;
   display: flex;
 }

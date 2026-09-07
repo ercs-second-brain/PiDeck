@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import type { Project } from "@agentskiss/shared";
 import { apiUpdateProject, errorMessage } from "../lib/api";
-import { UpdateBanner } from "../components/UpdateBanner";
 import { PiAuthBanner } from "../components/PiAuthBanner";
 import { boardStore, useAppState } from "../store/store";
 
@@ -35,7 +34,6 @@ export function SettingsPage() {
 
   return (
     <main className="page">
-      <UpdateBanner />
       <h1 className="page-title">{project.name} — settings</h1>
       <p className="project-repo">{project.repoUrl}</p>
       <PiAuthBanner />

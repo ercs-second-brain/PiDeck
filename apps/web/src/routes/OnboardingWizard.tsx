@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
 import type { Project } from "@agentskiss/shared";
 import { apiGetGhAuth, apiGetPiAuth, apiRegisterProject, errorMessage, type GhAuth, type PiAuth } from "../lib/api";
 import { PiAuthReport } from "../components/PiAuthBanner";
 
 /**
- * First-run onboarding wizard — shown when no projects are registered.
+ * Project onboarding wizard (issue #62): the former first-run onboarding
+ * page, now reachable from the terminals sidebar's "+" button (rendered as a
+ * modal) or the empty-state CTA in the main pane.
  *
  * Flow (PRD: repo connection):
  * 1. pi auth check (daemon-side probe via `GET /api/pi-auth`, issue #57):
@@ -18,7 +19,9 @@ import { PiAuthReport } from "../components/PiAuthBanner";
  * 4. Auto-create-agents question: should issues auto-create agents? Captures
  *    the GitHub username stored as the project's `autoAgentUsername`.
  *
- * Registration goes through the real `POST /api/projects` endpoint.
+ * Registration goes through the real `POST /api/projects` endpoint; on
+ * success `onRegistered(project)` hands the new project back to the shell
+ * (which closes the modal and opens the project's board).
  */
 
 type Step = "pi" | "permission" | "source" | "autoagent";
@@ -38,8 +41,8 @@ export function normalizeRepoUrl(input: string): string {
   return value;
 }
 
-export function OnboardingPage() {
-  const navigate = useNavigate();
+/** The wizard steps — embedded in the modal card. */
+export function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) => void }) {
   const [step, setStep] = useState<Step>("pi");
   const [pi, setPi] = useState<PiAuth | null>(null);
   const [piError, setPiError] = useState<string | null>(null);
@@ -101,7 +104,7 @@ export function OnboardingPage() {
       setSubmitting(false);
       return;
     }
-    navigate(`/projects/${project.id}`);
+    onRegistered(project);
   };
 
   const nextFromSource = (): void => {
@@ -120,9 +123,9 @@ export function OnboardingPage() {
   const stepIndex = STEP_LABELS.findIndex((s) => s.key === step);
 
   return (
-    <main className="page">
+    <div className="wizard">
       <h1 className="page-title">Welcome to agentsKISS</h1>
-      <p className="empty">Connect your first project to start orchestrating agents.</p>
+      <p className="empty">Connect a project to start orchestrating agents.</p>
 
       <ol className="wizard-steps">
         {STEP_LABELS.map((entry, index) => (
@@ -151,9 +154,7 @@ export function OnboardingPage() {
               </button>
             </>
           )}
-          {!checkingPi && piError === null && pi !== null && (
-            <PiAuthReport auth={pi} onRecheck={checkPi} />
-          )}
+          {!checkingPi && piError === null && pi !== null && <PiAuthReport auth={pi} onRecheck={checkPi} />}
           {!checkingPi && piError === null && pi !== null && (
             <div className="wizard-actions">
               {/* Issue #57: re-verify before proceeding — the gate cannot be
@@ -347,7 +348,30 @@ export function OnboardingPage() {
           </div>
         </section>
       )}
-    </main>
+    </div>
+  );
+}
+
+/**
+ * The wizard rendered as a modal overlay over the terminals page (issue
+ * #62) — launched from the sidebar's "+" button or an empty-state CTA.
+ */
+export function OnboardingModal({
+  onClose,
+  onRegistered,
+}: {
+  onClose: () => void;
+  onRegistered: (project: Project) => void;
+}) {
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Project onboarding">
+      <div className="modal-card">
+        <button type="button" className="modal-close" aria-label="Close onboarding" onClick={onClose}>
+          ×
+        </button>
+        <OnboardingWizard onRegistered={onRegistered} />
+      </div>
+    </div>
   );
 }
 

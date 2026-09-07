@@ -3,7 +3,14 @@ import { COLUMN_LABELS } from "../lib/kanban";
 import { KanbanCardView } from "./KanbanCardView";
 
 export interface CardDetails {
-  pullRequests: Map<number, PullRequest>;
+  /** PRs keyed by `"${projectId}#${number}"` so combined boards (issue #62)
+   *  cannot collide on PR numbers across projects. */
+  pullRequests: Map<string, PullRequest>;
+}
+
+/** Composite key for the card → PR lookup. */
+export function prKey(projectId: string, number: number): string {
+  return `${projectId}#${number}`;
 }
 
 /** One board column: header + the cards currently in it. */
@@ -16,7 +23,7 @@ export function BoardColumn({ summary, details }: { summary: KanbanColumnSummary
       </header>
       <div className="column-cards">
         {summary.cards.map((card: KanbanCard) => (
-          <KanbanCardView key={card.id} card={card} pr={details.pullRequests.get(card.number)} />
+          <KanbanCardView key={card.id} card={card} pr={details.pullRequests.get(prKey(card.projectId, card.number))} />
         ))}
         {summary.cards.length === 0 && <div className="column-empty">empty</div>}
       </div>

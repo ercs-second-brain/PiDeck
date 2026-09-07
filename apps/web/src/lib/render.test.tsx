@@ -3,7 +3,8 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import type { KanbanBoard, PullRequest, Worker } from "@agentskiss/shared";
 import { kanbanBoardSchema, workerSchema } from "@agentskiss/shared";
-import { BoardColumn } from "../components/BoardColumn";
+import { BoardColumn, prKey } from "../components/BoardColumn";
+import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { KanbanCardView } from "../components/KanbanCardView";
 import { WorkersPanel } from "../components/WorkersPanel";
 import { DiffLine } from "../routes/DiffPage";
@@ -65,7 +66,7 @@ const pr: PullRequest = {
 
 describe("component render smoke tests", () => {
   it("renders the full board without throwing", () => {
-    const details = { pullRequests: new Map([[pr.number, pr]]) };
+    const details = { pullRequests: new Map([[prKey(projectId, pr.number), pr]]) };
     for (const column of board.columns) {
       const html = renderToString(
         <MemoryRouter>
@@ -74,6 +75,44 @@ describe("component render smoke tests", () => {
       );
       expect(html).toContain("column-label");
     }
+  });
+
+  it("merges boards into the shared column order for the all-projects view", () => {
+    const boardB = kanbanBoardSchema.parse({
+      projectId: "other",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      columns: [
+        { column: "backlog", cards: [] },
+        {
+          column: "in_progress",
+          cards: [
+            {
+              id: "issue-2",
+              projectId: "other",
+              kind: "issue",
+              number: 3,
+              title: "Other project work",
+              column: "in_progress",
+              workerId: null,
+              updatedAt: "2026-01-02T00:00:00.000Z",
+            },
+          ],
+        },
+        { column: "in_review", cards: [] },
+        { column: "done", cards: [] },
+      ],
+    });
+    const html = renderToString(
+      <MemoryRouter>
+        <BoardColumns boards={[board, boardB]} details={mergedCardDetails([board, boardB], { [projectId]: [pr] })} />
+      </MemoryRouter>,
+    );
+    // One column set, cards of both boards merged in column order.
+    expect(html.match(/class="column column-/g) ?? []).toHaveLength(4);
+    expect(html).toContain("Fix the thing");
+    expect(html).toContain("Other project work");
+    // PR details resolve across the merged boards via the composite key.
+    expect(html).toContain("badge-ci");
   });
 
   it("renders issue and PR cards with distinct type badges and a diff link on open PRs", () => {

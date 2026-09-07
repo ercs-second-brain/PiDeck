@@ -2,7 +2,7 @@
   "name": "@agentskiss/web",
   "version": "0.1.0",
   "private": true,
-  "description": "agentsKISS web app — project list + kanban board (terminal and diff review land in later phases)",
+  "description": "agentsKISS web app — single-page terminals app: projects sidebar (onboarding, boards) + kanban, browser terminals, diff review",
   "type": "module",
   "scripts": {
     "dev": "vite",
