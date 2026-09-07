@@ -37,7 +37,7 @@ When onboarding finishes, open the webapp at the printed address (`agentskiss ad
 
 ## Self-updates
 
-When the upstream repo/ref advances, the webapp shows an **update available** banner (new short SHA) across the app (shell header), and the daemon exposes the same check as `GET /api/update`. Checks and downloads go through the `gh` CLI against the repo/ref the installer used (persisted in `~/.agentskiss/config.json`), so private repos and non-main dev refs update exactly like public ones:
+When the upstream repo/ref advances, the webapp shows an **update available** banner (new short SHA) across the app (shell header) with a click-to-update button, and the daemon exposes the same check as `GET /api/update`. The button is disabled (with a hint) while any agent worker is in an active status — orchestrator sessions persist across updates and never block — and the daemon re-checks the gate server-side on `POST /api/update/apply` (409 when a worker is active). Applying spawns the installed `agentskiss update` shim detached (the daemon restarts mid-apply) and returns immediately; the banner polls until the daemon reappears reporting the new build, with a recovery hint if it stays down. Upstream checks are cached (~hourly re-check) so webapp polling never burns gh rate limit. Checks and downloads go through the `gh` CLI against the repo/ref the installer used (persisted in `~/.agentskiss/config.json`), so private repos and non-main dev refs update exactly like public ones:
 
 ```sh
 agentskiss update --check   # report only: up to date, or old -> new short SHA

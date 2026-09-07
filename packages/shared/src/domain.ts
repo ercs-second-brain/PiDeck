@@ -251,6 +251,8 @@ export type WorkerStatus = z.infer<typeof workerStatusSchema>;
  * running, and the CI/review loop states. The single source of truth for
  * concurrency caps, spawn dedupe, and pipeline ownership checks. Terminal
  * statuses are the complement: `done` / `failed` / `stopped` / `archived`.
+ * Issue #76 reuses the same list as the click-to-update gate; orchestrator
+ * sessions are not workers and never count as active.
  */
 export const ACTIVE_WORKER_STATUSES: ReadonlySet<WorkerStatus> = new Set([
   "spawning",

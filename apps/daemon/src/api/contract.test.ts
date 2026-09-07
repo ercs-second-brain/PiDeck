@@ -10,6 +10,8 @@
  */
 
 import { createServer, type Server } from "node:http";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   endpoints,
@@ -21,7 +23,7 @@ import {
   pullRequestSchema,
   sessionSchema,
   settingsSchema,
-  updateStatusSchema,
+  updateStatusResponseSchema,
   workerSchema,
   type EndpointName,
 } from "@agentskiss/shared";
@@ -380,18 +382,89 @@ describe("settings", () => {
   });
 });
 
-describe("self-update (issue #55)", () => {
-  it("exposes the update status through the contract endpoint", async () => {
-    const res = await api("GET", endpoints.getUpdateStatus.path);
+describe("self-update (issues #55, #76)", () => {
+  /** Dedicated daemon: the shared one accumulates pipeline auto-spawned
+   * workers from the projects tests, which would make the gate counts
+   * nondeterministic. Its `apply` spawn is recorded, never executed (the
+   * real shim restarts the daemon, which no test can survive). */
+  const updateSpawns: Array<{ file: string; args: readonly string[] }> = [];
+  let upd: TestDaemon;
+  let updServer: Server;
+  let updBase: string;
+
+  beforeAll(async () => {
+    upd = testDaemon(ghRoutes, {
+      updateRepoUrl: "https://github.com/o/r",
+      updateGh: async (args) => {
+        if (args[0] === "api" && args[1] === "repos/o/r/commits/main") {
+          return { stdout: JSON.stringify({ sha: LOCAL_SHA }), stderr: "" };
+        }
+        throw new Error(`fake gh: unmatched invocation: gh ${args.join(" ")}`);
+      },
+      updateGit: async (args) => {
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return { stdout: `${LOCAL_SHA}\n`, stderr: "" };
+        throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
+      },
+      updateSpawn: (file, args) => {
+        updateSpawns.push({ file, args });
+        return { unref() {} };
+      },
+    });
+    mkdirSync(path.join(upd.stateDir, "bin"), { recursive: true });
+    writeFileSync(path.join(upd.stateDir, "bin", "agentskiss"), "#!/bin/sh\n");
+    const created = createDaemonServer({ services: upd.services, webDist: null });
+    updServer = created.server;
+    await new Promise<void>((resolve) => updServer.listen(0, "127.0.0.1", resolve));
+    const addr = updServer.address();
+    updBase = `http://127.0.0.1:${typeof addr === "object" && addr !== null ? addr.port : 0}`;
+  });
+
+  afterAll(async () => {
+    upd.services.hub.close();
+    await new Promise<void>((resolve) => updServer.close(() => resolve()));
+  });
+
+  async function updApi(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
+    const res = await fetch(`${updBase}${path}`, {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await res.text();
+    return { status: res.status, json: text.length > 0 ? (JSON.parse(text) as unknown) : undefined };
+  }
+
+  it("exposes the update status (plus the active-worker gate count) through the contract endpoint", async () => {
+    const res = await updApi("GET", endpoints.getUpdateStatus.path);
     expect(res.status).toBe(200);
-    expect(updateStatusSchema.parse(res.json)).toMatchObject({
+    expect(updateStatusResponseSchema.parse(res.json)).toMatchObject({
       repo: "o/r",
       ref: "main",
       localSha: LOCAL_SHA,
       remoteSha: LOCAL_SHA,
       updateAvailable: false,
       error: null,
+      activeWorkers: 0,
     });
+  });
+
+  it("applies when idle: spawns the installed shim detached and returns immediately", async () => {
+    const res = await updApi("POST", endpoints.applyUpdate.path);
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ ok: true });
+    expect(updateSpawns).toEqual([
+      { file: path.join(upd.stateDir, "bin", "agentskiss"), args: ["update"] },
+    ]);
+  });
+
+  it("rejects the apply server-side while any worker is active (issue #76)", async () => {
+    await updApi("POST", "/api/projects", { mode: "clone", repoUrl: "https://github.com/sp/gate" });
+    const spawned = await updApi("POST", "/api/projects/sp-gate/spawn", { issueNumber: 1, name: "gater" });
+    expect(spawned.status).toBe(201);
+    const res = await updApi("POST", endpoints.applyUpdate.path);
+    expect(res.status).toBe(409);
+    expect((res.json as { error: string }).error).toMatch(/still active/);
+    expect((res.json as { error: string }).error).toMatch(/every agent is idle/);
   });
 });
 

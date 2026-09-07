@@ -433,6 +433,47 @@ code {
   color: var(--amber);
 }
 
+/* Click-to-update (issue #76): affordance + gate hint inside the banner. */
+.update-apply {
+  margin-left: 10px;
+  padding: 4px 14px;
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--amber);
+  color: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.update-apply:hover:enabled {
+  filter: brightness(1.1);
+}
+
+.update-apply:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.update-banner.updating {
+  border-color: var(--issue);
+  background: color-mix(in srgb, var(--issue) 12%, var(--bg-raised));
+}
+
+.update-banner.updating code {
+  color: var(--issue);
+}
+
+.update-banner-hint {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.update-banner-error {
+  color: var(--red);
+  font-size: 13px;
+}
+
 .inline-link {
   color: var(--issue);
 }

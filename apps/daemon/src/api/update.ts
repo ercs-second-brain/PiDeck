@@ -7,17 +7,36 @@
  *
  * The upstream repo/ref mirrors what the installer used (install/lib/source.sh):
  * the persisted `config.json` record (`repoUrl`/`repoRef`) wins, with a
- * git-remote fallback for dev checkouts without a config file. Applying
- * updates is the CLI/service route (`agentskiss update`, install/bin/agentskiss +
- * install/lib/update.sh) — restarting the daemon from itself would be awkward.
+ * git-remote fallback for dev checkouts without a config file.
+ *
+ * Webapp click-to-update (issue #76): `check()` results are cached (default
+ * one hour) so webapp polling never burns gh API rate limit, and `apply()`
+ * spawns the installed `agentskiss update` shim **detached** — the shim
+ * rebuilds and restarts the daemon service mid-apply, so the endpoint that
+ * calls it returns immediately and the webapp polls until the daemon
+ * reappears reporting the new SHA. The active-worker gate lives in the
+ * route handlers (apps/daemon/src/api/handlers.ts), not here.
  */
 
+import { spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 import { defaultGhRunner, parseRepoUrl, type GhRunner } from "../github/gh.js";
 import { defaultGitRunner, type GitRunner } from "../github/repos.js";
+import { HttpError } from "./router.js";
 
 import type { UpdateStatus } from "@agentskiss/shared";
+
+/** Default re-check throttle: webapp polls freely; gh is hit at most hourly. */
+const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000;
+
+/** Injectable detached-process spawner for {@link UpdateChecker.apply} (tests). */
+export type UpdateSpawn = (
+  file: string,
+  args: readonly string[],
+  options: SpawnOptions,
+) => { unref(): void };
 
 /** Repo/ref config as persisted by the installer in `$AK_HOME/config.json`. */
 interface InstallConfig {
@@ -38,8 +57,18 @@ export interface UpdateCheckerOptions {
   gh?: GhRunner;
   /** Injectable git runner (tests); default spawns the real `git`. */
   git?: GitRunner;
+  /** Re-check throttle in ms; a fresh cached status is reused within it (tests; default 1h). */
+  cacheTtlMs?: number;
+  /** Injectable detached spawner for `apply` (tests); default node `spawn`. */
+  spawn?: UpdateSpawn;
   /** Injectable clock (tests). */
   now?: () => Date;
+}
+
+interface CachedStatus {
+  status: UpdateStatus;
+  /** `now()` reading when the check ran (ms epoch). */
+  at: number;
 }
 
 export class UpdateChecker {
@@ -49,7 +78,11 @@ export class UpdateChecker {
   private readonly repoRef?: string;
   private readonly gh: GhRunner;
   private readonly git: GitRunner;
+  private readonly cacheTtlMs: number;
+  private readonly spawn: UpdateSpawn;
   private readonly now: () => Date;
+  /** Last check result within the TTL — webapp polling must not re-hit gh. */
+  private cache: CachedStatus | undefined;
 
   constructor(options: UpdateCheckerOptions) {
     this.srcDir = options.srcDir;
@@ -58,15 +91,48 @@ export class UpdateChecker {
     this.repoRef = options.repoRef;
     this.gh = options.gh ?? defaultGhRunner;
     this.git = options.git ?? defaultGitRunner;
+    this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+    this.spawn = options.spawn ?? nodeSpawn;
     this.now = options.now ?? (() => new Date());
   }
 
   /**
-   * Runs one check. Never throws: failures surface in `error` with
-   * `updateAvailable: false`, so the webapp/CLI always get a well-formed
-   * status body.
+   * Runs one check, served from cache while fresh (issue #76: the webapp
+   * polls this; gh may be consulted at most ~hourly). Never throws:
+   * failures surface in `error` with `updateAvailable: false`, so the
+   * webapp/CLI always get a well-formed status body.
    */
   async check(): Promise<UpdateStatus> {
+    const cached = this.cache;
+    if (cached !== undefined && this.now().getTime() - cached.at < this.cacheTtlMs) {
+      return cached.status;
+    }
+    const status = await this.runCheck();
+    this.cache = { status, at: this.now().getTime() };
+    return status;
+  }
+
+  /**
+   * Applies a pending update (issue #76) by spawning the installed
+   * `agentskiss update` shim detached — the daemon restarts mid-apply, so
+   * callers return immediately after this resolves. The active-worker gate
+   * is the caller's responsibility (handlers.ts), so a worker that became
+   * active between check and apply is rejected before this runs.
+   */
+  async apply(): Promise<void> {
+    const shim = `${this.stateDir}/bin/agentskiss`;
+    if (!existsSync(shim)) {
+      throw new HttpError(
+        409,
+        `no agentskiss shim at ${shim} — click-to-update needs an installed agentskiss (dev checkouts apply via the CLI)`,
+      );
+    }
+    // Detached + unref'd: the shim outlives this process (the service
+    // restart kills the daemon mid-apply, on purpose).
+    this.spawn(shim, ["update"], { detached: true, stdio: "ignore", cwd: this.stateDir }).unref();
+  }
+
+  private async runCheck(): Promise<UpdateStatus> {
     const checkedAt = this.now().toISOString();
     let localSha: string | null = null;
     let remoteSha: string | null = null;

@@ -92,10 +92,15 @@ export const apiGetPullRequestDiff = (
   prNumber: number,
 ): Promise<EndpointResponse<"getPullRequestDiff">> => request("getPullRequestDiff", { projectId, prNumber });
 
-// --- Self-update (issue #55) --------------------------------------------------
+// --- Self-update (issues #55, #76) ----------------------------------------------
 
 export const apiGetUpdateStatus = (): Promise<EndpointResponse<"getUpdateStatus">> =>
   request("getUpdateStatus", {});
+
+/** Click-to-update (issue #76): the daemon gates on active workers (409 on
+ * conflict), spawns the update shim detached and returns immediately — the
+ * daemon restarts mid-apply, so the caller polls `apiGetUpdateStatus` after. */
+export const apiApplyUpdate = (): Promise<EndpointResponse<"applyUpdate">> => request("applyUpdate", {});
 
 // --- gh auth probe (onboarding wizard step 1) --------------------------------
 //
