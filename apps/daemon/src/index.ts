@@ -65,7 +65,8 @@ export function main(options: { stateDir?: string; host?: string; port?: number;
     // GitHub automation (issue #46): after reconciliation + orchestrator
     // bootstrap, start the watchers and the issue/PR pipelines. start()
     // baselines the issue watchers so the existing backlog does not
-    // mass-spawn on daemon (re)start.
+    // mass-spawn on daemon (re)start, and sweeps issues created while the
+    // daemon was down via the persisted per-project issue cursor (issue #50).
     .then(() => services.automation.start())
     .then(() => {
       if (services.automation.isRunning) {

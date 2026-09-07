@@ -315,4 +315,24 @@ describe("PollLoop", () => {
     expect(maxActive).toBe(1);
     loop.stop();
   });
+
+  it("can delay the first tick by one interval (immediate: false)", async () => {
+    vi.useFakeTimers();
+    let ticks = 0;
+    const loop = new PollLoop(
+      async () => {
+        ticks++;
+      },
+      10,
+      () => {},
+    );
+    loop.start({ immediate: false });
+    await vi.advanceTimersByTimeAsync(9);
+    expect(ticks).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ticks).toBe(1);
+    await vi.advanceTimersByTimeAsync(25);
+    expect(ticks).toBeGreaterThanOrEqual(3);
+    loop.stop();
+  });
 });
