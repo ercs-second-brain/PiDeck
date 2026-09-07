@@ -989,3 +989,81 @@ code {
   gap: 8px;
   margin-top: 16px;
 }
+
+/* Mobile content tweaks (issue #93): desktop above 768px is untouched; the
+   shell/drawer rules live in terminal.css. */
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px 14px;
+  }
+
+  .page-title {
+    font-size: 19px;
+    margin: 0 0 12px;
+  }
+
+  /* Headers and action rows wrap instead of overflowing sideways. */
+  .board-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .board-actions {
+    flex-wrap: wrap;
+  }
+
+  .wizard-steps,
+  .wizard-actions {
+    flex-wrap: wrap;
+  }
+
+  /* Finger-sized touch targets (≥ ~40px) for the shared controls. */
+  .button,
+  .simulate-button,
+  .update-apply {
+    min-height: 40px;
+  }
+
+  .modal-overlay {
+    padding: 20px 10px;
+  }
+
+  .modal-card {
+    padding: 18px 16px;
+  }
+
+  .modal-close {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* 16px input font stops iOS Safari's focus-time page zoom. */
+  .field input {
+    font-size: 16px;
+  }
+
+  /* Long repo/branch paths wrap instead of forcing horizontal scroll. */
+  .diff-path {
+    word-break: break-all;
+  }
+
+  .worker-row {
+    gap: 6px;
+  }
+
+  /* Small inline affordances get padded hit areas (negative margins keep
+     the visual layout unchanged). */
+  .card-diff-link {
+    padding: 12px 10px;
+    margin: -11px -6px;
+  }
+
+  .worker-terminal {
+    padding: 12px 0;
+  }
+
+  .back-link {
+    padding: 10px 0;
+  }
+}
