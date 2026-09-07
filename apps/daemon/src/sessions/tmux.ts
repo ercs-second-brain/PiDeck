@@ -97,10 +97,30 @@ export interface CapturePaneOptions {
 export class Tmux {
   private readonly runner: TmuxRunner;
   private readonly socketName: string | undefined;
+  private readonly sendChunkBytes: number;
+  private readonly sendEnterDelayMs: number;
+  /** Per-target serialization so concurrent `sendKeys` never interleave chunks. */
+  private readonly sendQueues = new Map<string, Promise<void>>();
 
-  constructor(options: { runner?: TmuxRunner; socketName?: string } = {}) {
+  constructor(
+    options: {
+      runner?: TmuxRunner;
+      socketName?: string;
+      /** Bytes of payload forwarded per `send-keys -H` invocation (issue #115). */
+      sendChunkBytes?: number;
+      /**
+       * Settle time between typing a message and pressing Enter (issue #115).
+       * A large paste can absorb a trailing Enter that arrives immediately
+       * after it, leaving the draft unsubmitted in the target TUI; the pause
+       * mirrors agent-orchestrator's EnterDelay. 0 disables the pause.
+       */
+      sendEnterDelayMs?: number;
+    } = {},
+  ) {
     this.runner = options.runner ?? defaultTmuxRunner();
     this.socketName = options.socketName;
+    this.sendChunkBytes = options.sendChunkBytes ?? DEFAULT_SEND_CHUNK_BYTES;
+    this.sendEnterDelayMs = options.sendEnterDelayMs ?? DEFAULT_SEND_ENTER_DELAY_MS;
   }
 
   /** Whether a `tmux` binary is available at all (used to skip integration tests). */
@@ -182,11 +202,104 @@ export class Tmux {
     await this.run(["resize-window", "-t", `${name}:`, "-x", String(cols), "-y", String(rows)]);
   }
 
-  /** Types literal text into the session's active pane, optionally pressing Enter. */
+  /**
+   * Types literal text into the session's active pane, optionally pressing
+   * Enter to submit it (issue #115).
+   *
+   * The payload never travels as a raw `send-keys -l` argument: tmux parses
+   * leading `-` as flags (so a message like "- fix the bug" failed outright
+   * with `invalid flag`), and payloads beyond tmux's ~16KB command buffer
+   * failed with `command too long`. Instead the text is chunked into
+   * `send-keys -H` hex-byte invocations, which tmux cannot reinterpret.
+   *
+   * Payloads containing control characters (newlines, tabs, ESC — i.e. any
+   * multi-line message) are wrapped in bracketed-paste markers so TUIs that
+   * enable paste mode (pi among them) insert the text atomically as literal
+   * content instead of interpreting embedded newlines as keypresses. Plain
+   * single-line payloads stay unwrapped so ordinary shells see exactly the
+   * typed characters.
+   *
+   * Enter is always its own invocation, sent after a short settle delay:
+   * a large burst can absorb an Enter that arrives immediately after it,
+   * leaving the draft unsubmitted in the target's input box.
+   */
   async sendKeys(name: string, keys: string, options: { enter?: boolean } = {}): Promise<void> {
-    await this.run(["send-keys", "-t", name, "-l", keys]);
-    if (options.enter) await this.run(["send-keys", "-t", name, "Enter"]);
+    await this.enqueueSend(name, () => this.performSendKeys(name, keys, options));
   }
+
+  /**
+   * Serializes sends per target: two overlapping `sendKeys` calls (e.g. the
+   * spawn prompt gate racing an orchestrator message) would otherwise
+   * interleave their hex chunks mid-message and corrupt the pane's input.
+   */
+  private enqueueSend(target: string, send: () => Promise<void>): Promise<void> {
+    const tail = this.sendQueues.get(target) ?? Promise.resolve();
+    const next = tail.then(send, send);
+    this.sendQueues.set(
+      target,
+      next.catch(() => {}), // keep the queue alive after failures
+    );
+    return next;
+  }
+
+  private async performSendKeys(
+    name: string,
+    keys: string,
+    options: { enter?: boolean },
+  ): Promise<void> {
+    const payload = needsPasteWrapping(keys) ? pasteWrap(keys) : keys;
+    await this.sendHexPayload(name, Buffer.from(payload, "utf8"));
+    if (options.enter) {
+      if (this.sendEnterDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, this.sendEnterDelayMs));
+      }
+      await this.run(["send-keys", "-t", name, "Enter"]);
+    }
+  }
+
+  /** Chunked hex `send-keys` — bytes tmux cannot reinterpret (issue #115). */
+  private async sendHexPayload(name: string, payload: Buffer): Promise<void> {
+    for (let offset = 0; offset < payload.length; offset += this.sendChunkBytes) {
+      const chunk = payload.subarray(offset, Math.min(offset + this.sendChunkBytes, payload.length));
+      await this.run([
+        "send-keys",
+        "-t",
+        name,
+        "-H",
+        ...[...chunk].map((byte) => byte.toString(16).padStart(2, "0")),
+      ]);
+    }
+  }
+}
+
+/**
+ * Bytes per `send-keys -H` invocation. tmux rejects commands beyond its
+ * ~16KB internal buffer (`command too long`); hex encoding costs 3 chars
+ * per byte, so 4KB of payload fits with margin (same ceiling the terminal
+ * bridge's InputPump uses).
+ */
+const DEFAULT_SEND_CHUNK_BYTES = 4096;
+
+/** Settle time before the submitting Enter (issue #115). */
+const DEFAULT_SEND_ENTER_DELAY_MS = 300;
+
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+
+/**
+ * Control characters a line-editor or TUI would treat as keypresses rather
+ * than literal content. Any of these means the payload must travel inside
+ * bracketed-paste markers.
+ */
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
+
+function needsPasteWrapping(keys: string): boolean {
+  return CONTROL_CHARS.test(keys);
+}
+
+/** Wraps a payload in bracketed-paste markers so TUIs insert it literally. */
+function pasteWrap(keys: string): string {
+  return `${PASTE_START}${keys}${PASTE_END}`;
 }
 
 function isNoServerMessage(stderr: string): boolean {
