@@ -1,22 +1,30 @@
 /**
- * WebSocket ⇄ tmux terminal bridge (issue #7).
+ * WebSocket ⇄ tmux terminal bridge (issues #7 and #67).
  *
  * The bridge speaks the terminal message family from `@agentskiss/shared`
  * (`terminal.attach` / `data` / `resize` / `reconnect` / `detach` and the
  * `terminal.attached` / `data` / `exited` server events).
  *
- * Design:
- * - Every attached client joins the {@link PaneStreamer} of its session.
- *   The streamer polls `capture-pane -p -e` (full scrollback + screen),
- *   diffs the screen against its model (`screen.ts`) and broadcasts escape
- *   updates to all clients — so multiple browser terminals can watch the
- *   same tmux pane concurrently.
- * - Attach/reconnect replays the captured scrollback before streaming, so
- *   a browser that reconnects after a network drop resumes exactly where
- *   the pane is (tmux keeps the pane alive regardless of clients).
- * - Input arrives as UTF-8 text and is forwarded with `send-keys -H`
- *   (one hex byte per argument), which survives control characters and
- *   multibyte UTF-8; large inputs are chunked.
+ * Design (issue #67 perf rework):
+ * - Input: per-streamer {@link InputPump} coalescing. Keystrokes arriving in
+ *   a burst are accumulated in a pending buffer and flushed as few, larger
+ *   `send-keys -H` invocations (a macrotask flush window plus in-flight
+ *   draining) — one tmux process per burst instead of one per keystroke.
+ * - Output: a per-streamer {@link PaneEventSource} (`pipe-pane` stream +
+ *   `fs.watch`) triggers captures the moment the pane writes output; a
+ *   slow timer loop (`streamPollMs`) only runs as a safety net while the
+ *   event source is healthy, and takes over completely when it is not.
+ * - Captures are screen-only (`-S -<rows>`, O(rows) instead of O(full
+ *   scrollback)); the full scrollback is captured only for the replay on
+ *   attach/reconnect. The diff/render protocol (`screen.ts`) and the wire
+ *   semantics (replay, resize, multi-client broadcast, `terminal.exited`)
+ *   are unchanged.
+ * - Every attached client joins the streamer of its session
+ *   (`pane-streamer.ts`), so multiple browser terminals can watch the same
+ *   tmux pane concurrently. Attach/reconnect replays the captured
+ *   scrollback before streaming, so a browser that reconnects after a
+ *   network drop resumes exactly where the pane is (tmux keeps the pane
+ *   alive regardless of clients).
  * - Resize propagates via `resize-window`; the model is resynced with a
  *   full screen repaint.
  *
@@ -33,12 +41,10 @@ import {
 import type { SessionRegistry } from "../sessions/registry.js";
 import type { Tmux } from "../sessions/tmux.js";
 import {
-  frameUpdate,
   fullRepaint,
-  screenRepaint,
   splitCapture,
-  withSynchronizedUpdate,
 } from "./screen.js";
+import { PaneStreamer, now, type ClientState } from "./pane-streamer.js";
 
 /** Minimal socket surface the bridge needs; implemented by `ws` and test fakes. */
 export interface TerminalSocket {
@@ -49,201 +55,64 @@ export interface TerminalSocket {
 }
 
 export interface TerminalBridgeOptions {
-  /** Poll interval (ms) while the pane is actively changing. */
+  /**
+   * Forces the timer-polling fallback (tests use it to simulate environments
+   * without a working event source, e.g. no `fs.watch` support).
+   */
+  disableEventSource?: boolean;
+  /**
+   * Fallback poll interval (ms) while the pane is actively changing. Only
+   * used when the event-driven stream is unavailable, or as the safety-net
+   * cadence while it is healthy (see `streamPollMs`).
+   */
   activePollMs?: number;
-  /** Poll interval (ms) while the pane looks idle. */
+  /** Fallback poll interval (ms) while the pane looks idle. */
   idlePollMs?: number;
+  /**
+   * Safety-net poll cadence (ms) while the event-driven stream is healthy.
+   * The stream is the primary output signal; this timer only catches signals
+   * lost to watcher hiccups (and truncates the stream file).
+   */
+  streamPollMs?: number;
   /** Scrollback lines captured and replayed on attach/reconnect. */
   scrollbackLines?: number;
   /** Maximum accepted input size per `terminal.data` message, in bytes. */
   maxInputBytes?: number;
   /** Bytes of input forwarded per `send-keys` invocation. */
   inputChunkBytes?: number;
+  /**
+   * Input flush window (ms): keystrokes arriving within one macrotask window
+   * are coalesced into a single `send-keys` invocation. 0 flushes on the next
+   * macrotask tick.
+   */
+  inputFlushMs?: number;
 }
 
 interface ResolvedOptions {
   activePollMs: number;
   idlePollMs: number;
+  streamPollMs: number;
   scrollbackLines: number;
   maxInputBytes: number;
   inputChunkBytes: number;
+  inputFlushMs: number;
+  disableEventSource: boolean;
 }
 
 const DEFAULTS: ResolvedOptions = {
   activePollMs: 50,
   idlePollMs: 250,
+  streamPollMs: 500,
   scrollbackLines: 2000,
   maxInputBytes: 65_536,
-  inputChunkBytes: 512,
+  inputChunkBytes: 4096,
+  inputFlushMs: 8,
+  disableEventSource: false,
 };
-
-/** Polls count as "active" for this long after the last observed change. */
-const ACTIVE_WINDOW_MS = 1500;
 
 /** WebSocket close codes (4xxx = application-defined). */
 export const CLOSE_UNKNOWN_SESSION = 4004;
 export const CLOSE_SESSION_GONE = 4005;
-
-interface ClientState {
-  readonly socket: TerminalSocket;
-  sessionId: string | null;
-}
-
-function now(): string {
-  return new Date().toISOString();
-}
-
-/**
- * Per-session output pump: polls tmux, diffs, broadcasts. Lives while at
- * least one client is attached; tmux itself keeps the pane running without
- * any streamer.
- */
-class PaneStreamer {
-  readonly clients = new Set<ClientState>();
-
-  /** Visible-screen model rows; `[]` means "resync pending". */
-  private model: string[] = [];
-  /** The row count the model is split against (last client-reported size). */
-  rows = 24;
-  private timer: ReturnType<typeof setTimeout> | undefined;
-  private disposed = false;
-  private lastChangeAt = 0;
-
-  constructor(
-    readonly session: Session,
-    private readonly tmux: Tmux,
-    private readonly options: ResolvedOptions,
-    private readonly onDisposed: (streamer: PaneStreamer) => void,
-  ) {}
-
-  get isDisposed(): boolean {
-    return this.disposed;
-  }
-
-  /** Current model screen (may be empty while a resync is pending). */
-  get screen(): string[] {
-    return this.model;
-  }
-
-  addClient(client: ClientState): void {
-    this.clients.add(client);
-    this.poke();
-  }
-
-  removeClient(client: ClientState): void {
-    this.clients.delete(client);
-    if (this.clients.size === 0) this.dispose();
-  }
-
-  /**
-   * Client-reported size changed: resize the tmux window and invalidate the
-   * model so the next poll repaints every client's screen.
-   */
-  async resize(cols: number, rows: number): Promise<void> {
-    this.rows = rows;
-    try {
-      await this.tmux.resize(this.session.tmuxSession, cols, rows);
-    } catch {
-      // Pane may have died between the check and the resize; the poller
-      // will notice and report `terminal.exited`.
-    }
-    this.model = [];
-    this.poke();
-  }
-
-  /** Forces a full screen repaint on the next poll. */
-  invalidate(): void {
-    this.model = [];
-    this.poke();
-  }
-
-  /** Requests a poll as soon as possible (e.g. after user input). */
-  poke(): void {
-    if (this.disposed) return;
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    this.timer = setTimeout(() => void this.poll(), 0);
-  }
-
-  dispose(): void {
-    this.disposed = true;
-    if (this.timer !== undefined) clearTimeout(this.timer);
-    this.timer = undefined;
-    this.onDisposed(this);
-  }
-
-  private schedule(delayMs: number): void {
-    if (this.disposed) return;
-    this.timer = setTimeout(() => void this.poll(), delayMs);
-  }
-
-  private async poll(): Promise<void> {
-    this.timer = undefined;
-    if (this.disposed) return;
-
-    let raw: string;
-    try {
-      const result = await this.tmux.run([
-        "capture-pane",
-        "-p",
-        "-e",
-        "-t",
-        this.session.tmuxSession,
-        "-S",
-        `-${this.options.scrollbackLines}`,
-      ]);
-      raw = result.stdout;
-    } catch {
-      const alive = await this.tmux.hasSession(this.session.tmuxSession).catch(() => false);
-      if (!alive) {
-        this.exited();
-        return;
-      }
-      this.schedule(this.options.idlePollMs);
-      return;
-    }
-
-    const { screen } = splitCapture(raw, this.rows);
-    if (this.model.length !== screen.length) {
-      // First frame after (re)start or a resize: full screen repaint.
-      this.model = screen;
-      this.broadcast(screenRepaint(screen));
-      this.lastChangeAt = Date.now();
-    } else {
-      const update = frameUpdate(this.model, screen);
-      if (update.length > 0) {
-        this.model = screen;
-        this.broadcast(update);
-        this.lastChangeAt = Date.now();
-      }
-    }
-
-    const active = Date.now() - this.lastChangeAt < ACTIVE_WINDOW_MS;
-    this.schedule(active ? this.options.activePollMs : this.options.idlePollMs);
-  }
-
-  private exited(): void {
-    this.dispose();
-    const event: TerminalServerEvent = {
-      type: "terminal.exited",
-      at: now(),
-      sessionId: this.session.id,
-      exitCode: null,
-    };
-    const payload = JSON.stringify(event);
-    for (const client of this.clients) client.socket.send(payload);
-  }
-
-  private broadcast(update: string): void {
-    const event: TerminalServerEvent = {
-      type: "terminal.data",
-      at: now(),
-      sessionId: this.session.id,
-      data: withSynchronizedUpdate(update),
-    };
-    const payload = JSON.stringify(event);
-    for (const client of this.clients) client.socket.send(payload);
-  }
-}
 
 /**
  * The terminal bridge. One instance per daemon; connect sockets with
@@ -336,14 +205,10 @@ export class TerminalBridge {
       this.detach(client);
     }
 
-    let streamer = this.streamers.get(sessionId);
-    if (!streamer || streamer.isDisposed) {
-      streamer = new PaneStreamer(session, this.deps.tmux, this.options, (s) => {
-        const current = this.streamers.get(sessionId);
-        if (current === s) this.streamers.delete(sessionId);
-      });
-      streamer.rows = rows;
-      this.streamers.set(sessionId, streamer);
+    const streamer = await this.joinStreamer(session, rows);
+    if (streamer === null) {
+      client.socket.close(CLOSE_SESSION_GONE, "tmux session no longer exists");
+      return;
     }
 
     // Adopt the attaching client's size (last attach wins, like tmux's own
@@ -355,20 +220,8 @@ export class TerminalBridge {
 
     // Capture the replay before joining the broadcast group, so the scrollback
     // snapshot and the stream cannot interleave mid-frame.
-    let replayData: string;
-    try {
-      const result = await this.deps.tmux.run([
-        "capture-pane",
-        "-p",
-        "-e",
-        "-t",
-        session.tmuxSession,
-        "-S",
-        `-${this.options.scrollbackLines}`,
-      ]);
-      const { history, screen } = splitCapture(result.stdout, streamer.rows);
-      replayData = fullRepaint(history, screen);
-    } catch {
+    const replayData = await this.buildReplay(session, streamer.rows);
+    if (replayData === null) {
       client.socket.close(CLOSE_SESSION_GONE, "tmux session no longer exists");
       return;
     }
@@ -390,38 +243,56 @@ export class TerminalBridge {
         data: replayData,
       } satisfies TerminalServerEvent),
     );
-    // Align the shared model with the replay so the next poll emits a clean
+    // Align the shared model with the replay so the next capture emits a clean
     // full repaint for the whole group (cheap, and removes any race between
     // the replay snapshot and concurrently broadcast frames).
     streamer.invalidate();
   }
 
-  /** Forwards UTF-8 input to the pane via hex `send-keys`, chunked. */
+  /** Joins (or creates) the session's streamer, starting its event stream. */
+  private async joinStreamer(session: Session, rows: number): Promise<PaneStreamer | null> {
+    let streamer = this.streamers.get(session.id);
+    if (streamer && !streamer.isDisposed) return streamer;
+    streamer = new PaneStreamer(session, this.deps.tmux, this.options, (s) => {
+      const current = this.streamers.get(session.id);
+      if (current === s) this.streamers.delete(session.id);
+    });
+    streamer.rows = rows;
+    this.streamers.set(session.id, streamer);
+    await streamer.startEventStream();
+    return streamer;
+  }
+
+  /**
+   * Full scrollback + screen replay (attach/reconnect only — the capture
+   * loop is screen-only), or `null` when the capture failed (pane gone).
+   */
+  private async buildReplay(session: Session, rows: number): Promise<string | null> {
+    try {
+      const result = await this.deps.tmux.run([
+        "capture-pane",
+        "-p",
+        "-e",
+        "-t",
+        session.tmuxSession,
+        "-S",
+        `-${this.options.scrollbackLines}`,
+      ]);
+      const { history, screen } = splitCapture(result.stdout, rows);
+      return fullRepaint(history, screen);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Forwards UTF-8 input through the streamer's coalescing input pump. */
   private async sendInput(client: ClientState, sessionId: string, data: string): Promise<void> {
     if (client.sessionId !== sessionId) return;
     const session = this.deps.registry.getSession(sessionId);
     if (!session) return;
     const bytes = Buffer.from(data, "utf8");
     if (bytes.length === 0 || bytes.length > this.options.maxInputBytes) return;
-
-    const chunkSize = this.options.inputChunkBytes;
-    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-      const chunk = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length));
-      const hexArgs = [...chunk].map((byte) => byte.toString(16).padStart(2, "0"));
-      try {
-        await this.deps.tmux.run([
-          "send-keys",
-          "-t",
-          session.tmuxSession,
-          "-H",
-          ...hexArgs,
-        ]);
-      } catch {
-        return; // pane gone; the poller reports `terminal.exited`
-      }
-    }
-    // Keystrokes usually produce immediate output — poll right away.
-    this.streamers.get(sessionId)?.poke();
+    this.streamers.get(sessionId)?.sendInput(data);
   }
 
   private async resize(

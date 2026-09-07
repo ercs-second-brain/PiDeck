@@ -83,6 +83,12 @@ export interface NewSessionOptions {
 export interface CapturePaneOptions {
   /** Number of history lines to capture back from the live pane. */
   lines?: number;
+  /**
+   * Capture only the trailing `lastLines` lines of the pane (issue #67):
+   * the visible screen is always the bottom N lines, so polling it is O(N)
+   * instead of O(history + N). Takes precedence over `lines`.
+   */
+  lastLines?: number;
 }
 
 /**
@@ -159,7 +165,7 @@ export class Tmux {
 
   /** Captures the visible pane (plus `lines` of scrollback) of a session's active window. */
   async capturePane(name: string, options: CapturePaneOptions = {}): Promise<string> {
-    const lines = options.lines ?? 500;
+    const lines = options.lastLines ?? options.lines ?? 500;
     const { stdout } = await this.run([
       "capture-pane",
       "-p",
