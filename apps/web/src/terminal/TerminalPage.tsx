@@ -13,7 +13,7 @@ import "./terminal.css";
 
 export function TerminalPage() {
   const { sessionId } = useParams();
-  const { entries, error, openOnboarding } = useSidebar();
+  const { entries, error, loaded, openOnboarding } = useSidebar();
 
   const selected = entries.flatMap((entry) => entry.sessions).find((session) => session.id === sessionId);
 
@@ -21,6 +21,12 @@ export function TerminalPage() {
     <div className="terminal-main">
       {selected ? (
         <TerminalPane key={selected.id} sessionId={selected.id} />
+      ) : !loaded && !error ? (
+        // Issue #90: not-loaded ≠ no-projects — don't offer onboarding while
+        // the project list is still in flight.
+        <div className="terminal-placeholder">
+          <p>Loading projects…</p>
+        </div>
       ) : entries.length === 0 && !error ? (
         <div className="terminal-placeholder">
           <p>No projects connected yet.</p>

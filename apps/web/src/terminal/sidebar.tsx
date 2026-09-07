@@ -22,6 +22,12 @@ import type { ProjectEntry } from "./SessionPicker";
 export interface SidebarContextValue {
   entries: ProjectEntry[];
   error: string | null;
+  /**
+   * True once the first project-list fetch completed successfully (issue
+   * #90): an empty `entries` before this point means "not loaded yet", not
+   * "no projects" — onboarding/first-run UI must not fire on loading state.
+   */
+  loaded: boolean;
   /** Project id currently starting its orchestrator (button pending state). */
   startingProjectId: string | null;
   /** Forces an immediate sidebar refresh (e.g. after onboarding registers a project). */
@@ -43,10 +49,20 @@ export interface SidebarContextValue {
  */
 const POLL_INTERVAL_MS = 15_000;
 
+/**
+ * First-run detection (issue #90): the onboarding modal auto-opens only when
+ * the project list actually loaded and is genuinely empty — the not-yet-
+ * loaded zero-entries state must not be mistaken for "no projects".
+ */
+export function shouldAutoOpenOnboarding(state: { loaded: boolean; error: string | null; entryCount: number }): boolean {
+  return state.loaded && state.error === null && state.entryCount === 0;
+}
+
 /** Polls the daemon for the sidebar's project/session/worker data. */
 export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) => void): {
   entries: ProjectEntry[];
   error: string | null;
+  loaded: boolean;
   startingProjectId: string | null;
   reload: () => void;
   startOrchestrator: (projectId: string) => void;
@@ -54,6 +70,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
 } {
   const [entries, setEntries] = useState<ProjectEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [startingProjectId, setStartingProjectId] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -67,7 +84,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
       pending = true;
       try {
         const projects = await fetchProjects();
-        const loaded = await Promise.all(
+        const nextEntries = await Promise.all(
           projects.map(async (project) => {
             const [sessions, workers] = await Promise.all([
               fetchSessions(project.id),
@@ -77,8 +94,9 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
           }),
         );
         if (!cancelled) {
-          setEntries(loaded);
+          setEntries(nextEntries);
           setError(null);
+          setLoaded(true);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -123,7 +141,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     [reload],
   );
 
-  return { entries, error, startingProjectId, reload, startOrchestrator, terminateWorker };
+  return { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker };
 }
 
 /** Context through which the shell shares sidebar data with main-pane routes. */
