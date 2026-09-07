@@ -2,12 +2,21 @@ import { describe, expect, it } from "vitest";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { Tmux, TmuxError, defaultTmuxRunner } from "./tmux.js";
 
-function makeTmux(options?: { initialPaneLines?: string[] }): {
+function makeTmux(
+  options?: {
+    initialPaneLines?: string[];
+    /** Tmux constructor overrides (e.g. `sendEnterDelayMs: 0` for timing-free tests). */
+    tmux?: ConstructorParameters<typeof Tmux>[0];
+  },
+): {
   tmux: Tmux;
   fake: FakeTmuxRunner;
 } {
   const fake = new FakeTmuxRunner({ initialPaneLines: options?.initialPaneLines });
-  return { tmux: new Tmux({ runner: (args) => fake.run(args) }), fake };
+  return {
+    tmux: new Tmux({ sendEnterDelayMs: 0, ...options?.tmux, runner: (args) => fake.run(args) }),
+    fake,
+  };
 }
 
 describe("Tmux.isAvailable", () => {
@@ -105,6 +114,79 @@ describe("Tmux against a fake server", () => {
     await tmux.resize("sess", 100, 30);
     expect(fake.sessions.get("sess")?.cols).toBe(100);
   });
+});
+
+describe("Tmux.sendKeys (issue #115)", () => {
+  it("sends every byte of a dash-prefixed message (issue #115)", async () => {
+    // tmux parses a raw `-l <text>` argument starting with `-` as flags and
+    // fails with `invalid flag` — the pre-#115 behavior that silently ate
+    // orchestrator messages. Hex send-keys must be immune.
+    const { tmux, fake } = makeTmux();
+    await tmux.newSession("sess");
+    const message = "- fix the login bug";
+    await tmux.sendKeys("sess", message, { enter: true });
+    expect(fake.sentBytes("sess").toString("utf8")).toBe(message);
+  });
+
+  it("delivers payloads larger than one chunk in order (issue #115)", async () => {
+    // tmux's command buffer rejects a >16KB `send-keys -l` argument with
+    // `command too long` — chunked hex send-keys must reassemble exactly.
+    const { tmux, fake } = makeTmux({ tmux: { sendChunkBytes: 1024 } });
+    await tmux.newSession("sess");
+    const message = "point 12345: the quick brown fox\n".repeat(200); // ~5.4KB ASCII
+    await tmux.sendKeys("sess", message, { enter: true });
+    // Multi-line payloads travel inside bracketed-paste markers (issue #115).
+    expect(fake.sentBytes("sess").toString("utf8")).toBe(`\x1b[200~${message}\x1b[201~`);
+  });
+
+  it("wraps multi-line payloads in bracketed paste and sends Enter separately (issue #115)", async () => {
+    const { tmux, fake } = makeTmux();
+    await tmux.newSession("sess");
+    const message = "line one\nline two\n- line three";
+    await tmux.sendKeys("sess", message, { enter: true });
+    const delivered = fake.sentBytes("sess").toString("utf8");
+    expect(delivered).toBe(`\x1b[200~${message}\x1b[201~`);
+    // Enter is its own invocation, after the payload flush.
+    const enters = fake.invocations.filter(
+      (inv) => inv.args[0] === "send-keys" && !inv.args.includes("-H") && !inv.args.includes("-l"),
+    );
+    expect(enters).toHaveLength(1);
+    expect(enters[0]?.args).toEqual(["send-keys", "-t", "sess", "Enter"]);
+  });
+
+  it("sends plain single-line payloads without paste markers (issue #115)", async () => {
+    const { tmux, fake } = makeTmux();
+    await tmux.newSession("sess");
+    await tmux.sendKeys("sess", "npm test", { enter: true });
+    expect(fake.sentBytes("sess").toString("utf8")).toBe("npm test");
+  });
+
+  it("presses Enter alone when the payload is empty (issue #115 nudge)", async () => {
+    const { tmux, fake } = makeTmux();
+    await tmux.newSession("sess");
+    await tmux.sendKeys("sess", "", { enter: true });
+    expect(fake.sentBytes("sess")).toHaveLength(0);
+    const enters = fake.invocations.filter((inv) => inv.args.at(-1) === "Enter");
+    expect(enters).toHaveLength(1);
+  });
+
+  it("waits the settle delay before Enter when configured (issue #115)", async () => {
+    const { tmux, fake } = makeTmux({ tmux: { sendEnterDelayMs: 60 } });
+    await tmux.newSession("sess");
+    const start = Date.now();
+    await tmux.sendKeys("sess", "hello", { enter: true });
+    expect(Date.now() - start).toBeGreaterThanOrEqual(50);
+    expect(fake.sessions.get("sess")?.paneLines).toEqual(["hello"]);
+  });
+
+  it("delivers multi-byte UTF-8 intact (issue #115)", async () => {
+    const { tmux, fake } = makeTmux();
+    await tmux.newSession("sess");
+    const message = "ok\u00e9\u2014 \ud83d\ude00 status";
+    await tmux.sendKeys("sess", message, { enter: true });
+    expect(fake.sentBytes("sess").toString("utf8")).toBe(message);
+  });
+
 });
 
 describe("defaultTmuxRunner", () => {

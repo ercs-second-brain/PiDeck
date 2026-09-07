@@ -92,6 +92,27 @@ export class FakeTmuxRunner {
     return this.pipes.get(target)?.notifyPath;
   }
 
+  /**
+   * Every byte sent to the pane's input via `send-keys -H`, in order.
+   * Key-name invocations (e.g. `send-keys Enter`) are not included — tests
+   * assert those via `invocations` (issue #115).
+   */
+  sentBytes(target: string): Buffer {
+    const chunks: Buffer[] = [];
+    for (const inv of this.invocations) {
+      const args = inv.args;
+      if (args[0] !== "send-keys" || !args.includes("-H")) continue;
+      if (!args.includes("-t") || args[args.indexOf("-t") + 1] !== target) continue;
+      const bytes: number[] = [];
+      for (let i = args.indexOf("-H") + 1; i < args.length; i++) {
+        const arg = args[i] ?? "";
+        if (/^[0-9a-fA-F]{2}$/.test(arg)) bytes.push(Number.parseInt(arg, 16));
+      }
+      chunks.push(Buffer.from(bytes));
+    }
+    return Buffer.concat(chunks);
+  }
+
   /** Whether a pipe-pane is active for the target (start/stop bookkeeping). */
   pipeActive(target: string): boolean {
     return this.pipes.has(target);
@@ -271,14 +292,14 @@ export class FakeTmuxRunner {
     return pane;
   }
 
-  /** Decodes `send-keys -H` hex byte arguments into literal text (1 byte/arg). */
+  /** Decodes `send-keys -H` hex byte arguments into UTF-8 text (1 byte/arg). */
   private decodeHex(hexArgs: string[], originalArgs: string[]): string {
-    let text = "";
+    const bytes: number[] = [];
     for (const arg of hexArgs) {
       if (!/^[0-9a-fA-F]{2}$/.test(arg)) this.fail(`bad hex byte: ${arg}`, originalArgs);
-      text += String.fromCharCode(Number.parseInt(arg, 16));
+      bytes.push(Number.parseInt(arg, 16));
     }
-    return text;
+    return Buffer.from(bytes).toString("utf8");
   }
 
   private target(cmdArgs: string[], originalArgs: string[]): string {
