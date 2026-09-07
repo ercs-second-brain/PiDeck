@@ -1,8 +1,10 @@
 /**
- * Tests for the terminal session picker: per-project IA (orchestrator nested
- * above workers, start-orchestrator affordance when absent), role/worker
- * badges, selection state, and empty/error handling. The page shell is pure
- * once the fetched data arrives, so the picker is exercised directly.
+ * Tests for the terminal sidebar (SessionPicker, issue #62): the "Projects"
+ * header with the "+" onboarding button, per-project IA (project rows open
+ * boards; orchestrator nested above workers, start-orchestrator affordance
+ * when absent), role/worker badges, selection state, and empty/error
+ * handling. The sidebar is pure, so it is exercised directly without xterm
+ * or effects.
  */
 
 import { describe, expect, it } from "vitest";
@@ -53,20 +55,39 @@ const workers: Worker[] = [
   },
 ];
 
-function renderPicker(overrides: Partial<Parameters<typeof SessionPicker>[0]> = {}) {
+type PickerProps = Parameters<typeof SessionPicker>[0];
+
+function renderPicker(overrides: Partial<PickerProps> = {}) {
   return renderToString(
     <SessionPicker
       entries={overrides.entries ?? [{ project, sessions, workers }]}
       error={overrides.error ?? null}
-      selectedId={overrides.selectedId ?? null}
+      selectedSessionId={overrides.selectedSessionId ?? null}
+      selectedProjectId={overrides.selectedProjectId}
       startingProjectId={overrides.startingProjectId}
-      onSelect={overrides.onSelect ?? (() => {})}
+      onSelectSession={overrides.onSelectSession ?? (() => {})}
+      onSelectProject={overrides.onSelectProject ?? (() => {})}
+      onSelectAllProjects={overrides.onSelectAllProjects ?? (() => {})}
+      onStartOnboarding={overrides.onStartOnboarding ?? (() => {})}
       onStartOrchestrator={overrides.onStartOrchestrator ?? (() => {})}
     />,
   );
 }
 
 describe("SessionPicker", () => {
+  it("renders the Projects header with the + onboarding button", () => {
+    const html = renderPicker();
+    expect(html).toContain("picker-title-button");
+    expect(html).toContain(">Projects</button>");
+    expect(html).toContain("picker-add");
+  });
+
+  it("renders project names as board-opening rows", () => {
+    const html = renderPicker();
+    expect(html).toContain("picker-project-name");
+    expect(html).toContain("agentsKISS");
+  });
+
   it("lists orchestrator and worker sessions with role badges", () => {
     const html = renderPicker();
     expect(html).toContain("role-orchestrator");
@@ -117,14 +138,19 @@ describe("SessionPicker", () => {
   });
 
   it("marks the selected session", () => {
-    const html = renderPicker({ selectedId: "sess-worker-1" });
+    const html = renderPicker({ selectedSessionId: "sess-worker-1" });
     const selected = html.match(/picker-session selected/g) ?? [];
     expect(selected).toHaveLength(1);
   });
 
-  it("shows the no-projects empty state", () => {
+  it("marks the project whose board is open in the main pane", () => {
+    const html = renderPicker({ selectedProjectId: project.id });
+    expect(html).toContain("picker-project-name selected");
+  });
+
+  it("shows the no-projects empty state pointing at the + button", () => {
     const html = renderPicker({ entries: [] });
-    expect(html).toContain("No projects registered yet.");
+    expect(html).toContain("No projects yet");
   });
 
   it("shows the daemon-unreachable error state", () => {

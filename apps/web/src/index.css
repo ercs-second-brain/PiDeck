@@ -420,6 +420,15 @@ code {
   font-size: 14px;
 }
 
+/* In the app shell (issue #62) it is a full-width strip between header and
+   the sidebar + main layout — drop the inset margins/radius. */
+.app > .update-banner {
+  margin: 0;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+}
+
 .update-banner code {
   color: var(--amber);
 }
@@ -872,4 +881,70 @@ code {
 
 .card-diff-link:hover {
   background: color-mix(in srgb, var(--pr) 14%, transparent);
+}
+
+/* --- Onboarding modal (issue #62) ------------------------------------------ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+
+.modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  padding: 24px 28px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* --- Combined all-projects board (issue #62) -------------------------------- */
+
+.combined-workers {
+  margin-top: 24px;
+}
+
+.combined-workers-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.empty-board-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
 }

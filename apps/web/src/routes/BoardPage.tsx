@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { Link, useParams } from "react-router";
-import { BoardColumn } from "../components/BoardColumn";
+import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { WorkersPanel } from "../components/WorkersPanel";
-import { boardStore, useAppState } from "../store/store";
+import { boardStore, useAppState, type ConnectionState } from "../store/store";
 
 const CONNECTION_LABELS = {
   connecting: "connecting…",
@@ -10,7 +10,18 @@ const CONNECTION_LABELS = {
   offline: "reconnecting…",
 } as const;
 
-/** Kanban board page for one project — live daemon data (REST + websocket). */
+export function ConnectionIndicator({ connection }: { connection: ConnectionState }) {
+  return (
+    <span className={`connection connection-${connection}`} title="WebSocket connection to the daemon">
+      <span className="connection-dot" /> {CONNECTION_LABELS[connection]}
+    </span>
+  );
+}
+
+/**
+ * Kanban board for one project (issue #62) — rendered in the app shell's
+ * main pane (the sidebar stays); live daemon data (REST + websocket).
+ */
 export function BoardPage() {
   const { projectId } = useParams();
   const state = useAppState();
@@ -37,8 +48,6 @@ export function BoardPage() {
 
   const board = state.boards[project.id];
   const workers = state.workers[project.id] ?? [];
-  const pullRequests = state.pullRequests[project.id] ?? [];
-  const details = { pullRequests: new Map(pullRequests.map((pr) => [pr.number, pr])) };
 
   return (
     <main className="page page-wide">
@@ -53,9 +62,7 @@ export function BoardPage() {
           </span>
         </div>
         <div className="board-actions">
-          <span className={`connection connection-${state.connection}`} title="WebSocket connection to the daemon">
-            <span className="connection-dot" /> {CONNECTION_LABELS[state.connection]}
-          </span>
+          <ConnectionIndicator connection={state.connection} />
           <Link className="button" to={`/projects/${project.id}/settings`}>
             Settings
           </Link>
@@ -66,11 +73,7 @@ export function BoardPage() {
       {board === undefined ? (
         <p className="empty">Loading board…</p>
       ) : (
-        <div className="board">
-          {board.columns.map((column) => (
-            <BoardColumn key={column.column} summary={column} details={details} />
-          ))}
-        </div>
+        <BoardColumns boards={[board]} details={mergedCardDetails([board], state.pullRequests)} />
       )}
 
       <WorkersPanel projectId={project.id} workers={workers} />
