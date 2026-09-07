@@ -59,7 +59,7 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `agentskiss workers --project <id>` | `--json` | `GET /api/projects/:projectId/workers` | Returns `Worker[]` |
 | `agentskiss pulls --project <id>` | `--json` | `GET /api/projects/:projectId/pulls` | Returns `PullRequest[]` (incl. `ciStatus`, `reviewState`) |
 | `agentskiss diff --project <id> <pr>` | — | `GET /api/projects/:projectId/pulls/:prNumber/diff` | Returns `PullRequestDiff` |
-| `agentskiss spawn` | `--project <id>`, `--issue <number>`, `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`) |
+| `agentskiss spawn` | `--project <id>`, `--issue <number>`, `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`). The initial `--prompt` is gated on pi auth readiness (issue #56): with no ready provider the worker holds at `spawning` (statusMessage names the fix) and the prompt is queued and delivered automatically once auth is ready |
 | `agentskiss send` | `--session <id>`, `--message <text>` | `POST /api/sessions/:sessionId/send` | Delivers into the session's tmux pane (typed, then Enter) |
 | `agentskiss report-pr <pr>` | — | `POST /api/sessions/report-pr` | Worker session self-reports its PR (resolved from its tmux pane context); explicit report wins over the title/branch heuristic, which stays as fallback (issue #49) |
 

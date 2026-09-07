@@ -100,6 +100,11 @@ export function testDaemon(
     tmux: new Tmux({ runner: tmux.asRunner() }),
     gh: fakeGh(ghRoutes),
     git: fakeGit(cloned),
+    // Hermetic default (issues #56/#57): pi auth ready without probing the
+    // real CLI. Overridden by piRunner/piReady in the tests that exercise
+    // the unauthenticated path.
+    ...(contextOptions.piRunner === undefined && contextOptions.piReady === undefined ? { piReady: true } : {}),
+    promptGatePollIntervalMs: 0,
     ...contextOptions,
   });
   return { services, stateDir, tmux, cloned };

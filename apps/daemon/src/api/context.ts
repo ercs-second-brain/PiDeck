@@ -9,6 +9,8 @@ import path from "node:path";
 
 import type { Project, Worker } from "@agentskiss/shared";
 
+import { PiAuthProbe, type PiRunner } from "../agent/pi-auth.js";
+import { PromptGate } from "../agent/prompt-gate.js";
 import { GhClient } from "../github/index.js";
 import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
@@ -48,6 +50,16 @@ export interface DaemonServices {
   automation: GithubAutomation;
   /** Self-update check: local source vs upstream via gh (issue #55, `GET /api/update`). */
   update: UpdateChecker;
+  /**
+   * pi auth readiness probe (issue #57): backs `GET /api/pi-auth`, the
+   * `/api/status` pi fields, and the spawn readiness gate (issue #56).
+   */
+  piAuth: PiAuthProbe;
+  /**
+   * Initial-prompt readiness gate (issue #56): holds prompts for spawns
+   * made before pi auth is ready and delivers them once it is.
+   */
+  promptGate: PromptGate;
   /** Injectable clock (ISO timestamps for events). */
   now: () => Date;
 }
@@ -75,6 +87,14 @@ export interface DaemonContextOptions {
   updateRepoUrl?: string;
   /** Explicit upstream ref for the update checker (tests; env override). */
   updateRepoRef?: string;
+  /** Override the pi CLI runner used by the pi auth probe (tests). */
+  piRunner?: PiRunner;
+  /** Force the pi-auth readiness verdict without probing (tests). */
+  piReady?: boolean;
+  /** Prompt-gate poll interval in ms (tests; `0` = manual delivery only). */
+  promptGatePollIntervalMs?: number;
+  /** pi-auth probe result TTL in ms (tests; `0` disables caching). */
+  piAuthTtlMs?: number;
 }
 
 /** Resolves the daemon state dir honoring `AGENTSKISS_HOME`. */
@@ -114,6 +134,22 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     gh,
   });
   const hub = new WsHub();
+
+  // pi auth readiness (issue #57) + the worker initial-prompt gate (issue
+  // #56): the gate polls through the same probe so queued prompts are
+  // delivered as soon as credentials appear.
+  const piAuth = new PiAuthProbe({
+    ...(options.piRunner !== undefined ? { run: options.piRunner } : {}),
+    ...(options.piReady !== undefined ? { readyOverride: options.piReady } : {}),
+    ...(options.piAuthTtlMs !== undefined ? { ttlMs: options.piAuthTtlMs } : {}),
+  });
+  const promptGate = new PromptGate({
+    sendKeys: (sessionId, keys, sendOptions) => sessions.sendKeys(sessionId, keys, sendOptions),
+    getWorker: (workerId) => sessions.getWorker(workerId),
+    updateWorkerStatus: (workerId, status, statusMessage) => sessions.updateWorkerStatus(workerId, status, statusMessage),
+    isReady: async () => (await piAuth.payload()).ready,
+    ...(options.promptGatePollIntervalMs !== undefined ? { pollIntervalMs: options.promptGatePollIntervalMs } : {}),
+  });
 
   const pullListing = new PullListingService({ gh });
   const kanban = new KanbanService({
@@ -164,6 +200,8 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     registry,
     automation,
     update,
+    piAuth,
+    promptGate,
     now: () => new Date(),
   };
 }

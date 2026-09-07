@@ -55,6 +55,18 @@ export function main(options: { stateDir?: string; host?: string; port?: number;
         console.error("[daemon] session reconcile failed:", err);
       },
     )
+    // pi auth readiness at startup (issue #57): a daemon with no ready pi
+    // provider says so loudly here and in /api/status + /api/pi-auth instead
+    // of failing later when workers queue their initial prompts (issue #56).
+    .then(() =>
+      services.piAuth.payload().then((pi) => {
+        if (!pi.ready) {
+          console.warn(
+            `[daemon] pi auth not ready: ${pi.detail}. Workers spawned before auth is ready hold at "spawning" with their initial prompt queued until a provider is ready.`,
+          );
+        }
+      }),
+    )
     // Orchestrator bootstrap (issue #12): after reconcile, ensure one
     // orchestrator session per registered project, listed in the web
     // terminal picker, running pi with the rendered orchestrator prompt.
@@ -88,6 +100,7 @@ export function main(options: { stateDir?: string; host?: string; port?: number;
     // Shutdown ordering (issue #46): stop the github watcher + pipelines
     // first, so no new spawn/prompt work starts during teardown.
     services.automation.stop();
+    services.promptGate.stop();
     services.hub.close();
     closeTerminal();
     server.close(() => process.exit(0));

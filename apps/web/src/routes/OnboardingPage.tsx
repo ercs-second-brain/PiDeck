@@ -1,27 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type { Project } from "@agentskiss/shared";
-import { apiGetGhAuth, apiRegisterProject, errorMessage, type GhAuth } from "../lib/api";
+import { apiGetGhAuth, apiGetPiAuth, apiRegisterProject, errorMessage, type GhAuth, type PiAuth } from "../lib/api";
+import { PiAuthReport } from "../components/PiAuthBanner";
 
 /**
  * First-run onboarding wizard — shown when no projects are registered.
  *
  * Flow (PRD: repo connection):
- * 1. gh permission check (daemon-side probe via `GET /api/gh-auth`).
- * 2. Choose the repo source: clone from git OR create a new GitHub repo —
+ * 1. pi auth check (daemon-side probe via `GET /api/pi-auth`, issue #57):
+ *    workers cannot run unauthenticated, so this step must pass (re-verify
+ *    after the handoff: `agentskiss onboard`, or pi /login) before the
+ *    wizard proceeds.
+ * 2. gh permission check (daemon-side probe via `GET /api/gh-auth`).
+ * 3. Choose the repo source: clone from git OR create a new GitHub repo —
  *    created repos are **private by default** with an explicit public toggle.
- * 3. Auto-create-agents question: should issues auto-create agents? Captures
+ * 4. Auto-create-agents question: should issues auto-create agents? Captures
  *    the GitHub username stored as the project's `autoAgentUsername`.
  *
  * Registration goes through the real `POST /api/projects` endpoint.
  */
 
-type Step = "permission" | "source" | "autoagent";
+type Step = "pi" | "permission" | "source" | "autoagent";
 
 const STEP_LABELS: Array<{ key: Step; label: string }> = [
-  { key: "permission", label: "1 · gh access" },
-  { key: "source", label: "2 · repository" },
-  { key: "autoagent", label: "3 · auto-agents" },
+  { key: "pi", label: "1 · pi agent" },
+  { key: "permission", label: "2 · gh access" },
+  { key: "source", label: "3 · repository" },
+  { key: "autoagent", label: "4 · auto-agents" },
 ];
 
 /** Expands `owner/repo` shorthands to full GitHub https URLs. */
@@ -34,7 +40,10 @@ export function normalizeRepoUrl(input: string): string {
 
 export function OnboardingPage() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>("permission");
+  const [step, setStep] = useState<Step>("pi");
+  const [pi, setPi] = useState<PiAuth | null>(null);
+  const [piError, setPiError] = useState<string | null>(null);
+  const [checkingPi, setCheckingPi] = useState(true);
   const [auth, setAuth] = useState<GhAuth | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
@@ -51,6 +60,15 @@ export function OnboardingPage() {
   const [username, setUsername] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const checkPi = useCallback(() => {
+    setCheckingPi(true);
+    setPiError(null);
+    apiGetPiAuth()
+      .then(setPi)
+      .catch((err: unknown) => setPiError(errorMessage(err)))
+      .finally(() => setCheckingPi(false));
+  }, []);
+
   const checkPermissions = useCallback(() => {
     setChecking(true);
     setAuthError(null);
@@ -63,6 +81,7 @@ export function OnboardingPage() {
       .finally(() => setChecking(false));
   }, []);
 
+  useEffect(checkPi, [checkPi]);
   useEffect(checkPermissions, [checkPermissions]);
 
   const submit = async (): Promise<void> => {
@@ -115,6 +134,43 @@ export function OnboardingPage() {
           </li>
         ))}
       </ol>
+
+      {step === "pi" && (
+        <section className="wizard-panel">
+          <h2 className="panel-title">pi agent auth</h2>
+          <p className="empty">
+            Workers are pi coding agents spawned in tmux panes — they need working pi credentials before any prompt
+            can be delivered.
+          </p>
+          {checkingPi && pi === null && <p className="empty">Checking pi auth on the daemon…</p>}
+          {!checkingPi && piError !== null && (
+            <>
+              <p className="error-note">Could not reach the daemon: {piError}</p>
+              <button type="button" className="button" onClick={checkPi}>
+                Retry
+              </button>
+            </>
+          )}
+          {!checkingPi && piError === null && pi !== null && (
+            <PiAuthReport auth={pi} onRecheck={checkPi} />
+          )}
+          {!checkingPi && piError === null && pi !== null && (
+            <div className="wizard-actions">
+              {/* Issue #57: re-verify before proceeding — the gate cannot be
+                  clicked through while no provider is ready. */}
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={!pi.ready}
+                title={pi.ready ? undefined : "pi auth is not ready — complete the handoff above, then re-check"}
+                onClick={() => setStep("permission")}
+              >
+                Continue
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       {step === "permission" && (
         <section className="wizard-panel">
