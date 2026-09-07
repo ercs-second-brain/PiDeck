@@ -77,6 +77,11 @@ export class ProjectLayout {
     return path.join(this.stateDir, "sessions.json");
   }
 
+  /** Path of the archived-worker scrollback persistence file (issue #104). */
+  archivedLogsFilePath(): string {
+    return path.join(this.stateDir, "archived-logs.json");
+  }
+
   /** Creates the on-disk layout for a project (idempotent). */
   ensureProject(projectId: string): ProjectDirs {
     const projectDir = this.projectDir(projectId);

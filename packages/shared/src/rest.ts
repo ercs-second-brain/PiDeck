@@ -14,6 +14,7 @@
 
 import { z } from "zod";
 import {
+  archivedWorkerLogSchema,
   kanbanBoardSchema,
   projectSchema,
   projectSettingsSchema,
@@ -308,6 +309,20 @@ export const endpoints = {
     params: z.object({ workerId: z.string().min(1) }),
     request: null,
     response: workerSchema,
+  },
+
+  /**
+   * Archived worker session log (issue #104): the tmux scrollback captured
+   * at termination plus the worker's final metadata (status, issue, PR,
+   * timestamps). 404 for unknown workers and for workers that are not
+   * archived — a live worker has no archived log yet.
+   */
+  getArchivedWorkerLog: {
+    method: "GET",
+    path: "/api/workers/:workerId/log",
+    params: z.object({ workerId: z.string().min(1) }),
+    request: null,
+    response: archivedWorkerLogSchema,
   },
 
   // Pull requests

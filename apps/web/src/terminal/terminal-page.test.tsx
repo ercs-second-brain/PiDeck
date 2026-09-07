@@ -247,7 +247,8 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
     expect(html).toContain("agentskiss-agentskiss-worker-1");
     expect(html).toContain("worker-badge archived");
     expect(html).toContain("picker-archived-session");
-    // History only: archived rows are not attachable buttons, not terminable.
+    expect(html).toContain("View the archived worker");
+    // History only: archived rows carry no terminate affordance.
     expect(html).not.toContain('title="Terminate worker"');
     const archivedRow = html.slice(html.indexOf("picker-archived-list"));
     expect(archivedRow).not.toContain("picker-session selected");

@@ -5,8 +5,9 @@
  * underneath — the orchestrator first, its worker sessions indented beneath
  * it (issue #63) with live worker status badges, then a collapsed
  * "Archived" section for terminated workers (issue #64). Clicking a session
- * attaches its terminal; active worker rows carry a terminate affordance
- * (✕ → in-place confirm) that archives the worker.
+ * attaches its terminal; clicking an archived worker opens its read-only
+ * captured log (issue #104); active worker rows carry a terminate
+ * affordance (✕ → in-place confirm) that archives the worker.
  *
  * The "Projects" header opens the all-projects combined board; the "+"
  * button launches the project onboarding wizard. Interaction state lives in
@@ -98,14 +99,20 @@ function WorkerRow(props: {
   const worker = workerFor(props.session, props.workers);
   const badge = worker ? workerBadge(worker) : null;
   if (props.archived) {
-    // Terminated worker: history only — visibly not active, not attachable.
+    // Terminated worker: history only — visibly not active, not terminable,
+    // but clickable: opens the read-only archived log (issue #104).
     return (
       <li className="picker-worker-row archived">
-        <span className="picker-session picker-archived-session" title="Archived worker (terminated)">
+        <button
+          type="button"
+          className={`picker-session picker-archived-session${props.session.id === props.selectedSessionId ? " selected" : ""}`}
+          title="View the archived worker's log"
+          onClick={() => props.onSelectSession(props.session.id)}
+        >
           <span className="role-badge role-worker">worker</span>
           <span className="picker-session-name">{props.session.tmuxSession}</span>
           {badge && <span className={badge.className}>{badge.label}</span>}
-        </span>
+        </button>
       </li>
     );
   }

@@ -118,6 +118,30 @@ export function requireOr404<T>(value: T | null | undefined, message: string): T
   return value;
 }
 
+/**
+ * Payload builder for the archived-worker-log endpoint (issue #104): the
+ * scrollback captured at terminate time plus the worker's final metadata.
+ * 404 for unknown workers and for workers that are not archived — a live
+ * worker has no archived log yet (its pane is still attachable instead).
+ */
+function archivedWorkerLogPayload(services: DaemonServices, workerId: string) {
+  const worker = requireOr404(services.sessions.getWorker(workerId), `unknown worker: ${workerId}`);
+  if (worker.status !== "archived") throw new HttpError(404, `worker ${worker.id} is not archived`);
+  const captured = services.sessions.archivedScrollback(worker.id);
+  return {
+    workerId: worker.id,
+    projectId: worker.projectId,
+    issueNumber: worker.issueNumber,
+    prNumber: worker.prNumber,
+    finalStatus: worker.status,
+    finalStatusMessage: worker.statusMessage,
+    startedAt: worker.startedAt,
+    updatedAt: worker.updatedAt,
+    capturedAt: captured?.capturedAt ?? null,
+    scrollback: captured?.scrollback ?? "",
+  };
+}
+
 /** Workers in an active status — the click-to-update gate (issue #76), via
  * the shared `ACTIVE_WORKER_STATUSES` (issue #70). Orchestrator sessions are
  * not workers (they persist across updates and never block). */
@@ -190,6 +214,13 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
       });
       return parsed;
     },
+
+    /**
+     * Archived worker session log (issue #104): the scrollback captured at
+     * terminate time plus the worker's final metadata (see the payload
+     * builder below for the 404 semantics).
+     */
+    getArchivedWorkerLog: ({ params }) => archivedWorkerLogPayload(services, params.workerId),
 
     listProjectPullRequests: async ({ params }) => {
       const project = requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);

@@ -23,6 +23,7 @@
 import type { Session, Worker, WorkerStatus } from "@agentskiss/shared";
 import { ProjectLayout } from "./layout.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
+import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
 import { Tmux } from "./tmux.js";
 import {
   DEFAULT_WORKER_COMMAND,
@@ -61,6 +62,12 @@ export interface SpawnedWorker {
   worker: Worker;
 }
 
+/**
+ * How much scrollback to capture when archiving a worker (issue #104): the
+ * tmux server's default history limit, so a full pane history fits.
+ */
+const ARCHIVED_SCROLLBACK_LINES = 2000;
+
 /** Result of {@link SessionManager.reconcile}. */
 export interface ReconcileResult {
   /** Registry sessions whose tmux session is alive (re-attachable as-is). */
@@ -77,11 +84,19 @@ export class SessionManager {
   private readonly tmux: Tmux;
   private readonly registry: SessionRegistry;
   private readonly layout: ProjectLayout;
+  private readonly archivedLogs: ArchivedLogStore;
 
-  constructor(deps: { tmux: Tmux; registry: SessionRegistry; layout: ProjectLayout }) {
+  constructor(deps: {
+    tmux: Tmux;
+    registry: SessionRegistry;
+    layout: ProjectLayout;
+    /** Archived-scrollback store (issue #104); defaults to the state-dir file. */
+    archivedLogs?: ArchivedLogStore;
+  }) {
     this.tmux = deps.tmux;
     this.registry = deps.registry;
     this.layout = deps.layout;
+    this.archivedLogs = deps.archivedLogs ?? new ArchivedLogStore(deps.layout.archivedLogsFilePath());
   }
 
   /** Creates the per-project state layout (clone/worktrees dirs). Idempotent. */
@@ -293,9 +308,26 @@ export class SessionManager {
     if (!worker) return null;
     const session = this.registry.getSession(worker.sessionId);
     if (session && (await this.tmux.hasSession(session.tmuxSession))) {
+      // Issue #104: capture the pane's scrollback *before* killing the tmux
+      // session — the bytes at termination — and persist it with the archived
+      // record so the webapp can show a read-only log afterwards. A capture
+      // failure must never block the terminate.
+      try {
+        const scrollback = await this.tmux.capturePane(session.tmuxSession, {
+          lines: ARCHIVED_SCROLLBACK_LINES,
+        });
+        this.archivedLogs.save(worker.id, { capturedAt: new Date().toISOString(), scrollback });
+      } catch (err) {
+        console.error(`[sessions] scrollback capture failed for ${session.tmuxSession}:`, err);
+      }
       await this.tmux.killSession(session.tmuxSession);
     }
     return this.registry.updateWorkerStatus(worker.id, "archived", message);
+  }
+
+  /** The worker's captured scrollback, if one was captured at terminate time (issue #104). */
+  archivedScrollback(workerId: string): ArchivedScrollback | undefined {
+    return this.archivedLogs.get(workerId);
   }
 
   /** Whether the session is a worker session whose worker was archived (issue #64). */
