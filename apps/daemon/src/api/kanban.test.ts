@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { projectSchema, type KanbanBoard, type PullRequest } from "@agentskiss/shared";
 
 import { GhClient, type GhRunner } from "../github/gh.js";
-import { KanbanService } from "./kanban.js";
+import { KanbanService, deriveBoard } from "./kanban.js";
 
 const PROJECT = "o-r";
 const REPO_URL = "https://github.com/o/r";
@@ -196,5 +196,57 @@ describe("KanbanService board cache", () => {
     h.service.invalidate(PROJECT);
     await h.service.getBoard(project);
     expect(h.ghCalls()).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveBoard column derivation (issue #102: archived workers)
+// ---------------------------------------------------------------------------
+
+describe("deriveBoard: archived workers (issue #102)", () => {
+  const UPDATED_AT = "2026-01-01T00:00:00.000Z";
+  const boardProject = projectSchema.parse({
+    id: "o-r",
+    name: "o-r",
+    repoUrl: "https://github.com/o/r",
+    defaultBranch: "main",
+    settings: { autoAgentUsername: null },
+    createdAt: UPDATED_AT,
+    updatedAt: UPDATED_AT,
+  });
+  const issue = {
+    projectId: "o-r",
+    number: 5,
+    title: "Worked",
+    state: "open" as const,
+    blockedBy: [],
+    assignee: null,
+    url: "https://github.com/o/r/issues/5",
+    updatedAt: UPDATED_AT,
+  };
+  const worker = (status: "running" | "archived") => ({
+    id: `worker-${status}`,
+    projectId: "o-r",
+    sessionId: `sess-${status}`,
+    issueNumber: 5,
+    prNumber: null,
+    status,
+    statusMessage: null,
+    startedAt: UPDATED_AT,
+    updatedAt: UPDATED_AT,
+  });
+  const card = (workers: Parameters<typeof deriveBoard>[3]) =>
+    deriveBoard(boardProject, [issue], [], workers).columns.find((c) => c.column === "in_progress")?.cards[0];
+
+  it("a live worker drives its issue card (in_progress, workerId set)", () => {
+    expect(card([worker("running")])).toMatchObject({ workerId: "worker-running", column: "in_progress" });
+  });
+
+  it("an archived worker does not: the unassigned issue falls back to backlog", () => {
+    expect(card([worker("archived")])).toBeUndefined();
+    const backlog = deriveBoard(boardProject, [issue], [], [worker("archived")]).columns.find(
+      (c) => c.column === "backlog",
+    )?.cards[0];
+    expect(backlog).toMatchObject({ workerId: null, column: "backlog" });
   });
 });
