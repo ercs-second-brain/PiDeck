@@ -35,6 +35,17 @@ The installer installs git/Node 22/pnpm/gh as needed (user-level, no sudo), fetc
 
 When onboarding finishes, open the webapp at the printed address (`agentskiss addr`) and walk the onboarding wizard to connect a repo: clone from git or create a new GitHub repo (private by default, toggle for public), and choose whether issues auto-create agents. Then head to **Terminals** to talk to the project's orchestrator (if the project doesn't have one yet, hit **Start orchestrator** in the sidebar and it comes up immediately).
 
+## Self-updates
+
+When the upstream repo/ref advances, the webapp shows an **update available** banner (new short SHA) on the projects and settings pages, and the daemon exposes the same check as `GET /api/update`. Checks and downloads go through the `gh` CLI against the repo/ref the installer used (persisted in `~/.agentskiss/config.json`), so private repos and non-main dev refs update exactly like public ones:
+
+```sh
+agentskiss update --check   # report only: up to date, or old -> new short SHA
+agentskiss update           # fetch (gh-authed git), rebuild, restart the service
+```
+
+`agentskiss update` is a no-op (no rebuild) when the installed source already matches the upstream ref; otherwise it reuses the installer's fetch/build machinery and restarts the daemon, leaving sessions and project state intact.
+
 ## Everyday commands
 
 `agentskiss` is one entry point: a small set of service verbs handled by the installed shim, everything else forwarded to the daemon CLI (used heavily by the pi skills). The full precedence table and flag reference is in [install/README.md](install/README.md); the common shapes:
@@ -44,6 +55,7 @@ agentskiss service start|stop|restart|status   # manage the persistent service
 agentskiss logs [-f]                           # daemon logs
 agentskiss addr                                # the webapp URL for this machine
 agentskiss onboard [--dry-run]                 # re-run guided onboarding
+agentskiss update [--check]                    # apply upstream updates (--check reports only)
 
 agentskiss status [--json]                     # daemon health
 agentskiss project get <id> | ls [--json]      # registered projects

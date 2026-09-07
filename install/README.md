@@ -126,6 +126,7 @@ agentskiss service start|stop|restart|status
 agentskiss start|stop|restart        bare shortcuts, same as `service ...`
 agentskiss addr                      webapp URL for this machine
 agentskiss onboard [--dry-run|--noninteractive|--skip-pi|--skip-gh]
+agentskiss update [--check]          apply upstream updates (--check reports only)
 agentskiss logs [-f]
 agentskiss help
 
@@ -146,7 +147,7 @@ CLI untouched:
 | Invoked as                       | Handled by   |
 | -------------------------------- | ------------ |
 | `service start\|stop\|restart\|status`, bare `start\|stop\|restart` | shim (service control) |
-| `addr`, `onboard`, `logs`, `help`, `-h`, `--help` | shim |
+| `addr`, `onboard`, `update`, `logs`, `help`, `-h`, `--help` | shim |
 | `status`                         | **daemon CLI** (daemon health — the pi skills' health check) |
 | anything else                    | **daemon CLI**, verbatim |
 
@@ -158,6 +159,16 @@ Notes:
   installer-only releases, where bare `status` printed service status.
 - `start`/`stop`/`restart` have no daemon-CLI counterpart, so the bare
   shortcuts are unambiguous; `service start` etc. are the canonical form.
+- `update` (issue #55) checks the installed source at `$AGENTSKISS_SRC` against
+  the upstream repo/ref the installer used (`$AK_HOME/config.json`, falling back
+  to the git remote), via `gh api repos/:owner/:repo/commits/<ref>` — so private
+  repos and non-main dev refs check and update like public ones. With an update
+  available it fetches the new source with gh-authed git (the installer's
+  `resolve_source`, including `_retry_with_gh_auth` semantics), rebuilds
+  (`build_from_source`), and restarts the service (`svc_restart`). Up to date →
+  no-op. `--check` reports without touching anything. The daemon exposes the
+  same check as `GET /api/update` (shared contract `getUpdateStatus`), which the
+  webapp renders as an update banner on the projects/settings pages.
 - The forwarded CLI reaches the daemon at `http://127.0.0.1:$AGENTSKISS_WEB_PORT`
   by default (set as `AGENTSKISS_DAEMON_URL` by the shim; a `AGENTSKISS_DAEMON_URL`
   already present in your environment wins). If the daemon build output is
@@ -178,16 +189,20 @@ Notes:
 
 `pnpm build` in this package runs `shellcheck` over all scripts (skipped
 with a note when shellcheck isn't installed; CI runners have it) and the
-plain-shell forwarding tests in `test/cli-forwarding.sh` (service verbs,
+plain-shell tests in `test/cli-forwarding.sh` (service verbs,
 daemon-CLI forwarding with args + exit codes, `status` precedence, missing-
-build error path) against a fake install layout — no daemons, no systemd.
+build error path) and `test/update.sh` (update check against fake git/gh,
+`update --check` shim wiring, the apply path's reuse of the installer
+machinery + service restart) against a fake install layout — no daemons, no
+network, no systemd.
 
 ## Tested matrix
 
 - **Tested here (Linux x64):** `shellcheck` clean on all scripts; `--dry-run`
   full-bootstrap run; `onboard.sh --dry-run`; service unit rendering;
   `agentskiss-daemon` smoke against the built daemon; shim
-  forwarding tests (`test/cli-forwarding.sh`); live smoke of the installed
+  forwarding tests (`test/cli-forwarding.sh`) and self-update tests
+  (`test/update.sh`, mock git/gh); live smoke of the installed
   shim forwarding to the real built daemon CLI (its errors and exit codes
   surface unchanged).
 - **Untested (needs hardware/VMs):** the real fresh-machine runs — macOS

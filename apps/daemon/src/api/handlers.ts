@@ -171,6 +171,10 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     getSettings: () => services.settings.get(),
 
     updateSettings: ({ body }) => services.settings.update(updateSettingsRequestSchema.parse(body)),
+
+    // Self-update check (issue #55): local source vs upstream via gh. Never
+    // throws — failures come back as a status body with `error` set.
+    getUpdateStatus: () => services.update.check(),
   };
 }
 

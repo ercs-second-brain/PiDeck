@@ -12,6 +12,9 @@
 #                                         that verb belongs to the daemon CLI)
 #     agentskiss addr                     webapp URL for this machine
 #     agentskiss onboard [flags]          (re-)run guided onboarding
+#     agentskiss update [--check]         fetch/rebuild/restart when the
+#                                         upstream ref advanced (--check:
+#                                         report only)
 #     agentskiss logs [-f]                daemon logs
 #     agentskiss help
 #
@@ -68,6 +71,8 @@ Service control (this shim):
   start|stop|restart                  shortcuts for the same (no bare `status`)
   addr                                print the webapp URL for this machine
   onboard [flags]                     (re-)run guided onboarding (--dry-run, --skip-pi, --skip-gh)
+  update [--check]                    apply upstream updates (fetch via gh-authed
+                                      git, rebuild, restart; --check reports only)
   logs [-f]                           tail daemon logs
 
 Agent CLI (forwarded to the daemon):
@@ -121,6 +126,22 @@ case "$cmd" in
   onboard)
     # shellcheck disable=SC2086
     sh "$AK_LIB/onboard.sh" "$@"
+    ;;
+  update)
+    upd_cmd=${1:-apply}
+    [ $# -gt 0 ] && shift
+    [ -f "$AK_LIB/update.sh" ] || { printf 'agentskiss: install broken, %s missing\n' "$AK_LIB/update.sh" >&2; exit 1; }
+    # shellcheck disable=SC1090 # installed lib dir, sourced on purpose
+    . "$AK_LIB/update.sh"
+    case "$upd_cmd" in
+      --check | -c) update_check; update_report ;;
+      apply | '') update_apply ;;
+      *)
+        printf 'agentskiss: unknown update command: %s\n' "$upd_cmd" >&2
+        printf 'usage: agentskiss update [--check]\n' >&2
+        exit 1
+        ;;
+    esac
     ;;
   logs)
     tail -n 100 "$@" "$AK_HOME/log/daemon.out.log" "$AK_HOME/log/daemon.err.log" 2>/dev/null

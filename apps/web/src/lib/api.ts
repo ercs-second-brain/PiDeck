@@ -90,6 +90,11 @@ export const apiGetPullRequestDiff = (
   prNumber: number,
 ): Promise<EndpointResponse<"getPullRequestDiff">> => request("getPullRequestDiff", { projectId, prNumber });
 
+// --- Self-update (issue #55) --------------------------------------------------
+
+export const apiGetUpdateStatus = (): Promise<EndpointResponse<"getUpdateStatus">> =>
+  request("getUpdateStatus", {});
+
 // --- gh auth probe (onboarding wizard step 1) --------------------------------
 //
 // `GET /api/gh-auth` is a non-contract daemon route (like `/api/status`):
