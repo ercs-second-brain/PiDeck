@@ -487,6 +487,28 @@
   color: var(--red);
 }
 
+/* Relaunch affordance (issue #117): shown in the status bar only while the
+   pane is dead (exited/unavailable) — pushes to the far end of the bar. */
+.terminal-relaunch {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.terminal-relaunch:hover:not(:disabled) {
+  border-color: var(--amber);
+}
+
+.terminal-relaunch:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .terminal-placeholder {
   flex: 1;
   display: flex;

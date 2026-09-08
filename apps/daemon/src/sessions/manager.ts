@@ -178,6 +178,11 @@ export class SessionManager {
     };
   }
 
+  /** The registry session for `sessionId`, or `undefined` when unknown. */
+  getSession(sessionId: string): Session | undefined {
+    return this.registry.getSession(sessionId);
+  }
+
   /** Registry sessions (all projects, or one project's). */
   listSessions(projectId?: string): Session[] {
     return this.registry.listSessions(projectId ? { projectId } : {});
@@ -334,6 +339,51 @@ export class SessionManager {
   private isArchivedWorkerSession(session: Session): boolean {
     if (session.role !== "worker" || session.workerId === null) return false;
     return this.registry.getWorker(session.workerId)?.status === "archived";
+  }
+
+  /**
+   * Relaunches a session's tmux pane (issue #117): the recovery path for a
+   * pane the user exited (Ctrl+C, `exit`) or that otherwise died. Idempotent
+   * weird-state cleanup — any lingering tmux session of the same name is
+   * killed first — then the session's launch path re-runs:
+   *
+   * - orchestrator sessions are recreated in their recorded cwd (the
+   *   project dir) with a plain interactive shell, the way
+   *   {@link ensureOrchestrator} created them;
+   * - worker sessions are re-spawned from their recorded cwd/command — the
+   *   same #27 resurrection machinery reconcile() uses, but user-triggered.
+   *
+   * The registry records (session + worker) are kept as-is, so session
+   * identity and history survive; a `stopped` worker goes back to
+   * `running`. Terminal worker statuses are untouched (a `done` worker's
+   * pipeline state must not regress because its pane was reloaded).
+   *
+   * Throws for unknown sessions and rejects archived worker sessions —
+   * their history is the archived log view, not a relaunchable pane.
+   */
+  async relaunchSession(sessionId: string): Promise<Session> {
+    const session = this.requireSession(sessionId);
+    if (this.isArchivedWorkerSession(session)) {
+      throw new Error(`session ${sessionId} is archived: archived sessions cannot be relaunched`);
+    }
+    if (await this.tmux.hasSession(session.tmuxSession)) {
+      await this.tmux.killSession(session.tmuxSession);
+    }
+    const cwd = session.cwd ?? (session.role === "worker" ? this.layout.cloneDir(session.projectId) : this.layout.projectDir(session.projectId));
+    const command =
+      session.role === "worker"
+        ? session.command !== undefined
+          ? resurrectionCommand(deserializeCommand(session.command))
+          : [...RESURRECT_WORKER_COMMAND]
+        : undefined;
+    await this.tmux.newSession(session.tmuxSession, { cwd, ...(command === undefined ? {} : { command }) });
+    if (session.workerId !== null) {
+      const worker = this.registry.getWorker(session.workerId);
+      if (worker && worker.status === "stopped") {
+        this.registry.updateWorkerStatus(worker.id, "running", "relaunched from the webapp");
+      }
+    }
+    return this.registry.getSession(session.id) as Session;
   }
 
   /**

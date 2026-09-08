@@ -142,6 +142,53 @@ function archivedWorkerLogPayload(services: DaemonServices, workerId: string) {
   };
 }
 
+/**
+ * Terminate handler (issue #64): kills the tmux session, marks the worker
+ * `archived`, and announces the new status on the hub so open sidebars
+ * update live.
+ */
+async function terminateWorkerPayload(services: DaemonServices, workerId: string) {
+  const worker = await services.sessions.archiveWorker(workerId);
+  const parsed = workerSchema.parse(requireOr404(worker, `unknown worker: ${workerId}`));
+  services.hub.broadcast({
+    type: "worker.status.changed",
+    at: services.now().toISOString(),
+    projectId: parsed.projectId,
+    workerId: parsed.id,
+    status: parsed.status,
+  });
+  return parsed;
+}
+
+/**
+ * Relaunch handler (issue #117): 404 for unknown sessions, 409 for archived
+ * ones (their history is the archived log view), then re-run the session's
+ * launch path via `SessionManager.relaunchSession`. A worker bumped from
+ * `stopped` back to `running` is announced on the hub so open sidebars and
+ * kanban boards update live.
+ */
+async function relaunchSessionPayload(services: DaemonServices, sessionId: string) {
+  const existing = requireOr404(services.sessions.getSession(sessionId), `unknown session: ${sessionId}`);
+  const worker = existing.workerId !== null ? services.sessions.getWorker(existing.workerId) : undefined;
+  if (worker?.status === "archived") {
+    throw new HttpError(409, `session ${existing.id} is archived — its log is read-only history`);
+  }
+  // Registry workers are mutated in place, so capture the status value.
+  const statusBefore = worker?.status;
+  const session = await services.sessions.relaunchSession(sessionId);
+  const after = existing.workerId !== null ? services.sessions.getWorker(existing.workerId) : undefined;
+  if (after && after.status !== statusBefore) {
+    services.hub.broadcast({
+      type: "worker.status.changed",
+      at: services.now().toISOString(),
+      projectId: after.projectId,
+      workerId: after.id,
+      status: after.status,
+    });
+  }
+  return session;
+}
+
 /** Workers in an active status — the click-to-update gate (issue #76), via
  * the shared `ACTIVE_WORKER_STATUSES` (issue #70). Orchestrator sessions are
  * not workers (they persist across updates and never block). */
@@ -202,18 +249,7 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
      * worker `archived`, and keeps the registry records for history. The
      * new status is announced on the hub so open sidebars update live.
      */
-    terminateWorker: async ({ params }) => {
-      const worker = await services.sessions.archiveWorker(params.workerId);
-      const parsed = workerSchema.parse(requireOr404(worker, `unknown worker: ${params.workerId}`));
-      services.hub.broadcast({
-        type: "worker.status.changed",
-        at: services.now().toISOString(),
-        projectId: parsed.projectId,
-        workerId: parsed.id,
-        status: parsed.status,
-      });
-      return parsed;
-    },
+    terminateWorker: ({ params }) => terminateWorkerPayload(services, params.workerId),
 
     /**
      * Archived worker session log (issue #104): the scrollback captured at
@@ -221,6 +257,16 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
      * builder below for the 404 semantics).
      */
     getArchivedWorkerLog: ({ params }) => archivedWorkerLogPayload(services, params.workerId),
+
+    /**
+     * Relaunch a dead session's tmux pane (issue #117): kills any lingering
+     * tmux session of the name and re-runs the session's launch path (see
+     * `SessionManager.relaunchSession`). 404 for unknown sessions, 409 for
+     * archived ones (their history is the archived log view). A worker
+     * bumped from `stopped` back to `running` is announced on the hub so
+     * open sidebars/kanban boards update live.
+     */
+    relaunchSession: ({ params }) => relaunchSessionPayload(services, params.sessionId),
 
     listProjectPullRequests: async ({ params }) => {
       const project = requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
