@@ -87,10 +87,22 @@ async function request<N extends EndpointName>(
 
 // --- Projects ---------------------------------------------------------------
 
+const LIST_PROJECTS_PATH = formatPath("listProjects", {});
+
 export const apiListProjects = (): Promise<EndpointResponse<"listProjects">> => request("listProjects", {});
 
-export const apiRegisterProject = (body: RegisterProjectRequest): Promise<EndpointResponse<"registerProject">> =>
-  request("registerProject", {}, body);
+export const apiRegisterProject = async (
+  body: RegisterProjectRequest,
+): Promise<EndpointResponse<"registerProject">> => {
+  const project = await request("registerProject", {}, body);
+  // Issue #203: drop any in-flight projects-list GET that started before this
+  // POST completed — a reader joining it (sidebar reload, store refresh)
+  // would see the pre-registration list. The entry is normally dropped when
+  // it settles; deleting it here just makes the *next* read start fresh, so
+  // the #88 single-flight coalescing itself is untouched.
+  inflightGets.delete(LIST_PROJECTS_PATH);
+  return project;
+};
 
 export const apiUpdateProject = (
   projectId: string,

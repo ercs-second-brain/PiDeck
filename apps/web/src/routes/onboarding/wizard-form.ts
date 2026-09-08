@@ -10,6 +10,7 @@
 export type ProjectStep = "source" | "autoagent";
 import type { Project } from "@pideck/shared";
 import { apiRegisterProject } from "../../lib/api";
+import { boardStore } from "../../store/store";
 
 export type WizardForm = {
   /** Step 1: register an existing repo, or create a new (private-by-default) one. */
@@ -58,7 +59,12 @@ export function autoAgentFormError(form: WizardForm): string | null {
   return null;
 }
 
-/** Registers the project via the real `POST /api/projects` endpoint. */
+/**
+ * Registers the project via the real `POST /api/projects` endpoint. On
+ * success the returned project is seeded into the shared store (issue #203):
+ * without that, the store's project list stayed stale until the next poll
+ * and the new project rendered as "not found" until a page refresh.
+ */
 export async function registerProject(form: WizardForm): Promise<Project> {
   const trimmedName = form.repoName.trim();
   const settings = {
@@ -68,5 +74,7 @@ export async function registerProject(form: WizardForm): Promise<Project> {
     form.mode === "clone"
       ? { mode: "clone" as const, repoUrl: normalizeRepoUrl(form.repoUrl), ...(trimmedName ? { name: trimmedName } : {}), settings }
       : { mode: "create" as const, name: trimmedName, isPrivate: !form.isPublic, settings };
-  return apiRegisterProject(body);
+  const project = await apiRegisterProject(body);
+  boardStore.upsertProject(project);
+  return project;
 }

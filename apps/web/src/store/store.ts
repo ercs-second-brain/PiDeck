@@ -65,6 +65,8 @@ export interface BoardStore {
   loadProject(projectId: string): Promise<void>;
   /** Refreshes the project list (and any already-loaded project data). */
   refresh(): Promise<void>;
+  /** Seeds a just-registered project (issue #203): visible immediately, board load kicked. */
+  upsertProject(project: Project): void;
 }
 
 const INITIAL_STATE: AppState = {
@@ -93,6 +95,13 @@ function isTerminalEvent(event: { type: string }): event is TerminalServerEvent 
 // Pure event reduction — exported for unit tests
 // ---------------------------------------------------------------------------
 
+/** Insert-or-replace by id, immutably (the `project.updated` reducer and upsertProject). */
+function upsertProjectList(projects: Project[], project: Project): Project[] {
+  return projects.some((p) => p.id === project.id)
+    ? projects.map((p) => (p.id === project.id ? project : p))
+    : [...projects, project];
+}
+
 /** Applies one server `KanbanUpdateEvent` to the state, immutably. */
 export function applyKanbanEvent(state: AppState, event: KanbanUpdateEvent): AppState {
   switch (event.type) {
@@ -111,12 +120,8 @@ export function applyKanbanEvent(state: AppState, event: KanbanUpdateEvent): App
         boards: { ...state.boards, [event.projectId]: { ...board, columns, updatedAt: event.at } },
       };
     }
-    case "project.updated": {
-      const projects = state.projects.some((p) => p.id === event.project.id)
-        ? state.projects.map((p) => (p.id === event.project.id ? event.project : p))
-        : [...state.projects, event.project];
-      return { ...state, projects };
-    }
+    case "project.updated":
+      return { ...state, projects: upsertProjectList(state.projects, event.project) };
     case "worker.spawned": {
       const existing = state.workers[event.worker.projectId] ?? [];
       const workers = existing.some((w) => w.id === event.worker.id)
@@ -212,6 +217,18 @@ class LiveBoardStore implements BoardStore {
     // event hitting the same project share one fetch round instead of
     // stacking three requests each per caller.
     return shareInFlight(this.projectLoads, projectId, () => this.runProjectLoad(projectId));
+  }
+
+  /**
+   * Issue #203: a successful `POST /api/projects` used to leave this store's
+   * project list stale until the next poll, so the freshly registered project
+   * rendered as "not found". Seeds the project into the list immediately and
+   * reuses the single-flight `loadProject` so the board data follows without
+   * a refresh and without stacking duplicate fetches.
+   */
+  upsertProject(project: Project): void {
+    this.setState({ projects: upsertProjectList(this.state.projects, project) });
+    void this.loadProject(project.id).catch(() => {});
   }
 
   private async runProjectLoad(projectId: string): Promise<void> {

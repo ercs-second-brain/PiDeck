@@ -60,4 +60,18 @@ describe("shareInFlight", () => {
     expect(map.size).toBe(0);
     await expect(shareInFlight(map, "GET /x", async () => "fresh")).resolves.toBe("fresh");
   });
+
+  it("a superseded entry's settle does not evict its replacement (#203 invalidation)", async () => {
+    const map: InFlight<number> = new Map();
+    const stale = deferred<number>();
+    void shareInFlight(map, "GET /x", () => stale.promise); // pre-registration read, still pending
+    map.delete("GET /x"); // what the write-invalidation in api.ts does (#203)
+    const freshRun = vi.fn(async () => 2);
+    const fresh = shareInFlight(map, "GET /x", freshRun); // must start a fresh run
+    stale.resolve(1); // stale settles late — its cleanup must not evict `fresh`
+    const third = shareInFlight(map, "GET /x", vi.fn(async () => 3)); // joins the fresh run
+    await expect(fresh).resolves.toBe(2);
+    await expect(third).resolves.toBe(2);
+    expect(freshRun).toHaveBeenCalledTimes(1);
+  });
 });
