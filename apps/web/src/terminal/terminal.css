@@ -299,13 +299,19 @@
   color: var(--text-dim);
 }
 
-/* Issue #63: worker sessions indent beneath their project's orchestrator —
-   the orchestrator renders first, the worker list follows with a tree-line
-   connecting it to the row above. */
-.picker-workers {
-  margin: 4px 0 0 22px;
+/* Issue #63/#174: worker sessions indent beneath their project row (the
+   chat entry) as a child group with a tree-line connecting them to the row
+   above; the archived section (issue #64) shares the same child-group
+   guide so the whole subtree reads as one hierarchy. */
+.picker-workers,
+.picker-archived {
+  margin-left: 22px;
   padding-left: 10px;
   border-left: 2px solid var(--border);
+}
+
+.picker-workers {
+  margin-top: 4px;
 }
 
 /* Issue #64: a worker row is the session button + (active workers only) a
@@ -412,7 +418,8 @@
   opacity: 0.6;
 }
 
-/* Issue #64: collapsed per-project archive for terminated workers. */
+/* Issue #64/#174: collapsed per-project archive for terminated workers —
+   indented as a child group of the project row (see .picker-workers). */
 .picker-archived {
   margin-top: 6px;
 }
