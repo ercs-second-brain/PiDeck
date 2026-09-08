@@ -33,7 +33,7 @@ const workerSession: Session = {
   id: "sess-worker-1",
   projectId: "agentskiss",
   role: "worker",
-  tmuxSession: "agentskiss-agentskiss-worker-1",
+  tmuxSession: "pideck-agentskiss-worker-1",
   workerId: "worker-1",
   createdAt: "2025-01-01T00:00:00.000Z",
 };

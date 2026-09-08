@@ -1,4 +1,4 @@
-# Concept Brief: agentsKISS
+# Concept Brief: PiDeck
 
 **Description:**
 A simple, self-hosted AI coding agent orchestration platform that uses the pi coding agent as its coding agent. Installed with a single command on Mac, Windows, or Linux, it installs a daemon + web app and follows the orchestration patterns of agent-orchestrator (project list, kanban, issue/PR watching, CI watching, orchestrator agents spawning workers) — but radically simplified, with a webapp frontend instead of desktop/mobile apps.
@@ -35,4 +35,4 @@ A simple, self-hosted AI coding agent orchestration platform that uses the pi co
 
 ## Not clarified
 - "multi-agent stuff" excluded — recorded as-is; how that differs from orchestrator-spawning-workers isn't specified
-- Working name assumed to be **agentsKISS** (from the project/repo name) — confirmed by user
+- Working name assumed to be **PiDeck** (from the project/repo name) — confirmed by user

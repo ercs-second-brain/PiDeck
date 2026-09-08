@@ -1,24 +1,24 @@
-# agentskiss project
+# pideck project
 
 Inspect registered projects: repo URL, default branch, and automation settings.
 
 ## Syntax
 
 ```
-agentskiss project <subcommand> [args] [flags]
+pideck project <subcommand> [args] [flags]
 ```
 
 ## Subcommands
 
 ---
 
-### agentskiss project get
+### pideck project get
 
 Fetch one registered project.
 
 **Syntax:**
 ```
-agentskiss project get <id> [flags]
+pideck project get <id> [flags]
 ```
 
 **Flags:**
@@ -30,18 +30,18 @@ agentskiss project get <id> [flags]
 **Example:**
 
 ```bash
-agentskiss project get agentskiss --json
+pideck project get pideck --json
 ```
 
 ---
 
-### agentskiss project ls
+### pideck project ls
 
 List registered projects.
 
 **Syntax:**
 ```
-agentskiss project ls [flags]
+pideck project ls [flags]
 ```
 
 **Flags:**
@@ -53,7 +53,7 @@ agentskiss project ls [flags]
 **Example:**
 
 ```bash
-agentskiss project ls --json
+pideck project ls --json
 ```
 
 ## Daemon behavior

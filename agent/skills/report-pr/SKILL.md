@@ -1,6 +1,6 @@
 ---
 name: report-pr
-description: "Report an opened pull request to the agentskiss daemon from a worker session (agentskiss report-pr). Use right after creating a PR in a worker session so the PR lifecycle loop (CI, reviews, merge) tracks it."
+description: "Report an opened pull request to the pideck daemon from a worker session (pideck report-pr). Use right after creating a PR in a worker session so the PR lifecycle loop (CI, reviews, merge) tracks it."
 trigger: "A worker session just opened a pull request."
 ---
 
@@ -11,7 +11,7 @@ is yours so the PR lifecycle loop (CI status, review comments, merge) tracks
 it:
 
 ```bash
-agentskiss report-pr <pr-number>
+pideck report-pr <pr-number>
 ```
 
 - No flags and no session id: the CLI resolves your worker session from the

@@ -1,4 +1,4 @@
-/* agentsKISS web — plain CSS, no framework. Dark terminal-adjacent theme. */
+/* PiDeck web — plain CSS, no framework. Dark terminal-adjacent theme. */
 
 :root {
   --bg: #0f1216;
@@ -409,7 +409,7 @@ code {
 }
 
 /* Self-update banner (issue #55): quiet strip above the page title when a
-   newer upstream revision exists. Applying is `agentskiss update` (CLI). */
+   newer upstream revision exists. Applying is `pideck update` (CLI). */
 .update-banner {
   margin: 0 0 16px;
   padding: 10px 14px;

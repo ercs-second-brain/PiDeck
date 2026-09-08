@@ -33,7 +33,7 @@ const sessions: Session[] = [
     id: "sess-orch-1",
     projectId: "agentskiss",
     role: "orchestrator",
-    tmuxSession: "agentskiss-agentskiss-orchestrator-1",
+    tmuxSession: "pideck-agentskiss-orchestrator-1",
     workerId: null,
     createdAt: "2025-01-01T00:00:00.000Z",
   },

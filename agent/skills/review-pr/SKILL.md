@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: "Review a pull request and post the GitHub review (approve or request-changes with inline comments) as an agentskiss review agent. Use when you are spawned as a review agent for a PR, or asked to (re-)review one."
+description: "Review a pull request and post the GitHub review (approve or request-changes with inline comments) as a PiDeck review agent. Use when you are spawned as a review agent for a PR, or asked to (re-)review one."
 trigger: "A review agent session was spawned for a PR, or the pipeline asks for a re-review after new commits."
 ---
 
@@ -17,7 +17,7 @@ pushes, and stops when you approve or the PR merges.
 gh pr view <pr-number> --repo <owner/name> --json title,body,author,baseRefName,headRefName
 gh pr diff <pr-number> --repo <owner/name>
 # or, via the daemon (needs the project id from your prompt):
-agentskiss diff --project {{PROJECT_ID}} <pr-number>
+pideck diff --project {{PROJECT_ID}} <pr-number>
 ```
 
 Read the surrounding source files in the checkout when the diff alone is not

@@ -5,7 +5,7 @@ import { DaemonError } from "./DaemonError";
 /**
  * Persistent pi auth status banner (issue #57): shows which pi providers
  * have ready credentials and the configured startup model — and, when pi is
- * **not** ready, the actionable handoff (run `agentskiss onboard`, or launch
+ * **not** ready, the actionable handoff (run `pideck onboard`, or launch
  * pi and use /login on the daemon host) with a re-check button. Workers
  * spawned while unauthenticated hold at `spawning` with their initial
  * prompt queued until a provider is ready (issue #56), so an unready banner
@@ -69,7 +69,7 @@ function PiAuthReport({ auth, onRecheck }: { auth: PiAuth; onRecheck: () => void
         </p>
       ) : (
         <p className="error-note">
-          pi has no ready provider on the daemon host. Run <code>agentskiss onboard</code> there, or launch{" "}
+          pi has no ready provider on the daemon host. Run <code>pideck onboard</code> there, or launch{" "}
           <code>pi</code> and use <code>/login</code> to pick a provider and authenticate. Workers spawned before
           then stay at <em>spawning</em> with their initial prompt queued until auth is ready.
         </p>

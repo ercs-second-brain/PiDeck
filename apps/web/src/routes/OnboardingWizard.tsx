@@ -16,7 +16,7 @@ import { INITIAL_FORM, autoAgentFormError, registerProject, sourceFormError, typ
  * Flow (PRD: repo connection):
  * 1. pi auth check (daemon-side probe via `GET /api/pi-auth`, issue #57):
  *    workers cannot run unauthenticated, so this step must pass (re-verify
- *    after the handoff: `agentskiss onboard`, or pi /login) before the
+ *    after the handoff: `pideck onboard`, or pi /login) before the
  *    wizard proceeds.
  * 2. gh permission check (daemon-side probe via `GET /api/gh-auth`).
  * 3. Choose the repo source: clone from git OR create a new GitHub repo —
@@ -95,7 +95,7 @@ function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) =
 
   return (
     <div className="wizard">
-      <h1 className="page-title">Welcome to agentsKISS</h1>
+      <h1 className="page-title">Welcome to PiDeck</h1>
       <p className="empty">Connect a project to start orchestrating agents.</p>
       <StepNav step={step} />
       {step === "pi" && (
