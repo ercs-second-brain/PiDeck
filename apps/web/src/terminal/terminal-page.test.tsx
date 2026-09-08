@@ -121,6 +121,28 @@ describe("SessionPicker", () => {
     expect(html).toContain("picker-worker-row");
   });
 
+  it("renders the archived section as an indented child group after the workers (issue #174)", () => {
+    const archivedWorker: Worker = { ...workers[0]!, id: "worker-2", status: "archived" };
+    const secondWorkerSession: Session = { ...sessions[1]!, id: "sess-worker-2", tmuxSession: "pideck-agentskiss-worker-2", workerId: "worker-2" };
+    const html = renderPicker({
+      entries: [{ project, sessions: [...sessions, secondWorkerSession], workers: [...workers, archivedWorker] }],
+      defaultArchivedOpen: true,
+    });
+    // Hierarchy within one project section: row → workers → archived group.
+    const row = html.indexOf("picker-project-row");
+    const live = html.indexOf("picker-workers");
+    const archived = html.indexOf("picker-archived");
+    expect(row).toBeLessThan(live);
+    expect(live).toBeLessThan(archived);
+    // All three stay inside the same project section — the archived group is
+    // a child of the project, not a sibling section.
+    const sectionEnd = html.indexOf("</section>");
+    expect(archived).toBeLessThan(sectionEnd);
+    // Archived rows render inside the archived group's own list.
+    const archivedList = html.indexOf("picker-archived-list");
+    expect(archivedList).toBeLessThan(html.indexOf("pideck-agentskiss-worker-2"));
+  });
+
   it("keeps worker status badges and selection on indented worker rows (issue #63)", () => {
     const html = renderPicker({ selectedSessionId: "sess-worker-1" });
     // Worker rows keep the live status badge and the selected class.
@@ -143,37 +165,6 @@ describe("SessionPicker", () => {
     expect(html).not.toContain("No active sessions.");
   });
 
-  it("marks the project name as selected while its board is open (#173, the original #62 behavior)", () => {
-    const html = renderPicker({ selectedProjectId: project.id });
-    expect(html).toContain("picker-project-name selected");
-    expect(html).toContain("picker-project-chat");
-  });
-
-  it("marks the chat icon as selected while the orchestrator is attached (issue #173)", () => {
-    const html = renderPicker({ selectedSessionId: "sess-orch-1" });
-    expect(html).toContain("picker-project-chat selected");
-  });
-
-  it("marks the starting orchestrator as pending on the chat icon", () => {
-    const html = renderPicker({
-      entries: [{ project, sessions: [], workers: [] }],
-      startingProjectId: project.id,
-    });
-    expect(html).toContain("picker-project-chat pending");
-    expect(html).toContain("disabled");
-  });
-
-  it("marks the selected session", () => {
-    const html = renderPicker({ selectedSessionId: "sess-worker-1" });
-    const selected = html.match(/picker-session selected/g) ?? [];
-    expect(selected).toHaveLength(1);
-  });
-
-  it("marks the project whose board is open in the main pane", () => {
-    const html = renderPicker({ selectedProjectId: project.id });
-    expect(html).toContain("picker-project-name selected");
-  });
-
   it("shows the no-projects empty state pointing at the + button", () => {
     const html = renderPicker({ entries: [] });
     expect(html).toContain("No projects yet");
@@ -189,6 +180,24 @@ describe("SessionPicker", () => {
     const html = renderPicker({ entries: [], error: "connection refused" });
     expect(html).toContain("Daemon unreachable");
     expect(html).toContain("connection refused");
+  });
+});
+
+describe("SessionPicker (selection, issue #173)", () => {
+  it("marks the attached session and the open board", () => {
+    const html = renderPicker({ selectedSessionId: "sess-worker-1" });
+    expect(html.match(/picker-session selected/g)).toHaveLength(1);
+    const board = renderPicker({ selectedProjectId: project.id });
+    expect(board).toContain("picker-project-name selected");
+    expect(board).toContain("picker-project-chat");
+  });
+
+  it("marks the chat icon selected while the orchestrator is attached, pending while starting", () => {
+    const attached = renderPicker({ selectedSessionId: "sess-orch-1" });
+    expect(attached).toContain("picker-project-chat selected");
+    const starting = renderPicker({ entries: [{ project, sessions: [], workers: [] }], startingProjectId: project.id });
+    expect(starting).toContain("picker-project-chat pending");
+    expect(starting).toContain("disabled");
   });
 });
 
