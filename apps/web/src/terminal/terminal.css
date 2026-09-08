@@ -97,9 +97,9 @@
   margin-top: 18px;
 }
 
-/* Issue #108: the project row holds the name (= orchestrator entry) and
-   the kanban icon side by side. position: relative anchors the row's ⋯
-   context menu (issue #167). */
+/* Issue #108/#173: the project row holds the name (= kanban entry) and
+   the chat icon (= orchestrator entry) side by side. position: relative
+   anchors the row's ⋯ context menu (issue #167). */
 .picker-project-row {
   position: relative;
   display: flex;
@@ -153,10 +153,10 @@
   color: var(--text);
 }
 
-/* Issue #167: the ⋯ context-menu toggle shares the kanban icon's quiet
+/* Issue #167: the ⋯ context-menu toggle shares the chat icon's quiet
    chrome; the ::after ghost expands its hit target to ≥40px (issue #93
    touch conventions) without inflating the visual button. */
-.picker-project-board,
+.picker-project-chat,
 .picker-project-menu {
   flex: none;
   width: 26px;
@@ -182,8 +182,9 @@
   inset: -7px;
 }
 
-.picker-project-board:hover,
-.picker-project-board.selected,
+.picker-project-chat:hover,
+.picker-project-chat.selected,
+.picker-project-chat.pending,
 .picker-project-menu:hover {
   border-color: var(--accent);
   color: var(--accent);
@@ -744,7 +745,7 @@
     font-size: 15px;
   }
 
-  .picker-project-board,
+  .picker-project-chat,
   .picker-project-menu {
     width: 40px;
     height: 40px;

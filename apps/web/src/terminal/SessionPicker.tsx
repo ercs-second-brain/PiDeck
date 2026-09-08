@@ -1,10 +1,11 @@
 /**
  * Sidebar for the terminals page — the app's only navigation (issue #62):
- * every registered project is a top-level entry whose NAME is the
- * orchestrator entry (issue #108): clicking it attaches the project's
- * orchestrator terminal, starting it first when absent (#53's idempotent
- * ensure endpoint). A kanban icon in the same row opens the project's
- * board. Worker sessions are nested beneath the row (issue #63) with live
+ * every registered project is a top-level entry whose NAME opens that
+ * project's kanban board (issue #173, the original #62 behavior). A chat
+ * icon in the same row attaches the project's orchestrator terminal,
+ * starting it first when absent (#53's idempotent ensure endpoint — the
+ * #108 affordance moved off the name). Worker sessions are nested beneath
+ * the row (issue #63) with live
  * worker status badges, then a collapsed "Archived" section for terminated
  * workers (issue #64). Clicking a session
  * attaches its terminal; clicking an archived worker opens its read-only
@@ -31,9 +32,9 @@ export interface ProjectEntry {
 }
 
 /**
- * One project's sidebar section: the project row (name = orchestrator
- * entry + kanban icon, issue #108), its nested live worker rows, and the
- * collapsed archived section (issue #64).
+ * One project's sidebar section: the project row (name = kanban entry +
+ * chat icon = orchestrator entry, issue #173), its nested live worker rows,
+ * and the collapsed archived section (issue #64).
  * Pure rendering — interaction state (termination confirmation, archived
  * expansion) comes in through props so the picker stays a thin shell.
  */
@@ -99,8 +100,8 @@ function ProjectSection(props: {
         projectName={project.name}
         projectId={project.id}
         hasOrchestrator={orchestrator !== undefined}
-        orchestratorSelected={orchestrator !== undefined && orchestrator.id === props.selectedSessionId}
         boardSelected={project.id === props.selectedProjectId}
+        chatSelected={orchestrator !== undefined && orchestrator.id === props.selectedSessionId}
         starting={starting}
         collapsed={props.collapsed}
         menuOpen={props.openMenuProjectId === project.id}
@@ -126,7 +127,7 @@ function ProjectSection(props: {
   );
 }
 
-/** Sidebar: project name = orchestrator entry (#108), workers nested beneath. */
+/** Sidebar: project name opens the board, chat icon the orchestrator (#173), workers nested beneath. */
 export function SessionPicker(props: {
   entries: ProjectEntry[];
   error: string | null;
@@ -142,7 +143,7 @@ export function SessionPicker(props: {
   /** Seeds the collapsed-project set (tests; live state comes from localStorage, issue #114). */
   defaultCollapsedProjects?: Set<string>;
   onSelectSession: (sessionId: string) => void;
-  /** Opens the project's kanban board in the main pane. */
+  /** Opens the project's kanban board in the main pane (the project-name click, #173). */
   onSelectProject: (projectId: string) => void;
   /** Opens the project's settings page in the main pane (issue #167). */
   onOpenSettings: (projectId: string) => void;
@@ -150,7 +151,7 @@ export function SessionPicker(props: {
   onSelectAllProjects: () => void;
   /** Opens the project onboarding wizard (the "+" button). */
   onStartOnboarding: () => void;
-  /** Starts (or attaches to) the project's orchestrator — the project-name click (#108, #53). */
+  /** Starts (or attaches to) the project's orchestrator — the chat-icon click (#173, #53). */
   onStartOrchestrator: (projectId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
 }) {

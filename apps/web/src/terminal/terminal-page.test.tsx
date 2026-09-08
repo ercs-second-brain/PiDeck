@@ -1,8 +1,9 @@
 /**
  * Tests for the terminal sidebar (SessionPicker, issue #62): the "Projects"
- * header with the "+" onboarding button, per-project IA (project rows open
- * boards; orchestrator nested above workers, start-orchestrator affordance
- * when absent), role/worker badges, selection state, and empty/error
+ * header with the "+" onboarding button, per-project IA (the project name
+ * opens the kanban board and the chat icon attaches/starts the orchestrator,
+ * issue #173; workers nested beneath, start affordance when absent),
+ * role/worker badges, selection state, and empty/error
  * handling. The sidebar is pure, so it is exercised directly without xterm
  * or effects.
  */
@@ -89,13 +90,16 @@ describe("SessionPicker", () => {
     expect(html).toContain("picker-add");
   });
 
-  it("renders the project name as the orchestrator entry with a kanban icon (issue #108)", () => {
+  it("renders the project name as the kanban entry with a chat icon (issue #173)", () => {
     const html = renderPicker();
     expect(html).toContain("picker-project-row");
     expect(html).toContain("picker-project-name");
     expect(html).toContain("agentsKISS");
-    expect(html).toContain("picker-project-board");
+    // Issue #173: the row icon is a chat bubble attaching/starting the
+    // orchestrator's pi terminal (the #53 affordance).
+    expect(html).toContain("picker-project-chat");
     expect(html).toContain("Attach agentsKISS&#x27;s orchestrator terminal");
+    expect(html).toContain("Open agentsKISS&#x27;s kanban board");
   });
 
   it("lists worker sessions with role badges; the orchestrator row is gone (issue #108)", () => {
@@ -125,7 +129,7 @@ describe("SessionPicker", () => {
     expect(html).toContain("role-worker");
   });
 
-  it("uses the project-name click to start the orchestrator when absent (issue #108)", () => {
+  it("uses the chat icon to start the orchestrator when absent (issue #173)", () => {
     const withoutOrchestrator = renderPicker({
       entries: [{ project, sessions: sessions.filter((s) => s.role === "worker"), workers }],
     });
@@ -133,18 +137,29 @@ describe("SessionPicker", () => {
     expect(withoutOrchestrator).toContain("Start agentsKISS&#x27;s orchestrator");
   });
 
-  it("offers the orchestrator start through the project name for projects with no sessions", () => {
+  it("offers the orchestrator start through the chat icon for projects with no sessions", () => {
     const html = renderPicker({ entries: [{ project, sessions: [], workers: [] }] });
     expect(html).toContain("Start agentsKISS&#x27;s orchestrator");
     expect(html).not.toContain("No active sessions.");
   });
 
-  it("marks the starting orchestrator as pending", () => {
+  it("marks the project name as selected while its board is open (#173, the original #62 behavior)", () => {
+    const html = renderPicker({ selectedProjectId: project.id });
+    expect(html).toContain("picker-project-name selected");
+    expect(html).toContain("picker-project-chat");
+  });
+
+  it("marks the chat icon as selected while the orchestrator is attached (issue #173)", () => {
+    const html = renderPicker({ selectedSessionId: "sess-orch-1" });
+    expect(html).toContain("picker-project-chat selected");
+  });
+
+  it("marks the starting orchestrator as pending on the chat icon", () => {
     const html = renderPicker({
       entries: [{ project, sessions: [], workers: [] }],
       startingProjectId: project.id,
     });
-    expect(html).toContain("Starting…");
+    expect(html).toContain("picker-project-chat pending");
     expect(html).toContain("disabled");
   });
 
@@ -156,11 +171,6 @@ describe("SessionPicker", () => {
 
   it("marks the project whose board is open in the main pane", () => {
     const html = renderPicker({ selectedProjectId: project.id });
-    expect(html).toContain("picker-project-board selected");
-  });
-
-  it("marks the project name as selected while its orchestrator is attached (issue #108)", () => {
-    const html = renderPicker({ selectedSessionId: "sess-orch-1" });
     expect(html).toContain("picker-project-name selected");
   });
 
@@ -206,10 +216,10 @@ describe("SessionPicker (collapsible projects, issue #114)", () => {
     expect(html).not.toContain("picker-archived");
   });
 
-  it("keeps the project row itself (name + board icon) visible when collapsed", () => {
+  it("keeps the project row itself (name + chat icon) visible when collapsed", () => {
     const html = renderPicker({ defaultCollapsedProjects: new Set([project.id]) });
     expect(html).toContain("agentsKISS");
-    expect(html).toContain("picker-project-board");
+    expect(html).toContain("picker-project-chat");
   });
 });
 
