@@ -149,6 +149,19 @@ describe("permission flow (issue #180)", () => {
     expect(renderToString(<PermissionRequest state="granted" onEnable={() => {}} />)).toBe("");
   });
 
+  it("reports unsupported on insecure origins even when the API exists (plain HTTP, issue #204)", () => {
+    setNotification({ permission: "denied", requestPermission: async () => "denied" });
+    const g = globalThis as { window?: { isSecureContext: boolean } };
+    g.window = { isSecureContext: false };
+    expect(permissionState()).toBe("unsupported");
+    expect(renderToString(<PermissionRequest state={permissionState()} onEnable={() => {}} />)).toBe("");
+    // Secure contexts keep the normal flow.
+    g.window = { isSecureContext: true };
+    expect(permissionState()).toBe("denied");
+    delete g.window;
+    setNotification(undefined);
+  });
+
   it("requestNotificationPermission asks only from the default state", async () => {
     setNotification(undefined);
     await expect(requestNotificationPermission()).resolves.toBe("unsupported");
