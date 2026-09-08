@@ -23,12 +23,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import type { DaemonServices } from "../api/context.js";
+import type { Project, Session } from "@pideck/shared";
 import type { ProjectService } from "../api/projects.js";
 import { atomicWrite } from "../json-store.js";
 import { ProjectLayout } from "../sessions/layout.js";
 import { shQuote, type SessionManager } from "../sessions/manager.js";
-import type { Project, Session } from "@pideck/shared";
 import type { Tmux } from "../sessions/tmux.js";
 
 import { findAgentPromptPath, renderOrchestratorPrompt } from "./prompt.js";
@@ -162,30 +161,4 @@ export class OrchestratorBootstrap {
     atomicWrite(file, content);
     return file;
   }
-}
-
-/**
- * Boot hook for the daemon entry point (`apps/daemon/src/index.ts`):
- * ensures one running orchestrator per registered project. Call once after
- * startup session reconciliation so resurrected orchestrator panes get
- * their agent relaunched.
- *
- * `layout` defaults to the state-dir layout derived from `PD_HOME`
- * (the daemon entry point uses the same default); tests inject the exact
- * {@link ProjectLayout} of their context.
- */
-export async function ensureProjectOrchestrators(
-  services: DaemonServices,
-  options: Partial<Pick<OrchestratorBootstrapDeps, "layout" | "promptPath" | "isAgentRunning" | "onError">> = {},
-): Promise<Session[]> {
-  const bootstrap = new OrchestratorBootstrap({
-    sessions: services.sessions,
-    tmux: services.tmux,
-    projects: services.projects,
-    layout: options.layout ?? new ProjectLayout(),
-    promptPath: options.promptPath,
-    isAgentRunning: options.isAgentRunning,
-    onError: options.onError,
-  });
-  return bootstrap.ensureAll();
 }

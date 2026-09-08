@@ -25,6 +25,7 @@ import {
   updateSettingsRequestSchema,
   workerSchema,
   type EndpointName,
+  type Project,
 } from "@pideck/shared";
 
 import { HttpError, Router } from "./router.js";
@@ -217,12 +218,30 @@ export function countActiveWorkers(services: DaemonServices): number {
 // The webapp contract handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * Registers a project and ends the creation path with the orchestrator
+ * persona running (issue #166): the daemon startup sweep only covers
+ * projects known at boot, so a mid-run registration (the webapp wizard's
+ * `POST /api/projects`) bootstraps its orchestrator here. Best-effort: the
+ * project is registered; a bootstrap failure (e.g. tmux trouble) is logged,
+ * never fails the registration.
+ */
+async function registerAndBootstrap(services: DaemonServices, body: unknown): Promise<Project> {
+  const project = await services.projects.register(registerProjectRequestSchema.parse(body));
+  try {
+    await services.orchestratorBootstrap.ensureForProject(project);
+  } catch (err) {
+    console.error(`[daemon] orchestrator bootstrap failed for project "${project.id}":`, err);
+  }
+  return project;
+}
+
 /** Builds the handler registry for every entry of the shared endpoint map. */
 export function contractHandlers(services: DaemonServices): EndpointRegistry {
   return {
     listProjects: () => services.projects.list(),
 
-    registerProject: ({ body }) => services.projects.register(registerProjectRequestSchema.parse(body)),
+    registerProject: ({ body }) => registerAndBootstrap(services, body),
 
     getProject: ({ params }) =>
       requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`),

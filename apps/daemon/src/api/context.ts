@@ -14,6 +14,7 @@ import { GhClient } from "../github/index.js";
 import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
 import { GithubAutomation, watcherOptionsFromEnv } from "../pipeline/wiring.js";
+import { OrchestratorBootstrap } from "../orchestrator/bootstrap.js";
 import { ProjectLayout, defaultStateDir } from "../sessions/layout.js";
 import { SessionManager } from "../sessions/manager.js";
 import { SessionRegistry } from "../sessions/registry.js";
@@ -37,6 +38,12 @@ export interface DaemonServices {
   /** Batched + TTL-cached open-PR listing shared by kanban/diffs (issue #40). */
   pullListing: PullListingService;
   sessions: SessionManager;
+  /**
+   * Orchestrator bootstrap (issue #12): ensures every registered project's
+   * orchestrator pane runs pi with the persona — driven at daemon startup
+   * and after each project registration (issue #166).
+   */
+  orchestratorBootstrap: OrchestratorBootstrap;
   hub: WsHub;
   /** Shared tmux runner (the terminal bridge streams through the same one). */
   tmux: Tmux;
@@ -126,23 +133,23 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const projects = new ProjectService({
     store: projectStore,
     layout,
-    // agent/README.md: daemon-wide auto-agent username + worker concurrency
-    // are the defaults seeded into newly registered projects.
+    // agent/README.md: daemon-wide defaults seed new projects.
     defaultSettings: () => ({
       autoAgentUsername: settings.get().autoAgentUsername,
       workerConcurrency: settings.get().defaultWorkerConcurrency,
     }),
-    // Projects registered/updated/deleted while the daemon runs get their
-    // watchers/pipelines re-synced (issue #46 wiring).
+    // Mid-run register/update/delete → watcher/pipeline resync (issue #46).
     onChange: () => automationRef.current?.resync(),
     ...(options.git !== undefined ? { git: options.git } : {}),
     gh,
   });
   const hub = new WsHub();
 
-  // pi auth readiness (issue #57) + the worker initial-prompt gate (issue
-  // #56): the gate polls through the same probe so queued prompts are
-  // delivered as soon as credentials appear.
+  // Orchestrator bootstrap (#12/#166): shared by the startup sweep and the registration handler.
+  const orchestratorBootstrap = new OrchestratorBootstrap({ sessions, tmux, projects, layout });
+
+  // pi auth readiness (issue #57) + worker initial-prompt gate (issue #56): the
+  // gate polls through the same probe so queued prompts deliver when ready.
   const piAuth = new PiAuthProbe({
     ...(options.piRunner !== undefined ? { run: options.piRunner } : {}),
     ...(options.piReady !== undefined ? { readyOverride: options.piReady } : {}),
@@ -205,6 +212,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     diffs,
     pullListing,
     sessions,
+    orchestratorBootstrap,
     hub,
     tmux,
     registry,
