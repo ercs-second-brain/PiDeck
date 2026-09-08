@@ -22,6 +22,7 @@ describe("SettingsStore", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      browserMergeNotifications: false,
     });
     store.update({ autoAgentUsername: "auto-agent" });
     expect(store.get()).toEqual({
@@ -31,6 +32,7 @@ describe("SettingsStore", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      browserMergeNotifications: false,
     });
 
     const reloaded = new SettingsStore(dir);
@@ -47,6 +49,14 @@ describe("SettingsStore", () => {
     expect(reloaded.get().autoFixReviewComments).toBe(true);
   });
 
+  it("defaults the merged-PR browser notification OFF and persists the opt-in (issue #111)", () => {
+    const dir = testDaemon().stateDir;
+    const store = new SettingsStore(dir);
+    expect(store.get().browserMergeNotifications).toBe(false);
+    store.update({ browserMergeNotifications: true });
+    expect(new SettingsStore(dir).get().browserMergeNotifications).toBe(true);
+  });
+
   it("fills the worker-pipeline toggles into a pre-#106 settings file (upgrade path)", () => {
     const dir = testDaemon().stateDir;
     mkdirSync(dir, { recursive: true });
@@ -59,6 +69,7 @@ describe("SettingsStore", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      browserMergeNotifications: false,
     });
   });
 

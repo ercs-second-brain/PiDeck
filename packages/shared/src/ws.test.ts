@@ -126,6 +126,21 @@ describe("websocket: kanban updates", () => {
   });
 });
 
+describe("websocket: user notifications (issue #111)", () => {
+  it("parses the merged-PR notification event", () => {
+    const merged = wsServerEventSchema.parse({
+      type: "notification.pr.merged",
+      at: NOW,
+      projectId: "p",
+      prNumber: 42,
+      title: "Add the thing",
+    });
+    expect(merged.type).toBe("notification.pr.merged");
+    expect(wsServerEventSchema.safeParse({ type: "notification.pr.merged", at: NOW, projectId: "p", prNumber: 0, title: "x" }).success).toBe(false);
+    expect(wsServerEventSchema.safeParse({ type: "notification.pr.exploded", at: NOW }).success).toBe(false);
+  });
+});
+
 describe("websocket: GitHub watcher events", () => {
   it("parses GitHub watcher events (issue created/assigned, PR opened/updated)", () => {
     const issue = {

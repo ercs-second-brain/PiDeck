@@ -80,6 +80,14 @@ export const settingsSchema = z.object({
   autoFixReviewComments: z.boolean().default(true),
   /** Spawn an auto review agent on green, unapproved PRs (issue #107). */
   autoReview: z.boolean().default(true),
+  /**
+   * Browser Notification API for merged PRs (issue #111, mirrored from
+   * agent-orchestrator's notification behavior). Default **off** — the
+   * in-app toast always shows; this opt-in additionally fires an OS-level
+   * browser notification. The webapp requests the permission when the
+   * toggle is first enabled.
+   */
+  browserMergeNotifications: z.boolean().default(false),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

@@ -1,8 +1,9 @@
 /**
  * Daemon-wide settings (`<stateDir>/settings.json`, all projects): default
  * auto-agent username, default worker concurrency applied to new projects,
- * and the worker-pipeline toggles that gate the PR loop's always-on
- * behaviors (issue #106, default ON).
+ * the worker-pipeline toggles that gate the PR loop's always-on behaviors
+ * (issue #106, default ON), and the merged-PR browser-notification toggle
+ * (issue #111, default OFF).
  */
 
 import { z } from "zod";
@@ -19,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoFixCi: true,
   autoFixReviewComments: true,
   autoReview: true,
+  browserMergeNotifications: false,
 };
 
 export class SettingsStore {
@@ -35,7 +37,8 @@ export class SettingsStore {
       { ...DEFAULT_SETTINGS, version: 1 as const },
     );
     // Settings written before #106 lack the pipeline toggles; the schema
-    // defaults fill them in (all ON) so an old file upgrades on load.
+    // defaults fill them in (all ON) so an old file upgrades on load. The
+    // #111 browser-notification toggle fills in OFF the same way.
     this.current = {
       autoAgentUsername: loaded.autoAgentUsername,
       defaultWorkerConcurrency: loaded.defaultWorkerConcurrency,
@@ -43,6 +46,7 @@ export class SettingsStore {
       autoFixCi: loaded.autoFixCi,
       autoFixReviewComments: loaded.autoFixReviewComments,
       autoReview: loaded.autoReview,
+      browserMergeNotifications: loaded.browserMergeNotifications,
     };
   }
 

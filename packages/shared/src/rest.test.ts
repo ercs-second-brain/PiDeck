@@ -73,6 +73,7 @@ describe("REST endpoint map", () => {
     expect(settings.terminateOnMerge).toBe(true);
     expect(settings.autoFixCi).toBe(true);
     expect(settings.autoFixReviewComments).toBe(true);
+    expect(settings.browserMergeNotifications).toBe(false);
     expect(settingsSchema.safeParse({ autoAgentUsername: "eric", defaultWorkerConcurrency: 0 }).success).toBe(false);
     expect(settingsSchema.parse({ autoAgentUsername: null, defaultWorkerConcurrency: 1, autoFixCi: false }).autoFixCi).toBe(false);
   });

@@ -9,6 +9,11 @@
  *   limit exhausted, PR closed without merging, owning worker lost). The
  *   API layer decides how to present failure; the card itself keeps its
  *   last known column.
+ * - `notification.pr.merged` — user-facing merged-PR notification
+ *   (issue #111, agent-orchestrator's `pr_merged` kind): the wiring
+ *   forwards it onto the WS hub as a shared `notification.pr.merged` event
+ *   so the webapp can toast it. Emitted once per merge (the PR drops out
+ *   of the active list as `done`).
  */
 
 import { z } from "zod";
@@ -31,6 +36,14 @@ export const prPipelineEventSchema = z.discriminatedUnion("type", [
     card: kanbanCardSchema,
     /** Machine-readable failure reason (e.g. `fix_attempt_limit_exhausted`). */
     reason: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("notification.pr.merged"),
+    at: isoDateTimeSchema,
+    projectId: idSchema,
+    prNumber: refNumberSchema,
+    /** PR title at merge time, for the webapp toast. */
+    title: z.string().min(1),
   }),
 ]);
 

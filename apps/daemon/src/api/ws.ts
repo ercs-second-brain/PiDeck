@@ -16,7 +16,7 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import { kanbanUpdateEventSchema, terminalClientMessageSchema, type KanbanUpdateEvent } from "@agentskiss/shared";
+import { terminalClientMessageSchema, wsServerEventSchema, type WsServerEvent } from "@agentskiss/shared";
 
 import { monitorWebSocket } from "../ws-heartbeat.js";
 
@@ -79,9 +79,9 @@ export class WsHub {
     return this.clients.size;
   }
 
-  /** Broadcasts a kanban/project/worker update to every connected client. */
-  broadcast(event: KanbanUpdateEvent): void {
-    const payload = JSON.stringify(kanbanUpdateEventSchema.parse(event));
+  /** Broadcasts a kanban/project/worker update or notification (issue #111) to every connected client. */
+  broadcast(event: WsServerEvent): void {
+    const payload = JSON.stringify(wsServerEventSchema.parse(event));
     for (const socket of this.clients) {
       if (socket.readyState === WebSocket.OPEN) {
         try {

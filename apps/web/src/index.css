@@ -1038,6 +1038,47 @@ code {
   text-decoration: underline;
 }
 
+/* --- Merged-PR toasts (issue #111) ------------------------------------------- */
+
+/* Bottom-right ephemeral toast stack, one row per merged worker PR. Sits
+   under the modals (modal-overlay z-50, update modal z-60). */
+.toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 340px;
+}
+
+.toast {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--green);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+.toast strong {
+  color: var(--green);
+}
+
+.toast-title {
+  color: var(--text-dim);
+}
+
 /* --- Onboarding modal (issue #62) ------------------------------------------ */
 
 .modal-overlay {

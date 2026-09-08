@@ -35,9 +35,15 @@ describe("PullRequestPipeline: merge", () => {
     const mergeCards = events.filter((e) => e.type === "kanban.pr.card");
     expect(mergeCards).toHaveLength(1);
     expect(mergeCards[0]).toMatchObject({ card: { column: "done" } });
+    // Merged-PR notification (issue #111): exactly one, alongside the card.
+    const notifications = events.filter((e) => e.type === "notification.pr.merged");
+    expect(notifications).toEqual([
+      { type: "notification.pr.merged", at: expect.any(String), projectId: PROJECT, prNumber: 12, title: expect.any(String) },
+    ]);
     expect(h.tracker.get(PROJECT, 12)!.state).toBe("done");
     expect(h.sessions.archived).toEqual(["worker-1"]);
     expect(h.sessions.statuses.at(-1)).toMatchObject({ status: "archived" });
+    // The merge settles once: no re-emitted notification on later polls.
     expect(await h.poll()).toEqual([]);
   });
 
@@ -50,9 +56,11 @@ describe("PullRequestPipeline: merge", () => {
 
     h.prs.get(12)!.pull = restPull(12, { merged: true, closed: true });
     h.openList.length = 0;
-    await h.poll();
+    const events = await h.poll();
     expect(h.sessions.archived).toEqual([]);
     expect(h.tracker.get(PROJECT, 12)!.state).toBe("done");
     expect(h.sessions.statuses.at(-1)).toMatchObject({ status: "done" });
+    // The notification is toggle-independent: it fires on the merge itself.
+    expect(events.some((e) => e.type === "notification.pr.merged")).toBe(true);
   });
 });

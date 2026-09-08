@@ -220,6 +220,15 @@ export class PullRequestPipeline {
     if (pr.state === "merged") {
       await this.settleMerged(tracked);
       this.pushCard(events, tracked, pr, tracked.updatedAt);
+      // Merged-PR notification (issue #111): the webapp toasts "<project>
+      // #<n> merged" so the user learns the outcome without watching.
+      events.push({
+        type: "notification.pr.merged",
+        at: tracked.updatedAt,
+        projectId: tracked.projectId,
+        prNumber: tracked.prNumber,
+        title: pr.title,
+      });
       return events;
     }
     if (pr.state === "closed") {
