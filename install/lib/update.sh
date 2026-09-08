@@ -210,44 +210,60 @@ update_report() {
 # _node_version_ge moved to common.sh (issue #202: the pi engines check in
 # assets.sh needs it too).
 
-# refresh_node_runtime — install the pinned private Node when the private
+# refresh_node_runtime — install the pinned private Node when the active
 # runtime is older than $PD_NODE_VERSION (issue #164 follow-up: the pin
 # advances with updates, and pi 0.75+ refuses Node < 22.19 — without this an
 # updated install keeps booting on a stale runtime, as observed on the dev
-# server). Uses deps.sh's tarball installer (idempotent: it skips the
-# download when the pinned version already sits in $PD_HOME/opt) and
-# repoints the env file's PD_NODE at the refreshed binary. A system node is
-# never touched — only installs with a private runtime ($PD_HOME/opt) are
-# refreshed; system-node users re-run the installer for a node bump.
+# server) OR below pi's Node floor ($PD_NODE_MIN_VERSION — pi's vendored
+# undici decodes zstd responses with zlib.createZstdDecompress, which only
+# exists on newer Node; observed live: an install whose PD_NODE resolved to
+# a SYSTEM node 22.14 kept crashing every pi session with
+# `zlib.createZstdDecompress is not a function` even though the source was
+# current, because this refresh used to skip system nodes entirely). Uses
+# deps.sh's tarball installer (idempotent: it skips the download when the
+# pinned version already sits in $PD_HOME/opt) and repoints the env file's
+# PD_NODE at the refreshed binary. A system node at or above the floor is
+# still never touched; a system node BELOW the floor is fixed exactly like a
+# stale private one — install the private runtime and repoint PD_NODE.
 refresh_node_runtime() {
   _rn_cur="${PD_NODE:-}"
   if [ ! -x "$_rn_cur" ]; then
     _rn_cur=$(command -v node 2>/dev/null) || _rn_cur=
   fi
-  case "$_rn_cur" in
-    "$PD_HOME"/opt/*) ;;
-    *) return 0 # system node (or none) — updates never touch it
-  esac
-  _rn_ver=$("$_rn_cur" -v 2>/dev/null) || return 0 # vMAJ.MIN.PATCH
-  # Two floors: the moving pin AND pi's Node floor (PD_NODE_MIN_VERSION,
-  # install/lib/common.sh — pi's vendored undici decodes zstd responses with
-  # zlib.createZstdDecompress, which only exists on Node >= 22.15). The pin
-  # alone is not enough on a real box whose installed lib still pins a
-  # pre-floor Node: this refresh runs BEFORE refresh_installed_layer, so the
-  # first apply would compare against the stale pin and skip a refresh the
-  # floor still requires — leaving the daemon on a node that crashes every
-  # pi session. When the floor is unknown (pre-floor common.sh), fall back
-  # to pin-only behavior.
-  _rn_floor=${PD_NODE_MIN_VERSION:-$PD_NODE_VERSION}
-  if _node_version_ge "${_rn_ver#v}" "$PD_NODE_VERSION" &&
-    _node_version_ge "${_rn_ver#v}" "$_rn_floor"; then
-    return 0 # private node meets both the pin and the pi floor
+  _rn_ver=
+  if [ -n "$_rn_cur" ]; then
+    _rn_ver=$("$_rn_cur" -v 2>/dev/null) || _rn_ver= # vMAJ.MIN.PATCH
   fi
+  _rn_private=
+  case "$_rn_cur" in
+    "$PD_HOME"/opt/*) _rn_private=1 ;;
+  esac
+  # Two floors: the moving pin AND pi's Node floor (PD_NODE_MIN_VERSION,
+  # install/lib/common.sh). The pin alone is not enough on a real box whose
+  # installed lib still pins a pre-floor Node: this refresh runs BEFORE
+  # refresh_installed_layer, so the first apply would compare against the
+  # stale pin and skip a refresh the floor still requires — leaving the
+  # daemon on a node that crashes every pi session. When the floor is
+  # unknown (pre-floor common.sh), fall back to pin-only behavior.
+  _rn_floor=${PD_NODE_MIN_VERSION:-$PD_NODE_VERSION}
+  if [ -n "$_rn_ver" ] && _node_version_ge "${_rn_ver#v}" "$_rn_floor"; then
+    # The active node meets pi's floor — only a private node below the pin
+    # still refreshes here (#224); a system node is never touched.
+    if [ -z "$_rn_private" ]; then
+      return 0 # system node at/above the floor — updates never touch it
+    fi
+    if _node_version_ge "${_rn_ver#v}" "$PD_NODE_VERSION"; then
+      return 0 # private node meets both the pin and the pi floor
+    fi
+    # private node above the floor but below the pin: refresh to the pin
+  fi
+  # Below the pi floor (private OR system), below the pin (private), or
+  # unresolvable (no node at all): install the pinned private runtime.
   if [ ! -f "$PD_LIB/deps.sh" ]; then
     warn "$PD_LIB/deps.sh missing — cannot refresh the Node runtime (still on $_rn_ver)"
     return 0
   fi
-  step "refreshing the Node runtime ($_rn_ver -> v$PD_NODE_VERSION)"
+  step "refreshing the Node runtime (${_rn_ver:-none} -> v$PD_NODE_VERSION)"
   # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
   . "$PD_LIB/deps.sh"
   _install_node_tarball

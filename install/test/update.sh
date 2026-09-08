@@ -255,6 +255,51 @@ check_grep 'the floor refresh installs the pinned node' 'NODE refresh' "$(cat "$
 check_grep 'the floor refresh repoints the active node' "node=$NEW_NODE_DIR/node" "$out"
 check_grep 'the floor refresh repoints env PD_NODE' "PD_NODE=\"$NEW_NODE_DIR/node\"" "$(cat "$PD_HOME/env")"
 
+# --- system node below the pi floor on an up-to-date apply -------------------
+# The real-box bug behind this fix: refresh_node_runtime used to return early
+# for ANY node outside $PD_HOME/opt ("system node — updates never touch it"),
+# so an install whose PD_NODE resolved to a system node 22.14 kept crashing
+# every pi session (`zlib.createZstdDecompress is not a function`) no matter
+# how current the source was — and `pideck update` reported "up to date"
+# without ever fixing it. A system node BELOW PD_NODE_MIN_VERSION must be
+# treated exactly like a stale private node: install the pinned private
+# runtime, repoint PD_NODE in env, reinstall pi under it, restart — even on
+# the fully-current (UPDATE_IDLE) path where the fetch/build/layer refresh
+# are all skipped.
+SYSNODE_OLD_DIR="$tmp/sysnode-v22.14.0/bin" # outside $PD_HOME/opt on purpose
+mkdir -p "$SYSNODE_OLD_DIR"
+printf '#!/bin/sh\n[ "$1" = -v ] && printf "v22.14.0\\n"\n' > "$SYSNODE_OLD_DIR/node"
+chmod +x "$SYSNODE_OLD_DIR/node"
+set_pd_node "$SYSNODE_OLD_DIR/node"
+: > "$ORDER_LOG"
+rm -f "$PD_HOME/var/update-state.json"
+
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
+check_eq 'up-to-date apply with a below-floor system node exits 0' '0' "$rc"
+check_eq 'below-floor system node is replaced by the private runtime + pi reinstall' \
+  'NODE refresh
+PI install install -g --ignore-scripts @earendil-works/pi-coding-agent' "$(cat "$ORDER_LOG")"
+check_grep 'below-floor system-node apply restarts the daemon' 'SVC restart' "$out"
+check_grep 'below-floor system-node apply repoints env PD_NODE' "PD_NODE=\"$NEW_NODE_DIR/node\"" "$(cat "$PD_HOME/env")"
+check_grep 'below-floor system-node apply ends with done progress' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
+
+# A system node AT or ABOVE the floor (even below the pin) is still untouched:
+# updates rescue a broken system node, they never replace a healthy one.
+SYSNODE_OK_DIR="$tmp/sysnode-v22.20.0/bin"
+mkdir -p "$SYSNODE_OK_DIR"
+printf '#!/bin/sh\n[ "$1" = -v ] && printf "v22.20.0\\n"\n' > "$SYSNODE_OK_DIR/node"
+chmod +x "$SYSNODE_OK_DIR/node"
+set_pd_node "$SYSNODE_OK_DIR/node"
+: > "$ORDER_LOG"
+rm -f "$PD_HOME/var/update-state.json"
+
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
+check_eq 'up-to-date apply with a healthy system node exits 0' '0' "$rc"
+check_grep 'healthy system node reports up to date (idle exit)' 'up to date' "$out"
+check_no_grep 'healthy system node is never replaced' 'NODE refresh' "$(cat "$ORDER_LOG" 2>/dev/null)"
+check_grep 'healthy system node keeps its env PD_NODE' "PD_NODE=\"$SYSNODE_OK_DIR/node\"" "$(cat "$PD_HOME/env")"
+check_no_grep 'healthy system node apply does not restart the daemon' 'SVC restart' "$out"
+
 # --- apply path: outdated pi on a current install (issue #223) ---------------
 # With the node current, the apply still checks the installed pi version vs
 # npm latest and reinstalls when newer (logged old -> new), then restarts.
