@@ -32,6 +32,7 @@ import { enrichPullRequest, fetchReviewComments, listPullRequests, mapRestPull }
 import { DEFAULT_POLL_INTERVAL_MS, PollLoop, type GithubWatcherEvent } from "../../github/watch.js";
 import type { PRPipelineEvent, PRPipelineEventEmitter } from "./events.js";
 import { driveLoop } from "./drive.js";
+import { archiveReviewAgent } from "./review.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import { prCardId, PRTracker, type TrackedPR } from "./tracker.js";
 
@@ -53,10 +54,21 @@ export interface PRSessionControl {
   sendKeys(sessionId: string, keys: string, options?: { enter?: boolean }): Promise<void>;
   /**
    * Terminates a worker (kills its tmux pane, marks `archived`) — used when
-   * its PR merges and `terminateOnMerge` is on (issue #106). Optional: the
+   * its PR merges and `terminateOnMerge` is on (issue #106), and for review
+   * agents reaching the end of their cycle (issue #107). Optional: the
    * all-`done` legacy behavior applies when absent.
    */
   archiveWorker?(workerId: string, message?: string): Promise<Worker | null>;
+  /**
+   * Spawns the auto review agent for a PR (issue #107): a reviewer-kind
+   * worker nested under `parentWorkerId` (the PR-authoring worker) with the
+   * review prompt gated on pi readiness. Optional: when absent, the review
+   * cycle is skipped (legacy hosts/fakes).
+   */
+  spawnReviewAgent?(
+    projectId: string,
+    request: { prNumber: number; parentWorkerId: string | null; prompt: string },
+  ): Promise<Worker | null>;
 }
 
 export interface PullRequestPipelineOptions {
@@ -73,6 +85,11 @@ export interface PullRequestPipelineOptions {
    * Default: all ON.
    */
   workerSettings?: () => WorkerPipelineSettings;
+  /**
+   * Max concurrent workers for the PR's project (issue #107 review-agent
+   * spawns respect the cap); `undefined` = unbounded.
+   */
+  workerCap?: () => number | undefined;
   /** Max consecutive CI-fix prompts per red streak. Default: {@link DEFAULT_MAX_FIX_ATTEMPTS}. */
   maxFixAttempts?: number;
   /** Age at which an unanswered fix/address prompt is treated as stale. Default: 15 min. */
@@ -208,6 +225,7 @@ export class PullRequestPipeline {
       // Closed without merging: terminal, but the loop did not fail — the
       // worker is done, the card is reported failed for the API layer to present.
       tracked.state = "failed";
+      await archiveReviewAgent(tracked, this.sessions, `PR #${tracked.prNumber} closed — review agent done`);
       this.setWorkerStatusQuietly(tracked.workerId, "done", `PR #${tracked.prNumber} closed without merging`);
       const card = this.buildCard(tracked, pullRequestColumn(pr), tracked.updatedAt);
       events.push({ type: "kanban.pr.card", at: tracked.updatedAt, card });
@@ -220,6 +238,8 @@ export class PullRequestPipeline {
       ...(await driveLoop(tracked, pr, record.headSha, comments, {
         sessions: this.sessions,
         settings: this.options.workerSettings ?? (() => undefined),
+        workerCap: this.options.workerCap ?? (() => undefined),
+        repo: `${this.repo.owner}/${this.repo.repo}`,
         maxFixAttempts: this.maxFixAttempts,
         fixPromptTimeoutMs: this.fixPromptTimeoutMs,
         now: this.now,
@@ -283,7 +303,10 @@ export class PullRequestPipeline {
   }
 
   private findOwner(pr: PullRequest): Worker | undefined {
-    const workers = this.sessions.listWorkers({ projectId: pr.projectId }).filter((w) => w.prNumber === pr.number);
+    // Review agents (issue #107) record the PR they review but never own it.
+    const workers = this.sessions.listWorkers({ projectId: pr.projectId }).filter(
+      (w) => w.prNumber === pr.number && w.kind !== "reviewer",
+    );
     if (workers.length === 0) return undefined;
     return workers.find((w) => ACTIVE_WORKER_STATUSES.has(w.status)) ?? workers[0];
   }
@@ -295,6 +318,7 @@ export class PullRequestPipeline {
    */
   private async settleMerged(tracked: TrackedPR): Promise<void> {
     tracked.state = "done";
+    await archiveReviewAgent(tracked, this.sessions, `PR #${tracked.prNumber} merged — review agent done`);
     const message = `PR #${tracked.prNumber} merged`;
     const terminateOnMerge = this.options.workerSettings?.().terminateOnMerge ?? DEFAULT_WORKER_PIPELINE_SETTINGS.terminateOnMerge;
     if (terminateOnMerge && this.sessions.archiveWorker !== undefined) {
@@ -312,6 +336,9 @@ export class PullRequestPipeline {
   private failTracked(tracked: TrackedPR, reason: string, workerStatus: WorkerStatus, workerMessage: string): PRPipelineEvent[] {
     tracked.state = "failed";
     tracked.updatedAt = this.now().toISOString();
+    // The reviewer's job ends with the PR (issue #107); archival is
+    // best-effort and never throws.
+    void archiveReviewAgent(tracked, this.sessions, `PR #${tracked.prNumber} failed — review agent done`);
     this.setWorkerStatusQuietly(tracked.workerId, workerStatus, workerMessage);
     const card = this.buildCard(tracked, "in_review", tracked.updatedAt);
     return [

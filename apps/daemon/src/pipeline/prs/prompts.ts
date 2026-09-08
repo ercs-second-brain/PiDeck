@@ -55,6 +55,50 @@ export function buildReviewCommentsPrompt(pr: PullRequest, comments: PRReviewCom
   return parts.map(oneLine).join(" ");
 }
 
+export interface ReviewAgentPromptOptions {
+  /** Project id for `agentskiss` CLI read commands (diffs, PR state). */
+  projectId: string;
+  /** `owner/name` of the repository the PR lives in (for `gh --repo`). */
+  repo: string;
+}
+
+/**
+ * Builds the initial prompt for an auto review agent (issue #107): the
+ * agent reads the PR diff, reviews it, and posts a GitHub review (approve
+ * or request changes) via `gh`. Single line — it is typed into an
+ * interactive pi pane (see the module docblock).
+ */
+export function buildReviewAgentPrompt(pr: PullRequest, options: ReviewAgentPromptOptions): string {
+  const parts = [
+    `[agentskiss] You are the review agent for PR #${pr.number} "${oneLine(pr.title)}" (${pr.url}) ` +
+      `in project ${options.projectId}.`,
+    `Follow your review-pr skill: read the diff (\`gh pr diff ${pr.number} --repo ${options.repo}\` ` +
+      `or \`agentskiss diff --project ${options.projectId} ${pr.number}\`) and review it for correctness, ` +
+      "bugs, and maintainability.",
+    `Then post your GitHub review: approve with ` +
+      `\`gh pr review ${pr.number} --repo ${options.repo} --approve --body "<summary>"\` or request changes with ` +
+      `\`gh pr review ${pr.number} --repo ${options.repo} --request-changes --body "<summary>"\` ` +
+      "plus inline comments via the gh api reviews endpoint (see the skill).",
+    "Do not push commits, do not open or close PRs. When done, reply with a short review summary.",
+  ];
+  return parts.map(oneLine).join(" ");
+}
+
+/**
+ * Builds the re-review prompt sent to an existing review agent when new
+ * commits land on the PR it reviews (issue #107 re-run loop).
+ */
+export function buildReReviewPrompt(pr: PullRequest, options: ReviewAgentPromptOptions): string {
+  const parts = [
+    `[agentskiss] New commits were pushed to PR #${pr.number} "${oneLine(pr.title)}" (${pr.url}) ` +
+      `since your last review.`,
+    `Re-review the updated diff (\`gh pr diff ${pr.number} --repo ${options.repo}\`) and post a fresh ` +
+      `GitHub review — approve or request changes — exactly as before (review-pr skill).`,
+    "Do not push commits, do not open or close PRs. Reply with a short summary when done.",
+  ];
+  return parts.map(oneLine).join(" ");
+}
+
 function commentSummary(comments: PRReviewComment[]): string {
   return comments
     .map((c, i) => {

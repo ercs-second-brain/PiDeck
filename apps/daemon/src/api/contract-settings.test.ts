@@ -30,6 +30,7 @@ describe("settings", () => {
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,
+      autoReview: true,
     });
 
     const updated = await api("PUT", endpoints.updateSettings.path, { autoAgentUsername: "auto-agent" });
@@ -40,6 +41,7 @@ describe("settings", () => {
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,
+      autoReview: true,
     });
 
     // Worker-pipeline toggles (issue #106) update without a restart.

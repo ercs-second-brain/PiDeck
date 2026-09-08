@@ -113,11 +113,14 @@ export function fakeSessions(workers: Worker[]): {
   prompts: SentPrompt[];
   statuses: StatusChange[];
   archived: string[];
+  spawned: Array<{ projectId: string; request: { prNumber: number; parentWorkerId: string | null; prompt: string } }>;
 } {
   const prompts: SentPrompt[] = [];
   const statuses: StatusChange[] = [];
   const archived: string[] = [];
+  const spawned: Array<{ projectId: string; request: { prNumber: number; parentWorkerId: string | null; prompt: string } }> = [];
   const byId = new Map(workers.map((w) => [w.id, w]));
+  let reviewerSeq = 0;
   const control: PRSessionControl = {
     listWorkers: (filter = {}) => workers.filter((w) => filter.projectId === undefined || w.projectId === filter.projectId),
     getWorker: (id) => byId.get(id),
@@ -141,8 +144,25 @@ export function fakeSessions(workers: Worker[]): {
       archived.push(workerId);
       return worker;
     },
+    spawnReviewAgent: async (projectId, request) => {
+      spawned.push({ projectId, request });
+      reviewerSeq += 1;
+      const reviewer = makeWorker({
+        id: `worker-reviewer-${reviewerSeq}`,
+        sessionId: `sess-reviewer-${reviewerSeq}`,
+        issueNumber: 0,
+        prNumber: request.prNumber,
+        kind: "reviewer",
+        parentWorkerId: request.parentWorkerId,
+        status: "running",
+        statusMessage: "review agent running; prompt delivered",
+      });
+      workers.push(reviewer);
+      byId.set(reviewer.id, reviewer);
+      return reviewer;
+    },
   };
-  return { control, prompts, statuses, archived };
+  return { control, prompts, statuses, archived, spawned };
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +189,7 @@ export function makeHarness(
     fixPromptTimeoutMs?: number;
     trackerPath?: string;
     workerSettings?: () => WorkerPipelineSettings;
+    workerCap?: () => number | undefined;
   } = {},
 ): Harness {
   const prs = new Map<number, FakePR>();
@@ -191,6 +212,7 @@ export function makeHarness(
     maxFixAttempts: options.maxFixAttempts,
     fixPromptTimeoutMs: options.fixPromptTimeoutMs,
     workerSettings: options.workerSettings,
+    workerCap: options.workerCap,
     now,
   });
   return {

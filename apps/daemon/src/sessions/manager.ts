@@ -20,7 +20,7 @@
  * parse/sanitize) live in `tmux-commands.ts` and are re-exported here.
  */
 
-import type { Session, Worker, WorkerStatus } from "@agentskiss/shared";
+import type { Session, Worker, WorkerKind, WorkerStatus } from "@agentskiss/shared";
 import { ProjectLayout } from "./layout.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
@@ -55,6 +55,12 @@ export interface SpawnWorkerOptions {
   command?: string[];
   /** Initial status message once the agent is up. */
   statusMessage?: string;
+  /** Worker kind (issue #107); omit for implementers — absent means implementer. */
+  kind?: WorkerKind;
+  /** Parent worker for nested spawns (review agents, issue #107). */
+  parentWorkerId?: string | null;
+  /** PR the worker owns or reviews (review agents, issue #107). */
+  prNumber?: number;
 }
 
 export interface SpawnedWorker {
@@ -152,6 +158,9 @@ export class SessionManager {
       issueNumber: options.issueNumber,
       status: "spawning",
       statusMessage: "launching agent session",
+      ...(options.prNumber !== undefined ? { prNumber: options.prNumber } : {}),
+      ...(options.kind !== undefined ? { kind: options.kind } : {}),
+      ...(options.parentWorkerId !== undefined ? { parentWorkerId: options.parentWorkerId } : {}),
     });
     this.registry.setSessionWorker(session.id, worker.id);
 
@@ -167,11 +176,7 @@ export class SessionManager {
       throw err;
     }
 
-    const running = this.registry.updateWorkerStatus(
-      worker.id,
-      "running",
-      options.statusMessage ?? "agent running in tmux session",
-    );
+    const running = this.registry.updateWorkerStatus(worker.id, "running", options.statusMessage ?? "agent running in tmux session");
     return {
       session: this.registry.getSession(session.id) as Session,
       worker: running,

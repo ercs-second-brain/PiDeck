@@ -16,7 +16,8 @@ agent/
     ├── spawn-worker/          # request a worker spawn via the daemon CLI
     ├── report-pr/             # worker self-report of an opened PR (issue #49)
     ├── ci-status/             # CI status lookup
-    └── review-comments/       # review-comment retrieval
+    ├── review-comments/       # review-comment retrieval
+    └── review-pr/             # auto review agent: review a PR, post the GitHub review (issue #107)
 ```
 
 Skills follow pi's skill conventions (frontmatter with `name`/`description`, loaded on demand); see pi's `docs/skills.md`.
@@ -79,6 +80,7 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `agentskiss spawn ...` | `skills/spawn-worker/SKILL.md` (reference doc: `skills/using-agentskiss/commands/spawn.md`) |
 | `agentskiss pulls ...`, `agentskiss diff ...` | `skills/ci-status/SKILL.md` |
 | `gh pr checks ...`, `gh run view ...`, `gh api .../pulls/<n>/comments`, `gh pr view --comments` | `skills/review-comments/SKILL.md` |
+| `gh pr diff ...`, `gh pr review ...`, `gh api .../pulls/<n>/reviews` | `skills/review-pr/SKILL.md` (auto review agent, issue #107) |
 | all other `agentskiss` read commands | `skills/using-agentskiss/commands/state.md`, `commands/project.md` |
 | `agentskiss send ...` | `skills/using-agentskiss/commands/send.md` |
 | `agentskiss report-pr <pr>` | `skills/report-pr/SKILL.md` |

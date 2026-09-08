@@ -16,6 +16,11 @@
  *   again", and detects stuck prompts.
  * - `lastSeenCommentId`: watermark so review comments are delivered once,
  *   including comments that arrive after fixes.
+ * - `reviewWorkerId` / `reviewedHeadSha`: the auto review agent (issue
+ *   #107) currently assigned to the PR and the head SHA its latest round
+ *   was spawned/re-prompted for. A new round starts whenever the head moves
+ *   (or the previous reviewer died without deciding); the reviewer is
+ *   archived when the PR is approved, merged, closed, or failed.
  *
  * State is persisted to a JSON file (same pattern as the session
  * registry) so a daemon restart reconciles tracked PRs instead of losing
@@ -41,6 +46,10 @@ const trackedPRSchema = z.object({
   lastPromptedAt: z.string().nullable(),
   lastPromptedHeadSha: z.string().nullable(),
   lastSeenCommentId: z.number().int().nullable(),
+  /** Auto review agent (issue #107) assigned to this PR, if any. Defaults keep pre-#107 files loadable. */
+  reviewWorkerId: z.string().nullable().default(null),
+  /** Head SHA the reviewer's latest round was spawned/re-prompted for. */
+  reviewedHeadSha: z.string().nullable().default(null),
   headSha: z.string().nullable(),
   cardSignature: z.string().nullable(),
   updatedAt: z.string(),
@@ -94,6 +103,8 @@ export class PRTracker {
       lastPromptedAt: null,
       lastPromptedHeadSha: null,
       lastSeenCommentId: null,
+      reviewWorkerId: null,
+      reviewedHeadSha: null,
       headSha: null,
       cardSignature: null,
       updatedAt: now.toISOString(),

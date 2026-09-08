@@ -10,7 +10,9 @@ import { checkRuns, makeHarness, PROJECT, restComment } from "./harness.js";
 
 describe("PullRequestPipeline: review comments", () => {
   it("delivers review comments to the worker and handles comments arriving after fixes", async () => {
-    const h = makeHarness();
+    // autoReview off: the review-comment delivery flow (#106) is orthogonal
+    // to the review-agent cycle (#107, pipeline-review-agent.test.ts).
+    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: true, autoReview: false }) });
     h.openList.push(12);
     h.prs.set(12, {
       pull: restPull(12, { sha: "sha-1" }),

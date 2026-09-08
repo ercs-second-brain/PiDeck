@@ -36,5 +36,6 @@ The command catalog above is generic. Task-oriented orchestration skills build o
 - `report-pr` — a worker session reports the PR it opened (`agentskiss report-pr`).
 - `ci-status` — CI status lookup and CI-fix routing.
 - `review-comments` — review-comment retrieval and addressing workflow.
+- `review-pr` — the auto review agent's workflow: review a PR diff and post the GitHub review (issue #107).
 
 Use [references to `packages/shared/src/rest.ts`] only when a request does not map clearly to a command above.

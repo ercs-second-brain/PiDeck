@@ -246,6 +246,16 @@ export const workerStatusSchema = z.enum([
 export type WorkerStatus = z.infer<typeof workerStatusSchema>;
 
 /**
+ * What a worker does (issue #107): `implementer` owns the issue/PR build
+ * loop (the default — records may omit the field, older ones always do);
+ * `reviewer` is an auto-spawned code-review agent that reviews a PR and
+ * posts a GitHub review, nested under the PR-authoring worker via
+ * {@link Worker.parentWorkerId}.
+ */
+export const workerKindSchema = z.enum(["implementer", "reviewer"]);
+export type WorkerKind = z.infer<typeof workerKindSchema>;
+
+/**
  * Worker statuses that count as "actively working" (non-terminal): spawning,
  * running, and the CI/review loop states. The single source of truth for
  * concurrency caps, spawn dedupe, and pipeline ownership checks. Terminal
@@ -273,8 +283,19 @@ export const workerSchema = z.object({
    * card of their own and only ever appear in the workers list.
    */
   issueNumber: z.number().int().min(0),
-  /** PR opened by the worker, once one exists. */
+  /** PR opened by the worker, once one exists. Review agents record the PR they review. */
   prNumber: refNumberSchema.nullable(),
+  /**
+   * What the worker does ({@link workerKindSchema}). Optional for backward
+   * compatibility: absent means `"implementer"` (all pre-#107 records).
+   */
+  kind: workerKindSchema.optional(),
+  /**
+   * Worker this one is nested under (issue #107): review agents carry the
+   * PR-authoring worker's id when the PR→worker association is known,
+   * `null`/absent for sibling spawns and all implementer workers.
+   */
+  parentWorkerId: idSchema.nullable().optional(),
   /**
    * Filesystem path the worker's agent runs in — the project clone or a
    * per-issue worktree (e.g. under `<stateDir>/projects/<projectId>/worktrees/`).
