@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGetPiAuth, errorMessage, type PiAuth } from "../lib/api";
+import { DaemonError } from "./DaemonError";
 
 /**
  * Persistent pi auth status banner (issue #57): shows which pi providers
@@ -29,22 +30,34 @@ export function PiAuthBanner() {
   return (
     <section className="wizard-panel">
       <h2 className="panel-title">pi agent auth</h2>
-      {checking && auth === null && <p className="empty">Checking pi auth on the daemon…</p>}
-      {!checking && error !== null && (
-        <>
-          <p className="error-note">Could not reach the daemon: {error}</p>
-          <button type="button" className="button" onClick={check}>
-            Retry
-          </button>
-        </>
-      )}
-      {!checking && error === null && auth !== null && <PiAuthReport auth={auth} onRecheck={check} />}
+      <PiAuthStatus checking={checking} auth={auth} error={error} onRecheck={check} />
     </section>
   );
 }
 
-/** Verdict display for the pi auth probe, shared by the banner and the onboarding wizard. */
-export function PiAuthReport({ auth, onRecheck }: { auth: PiAuth; onRecheck: () => void }) {
+/**
+ * The pi probe's three states — checking, unreachable (retry), or the
+ * verdict report — shared by the persistent banner and the onboarding
+ * wizard's step 1.
+ */
+export function PiAuthStatus(props: {
+  checking: boolean;
+  auth: PiAuth | null;
+  error: string | null;
+  onRecheck: () => void;
+}) {
+  const { checking, auth, error, onRecheck } = props;
+  return (
+    <>
+      {checking && auth === null && <p className="empty">Checking pi auth on the daemon…</p>}
+      {!checking && error !== null && <DaemonError error={error} onRetry={onRecheck} />}
+      {!checking && error === null && auth !== null && <PiAuthReport auth={auth} onRecheck={onRecheck} />}
+    </>
+  );
+}
+
+/** Verdict display for the pi auth probe (used by the banner and the wizard's step 1). */
+function PiAuthReport({ auth, onRecheck }: { auth: PiAuth; onRecheck: () => void }) {
   return (
     <div className="perm-report">
       {auth.ready ? (
