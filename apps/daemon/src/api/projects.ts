@@ -46,7 +46,7 @@ interface Persisted {
 }
 
 /** Per-project settings with only the fields the shared contract defines. */
-export type ProjectSettingsPatch = Partial<Pick<ProjectSettings, "autoAgentUsername" | "workerConcurrency">>;
+type ProjectSettingsPatch = Partial<Pick<ProjectSettings, "autoAgentUsername" | "workerConcurrency">>;
 
 /** Extracts the stored project settings from a request's optional patch. */
 export function resolveSettings(
@@ -167,7 +167,7 @@ export interface ProjectTeardown {
   forgetBoard: (projectId: string) => void;
 }
 
-export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   autoAgentUsername: null,
 };
 

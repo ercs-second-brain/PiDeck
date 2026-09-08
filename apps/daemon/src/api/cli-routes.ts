@@ -41,9 +41,3 @@ export const sessionReportPrSchema = z.object({
   /** PR number the worker opened. */
   prNumber: refNumberSchema,
 });
-
-/** `POST /api/sessions/:sessionId/keys` — raw tmux send-keys (daemon-internal). */
-export const sessionKeysSchema = z.object({
-  keys: z.string(),
-  enter: z.boolean().optional(),
-});

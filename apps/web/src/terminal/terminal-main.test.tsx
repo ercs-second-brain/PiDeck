@@ -13,20 +13,13 @@ import { MemoryRouter, Route, Routes } from "react-router";
 vi.mock("@xterm/xterm", () => ({ Terminal: class {} }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
-import type { Project, Session, Worker } from "@pideck/shared";
+import type { Session, Worker } from "@pideck/shared";
+import { makeProject } from "./test-fixtures";
 import { TerminalPage } from "./TerminalPage";
 import { SidebarContext, type SidebarContextValue } from "./sidebar";
 import type { ProjectEntry } from "./SessionPicker";
 
-const project: Project = {
-  id: "agentskiss",
-  name: "agentsKISS",
-  repoUrl: "https://github.com/ercs-second-brain/agentsKISS",
-  defaultBranch: "main",
-  settings: { autoAgentUsername: null, workerConcurrency: 2 },
-  createdAt: "2025-01-01T00:00:00.000Z",
-  updatedAt: "2025-01-01T00:00:00.000Z",
-};
+const project = makeProject();
 
 const sessions: Session[] = [
   {

@@ -10,19 +10,12 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { Project, Session, Worker } from "@pideck/shared";
+import type { Session, Worker } from "@pideck/shared";
+import { makeProject } from "./test-fixtures";
 import { SessionPicker } from "./SessionPicker";
 import { TerminateWorkerButton, TerminateWorkerModal } from "./picker-rows";
 
-const project: Project = {
-  id: "agentskiss",
-  name: "agentsKISS",
-  repoUrl: "https://github.com/ercs-second-brain/agentsKISS",
-  defaultBranch: "main",
-  settings: { autoAgentUsername: null, workerConcurrency: 2 },
-  createdAt: "2025-01-01T00:00:00.000Z",
-  updatedAt: "2025-01-01T00:00:00.000Z",
-};
+const project = makeProject();
 
 const sessions: Session[] = [
   {
@@ -86,9 +79,9 @@ function renderPicker(overrides: Partial<PickerProps> = {}) {
 describe("SessionPicker", () => {
   it("renders the Projects header with the + onboarding button", () => {
     const html = renderPicker();
-    expect(html).toContain("picker-title-button");
+    expect(html).toContain("title=\"Open the all-projects board\"");
     expect(html).toContain(">Projects</button>");
-    expect(html).toContain("picker-add");
+    expect(html).toContain("title=\"Connect a project\"");
   });
 
   it("renders the project name as the kanban entry with a chat icon (issue #173)", () => {

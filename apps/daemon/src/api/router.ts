@@ -10,7 +10,7 @@
 import { ZodError } from "zod";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-export interface RequestContext {
+interface RequestContext {
   req: IncomingMessage;
   res: ServerResponse;
   /** Matched `:name` params (decoded). */
@@ -21,7 +21,7 @@ export interface RequestContext {
   query: string;
 }
 
-export interface RouteMatch {
+interface RouteMatch {
   status?: number;
   /** JSON-serialized into the response unless `undefined` (handler wrote it). */
   body?: unknown;
@@ -136,7 +136,7 @@ export class HttpError extends Error {
   }
 }
 
-export function sendJson(res: ServerResponse, status: number, body: unknown): void {
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");

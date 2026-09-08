@@ -11,11 +11,11 @@ import path from "node:path";
 import { createDaemonServer } from "./server.js";
 import { testDaemon, type TestDaemon } from "./testutil.js";
 
-export const UPDATED_AT = "2026-01-01T00:00:00.000Z";
+const UPDATED_AT = "2026-01-01T00:00:00.000Z";
 /** Local source HEAD used by the /api/update contract tests (issue #55). */
 export const LOCAL_SHA = "a".repeat(40);
 
-export const ghRoutes = {
+const ghRoutes = {
   graphql: {
     "pullRequests(first: $first": {
       repository: {
@@ -105,9 +105,9 @@ export const ghRoutes = {
   ].join("\n"),
 };
 
-export type ApiProbe = (method: string, path: string, body?: unknown) => Promise<{ status: number; json: unknown }>;
+type ApiProbe = (method: string, path: string, body?: unknown) => Promise<{ status: number; json: unknown }>;
 
-export function makeApi(base: string): ApiProbe {
+function makeApi(base: string): ApiProbe {
   return async (method, path, body) => {
     const res = await fetch(`${base}${path}`, {
       method,

@@ -106,7 +106,7 @@ function logSlowEndpoint(method: string, pathname: string, durationMs: number): 
 }
 
 /** Resolves the default webapp dist dir relative to the daemon package (`apps/web/dist`). */
-export function defaultWebDist(): string | undefined {
+function defaultWebDist(): string | undefined {
   const fromEnv = process.env["PD_WEB_DIST"];
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
   // This module lives at <repo>/apps/daemon/{src/api,dist/api}/server.js;
