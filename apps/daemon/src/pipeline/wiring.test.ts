@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Issue, KanbanUpdateEvent, PullRequest } from "@agentskiss/shared";
+import type { Issue, PullRequest, WsServerEvent } from "@agentskiss/shared";
 
 import { testDaemon, type FakeGhRoutes, type TestDaemon } from "../api/testutil.js";
 import { makeIssue as sharedMakeIssue, makePullRequest as sharedMakePullRequest, restPull as sharedRestPull } from "../testing/fixtures.js";
@@ -96,8 +96,8 @@ async function registeredDaemon(ghRoutes: FakeGhRoutes = emptyRoutes()): Promise
   return { ...daemon, automation: daemon.services.automation };
 }
 
-function broadcasts(daemon: TestDaemon): KanbanUpdateEvent[] {
-  const events: KanbanUpdateEvent[] = [];
+function broadcasts(daemon: TestDaemon): WsServerEvent[] {
+  const events: WsServerEvent[] = [];
   vi.spyOn(daemon.services.hub, "broadcast").mockImplementation((event) => {
     events.push(event);
   });

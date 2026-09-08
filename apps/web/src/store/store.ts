@@ -26,6 +26,7 @@ import {
   type KanbanBoard,
   type KanbanColumnSummary,
   type KanbanUpdateEvent,
+  type NotificationEvent,
   type Project,
   type PullRequest,
   type TerminalServerEvent,
@@ -159,6 +160,8 @@ class LiveBoardStore implements BoardStore {
   private wsAttempt = 0;
   private wsTimer: number | undefined;
   private pollTimer: number | undefined;
+  /** Notification-event subscribers (#111; the Toasts surface). */
+  private readonly notificationListeners = new Set<(event: NotificationEvent) => void>();
   private stopped = false;
 
   start(): void {
@@ -269,7 +272,25 @@ class LiveBoardStore implements BoardStore {
     if (isTerminalEvent(event)) {
       return; // terminal events: the /ws bridge, not this store
     }
+    // User notifications (issue #111) are not board state: they fan out to
+    // subscribers (the toast surface) and never touch AppState.
+    if (event.type === "notification.pr.merged") {
+      for (const listener of this.notificationListeners) listener(event);
+      return;
+    }
     this.apply(event);
+  }
+
+  /**
+   * Subscribes to user-notification events (issue #111); returns the
+   * unsubscribe function. Ephemeral by design — events fire once over the
+   * socket and are not replayed.
+   */
+  onNotification(listener: (event: NotificationEvent) => void): () => void {
+    this.notificationListeners.add(listener);
+    return () => {
+      this.notificationListeners.delete(listener);
+    };
   }
 
   /** Applies one kanban update event (exposed for tests). */
@@ -286,6 +307,7 @@ function createBoardStore(): BoardStore & {
   apply(event: KanbanUpdateEvent): void;
   start(): void;
   stop(): void;
+  onNotification(listener: (event: NotificationEvent) => void): () => void;
 } {
   return new LiveBoardStore();
 }

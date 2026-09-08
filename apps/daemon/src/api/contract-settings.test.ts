@@ -31,6 +31,7 @@ describe("settings", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      browserMergeNotifications: false,
     });
 
     const updated = await api("PUT", endpoints.updateSettings.path, { autoAgentUsername: "auto-agent" });
@@ -42,6 +43,7 @@ describe("settings", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      browserMergeNotifications: false,
     });
 
     // Worker-pipeline toggles (issue #106) update without a restart.

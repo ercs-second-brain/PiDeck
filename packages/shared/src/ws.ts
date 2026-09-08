@@ -20,6 +20,7 @@ import {
   kanbanColumnSchema,
   projectSchema,
   pullRequestSchema,
+  refNumberSchema,
   workerSchema,
   workerStatusSchema,
 } from "./domain.js";
@@ -149,9 +150,39 @@ export const githubWatcherEventSchema = z.discriminatedUnion("type", [
 export type GithubWatcherEvent = z.infer<typeof githubWatcherEventSchema>;
 
 // ---------------------------------------------------------------------------
+// Server → client: user notifications (issue #111)
+// ---------------------------------------------------------------------------
+
+/**
+ * User-facing notification events (issue #111): things the user should
+ * learn without staring at the board. Mirrors agent-orchestrator's
+ * notification kinds — its `pr_merged` type (backend/internal/domain/
+ * notification.go) — sliced to the merged-PR case; the union is open for
+ * more kinds later. The PR pipeline emits the daemon-internal event, the
+ * broadcast bridge forwards it here, and the webapp's toast surface
+ * (mounted from main.tsx) renders it.
+ */
+export const notificationEventSchema = z.discriminatedUnion("type", [
+  /** A tracked worker's PR merged (the PR loop observed the merge). */
+  z.object({
+    type: z.literal("notification.pr.merged"),
+    at: isoDateTimeSchema,
+    projectId: projectIdField,
+    prNumber: refNumberSchema,
+    /** PR title at merge time, for the toast's secondary line. */
+    title: z.string().min(1),
+  }),
+]);
+export type NotificationEvent = z.infer<typeof notificationEventSchema>;
+
+// ---------------------------------------------------------------------------
 // Full unions
 // ---------------------------------------------------------------------------
 
 /** Everything the server can send over the WebSocket. */
-export const wsServerEventSchema = z.union([terminalServerEventSchema, kanbanUpdateEventSchema]);
+export const wsServerEventSchema = z.union([
+  terminalServerEventSchema,
+  kanbanUpdateEventSchema,
+  notificationEventSchema,
+]);
 export type WsServerEvent = z.infer<typeof wsServerEventSchema>;

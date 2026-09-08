@@ -7,8 +7,9 @@ import { boardStore, useAppState } from "../store/store";
 
 /**
  * Project settings surface: auto-agent username, the worker concurrency
- * cap, the persistent pi auth status banner (issue #57), and the daemon-
- * wide worker-pipeline toggles (issue #106).
+ * cap, the persistent pi auth status banner (issue #57), the daemon-
+ * wide worker-pipeline toggles (issue #106), and the merged-PR browser-
+ * notification toggle (issue #111).
  * `workerConcurrency` unset means unbounded (issue #14 semantics: every
  * unblocked issue spawns a worker immediately).
  */
@@ -66,10 +67,21 @@ const WORKER_TOGGLES: Array<{ key: "terminateOnMerge" | "autoFixCi" | "autoFixRe
   },
 ];
 
+/** The merged-PR browser-notification toggle (issue #111, default OFF). */
+const NOTIFICATION_TOGGLE: { key: "browserMergeNotifications"; label: string; hint: string } = {
+  key: "browserMergeNotifications",
+  label: "Browser notifications for merged PRs",
+  hint: "Fires an OS-level browser notification when a worker's PR merges, in addition to the in-app toast. Default off.",
+};
+
+type ToggleKey = (typeof WORKER_TOGGLES)[number]["key"] | (typeof NOTIFICATION_TOGGLE)["key"];
+
 /**
- * Daemon-wide worker-pipeline toggles (issue #106): global for all projects,
- * persisted by the daemon, read fresh on every pipeline decision — a change
- * here takes effect without a daemon restart. Each toggle saves immediately.
+ * Daemon-wide toggles (issues #106, #111): global for all projects,
+ * persisted by the daemon, read fresh on every pipeline decision — a
+ * change here takes effect without a daemon restart. Each toggle saves
+ * immediately. Enabling browser notifications first asks the browser for
+ * Notification permission (a denied grant keeps the toggle off).
  */
 function GlobalWorkerSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -91,7 +103,15 @@ function GlobalWorkerSettings() {
     };
   }, []);
 
-  const toggle = (key: (typeof WORKER_TOGGLES)[number]["key"], value: boolean): void => {
+  const toggle = async (key: ToggleKey, value: boolean): Promise<void> => {
+    // Issue #111: the permission prompt needs a user gesture — this click.
+    // A denied/blocked grant reverts (the daemon setting stays off).
+    if (key === "browserMergeNotifications" && value && typeof Notification !== "undefined" && Notification.permission !== "granted") {
+      if ((await Notification.requestPermission()) !== "granted") {
+        setError("Browser notifications are blocked for this site — allow them in the browser's site settings, then try again.");
+        return;
+      }
+    }
     setSavingKey(key);
     setError(null);
     apiUpdateSettings({ [key]: value })
@@ -100,30 +120,34 @@ function GlobalWorkerSettings() {
       .finally(() => setSavingKey(null));
   };
 
+  const renderToggle = (toggleDef: { key: ToggleKey; label: string; hint: string }) => (
+    <label key={toggleDef.key} className="toggle-row">
+      <input
+        type="checkbox"
+        checked={settings !== null && settings[toggleDef.key]}
+        disabled={savingKey !== null || settings === null}
+        onChange={(e) => void toggle(toggleDef.key, e.target.checked)}
+      />
+      <span>
+        {toggleDef.label}
+        <small className="field-hint"> {toggleDef.hint}</small>
+      </span>
+    </label>
+  );
+
   return (
-    <section className="global-worker-settings">
-      <h2 className="section-title">Worker pipeline (all projects)</h2>
-      {loadError !== null && <p className="error-note">Failed to load global settings: {loadError}</p>}
-      {settings !== null && (
-        <div className="settings-form">
-          {WORKER_TOGGLES.map((toggleDef) => (
-            <label key={toggleDef.key} className="toggle-row">
-              <input
-                type="checkbox"
-                checked={settings[toggleDef.key]}
-                disabled={savingKey !== null}
-                onChange={(e) => toggle(toggleDef.key, e.target.checked)}
-              />
-              <span>
-                {toggleDef.label}
-                <small className="field-hint"> {toggleDef.hint}</small>
-              </span>
-            </label>
-          ))}
-        </div>
-      )}
+    <>
+      <section className="global-worker-settings">
+        <h2 className="section-title">Worker pipeline (all projects)</h2>
+        {loadError !== null && <p className="error-note">Failed to load global settings: {loadError}</p>}
+        <div className="settings-form">{WORKER_TOGGLES.map(renderToggle)}</div>
+      </section>
+      <section className="global-worker-settings">
+        <h2 className="section-title">Notifications (all projects)</h2>
+        <div className="settings-form">{renderToggle(NOTIFICATION_TOGGLE)}</div>
+      </section>
       {error !== null && <p className="error-note">{error}</p>}
-    </section>
+    </>
   );
 }
 
