@@ -1,5 +1,5 @@
 #!/bin/sh
-# shellcheck shell=sh disable=SC2154 # failures comes from the sourced harness
+# shellcheck shell=sh disable=SC2154,SC1091 # failures comes from the sourced harness
 # Plain-shell tests for lib/deps.sh's pnpm handling (issue #162, no bats
 # dependency — matches install/'s shell-only tooling). Covers: ensure_pnpm
 # must yield a pnpm that RUNS for build_from_source — a broken corepack shim
@@ -40,6 +40,9 @@ EOF
   chmod +x "$1/npm"
 }
 make_npm_stub "$NODE_BIN_DIR" 0
+# (consumed by the sourced deps.sh, not directly in this file)
+# shellcheck disable=SC2034
+export PD_NODE_BIN_DIR
 PD_NODE_BIN_DIR="$NODE_BIN_DIR"
 
 make_pnpm() { # make_pnpm <dir> <version-or-broken> <is-shim>
@@ -144,7 +147,9 @@ check_grep 'npm failure: actionable guidance' 'npm install -g pnpm@' "$out"
 # --- node version floor: >= 22.19.0 enforced (pi 0.75.0+ requirement) ------
 _node_floor_probe() { # _node_floor_probe <major> <minor> -> "<exit code of deps.sh's _node_meets_min>"
   (
-    PD_NODE_MIN_VERSION="22.19.0"
+    # consumed by the deps.sh sourced right below
+    # shellcheck disable=SC2034
+    export PD_NODE_MIN_VERSION="22.19.0"
     # shellcheck disable=SC1091 # installer lib, sourced on purpose
     . "$INSTALL_DIR/lib/deps.sh"
     _node_meets_min "$1" "$2"
