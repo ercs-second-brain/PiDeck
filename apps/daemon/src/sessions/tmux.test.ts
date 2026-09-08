@@ -135,8 +135,10 @@ describe("Tmux.sendKeys (issue #115)", () => {
     await tmux.newSession("sess");
     const message = "point 12345: the quick brown fox\n".repeat(200); // ~5.4KB ASCII
     await tmux.sendKeys("sess", message, { enter: true });
-    // Multi-line payloads travel inside bracketed-paste markers (issue #115).
-    expect(fake.sentBytes("sess").toString("utf8")).toBe(`\x1b[200~${message}\x1b[201~`);
+    // Multi-line payloads travel inside bracketed-paste markers (issue #115);
+    // the trailing submit newline is stripped (issue #123).
+    const body = message.replace(/\n$/, "");
+    expect(fake.sentBytes("sess").toString("utf8")).toBe(`\x1b[200~${body}\x1b[201~`);
   });
 
   it("wraps multi-line payloads in bracketed paste and sends Enter separately (issue #115)", async () => {
@@ -152,6 +154,29 @@ describe("Tmux.sendKeys (issue #115)", () => {
     );
     expect(enters).toHaveLength(1);
     expect(enters[0]?.args).toEqual(["send-keys", "-t", "sess", "Enter"]);
+  });
+
+  it("strips the trailing newline from a paste-wrapped payload (issue #123)", async () => {
+    // The orchestrator's messages end with a trailing \n; inside the paste
+    // that newline is inserted by pi as literal text (a stray empty line in
+    // the editor) while submission must come from the explicit Enter.
+    const { tmux, fake } = makeTmux();
+    await tmux.newSession("sess");
+    await tmux.sendKeys("sess", "line one\nline two\n", { enter: true });
+    expect(fake.sentBytes("sess").toString("utf8")).toBe(
+      "\x1b[200~line one\nline two\x1b[201~",
+    );
+    const enters = fake.invocations.filter((inv) => inv.args.at(-1) === "Enter");
+    expect(enters).toHaveLength(1);
+  });
+
+  it("collapses an all-newlines payload to the empty nudge (issue #123)", async () => {
+    const { tmux, fake } = makeTmux();
+    await tmux.newSession("sess");
+    await tmux.sendKeys("sess", "\n\n", { enter: true });
+    expect(fake.sentBytes("sess")).toHaveLength(0);
+    const enters = fake.invocations.filter((inv) => inv.args.at(-1) === "Enter");
+    expect(enters).toHaveLength(1);
   });
 
   it("sends plain single-line payloads without paste markers (issue #115)", async () => {

@@ -219,6 +219,13 @@ export class Tmux {
    * single-line payloads stay unwrapped so ordinary shells see exactly the
    * typed characters.
    *
+   * Trailing newlines are stripped from the payload first (issue #123): a
+   * newline inside the paste is inserted by the target editor as literal
+   * text (a stray empty line under the message, the exact "new line at the
+   * end" the user reported) while the actual submission must come from the
+   * explicit Enter below — so the paste should end exactly where the
+   * intended message text ends.
+   *
    * Enter is always its own invocation, sent after a short settle delay:
    * a large burst can absorb an Enter that arrives immediately after it,
    * leaving the draft unsubmitted in the target's input box.
@@ -247,7 +254,12 @@ export class Tmux {
     keys: string,
     options: { enter?: boolean },
   ): Promise<void> {
-    const payload = needsPasteWrapping(keys) ? pasteWrap(keys) : keys;
+    // Strip trailing submit newlines before paste-wrapping (issue #123): the
+    // explicit Enter below is the submission, so any trailing \n in the
+    // payload would only be inserted as literal text by the target editor.
+    // A payload that was nothing but newlines collapses to the empty nudge.
+    const body = stripTrailingNewlines(keys);
+    const payload = needsPasteWrapping(body) ? pasteWrap(body) : body;
     await this.sendHexPayload(name, Buffer.from(payload, "utf8"));
     if (options.enter) {
       if (this.sendEnterDelayMs > 0) {
@@ -300,6 +312,11 @@ function needsPasteWrapping(keys: string): boolean {
 /** Wraps a payload in bracketed-paste markers so TUIs insert it literally. */
 function pasteWrap(keys: string): string {
   return `${PASTE_START}${keys}${PASTE_END}`;
+}
+
+/** Removes trailing CR/LF run — the submit newlines, not message content. */
+function stripTrailingNewlines(keys: string): string {
+  return keys.replace(/[\r\n]+$/, "");
 }
 
 function isNoServerMessage(stderr: string): boolean {
