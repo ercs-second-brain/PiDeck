@@ -82,7 +82,7 @@ Defaults are sensible; the installer writes the first group into `~/.agentskiss/
 | `AGENTSKISS_PI_DIR` | daemon pi auth probe | `~/.pi/agent` | pi config dir the probe reads (`settings.json` startup model; keep in sync with the installer's value) |
 | `AGENTSKISS_SESSION_ID` | set by the daemon | — | Injected into each agent session so prompts/skills can reference their own session |
 
-Bootstrap-only overrides (rarely needed; see `install/bootstrap.sh`): `AGENTSKISS_REPO_URL`, `AGENTSKISS_REPO_REF`, `AGENTSKISS_NODE_VERSION`, `AGENTSKISS_PI_PACKAGE`, `AGENTSKISS_PI_DIR`. Development-only: `AGENTSKISS_PORT`/`AGENTSKISS_STATE_DIR` configure the standalone terminal server in `apps/daemon/src/terminal/standalone.ts`.
+Bootstrap-only overrides (rarely needed; see `install/bootstrap.sh`): `AGENTSKISS_REPO_URL`, `AGENTSKISS_REPO_REF`, `AGENTSKISS_NODE_VERSION`, `AGENTSKISS_PI_PACKAGE`, `AGENTSKISS_PI_DIR`.
 
 ## Platform support
 

@@ -21,9 +21,6 @@ export function defaultStateDir(): string {
   return path.join(os.homedir(), ".agentskiss");
 }
 
-/** Default daemon state directory (honors `AGENTSKISS_HOME`). */
-export const DEFAULT_STATE_DIR = defaultStateDir();
-
 export interface ProjectDirs {
   projectDir: string;
   cloneDir: string;

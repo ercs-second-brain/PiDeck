@@ -1,8 +1,7 @@
 /**
  * Adapter wiring {@link TerminalBridge} to a Node HTTP server via the `ws`
- * package. The daemon's real HTTP server (issue #13) can call
- * {@link attachTerminalWebSocket} on its own `http.Server`; the standalone
- * dev harness does the same.
+ * package. The daemon's HTTP server calls {@link attachTerminalWebSocket}
+ * on its own `http.Server`.
  */
 
 import type { Server as HttpServer } from "node:http";

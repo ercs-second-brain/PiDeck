@@ -1,7 +1,7 @@
 /**
  * Typed REST access to the daemon, driven by the shared endpoint map
  * (`@agentskiss/shared`). Same-origin: the daemon serves the webapp and the
- * API together (standalone harness now, full daemon HTTP server later).
+ * API together.
  */
 
 import { z } from "zod";
