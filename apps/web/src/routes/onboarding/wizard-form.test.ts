@@ -8,7 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { projectSchema, type Project } from "@pideck/shared";
 import { boardStore } from "../../store/store";
-import { INITIAL_FORM, registerProject, type WizardForm } from "./wizard-form";
+import { INITIAL_FORM, prefillUsername, registerProject, type WizardForm } from "./wizard-form";
 
 vi.mock("../../lib/api", () => ({
   apiRegisterProject: vi.fn(async () => {
@@ -32,6 +32,22 @@ const mockGetKanban = vi.mocked(apiGetKanban);
 function form(patch: Partial<WizardForm>): WizardForm {
   return { ...INITIAL_FORM, ...patch };
 }
+
+describe("prefillUsername (autoAgentUsername prefill)", () => {
+  it("fills an empty username with the authenticated login", () => {
+    expect(prefillUsername(INITIAL_FORM, "octocat")).toEqual({ ...INITIAL_FORM, username: "octocat" });
+  });
+
+  it("never overwrites a username the user already typed", () => {
+    const typed = form({ username: "someone-else" });
+    expect(prefillUsername(typed, "octocat")).toBe(typed);
+  });
+
+  it("leaves the form unchanged when the daemon is unauthenticated", () => {
+    expect(prefillUsername(INITIAL_FORM, null)).toBe(INITIAL_FORM);
+    expect(prefillUsername(INITIAL_FORM, "")).toBe(INITIAL_FORM);
+  });
+});
 
 describe("registerProject (issue #203)", () => {
   it("seeds the store so the board page finds the project without a refresh", async () => {

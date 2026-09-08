@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Project } from "@pideck/shared";
-import { errorMessage } from "../lib/api";
+import { apiGetGhAuth, errorMessage } from "../lib/api";
 import { AutoAgentStep } from "./onboarding/AutoAgentStep";
 import { RepoSourceStep } from "./onboarding/RepoSourceStep";
 import { StepNav } from "./onboarding/StepNav";
-import { INITIAL_FORM, autoAgentFormError, registerProject, sourceFormError, type ProjectStep, type WizardForm } from "./onboarding/wizard-form";
+import { INITIAL_FORM, autoAgentFormError, prefillUsername, registerProject, sourceFormError, type ProjectStep, type WizardForm } from "./onboarding/wizard-form";
 
 /** The project flow's steps (issue #183): project things only — repo source, then agents. */
 const PROJECT_STEPS = [
@@ -41,6 +41,21 @@ function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) =
   const [form, setForm] = useState<WizardForm>(INITIAL_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Best-effort prefill (issue: prefill autoAgentUsername): offer the
+  // authenticated GitHub login instead of an empty username field. Never
+  // blocks the wizard — an unreachable probe just leaves the field empty.
+  useEffect(() => {
+    let cancelled = false;
+    apiGetGhAuth()
+      .then((auth) => {
+        if (!cancelled) setForm((current) => prefillUsername(current, auth.login));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const patchForm = (patch: Partial<WizardForm>): void => {
     setForm((current) => ({ ...current, ...patch }));
