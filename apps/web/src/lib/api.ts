@@ -12,11 +12,14 @@ import { z } from "zod";
 import {
   endpoints,
   formatPath,
+  ghAuthSchema,
+  onboardingStateSchema,
   piAuthSchema,
   type EndpointName,
   type EndpointParams,
   type EndpointRequest,
   type EndpointResponse,
+  type OnboardingState,
   type PiAuth,
   type RegisterProjectRequest,
   type UpdateProjectRequest,
@@ -175,22 +178,13 @@ export const relaunchSession = (sessionId: string): Promise<EndpointResponse<"re
 export const fetchArchivedWorkerLog = (workerId: string): Promise<EndpointResponse<"getArchivedWorkerLog">> =>
   request("getArchivedWorkerLog", { workerId });
 
-// --- gh auth probe (onboarding wizard step 1) --------------------------------
+// --- gh auth probe (onboarding wizard step 2) --------------------------------
 //
 // `GET /api/gh-auth` is a non-contract daemon route (like `/api/status`):
 // a capability probe over the daemon's gh CLI, not a resource API, so it
-// has no entry in the shared endpoint map. Shape is validated here.
+// has no entry in the shared endpoint map. The shape is contracted in the
+// shared package (`ghAuthSchema`).
 
-export const ghAuthSchema = z.object({
-  authenticated: z.boolean(),
-  login: z.string().nullable(),
-  tokenSource: z.string(),
-  scopes: z.array(z.string()),
-  canCreateRepos: z.enum(["yes", "no", "unknown"]),
-  canCreatePrivateRepos: z.enum(["yes", "no", "unknown"]),
-  canCreatePublicRepos: z.enum(["yes", "no", "unknown"]),
-  detail: z.string(),
-});
 export type GhAuth = z.infer<typeof ghAuthSchema>;
 export type { PiAuth };
 
@@ -211,6 +205,20 @@ export async function apiGetPiAuth(): Promise<PiAuth> {
   if (!response.ok) throw new ApiError(response.status, "GET", "/api/pi-auth", response.statusText);
   return piAuthSchema.parse(await response.json());
 }
+
+// --- onboarding state (wizard, issue #165) -----------------------------------
+//
+// `GET /api/onboarding` is the one shared source of truth for onboarding
+// state: the installer's recorded results plus the live pi/gh probes, so
+// the wizard marks steps the shell onboarding completed as done.
+
+export async function apiGetOnboardingState(): Promise<OnboardingState> {
+  const response = await fetch("/api/onboarding", { headers: { accept: "application/json" } });
+  if (!response.ok) throw new ApiError(response.status, "GET", "/api/onboarding", response.statusText);
+  return onboardingStateSchema.parse(await response.json());
+}
+
+export type { OnboardingState };
 
 /** Error message extraction shared by all callers. */
 export function errorMessage(err: unknown): string {

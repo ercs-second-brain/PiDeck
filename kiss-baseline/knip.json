@@ -26,7 +26,6 @@
     "export:apps/daemon/src/pipeline/prs/pipeline.ts:DEFAULT_FIX_PROMPT_TIMEOUT_MS",
     "export:apps/daemon/src/pipeline/prs/tracker.ts:trackedPrStateSchema",
     "export:apps/web/src/lib/api.ts:ApiError",
-    "export:apps/web/src/lib/api.ts:ghAuthSchema",
     "export:apps/web/src/terminal/connection.ts:defaultTerminalWsUrl",
     "type:apps/daemon/src/api/context.ts:Project",
     "type:apps/daemon/src/api/contract-fixtures.ts:ApiProbe",

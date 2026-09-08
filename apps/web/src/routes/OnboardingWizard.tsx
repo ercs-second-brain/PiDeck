@@ -4,8 +4,10 @@ import { apiGetGhAuth, apiGetPiAuth, errorMessage, type GhAuth, type PiAuth } fr
 import { AutoAgentStep } from "./onboarding/AutoAgentStep";
 import { GhPermissionStep } from "./onboarding/GhPermissionStep";
 import { PiAuthStep } from "./onboarding/PiAuthStep";
+import { RecordedNote } from "./onboarding/RecordedNote";
 import { RepoSourceStep } from "./onboarding/RepoSourceStep";
 import { StepNav, type Step } from "./onboarding/StepNav";
+import { useOnboardingEntryStep } from "./onboarding/entry-step";
 import { INITIAL_FORM, autoAgentFormError, registerProject, sourceFormError, type WizardForm } from "./onboarding/wizard-form";
 
 /**
@@ -28,6 +30,12 @@ import { INITIAL_FORM, autoAgentFormError, registerProject, sourceFormError, typ
  * success `onRegistered(project)` hands the new project back to the shell
  * (which closes the modal and opens the project's board).
  *
+ * Shared onboarding state (issue #165): the wizard reads `GET
+ * /api/onboarding` — the daemon-side source of truth combining the shell
+ * installer's recorded results with the live probes — and never re-asks a
+ * step that is genuinely complete: the flow starts at the first incomplete
+ * step and completed pi/gh steps render as done in the step indicator.
+ *
  * The step state machine and the cross-step form live here; each step panel
  * is a presentational component under `./onboarding/` (frame: StepPanel,
  * indicator: StepNav, shared form type + validation + registration:
@@ -44,6 +52,9 @@ function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) =
   const [checking, setChecking] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Issue #165: shared daemon-side onboarding state (recorded shell results
+  // in the header; flow entered at the first incomplete step).
+  const recorded = useOnboardingEntryStep(pi, auth, checkingPi, checking, setStep);
 
   const patchForm = (patch: Partial<WizardForm>): void => {
     setForm((current) => ({ ...current, ...patch }));
@@ -93,11 +104,16 @@ function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) =
       });
   };
 
+  const piDone = pi?.ready === true;
+  const ghDone = auth?.authenticated === true;
+  const doneSteps: Step[] = [...(piDone ? (["pi"] as const) : []), ...(ghDone ? (["permission"] as const) : [])];
+
   return (
     <div className="wizard">
       <h1 className="page-title">Welcome to PiDeck</h1>
       <p className="empty">Connect a project to start orchestrating agents.</p>
-      <StepNav step={step} />
+      {recorded !== null && <RecordedNote recorded={recorded} />}
+      <StepNav step={step} doneSteps={doneSteps} />
       {step === "pi" && (
         <PiAuthStep checking={checkingPi} auth={pi} error={piError} onRecheck={checkPi} onContinue={() => setStep("permission")} />
       )}

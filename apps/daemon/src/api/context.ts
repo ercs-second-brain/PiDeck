@@ -29,6 +29,8 @@ import { UpdateChecker, type UpdateSpawn } from "./update.js";
 import { WsHub } from "./ws.js";
 
 export interface DaemonServices {
+  /** Daemon state dir (`PD_HOME`) — onboarding.json and other state live here. */
+  stateDir: string;
   projects: ProjectService;
   projectStore: ProjectStore;
   settings: SettingsStore;
@@ -120,8 +122,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
   const projectStore = new ProjectStore(stateDir);
   const settings = new SettingsStore(stateDir);
-  // Forward-declared so the project service's change hook can reach the
-  // automation constructed below it (register/update/delete → resync).
+  // Forward-declared so the change hook below reaches the automation constructed after it (issue #46).
   const automationRef: { current?: GithubAutomation } = {};
   const projects = new ProjectService({
     store: projectStore,
@@ -198,6 +199,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   });
 
   return {
+    stateDir,
     projects,
     projectStore,
     settings,
