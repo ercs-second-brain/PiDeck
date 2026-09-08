@@ -12,7 +12,8 @@ import { boardStore } from "../store/store";
  * wide worker-pipeline toggles (issue #106), and the merged-PR browser-
  * notification toggle (issue #111).
  * `workerConcurrency` unset means unbounded (issue #14 semantics: every
- * unblocked issue spawns a worker immediately).
+ * unblocked issue spawns a worker immediately); saving an empty field sends
+ * `null` explicitly so the cap actually clears (issue #168).
  */
 export function SettingsPage() {
   const { projectId } = useParams();
@@ -150,7 +151,7 @@ function SettingsForm({ project }: { project: Project }) {
     if (capRaw.length > 0) {
       const parsed = Number(capRaw);
       if (!Number.isInteger(parsed) || parsed < 1 || parsed > 16) {
-        setError("Worker concurrency must be an integer between 1 and 16 (empty = unbounded).");
+        setError("Worker concurrency must be an integer between 1 and 16 (empty = unlimited).");
         return;
       }
       cap = parsed;
@@ -159,7 +160,13 @@ function SettingsForm({ project }: { project: Project }) {
     setError(null);
     try {
       await apiUpdateProject(project.id, {
-        settings: { autoAgentUsername: trimmed.length > 0 ? trimmed : null, ...(cap !== undefined ? { workerConcurrency: cap } : {}) },
+        settings: {
+          autoAgentUsername: trimmed.length > 0 ? trimmed : null,
+          // Issue #168: an empty field sends `null` explicitly — the daemon
+          // treats it as unset (unbounded); omitting the field would keep
+          // the previous cap instead of clearing it.
+          workerConcurrency: cap ?? null,
+        },
       });
       setSaved(true);
       await boardStore.refresh();
@@ -201,7 +208,7 @@ function SettingsForm({ project }: { project: Project }) {
           type="number"
           min={1}
           max={16}
-          placeholder="empty = unbounded"
+          placeholder="empty = unlimited"
           value={concurrency}
           onChange={(e) => {
             setConcurrency(e.target.value);
@@ -209,7 +216,7 @@ function SettingsForm({ project }: { project: Project }) {
           }}
         />
         <small className="field-hint">
-          Max workers running concurrently for this project (1–16). Empty means unbounded.
+          Max workers running concurrently for this project (1–16). Empty = unlimited.
         </small>
       </div>
       {error !== null && <p className="error-note">{error}</p>}

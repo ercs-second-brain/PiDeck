@@ -36,7 +36,20 @@ describe("domain: project", () => {
     });
     expect(project.id).toBe("pideck");
     expectTypeOf(project).toEqualTypeOf<Project>();
-    expectTypeOf(project.settings.workerConcurrency).toEqualTypeOf<number | undefined>();
+    expectTypeOf(project.settings.workerConcurrency).toEqualTypeOf<number | null | undefined>();
+  });
+
+  it("accepts null workerConcurrency as an explicit clear (= unbounded, issue #168)", () => {
+    const project = projectSchema.parse({
+      id: "p",
+      name: "p",
+      repoUrl: "https://github.com/example/example",
+      defaultBranch: "main",
+      settings: { autoAgentUsername: null, workerConcurrency: null },
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(project.settings.workerConcurrency).toBeNull();
   });
 
   it("leaves workerConcurrency unset (unbounded) when not provided", () => {

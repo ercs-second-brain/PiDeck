@@ -38,10 +38,11 @@ export async function spawnWorker(
 ): Promise<Worker> {
   const project = requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
   const active = services.sessions.listWorkers({ projectId }).filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status));
-  // `workerConcurrency` unset = unbounded (issue #14); when set, manual spawns
-  // beyond the cap are rejected (the auto-spawn pipeline queues instead).
+  // `workerConcurrency` unset/null = unbounded (issues #14, #168); when set,
+  // manual spawns beyond the cap are rejected (the auto-spawn pipeline queues
+  // instead).
   const cap = project.settings.workerConcurrency;
-  if (cap !== undefined && active.length >= cap) {
+  if (cap != null && active.length >= cap) {
     throw new HttpError(
       409,
       `worker concurrency cap reached for project "${projectId}" (${active.length}/${cap} active)`,

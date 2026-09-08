@@ -100,7 +100,7 @@ async function cmdProject(ctx: CommandContext): Promise<number> {
     const project = await ctx.client.getProject(id);
     emit(ctx.json, project, () =>
       console.log(
-        `${project.id}\n  repo:    ${project.repoUrl}\n  branch:  ${project.defaultBranch}\n  name:    ${project.name}\n  auto-agent: ${project.settings.autoAgentUsername ?? "(disabled)"}\n  concurrency: ${project.settings.workerConcurrency}`,
+        `${project.id}\n  repo:    ${project.repoUrl}\n  branch:  ${project.defaultBranch}\n  name:    ${project.name}\n  auto-agent: ${project.settings.autoAgentUsername ?? "(disabled)"}\n  concurrency: ${project.settings.workerConcurrency ?? "unbounded"}`,
       ),
     );
     return 0;

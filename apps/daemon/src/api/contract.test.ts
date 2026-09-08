@@ -146,6 +146,32 @@ describe("projects", () => {
     expect(deleted.json).toBeUndefined();
     expect((await api("GET", formatPath("getProject", { projectId: "o-r" }))).status).toBe(404);
   });
+
+  it("clears the worker concurrency cap when the settings UI sends null (issue #168)", async () => {
+    // Register with a capped project (the daemon default caps new projects).
+    await api("POST", "/api/projects", { mode: "clone", repoUrl: "https://github.com/o/clear" });
+    const capped = projectSchema.parse((await api("GET", formatPath("getProject", { projectId: "o-clear" }))).json);
+    expect(capped.settings.workerConcurrency).toBe(1);
+
+    // Empty field → the UI sends `settings.workerConcurrency: null`.
+    const cleared = await api("PATCH", formatPath("updateProject", { projectId: "o-clear" }), {
+      settings: { autoAgentUsername: null, workerConcurrency: null },
+    });
+    expect(cleared.status).toBe(200);
+    const clearedProject = projectSchema.parse(cleared.json);
+    // Null is normalized to unset: the cap is gone, not silently reverted.
+    expect(clearedProject.settings.workerConcurrency).toBeUndefined();
+    // Read-back over GET agrees — the field reads back empty for unbounded.
+    const reread = projectSchema.parse((await api("GET", formatPath("getProject", { projectId: "o-clear" }))).json);
+    expect(reread.settings.workerConcurrency).toBeUndefined();
+
+    // A field omitted from the patch still means "untouched" (keep the cap).
+    await api("PATCH", formatPath("updateProject", { projectId: "o-clear" }), { settings: { workerConcurrency: 3 } });
+    const untouched = await api("PATCH", formatPath("updateProject", { projectId: "o-clear" }), {
+      settings: { autoAgentUsername: "auto-agent" },
+    });
+    expect(projectSchema.parse(untouched.json).settings.workerConcurrency).toBe(3);
+  });
 });
 
 describe("kanban", () => {
