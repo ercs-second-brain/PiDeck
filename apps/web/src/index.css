@@ -458,6 +458,9 @@ code {
   border-left: 3px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
+  /* Issue #262: never let min-content pressure from unbreakable strings
+     (URLs, long branch names) widen the card past its column. */
+  min-width: 0;
 }
 
 .card-issue {
@@ -505,6 +508,8 @@ code {
   font-size: 13.5px;
   font-weight: 500;
   margin-bottom: 8px;
+  /* Issue #262: break long unbroken words so the title stays inside the card. */
+  overflow-wrap: anywhere;
 }
 
 .card-meta {
@@ -560,12 +565,26 @@ code {
   border-color: color-mix(in srgb, var(--issue) 40%, transparent);
 }
 
+/* Issue #262: max-width/text-overflow only apply to non-inline boxes, so the
+   badge must be inline-block for the ellipsis cap to actually clip long
+   branch names (as a flex item of .card-meta it also gets min-size 0). */
 .badge-branch {
+  display: inline-block;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 10.5px;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.card-worker-link {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .card-time {
