@@ -411,7 +411,7 @@ FAKE_SRC="$tmp/fresh-src"
 mkdir -p "$FAKE_SRC/install/bin" "$FAKE_SRC/install/lib" "$FAKE_SRC/install/service"
 cp "$INSTALL_DIR/lib/"*.sh "$FAKE_SRC/install/lib/"
 cp "$INSTALL_DIR/onboard.sh" "$FAKE_SRC/install/onboard.sh"
-cp "$INSTALL_DIR/bin/pideck" "$INSTALL_DIR/bin/pideck-daemon" "$FAKE_SRC/install/bin/"
+cp "$INSTALL_DIR/bin/pideck" "$INSTALL_DIR/bin/pideck-daemon" "$INSTALL_DIR/bin/pi" "$FAKE_SRC/install/bin/"
 printf 'unit template v2\n' > "$FAKE_SRC/install/service/pideck-daemon.service"
 
 # stale installed layer: real scripts + marker line (so they differ from the
@@ -480,6 +480,12 @@ else
   printf 'not ok - ~/.local/bin/pideck symlink missing/wrong after refresh\n'
   failures=$((failures + 1))
 fi
+if [ "$(readlink "$PD_HOME/.local/bin/pi")" = "$PD_HOME/bin/pi" ]; then
+  printf 'ok - pi shim symlinked into ~/.local/bin (issue #252)\n'
+else
+  printf 'not ok - ~/.local/bin/pi shim symlink missing/wrong after refresh (issue #252)\n'
+  failures=$((failures + 1))
+fi
 cp "$INSTALL_DIR/lib/source.sh" "$PD_HOME/lib/"
 
 # --- apply path: stale real-file ~/.local/bin shims (issue #215) -------------
@@ -493,7 +499,7 @@ cp "$INSTALL_DIR/lib/source.sh" "$PD_HOME/lib/"
 # no-op and absent entries stay absent (bootstrap owns creation).
 stale_lbin="$PD_HOME/.local/bin"
 mkdir -p "$PD_SRC/install/bin" "$stale_lbin"
-cp "$INSTALL_DIR/bin/pideck" "$INSTALL_DIR/bin/pideck-daemon" "$PD_SRC/install/bin/"
+cp "$INSTALL_DIR/bin/pideck" "$INSTALL_DIR/bin/pideck-daemon" "$INSTALL_DIR/bin/pi" "$PD_SRC/install/bin/"
 # start from no ~/.local/bin entries: the previous section's apply left a
 # canonical pideck symlink there, and `> file` would follow it
 cp "$INSTALL_DIR/lib/service.sh" "$PD_HOME/lib/service.sh.real"
@@ -501,11 +507,12 @@ cat > "$PD_HOME/lib/service.sh" <<'EOF'
 svc_restart() { printf 'SVC restart\n'; }
 register_service() { printf 'REGISTER service\n'; }
 EOF
-rm -f "$stale_lbin/pideck" "$stale_lbin/pideck-daemon"
+rm -f "$stale_lbin/pideck" "$stale_lbin/pideck-daemon" "$stale_lbin/pi"
 # fe43fa0-era compat copies: real files whose content is an old shim
 # generation (the live breakage — syntax errors while main's shim is clean).
 printf '#!/bin/sh\nPD_NODE_BIN_DIR: parameter not set\n;; garbage\n' > "$stale_lbin/pideck"
 printf '#!/bin/sh\n# stale fe43fa0-era daemon launcher\n' > "$stale_lbin/pideck-daemon"
+printf '#!/bin/sh\n# stale fe43fa0-era pi shim\n' > "$stale_lbin/pi"
 printf '#!/bin/sh\n# stale installed shim (pre-refresh)\n' > "$PD_HOME/bin/pideck"
 printf '%s\n' "$STALE_RUNNING" > "$PD_HOME/var/running-sha" # restart-only apply: the refresh still runs
 rm -f "$PD_HOME/var/update-state.json"
@@ -537,6 +544,18 @@ if cmp -s "$INSTALL_DIR/bin/pideck-daemon" "$stale_lbin/pideck-daemon"; then
   printf 'ok - converted ~/.local/bin/pideck-daemon matches the current shim\n'
 else
   printf 'not ok - converted ~/.local/bin/pideck-daemon does not match the current shim\n'
+  failures=$((failures + 1))
+fi
+if [ -L "$stale_lbin/pi" ] && [ "$(readlink "$stale_lbin/pi")" = "$PD_HOME/bin/pi" ]; then
+  printf 'ok - stale real-file ~/.local/bin/pi is the canonical symlink (issue #252)\n'
+else
+  printf 'not ok - stale real-file ~/.local/bin/pi was not converted (issue #252)\n'
+  failures=$((failures + 1))
+fi
+if cmp -s "$INSTALL_DIR/bin/pi" "$stale_lbin/pi"; then
+  printf 'ok - converted ~/.local/bin/pi matches the current shim (issue #252)\n'
+else
+  printf 'not ok - converted ~/.local/bin/pi does not match the current shim (issue #252)\n'
   failures=$((failures + 1))
 fi
 
@@ -593,6 +612,15 @@ build_from_source() { :; }
 EOF
 rm -f "$PD_HOME/var/update-state.json" "$ORDER_LOG"
 
+# Issue #254: stale ~/.local/bin runtime compat symlinks left by the OLD
+# private tarball must be repointed to the refreshed runtime (or dropped
+# when the new runtime lacks the tool); foreign targets (nvm etc.) survive.
+mkdir -p "$tmp/nvm" "$PD_HOME/.local/bin"
+ln -sfn "$OLD_NODE_DIR/node" "$PD_HOME/.local/bin/node"
+ln -sfn "$OLD_NODE_DIR/npm" "$PD_HOME/.local/bin/npm"
+ln -sfn "$OLD_NODE_DIR/npx" "$PD_HOME/.local/bin/npx" # new runtime has no npx -> dropped
+ln -sfn "$tmp/nvm/corepack" "$PD_HOME/.local/bin/corepack" # foreign target -> untouched
+
 out=$(env FAKE_LOCAL_SHA="$LOCAL_SHA" FAKE_REMOTE_SHA="$REMOTE_NEW" \
   PD_HOME="$PD_HOME" HOME="$PD_HOME" PATH="$FAKE_BIN:$PATH" sh "$SHIM" update); rc=$?
 check_eq 'node+pi apply exits 0' '0' "$rc"
@@ -602,6 +630,20 @@ NODE refresh
 PI install install -g --ignore-scripts @earendil-works/pi-coding-agent
 SVC restart' "$(cat "$ORDER_LOG")"
 check_grep 'env PD_NODE repointed to the refreshed runtime' "PD_NODE=\"$NEW_NODE_DIR/node\"" "$(cat "$PD_HOME/env")"
+check_eq 'stale ~/.local/bin/node -> refreshed runtime (issue #254)' \
+  "$NEW_NODE_DIR/node" "$(readlink "$PD_HOME/.local/bin/node")"
+check_eq 'stale ~/.local/bin/npm -> refreshed runtime (issue #254)' \
+  "$NEW_NODE_DIR/npm" "$(readlink "$PD_HOME/.local/bin/npm")"
+if [ ! -e "$PD_HOME/.local/bin/npx" ] && [ ! -L "$PD_HOME/.local/bin/npx" ]; then
+  printf 'ok - stale ~/.local/bin/npx dropped (refreshed runtime lacks it, issue #254)\n'
+else
+  printf 'not ok - stale ~/.local/bin/npx survived the runtime refresh (issue #254)\n'
+  failures=$((failures + 1))
+fi
+check_eq 'foreign ~/.local/bin/corepack symlink never touched (issue #254)' \
+  "$tmp/nvm/corepack" "$(readlink "$PD_HOME/.local/bin/corepack")"
+check_eq 'pi reinstall does not clobber the pi shim symlink (issue #252)' \
+  "$PD_HOME/bin/pi" "$(readlink "$PD_HOME/.local/bin/pi")"
 check_grep 'node+pi apply ends with done progress' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
 
 # --- apply path: pi engines check refuses a too-old node (issue #202) -------
@@ -641,7 +683,7 @@ resolve_source() {
   mkdir -p "\$PD_SRC/install/bin" "\$PD_SRC/install/lib" "\$PD_SRC/install/service"
   cp "$INSTALL_DIR/lib/"*.sh "\$PD_SRC/install/lib/"
   cp "$INSTALL_DIR/onboard.sh" "\$PD_SRC/install/onboard.sh"
-  cp "$INSTALL_DIR/bin/pideck" "$INSTALL_DIR/bin/pideck-daemon" "\$PD_SRC/install/bin/"
+  cp "$INSTALL_DIR/bin/pideck" "$INSTALL_DIR/bin/pideck-daemon" "$INSTALL_DIR/bin/pi" "\$PD_SRC/install/bin/"
   FAKE_LOCAL_SHA="$LOCAL_SHA"; export FAKE_LOCAL_SHA
   printf 'RESOLVE re-clone %s\n' "\$PD_REPO_REF"
 }
@@ -671,6 +713,59 @@ check_grep 'failed re-clone apply keeps the honest check error (issue #221)' 'ca
 check_grep 'failed re-clone apply records failed progress (issue #221)' '"stage":"failed"' "$(cat "$PD_HOME/var/update-state.json")"
 check_no_grep 'failed re-clone apply never rebuilds (issue #221)' 'BUILD' "$out"
 write_config
+
+# --- plain-shell pi shim (issue #252) ---------------------------------------
+# pi over SSH (any plain shell) must run on the canonical private node, not
+# whatever `node` is first on PATH: the npm-global entrypoint's shebang
+# resolves the system node and crashes below pi's floor (issue #202). The
+# shim reuses the pideck shim's resolve_canonical_node and execs the
+# npm-global entrypoint on it. Teach the fake private node to run scripts
+# (earlier sections only exercise -v) and stage a system node that shouts if
+# it is ever used.
+cat > "$NEW_NODE_DIR/node" <<'EOF'
+#!/bin/sh
+[ "$1" = -v ] && { printf 'v22.23.2\n'; exit 0; }
+script=$1
+[ -f "$script" ] || { printf 'fake-node: %s: not found\n' "$script" >&2; exit 127; }
+shift
+printf 'PI-RAN-ON-PRIVATE\n'
+exec /bin/sh "$script" "$@"
+EOF
+chmod +x "$NEW_NODE_DIR/node"
+mkdir -p "$PD_HOME/opt/npm-global/bin" "$tmp/pi-sysbin"
+cat > "$PD_HOME/opt/npm-global/bin/pi" <<'EOF'
+printf 'PI-ENTRY: %s\n' "$*"
+EOF
+chmod +x "$PD_HOME/opt/npm-global/bin/pi"
+printf '#!/bin/sh\nprintf "SYSTEM-NODE used\\n"\n' > "$tmp/pi-sysbin/node"
+chmod +x "$tmp/pi-sysbin/node"
+
+run_pi_shim() {
+  env -u PD_NODE -u PD_NODE_BIN -u PD_NODE_BIN_DIR \
+    PATH="$tmp/pi-sysbin:$FAKE_BIN:$PATH" PD_HOME="$PD_HOME" HOME="$PD_HOME" \
+    sh "$PD_HOME/bin/pi" "$@"
+}
+
+out=$(run_pi_shim run --flag); rc=$?
+check_eq 'pi shim exits 0' '0' "$rc"
+check_grep 'pi shim execs the npm-global entrypoint with args intact' 'PI-ENTRY: run --flag' "$out"
+check_grep 'pi shim runs the entrypoint on the private runtime' 'PI-RAN-ON-PRIVATE' "$out"
+check_no_grep 'pi shim never uses the system node on PATH' 'SYSTEM-NODE used' "$out"
+
+# Without an env-file PD_NODE the newest private runtime still wins over the
+# system node on PATH (derivation fallback 3 in resolve_canonical_node).
+set_pd_node ""
+out=$(run_pi_shim doctor)
+check_grep 'pi shim without env PD_NODE still runs the newest private runtime' 'PI-RAN-ON-PRIVATE' "$out"
+check_grep 'pi shim forwards args without env PD_NODE' 'PI-ENTRY: doctor' "$out"
+check_no_grep 'pi shim without env PD_NODE never uses the system node' 'SYSTEM-NODE used' "$out"
+
+# A missing npm-global entrypoint is an honest, actionable error.
+mv "$PD_HOME/opt/npm-global/bin/pi" "$tmp/pi-entry.bak"
+out=$(run_pi_shim --version 2>&1); rc=$?
+check_eq 'pi shim without the npm-global entrypoint exits nonzero' '1' "$rc"
+check_grep 'pi shim names the missing entrypoint' 'pi entrypoint missing' "$out"
+mv "$tmp/pi-entry.bak" "$PD_HOME/opt/npm-global/bin/pi"
 
 # --- summary ----------------------------------------------------------------
 if [ "$failures" -eq 0 ]; then
