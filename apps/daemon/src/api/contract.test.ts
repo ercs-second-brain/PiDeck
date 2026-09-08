@@ -68,9 +68,11 @@ describe("contract endpoint coverage", () => {
         ? { projectId: "x", prNumber: 1 }
         : endpoint.path.includes(":workerId")
           ? { workerId: "x" }
-          : endpoint.path.includes(":projectId")
-            ? { projectId: "x" }
-            : {};
+          : endpoint.path.includes(":sessionId")
+            ? { sessionId: "x" }
+            : endpoint.path.includes(":projectId")
+              ? { projectId: "x" }
+              : {};
       const path = formatPath(name as EndpointName, params as never);
       expect(router.find(endpoint.method, path), `${endpoint.method} ${endpoint.path}`).toBeDefined();
     }
@@ -178,6 +180,41 @@ describe("sessions & workers", () => {
     expect(workers.status).toBe(200);
     const parsedWorkers = (workers.json as unknown[]).map((w) => workerSchema.parse(w));
     expect(parsedWorkers.map((w) => w.id)).toContain(worker.id);
+  });
+
+  it("relaunches a dead session over HTTP: same identity, pane recreated (issue #117)", async () => {
+    const { services, tmux } = daemon;
+    if (services.projects.get("relaunch-rep") === undefined) {
+      services.projects.register({ mode: "clone", repoUrl: "https://github.com/relaunch/rep" });
+    }
+    const { session, worker } = await services.sessions.spawnWorker("relaunch-rep", { issueNumber: 8 });
+    await services.sessions.updateWorkerStatus(worker.id, "stopped", "pane died");
+    tmux.sessions.delete(session.tmuxSession); // simulate the pane dying
+    expect(tmux.sessions.has(session.tmuxSession)).toBe(false);
+
+    // Capture hub broadcasts for the assertion below.
+    const hubBroadcasts: unknown[] = [];
+    const originalBroadcast = services.hub.broadcast.bind(services.hub);
+    services.hub.broadcast = ((event: unknown) => {
+      hubBroadcasts.push(event);
+      return originalBroadcast(event as Parameters<typeof originalBroadcast>[0]);
+    }) as typeof services.hub.broadcast;
+
+    const res = await api("POST", formatPath("relaunchSession", { sessionId: session.id }));
+    expect(res.status).toBe(200);
+    const relaunched = sessionSchema.parse(res.json);
+    expect(relaunched.id).toBe(session.id); // identity preserved
+    expect(tmux.sessions.has(session.tmuxSession)).toBe(true); // pane recreated
+
+    // The worker bump is announced on the hub for live sidebars.
+    expect(hubBroadcasts).toContainEqual(
+      expect.objectContaining({ type: "worker.status.changed", workerId: worker.id, status: "running" }),
+    );
+
+    // Unknown session → 404; archived worker → 409 (history, not a pane).
+    expect((await api("POST", formatPath("relaunchSession", { sessionId: "sess-ghost" }))).status).toBe(404);
+    await services.sessions.archiveWorker(worker.id);
+    expect((await api("POST", formatPath("relaunchSession", { sessionId: session.id }))).status).toBe(409);
   });
 
   it("404s for unknown projects", async () => {

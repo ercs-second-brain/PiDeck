@@ -5,10 +5,11 @@
  * keystrokes are forwarded; container resizes propagate to tmux.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { relaunchSession } from "./api";
 import { InputBatcher } from "./input-batcher";
 import { TerminalConnection, type TerminalStatus } from "./connection";
 import { TERMINAL_KEYS } from "./keys";
@@ -22,6 +23,50 @@ const STATUS_LABELS: Record<TerminalStatus, string> = {
   detached: "Detached",
 };
 
+/**
+ * Whether the status bar should offer the relaunch affordance (issue #117):
+ * the pane is dead — the tmux session ended (`terminal.exited`) or no
+ * longer exists — so instead of a dead end the user can restart it. Live
+ * and transitioning states never offer it; archived sessions never reach
+ * this pane at all (they render the read-only archived log view).
+ */
+export function relaunchOffered(status: TerminalStatus): boolean {
+  return status === "exited" || status === "unavailable";
+}
+
+/**
+ * Relaunch state + handler (issue #117): calls the daemon's relaunch
+ * endpoint (which kills any lingering tmux session and re-runs the
+ * session's launch path), then re-attaches the terminal with the
+ * last-known pane size. Failures surface in the status bar and leave the
+ * affordance available for a retry.
+ */
+function useRelaunch(
+  sessionId: string,
+  connectionRef: RefObject<TerminalConnection | null>,
+  sizeRef: RefObject<{ cols: number; rows: number }>,
+) {
+  const [relaunching, setRelaunching] = useState(false);
+  const [relaunchError, setRelaunchError] = useState<string | null>(null);
+  const relaunch = async () => {
+    if (relaunching) return;
+    setRelaunching(true);
+    setRelaunchError(null);
+    try {
+      await relaunchSession(sessionId);
+      // Fresh attach (not reconnect): the pane is brand new, scrollback
+      // replay comes from the daemon's retained history for the session.
+      const { cols, rows } = sizeRef.current ?? { cols: 80, rows: 24 };
+      connectionRef.current?.attach(sessionId, cols, rows);
+    } catch (err) {
+      setRelaunchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRelaunching(false);
+    }
+  };
+  return { relaunching, relaunchError, relaunch };
+}
+
 export function TerminalPane({ sessionId }: { sessionId: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Live handle onto the pane's input path for the mobile key row (issue
@@ -30,6 +75,12 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
   const sendRef = useRef<((data: string) => void) | null>(null);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [detail, setDetail] = useState<string | undefined>(undefined);
+  // Relaunch affordance state (issue #117): the live connection handle (so
+  // the click can re-attach after the daemon recreated the pane) and the
+  // last-known pane size for that re-attach.
+  const connectionRef = useRef<TerminalConnection | null>(null);
+  const sizeRef = useRef({ cols: 80, rows: 24 });
+  const { relaunching, relaunchError, relaunch } = useRelaunch(sessionId, connectionRef, sizeRef);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -59,6 +110,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
       },
       onReplay: () => term.reset(),
     });
+    connectionRef.current = connection;
     // Coalesce keystroke bursts into fewer, larger WS frames (issue #67).
     const batcher = new InputBatcher((data) => connection.sendInput(data));
     term.onData((data) => batcher.add(data));
@@ -66,6 +118,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
 
     let lastSent = { cols: term.cols, rows: term.rows };
     const propagateResize = () => {
+      sizeRef.current = { cols: term.cols, rows: term.rows };
       if (term.cols !== lastSent.cols || term.rows !== lastSent.rows) {
         lastSent = { cols: term.cols, rows: term.rows };
         connection.resize(term.cols, term.rows);
@@ -88,6 +141,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
 
     return () => {
       sendRef.current = null;
+      connectionRef.current = null;
       observer.disconnect();
       batcher.close();
       connection.detach();
@@ -99,10 +153,47 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
     <div className="terminal-pane">
       <div ref={containerRef} className="terminal-container" />
       <KeyRow onSend={(data) => sendRef.current?.(data)} />
-      <div className={`terminal-statusbar status-${status}`}>
-        <span className="terminal-status-label">{STATUS_LABELS[status]}</span>
-        {detail && <span className="terminal-status-detail">{detail}</span>}
-      </div>
+      <StatusBar
+        status={status}
+        detail={detail}
+        relaunching={relaunching}
+        relaunchError={relaunchError}
+        onRelaunch={relaunch}
+      />
+    </div>
+  );
+}
+
+/**
+ * Bottom status bar: connection state, optional detail text, and — only
+ * while the pane is dead (exited/unavailable, issue #117) — the relaunch
+ * button that restarts the tmux session without a dead end.
+ */
+export function StatusBar(props: {
+  status: TerminalStatus;
+  detail?: string;
+  relaunching: boolean;
+  relaunchError: string | null;
+  onRelaunch: () => void;
+}) {
+  const { status, detail, relaunching, relaunchError, onRelaunch } = props;
+  return (
+    <div className={`terminal-statusbar status-${status}`}>
+      <span className="terminal-status-label">{STATUS_LABELS[status]}</span>
+      {detail && <span className="terminal-status-detail">{detail}</span>}
+      {relaunchError && <span className="terminal-status-detail">Relaunch failed: {relaunchError}</span>}
+      {relaunchOffered(status) && (
+        <button
+          type="button"
+          className="terminal-relaunch"
+          aria-label="Relaunch session"
+          title="Kill any lingering tmux session of this name and restart it"
+          disabled={relaunching}
+          onClick={onRelaunch}
+        >
+          {relaunching ? "Relaunching…" : "↻ Relaunch"}
+        </button>
+      )}
     </div>
   );
 }

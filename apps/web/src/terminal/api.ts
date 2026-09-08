@@ -74,6 +74,15 @@ export function terminateWorker(workerId: string): Promise<Worker> {
 }
 
 /**
+ * Relaunches a dead session's tmux pane (issue #117): the daemon kills any
+ * lingering tmux session of the name and re-runs the session's launch path;
+ * the registry record (identity/history) is preserved, only the pane is new.
+ */
+export function relaunchSession(sessionId: string): Promise<Session> {
+  return post(sessionSchema, formatPath("relaunchSession", { sessionId }));
+}
+
+/**
  * Fetches an archived worker's log (issue #104): the scrollback captured at
  * termination plus the worker's final metadata.
  */

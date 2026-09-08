@@ -26,7 +26,6 @@
     "export:apps/daemon/src/pipeline/prs/harness.ts:fakeGh",
     "export:apps/daemon/src/pipeline/prs/pipeline.ts:DEFAULT_FIX_PROMPT_TIMEOUT_MS",
     "export:apps/daemon/src/pipeline/prs/tracker.ts:trackedPrStateSchema",
-    "export:apps/daemon/src/sessions/manager.ts:DEFAULT_WORKER_COMMAND",
     "export:apps/web/src/lib/api.ts:ApiError",
     "export:apps/web/src/lib/api.ts:ghAuthSchema",
     "export:apps/web/src/routes/OnboardingWizard.tsx:OnboardingWizard",

@@ -325,6 +325,24 @@ export const endpoints = {
     response: archivedWorkerLogSchema,
   },
 
+  /**
+   * Relaunch a dead session's tmux pane (issue #117): kills any lingering
+   * tmux session of the same name (idempotent weird-state cleanup), then
+   * re-runs the session's launch path — orchestrator sessions are recreated
+   * in their recorded cwd with a plain shell; worker sessions are re-spawned
+   * from their recorded cwd/command (the #27 resurrection machinery,
+   * user-triggered). The registry record (session + worker) is preserved, so
+   * identity and history survive; only the pane is new. Archived sessions
+   * are rejected (409) — their history is #104's read-only log view.
+   */
+  relaunchSession: {
+    method: "POST",
+    path: "/api/sessions/:sessionId/relaunch",
+    params: z.object({ sessionId: z.string().min(1) }),
+    request: null,
+    response: sessionSchema,
+  },
+
   // Pull requests
   listProjectPullRequests: {
     method: "GET",
