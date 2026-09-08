@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate } from "react-router";
 import type { Project } from "@pideck/shared";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { NodeVersionWarning } from "./components/NodeVersionWarning";
 import { NotificationBell } from "./components/NotificationCenter";
 import { AllProjectsBoard } from "./routes/AllProjectsBoard";
 import { BoardPage } from "./routes/BoardPage";
@@ -57,14 +58,48 @@ const router = createBrowserRouter([
   },
 ]);
 
+/** App header: sidebar toggle + brand (needs `<Link>`, so it renders inside the router). */
+function AppHeader(props: { sidebarOpen: boolean; onToggleSidebar: () => void }) {
+  return (
+    <header className="app-header">
+      <button
+        type="button"
+        className="menu-toggle"
+        aria-label="Toggle the project sidebar"
+        title="Projects"
+        onClick={props.onToggleSidebar}
+      >
+        ☰
+      </button>
+      <Link to="/" className="brand">
+        Pi<span className="brand-accent">Deck</span>
+      </Link>
+      <div className="header-actions">
+        <NotificationBell />
+      </div>
+    </header>
+  );
+}
+
 function Shell() {
   const navigate = useNavigate();
   // Layout route: params from the matched child (e.g. /terminal/:sessionId,
   // /projects/:projectId) are merged in, so the sidebar can mark the
   // currently attached session / open project.
   const { sessionId, projectId } = useParams();
-  const { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker, deleteProject } =
-    useSidebarData((sessionId) => navigateFromSidebar(`/terminal/${sessionId}`));
+  const {
+    entries,
+    error,
+    loaded,
+    startingProjectId,
+    globalAgent,
+    startingGlobalAgent,
+    reload,
+    startOrchestrator,
+    startGlobalAgent,
+    terminateWorker,
+    deleteProject,
+  } = useSidebarData((sessionId) => navigateFromSidebar(`/terminal/${sessionId}`));
   // The two onboarding modals (issues #62, #90, #183): see use-onboarding-gates.
   const onboarding = useOnboardingGates({ loaded, error, entryCount: entries.length });
   // Issue #93: on small viewports the sidebar collapses into a drawer; the
@@ -80,8 +115,11 @@ function Shell() {
     error,
     loaded,
     startingProjectId,
+    globalAgent,
+    startingGlobalAgent,
     reload,
     startOrchestrator: (projectId: string) => startOrchestrator(projectId),
+    startGlobalAgent: () => startGlobalAgent(),
     terminateWorker,
     deleteProject,
     openOnboarding: onboarding.openProject,
@@ -96,24 +134,9 @@ function Shell() {
 
   return (
     <div className={`app${sidebarOpen ? " sidebar-open" : ""}`}>
-      <header className="app-header">
-        <button
-          type="button"
-          className="menu-toggle"
-          aria-label="Toggle the project sidebar"
-          title="Projects"
-          onClick={() => setSidebarOpen((open) => !open)}
-        >
-          ☰
-        </button>
-        <Link to="/" className="brand">
-          Pi<span className="brand-accent">Deck</span>
-        </Link>
-        <div className="header-actions">
-          <NotificationBell />
-        </div>
-      </header>
+      <AppHeader sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} />
       <UpdateBanner />
+      <NodeVersionWarning />
       <div className="app-body">
         <SidebarContext.Provider value={sidebar}>
           <SessionPicker
@@ -123,6 +146,8 @@ function Shell() {
             selectedSessionId={sessionId ?? null}
             selectedProjectId={projectId ?? null}
             startingProjectId={startingProjectId}
+            globalAgent={globalAgent}
+            startingGlobalAgent={startingGlobalAgent}
             onSelectSession={(id) => navigateFromSidebar(`/terminal/${id}`)}
             onSelectProject={(projectId) => navigateFromSidebar(`/projects/${projectId}`)}
             onOpenSettings={(projectId) => navigateFromSidebar(`/projects/${projectId}/settings`)}
@@ -130,6 +155,7 @@ function Shell() {
             onStartOnboarding={onboarding.openProject}
             onOpenGlobalSettings={() => navigateFromSidebar("/settings")}
             onStartOrchestrator={(projectId) => startOrchestrator(projectId)}
+            onStartGlobalAgent={startGlobalAgent}
             onTerminateWorker={terminateWorker}
             onDeleteProject={deleteProjectAndLeave}
           />

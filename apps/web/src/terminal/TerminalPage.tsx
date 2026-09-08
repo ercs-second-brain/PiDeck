@@ -11,16 +11,36 @@
  */
 
 import { useParams } from "react-router";
+import type { Session } from "@pideck/shared";
 import { TerminalPane } from "./TerminalPane";
 import { ArchivedLogView } from "./ArchivedLogView";
+import type { ProjectEntry } from "./SessionPicker";
 import { useSidebar } from "./sidebar";
 import "./terminal.css";
 
+/**
+ * The session behind the route param: a project entry's session, or — for
+ * the workspace-level global agent (projectId `global`, which belongs to no
+ * project entry) — the sidebar context's global agent session.
+ */
+function findSelectedSession(
+  entries: ProjectEntry[],
+  globalAgent: Session | null,
+  sessionId: string | undefined,
+): Session | undefined {
+  if (sessionId === undefined) return undefined;
+  for (const entry of entries) {
+    const session = entry.sessions.find((candidate) => candidate.id === sessionId);
+    if (session !== undefined) return session;
+  }
+  return globalAgent !== null && globalAgent.id === sessionId ? globalAgent : undefined;
+}
+
 export function TerminalPage() {
   const { sessionId } = useParams();
-  const { entries, error, loaded, openOnboarding } = useSidebar();
+  const { entries, globalAgent, error, loaded, openOnboarding } = useSidebar();
 
-  const selected = entries.flatMap((entry) => entry.sessions).find((session) => session.id === sessionId);
+  const selected = findSelectedSession(entries, globalAgent, sessionId);
   const selectedWorker =
     selected?.workerId != null ? entries.flatMap((entry) => entry.workers).find((worker) => worker.id === selected.workerId) : undefined;
   const prUrl = selected ? entries.find((entry) => entry.project.id === selected.projectId)?.project.repoUrl : undefined;

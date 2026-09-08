@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import {
+  GLOBAL_AGENT_PROJECT_ID,
   projectSchema,
   type Project,
   type ProjectSettings,
@@ -206,11 +207,19 @@ export class ProjectService {
    *   clones it.
    */
   async register(input: RegisterProjectInput): Promise<Project> {
+    const id = await this.deriveId(input.name, input.mode === "clone" ? (input.repoUrl as string) : "", input.mode);
+    // `global` is the reserved pseudo-project id of the workspace-level
+    // global agent session — a registered project under it would collide
+    // with the global agent's registry records, dirs, and tmux names.
+    // Checked before the remote repo is created/cloned (create mode would
+    // otherwise open a GitHub repo that then cannot be registered).
+    if (id === GLOBAL_AGENT_PROJECT_ID) {
+      throw new ConflictError(`project id "${id}" is reserved for the global agent`);
+    }
     const repoUrl =
       input.mode === "clone"
         ? (input.repoUrl as string)
         : await this.createRemoteRepo(input);
-    const id = await this.deriveId(input.name, repoUrl, input.mode);
     if (this.store.get(id) !== undefined) {
       throw new ConflictError(`project id "${id}" is already registered`);
     }

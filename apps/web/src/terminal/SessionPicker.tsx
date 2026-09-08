@@ -38,6 +38,7 @@ import {
   WorkerRow,
   workerFor,
 } from "./picker-rows";
+import { GlobalAgentRow } from "./GlobalAgentRow";
 import { usePickerState } from "./use-picker-state";
 
 /**
@@ -202,8 +203,7 @@ function ConfirmModals(props: {
   );
 }
 
-/** Sidebar: project name opens the board, chat icon the orchestrator (#173), workers nested beneath. */
-export function SessionPicker(props: {
+export interface SessionPickerProps {
   entries: ProjectEntry[];
   error: string | null;
   /** Project list still loading (issue #90): empty ≠ no projects yet. */
@@ -211,6 +211,10 @@ export function SessionPicker(props: {
   selectedSessionId: string | null;
   selectedProjectId?: string | null;
   startingProjectId?: string | null;
+  /** The workspace-level global agent session, when one exists. */
+  globalAgent?: Session | null;
+  /** True while the global agent start request is in flight. */
+  startingGlobalAgent?: boolean;
   /** Worker id whose termination is in flight (confirm button pending state). */
   terminatingWorkerId?: string | null;
   /** Initial expanded state of the per-project archived sections (tests/UX). */
@@ -230,17 +234,28 @@ export function SessionPicker(props: {
   onStartOnboarding: () => void;
   /** Starts (or attaches to) the project's orchestrator — the chat-icon click (#173, #53). */
   onStartOrchestrator: (projectId: string) => void;
+  /** Starts (or attaches to) the workspace-level global agent. */
+  onStartGlobalAgent?: () => void;
   /** Deletes a project locally (issue #172): daemon teardown, GitHub repo
    * kept. Rejecting (e.g. 409 while workers drive a PR) surfaces in the modal. */
   onDeleteProject?: (projectId: string) => Promise<void>;
   onTerminateWorker?: (workerId: string) => void;
-}) {
+}
+
+/** Sidebar: project name opens the board, chat icon the orchestrator (#173), workers nested beneath. */
+export function SessionPicker(props: SessionPickerProps) {
   const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
   const now = useTickingNow();
 
   return (
     <aside className="session-picker">
       <PickerHeader onSelectAllProjects={props.onSelectAllProjects} onStartOnboarding={props.onStartOnboarding} />
+      <GlobalAgentRow
+        session={props.globalAgent ?? null}
+        selected={props.globalAgent?.id === props.selectedSessionId}
+        starting={props.startingGlobalAgent === true}
+        onStart={() => props.onStartGlobalAgent?.()}
+      />
       {props.entries.map((entry) => (
         <ProjectSection
           key={entry.project.id}

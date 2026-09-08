@@ -21,6 +21,7 @@
  */
 
 import type { Session, Worker, WorkerKind, WorkerStatus } from "@pideck/shared";
+import { GLOBAL_AGENT_PROJECT_ID } from "@pideck/shared";
 import { ProjectLayout } from "./layout.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
@@ -128,12 +129,35 @@ export class SessionManager {
    * (and registry record) if none is alive. One per project.
    */
   async ensureOrchestrator(projectId: string): Promise<Session> {
+    this.ensureProject(projectId);
+    return this.ensureOrchestratorSession(projectId, this.layout.projectDir(projectId));
+  }
+
+  /**
+   * Returns the workspace-level global agent session (the top of the agent
+   * hierarchy: global agent → project orchestrators → workers → review
+   * agents), creating its tmux session (and registry record) if none is
+   * alive. One per workspace; modeled as an orchestrator-role session under
+   * the reserved `GLOBAL_AGENT_PROJECT_ID` pseudo-project so registry
+   * persistence, reconcile/adoption, the terminal bridge, relaunch, and
+   * `pideck send` all work unchanged. Its pane runs in the daemon state dir
+   * root — the workspace spanning every project — not in any project dir.
+   */
+  async ensureGlobalAgent(): Promise<Session> {
+    return this.ensureOrchestratorSession(GLOBAL_AGENT_PROJECT_ID, this.layout.root);
+  }
+
+  /**
+   * Shared find-or-create for orchestrator-role sessions (per-project
+   * orchestrators and the global agent): reuse the live session when one
+   * exists, else open a fresh `pideck-<projectId>-orchestrator-<n>` tmux
+   * session in the given cwd.
+   */
+  private async ensureOrchestratorSession(projectId: string, cwd: string): Promise<Session> {
     for (const existing of this.registry.listSessions({ projectId, role: "orchestrator" })) {
       if (await this.tmux.hasSession(existing.tmuxSession)) return existing;
     }
-    await this.ensureProject(projectId);
     const name = await this.nextTmuxSessionName(projectId, "orchestrator");
-    const cwd = this.layout.projectDir(projectId);
     await this.tmux.newSession(name, { cwd });
     return this.registry.createSession({
       projectId,
@@ -262,12 +286,8 @@ export class SessionManager {
         });
         result.resurrected.push(session);
       } catch (err) {
-        this.markWorkerStopped(
-          session,
-          `tmux pane died and could not be recreated: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
+        const reason = err instanceof Error ? err.message : String(err);
+        this.markWorkerStopped(session, `tmux pane died and could not be recreated: ${reason}`);
         result.lost.push(session);
       }
     }
@@ -300,17 +320,11 @@ export class SessionManager {
    * {@link ensureOrchestrator} created them.
    */
   private launchPath(session: Session): { cwd: string; command?: string[] } {
-    const cwd =
-      session.cwd ??
-      (session.role === "worker"
-        ? this.layout.cloneDir(session.projectId)
-        : this.layout.projectDir(session.projectId));
-    const command =
-      session.role === "worker"
-        ? session.command !== undefined
-          ? resurrectionCommand(deserializeCommand(session.command))
-          : [...RESURRECT_WORKER_COMMAND]
-        : undefined;
+    const cwd = session.cwd ??
+      (session.role === "worker" ? this.layout.cloneDir(session.projectId) : this.layout.projectDir(session.projectId));
+    const command = session.role === "worker"
+      ? session.command !== undefined ? resurrectionCommand(deserializeCommand(session.command)) : [...RESURRECT_WORKER_COMMAND]
+      : undefined;
     return { cwd, ...(command === undefined ? {} : { command }) };
   }
 

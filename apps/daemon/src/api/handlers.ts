@@ -228,6 +228,16 @@ export function countActiveWorkers(services: DaemonServices): number {
  * project is registered; a bootstrap failure (e.g. tmux trouble) is logged,
  * never fails the registration.
  */
+function projectSessionsPayload(services: DaemonServices, projectId: string) {
+  requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
+  return services.sessions.listSessions(projectId);
+}
+
+function projectWorkersPayload(services: DaemonServices, projectId: string) {
+  requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
+  return services.sessions.listWorkers({ projectId });
+}
+
 async function registerAndBootstrap(services: DaemonServices, body: unknown): Promise<Project> {
   const project = await services.projects.register(registerProjectRequestSchema.parse(body));
   try {
@@ -262,15 +272,16 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
       return services.kanban.getBoard(project);
     },
 
-    listProjectSessions: ({ params }) => {
-      requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
-      return services.sessions.listSessions(params.projectId);
-    },
+    listProjectSessions: ({ params }) => projectSessionsPayload(services, params.projectId),
 
-    listProjectWorkers: ({ params }) => {
-      requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
-      return services.sessions.listWorkers({ projectId: params.projectId });
-    },
+    // Every session daemon-wide (including the global agent's, projectId
+    // `global`): backs the sidebar's global-agent row and `pideck sessions`.
+    listAllSessions: () => services.sessions.listSessions(),
+
+    // Start (or attach to) the workspace-level global agent (hierarchy top).
+    ensureGlobalAgent: () => services.orchestratorBootstrap.ensureGlobalAgent(),
+
+    listProjectWorkers: ({ params }) => projectWorkersPayload(services, params.projectId),
 
     /**
      * Start (or reuse) the project's orchestrator session (issue #53): a

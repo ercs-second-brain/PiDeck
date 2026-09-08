@@ -122,6 +122,8 @@ export function makeApi(base: string): ApiProbe {
 export interface ContractServer {
   daemon: TestDaemon;
   api: ApiProbe;
+  /** Base URL of the running HTTP server (`http://127.0.0.1:<port>`). */
+  base: string;
   close(): Promise<void>;
 }
 
@@ -136,6 +138,7 @@ export async function startContractServer(options: Parameters<typeof testDaemon>
   return {
     daemon,
     api: makeApi(base),
+    base,
     close: async () => {
       daemon.services.hub.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));

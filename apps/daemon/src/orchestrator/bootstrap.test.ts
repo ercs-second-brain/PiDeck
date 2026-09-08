@@ -35,6 +35,13 @@ const TEMPLATE = [
   "",
 ].join("\n");
 
+/** Global-agent template fixture: the workspace-level persona's placeholder. */
+const GLOBAL_TEMPLATE = [
+  "## PiDeck Global Agent",
+  "Workspace path: {{WORKSPACE_PATH}}",
+  "",
+].join("\n");
+
 interface Harness {
   daemon: TestDaemon;
   bootstrap: OrchestratorBootstrap;
@@ -131,18 +138,81 @@ describe("OrchestratorBootstrap.ensureForProject", () => {
     const a = await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/a" });
     const b = await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/b" });
     const errors: string[] = [];
+    mkdirSync(path.join(daemon.stateDir, "fixtures"), { recursive: true });
+    writeFileSync(path.join(daemon.stateDir, "fixtures", "global-agent.md"), GLOBAL_TEMPLATE);
     const bootstrap = new OrchestratorBootstrap({
       sessions: daemon.services.sessions,
       tmux: daemon.services.tmux,
       layout: new ProjectLayout(daemon.stateDir),
       projects: daemon.services.projects,
       promptPath: "/nonexistent/template.md", // every project fails to render
+      globalPromptPath: path.join(daemon.stateDir, "fixtures", "global-agent.md"),
+      onError: (err, projectId) => errors.push(`${projectId}: ${err instanceof Error ? err.message : String(err)}`),
+    });
+    // The per-project template is deliberately broken, so only the global
+    // agent (the hierarchy's top layer, ensured first) comes back.
+    const sessions = await bootstrap.ensureAll();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.projectId).toBe("global");
+    expect(sessions[0]?.role).toBe("orchestrator");
+    expect(errors).toHaveLength(2);
+    expect(errors.map((e) => e.split(":")[0])).toEqual(expect.arrayContaining([a.id, b.id]));
+  });
+
+  it("ensureAll reports the global agent's failure without stopping the projects", async () => {
+    const daemon = testDaemon();
+    await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/a" });
+    const errors: string[] = [];
+    const promptPath = path.join(daemon.stateDir, "fixtures", "orchestrator.md");
+    mkdirSync(path.dirname(promptPath), { recursive: true });
+    writeFileSync(promptPath, TEMPLATE);
+    const bootstrap = new OrchestratorBootstrap({
+      sessions: daemon.services.sessions,
+      tmux: daemon.services.tmux,
+      layout: new ProjectLayout(daemon.stateDir),
+      projects: daemon.services.projects,
+      promptPath,
+      globalPromptPath: "/nonexistent/global-agent.md", // the global agent fails to render
       onError: (err, projectId) => errors.push(`${projectId}: ${err instanceof Error ? err.message : String(err)}`),
     });
     const sessions = await bootstrap.ensureAll();
-    expect(sessions).toHaveLength(0);
-    expect(errors).toHaveLength(2);
-    expect(errors.map((e) => e.split(":")[0])).toEqual(expect.arrayContaining([a.id, b.id]));
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.projectId).toBe("o-a");
+    expect(errors).toEqual([expect.stringContaining("global:")]);
+  });
+});
+
+describe("OrchestratorBootstrap.ensureGlobalAgent", () => {
+  it("creates the workspace-level global agent with the rendered prompt in the state dir", async () => {
+    const h = await harness();
+    const session = await h.bootstrap.ensureGlobalAgent();
+
+    expect(session.projectId).toBe("global");
+    expect(session.role).toBe("orchestrator");
+    expect(session.cwd).toBe(h.daemon.stateDir); // the workspace root, not a project dir
+
+    const promptFile = path.join(h.daemon.stateDir, "global-agent-prompt.md");
+    const rendered = readFileSync(promptFile, "utf8");
+    expect(rendered).toContain(`Workspace path: ${h.daemon.stateDir}`);
+    expect(rendered).not.toMatch(/\{\{[A-Z0-9_]+\}\}/);
+
+    const pane = h.daemon.tmux.sessions.get(session.tmuxSession);
+    expect(pane?.paneLines).toEqual([orchestratorLaunchCommand({ sessionId: session.id, promptFile })]);
+    expect(pane?.paneLines[0]).toContain("pi --append-system-prompt");
+  });
+
+  it("is idempotent: one global agent across repeated runs", async () => {
+    let probeCalls = 0;
+    const h = await harness({
+      isAgentRunning: async () => {
+        probeCalls++;
+        return probeCalls > 1;
+      },
+    });
+    const first = await h.bootstrap.ensureGlobalAgent();
+    const second = await h.bootstrap.ensureGlobalAgent();
+    expect(second.id).toBe(first.id);
+    expect(h.daemon.tmux.sessions.get(first.tmuxSession)?.paneLines).toHaveLength(1); // launched exactly once
   });
 });
 
