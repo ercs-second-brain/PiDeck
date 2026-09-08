@@ -38,6 +38,12 @@ export function ArchivedLogPanel(props: { log: ArchivedWorkerLog; prUrl?: string
             <dt>Task</dt>
             <dd>{taskLabel(log.issueNumber)}</dd>
           </div>
+          {log.prompt !== null && (
+            <div className="archived-log-meta-item archived-log-prompt">
+              <dt>Prompt</dt>
+              <dd>{log.prompt}</dd>
+            </div>
+          )}
           {log.prNumber !== null && (
             <div className="archived-log-meta-item">
               <dt>PR</dt>

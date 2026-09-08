@@ -61,6 +61,8 @@ export interface SpawnWorkerOptions {
   parentWorkerId?: string | null;
   /** PR the worker owns or reviews (review agents, issue #107). */
   prNumber?: number;
+  /** Initial prompt typed into the pane at spawn; persisted on the worker (issue #120). */
+  prompt?: string;
 }
 
 export interface SpawnedWorker {
@@ -170,6 +172,7 @@ export class SessionManager {
       status: "spawning",
       statusMessage: "launching agent session",
       ...(options.prNumber !== undefined ? { prNumber: options.prNumber } : {}),
+      ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
       ...(options.kind !== undefined ? { kind: options.kind } : {}),
       ...(options.parentWorkerId !== undefined ? { parentWorkerId: options.parentWorkerId } : {}),
     });
@@ -178,11 +181,7 @@ export class SessionManager {
     try {
       await this.tmux.newSession(name, { cwd, command });
     } catch (err) {
-      this.registry.updateWorkerStatus(
-        worker.id,
-        "failed",
-        `tmux launch failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.registry.updateWorkerStatus(worker.id, "failed", `tmux launch failed: ${err instanceof Error ? err.message : String(err)}`);
       this.registry.deleteSession(session.id);
       throw err;
     }

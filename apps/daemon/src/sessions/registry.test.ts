@@ -227,13 +227,14 @@ describe("SessionRegistry: reviewer linkage (issue #107)", () => {
       prNumber: 12,
       kind: "reviewer",
       parentWorkerId: "worker-1",
+      prompt: "Review PR #12 for correctness",
       status: "running",
     });
-    expect(reviewer).toMatchObject({ prNumber: 12, kind: "reviewer", parentWorkerId: "worker-1" });
+    expect(reviewer).toMatchObject({ prNumber: 12, kind: "reviewer", parentWorkerId: "worker-1", prompt: "Review PR #12 for correctness" });
 
     // The linkage survives a reload (persistence round-trip).
     const reloaded = new SessionRegistry(filePath);
-    expect(reloaded.getWorker(reviewer.id)).toMatchObject({ kind: "reviewer", parentWorkerId: "worker-1" });
+    expect(reloaded.getWorker(reviewer.id)).toMatchObject({ kind: "reviewer", parentWorkerId: "worker-1", prompt: "Review PR #12 for correctness" });
 
     // Sibling spawns (no parent) leave the field absent; implementers stay unmarked.
     const sibling = registry.registerWorker({ projectId: "a", sessionId: session.id, issueNumber: 1 });

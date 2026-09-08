@@ -44,6 +44,8 @@ export interface RegisterWorkerInput {
   kind?: WorkerKind;
   /** Parent worker for nested spawns (review agents, issue #107). */
   parentWorkerId?: string | null;
+  /** Initial prompt typed into the pane at spawn (issue #120); absent when none. */
+  prompt?: string;
   status?: WorkerStatus;
   statusMessage?: string | null;
 }
@@ -172,6 +174,7 @@ export class SessionRegistry {
       updatedAt: now,
     };
     if (input.kind !== undefined) worker.kind = input.kind;
+    if (input.prompt !== undefined) worker.prompt = input.prompt;
     if (input.parentWorkerId !== undefined && input.parentWorkerId !== null) {
       worker.parentWorkerId = input.parentWorkerId;
     }

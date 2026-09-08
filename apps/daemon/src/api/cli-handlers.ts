@@ -49,7 +49,7 @@ export async function spawnWorker(
   }
   const { worker } = await services.sessions.spawnWorker(projectId, {
     issueNumber: input.issueNumber ?? 0,
-    ...(input.prompt !== undefined ? { statusMessage: "agent running; initial prompt queued" } : {}),
+    ...(input.prompt !== undefined ? { statusMessage: "agent running; initial prompt queued", prompt: input.prompt } : {}),
   });
   const piAuth = await services.piAuth.payload();
   if (!piAuth.ready) {
