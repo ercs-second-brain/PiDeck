@@ -36,18 +36,10 @@ export class SettingsStore {
       },
       { ...DEFAULT_SETTINGS, version: 1 as const },
     );
-    // Settings written before #106 lack the pipeline toggles; the schema
-    // defaults fill them in (all ON) so an old file upgrades on load. The
-    // #111 browser-notification toggle fills in OFF the same way.
-    this.current = {
-      autoAgentUsername: loaded.autoAgentUsername,
-      defaultWorkerConcurrency: loaded.defaultWorkerConcurrency,
-      terminateOnMerge: loaded.terminateOnMerge,
-      autoFixCi: loaded.autoFixCi,
-      autoFixReviewComments: loaded.autoFixReviewComments,
-      autoReview: loaded.autoReview,
-      browserMergeNotifications: loaded.browserMergeNotifications,
-    };
+    // The parse re-applies schema defaults, so settings written before #106
+    // (or before #111) upgrade on load — no per-field copy to forget when a
+    // new setting is added.
+    this.current = settingsSchema.parse(loaded);
   }
 
   get(): Settings {
