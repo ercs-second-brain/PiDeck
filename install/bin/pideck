@@ -44,6 +44,43 @@ PD_LIB="$PD_HOME/lib"
 . "$PD_LIB/common.sh"
 . "$PD_LIB/service.sh"
 
+# Issue #208: PD_NODE_BIN/PD_NODE_BIN_DIR are service-env variables (the
+# service unit templates consume them) — a plain login shell only has the
+# env file, and running the shim from one used to crash with
+# `PD_NODE_BIN: parameter not set` mid-update. Derive them instead:
+# PD_NODE from the env file (sourced above), else the newest node-v* dir
+# under $PD_HOME/opt (survives node dir renames after a refresh), else
+# whatever node is on PATH — with actionable guidance when none exists.
+if [ "${PD_NODE_BIN:-}" = "" ] || [ ! -x "${PD_NODE:-}" ]; then
+  _pd_node="${PD_NODE:-}"
+  if [ ! -x "$_pd_node" ]; then
+    _pd_newest=
+    _pd_newest_ver=
+    for _pd_cand in "$PD_HOME"/opt/node-v*/bin/node; do
+      [ -x "$_pd_cand" ] || continue
+      _pd_ver=${_pd_cand#*node-v}
+      _pd_ver=${_pd_ver%%/*}
+      if [ -z "$_pd_newest" ] || ! _node_version_ge "$_pd_newest_ver" "$_pd_ver"; then
+        _pd_newest=$_pd_cand
+        _pd_newest_ver=$_pd_ver
+      fi
+    done
+    _pd_node=$_pd_newest
+  fi
+  if [ ! -x "$_pd_node" ]; then
+    _pd_node=$(command -v node 2>/dev/null) || :
+  fi
+  if [ -n "${_pd_node:-}" ] && [ -x "$_pd_node" ]; then
+    PD_NODE=$_pd_node
+    PD_NODE_BIN=$_pd_node
+    PD_NODE_BIN_DIR=$(dirname "$_pd_node")
+    export PD_NODE PD_NODE_BIN PD_NODE_BIN_DIR
+  else
+    printf 'pideck: no node runtime found (PD_NODE unset, no %s/opt/node-v*, no node on PATH) — run the pideck installer\n' "$PD_HOME" >&2
+    exit 1
+  fi
+fi
+
 detect_os
 
 daemon_cli_bin() {

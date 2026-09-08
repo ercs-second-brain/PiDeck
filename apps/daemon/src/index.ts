@@ -22,6 +22,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createDaemonContext, type DaemonServices } from "./api/context.js";
+import { nodeStatus, PI_NODE_MIN_VERSION } from "./api/node-version.js";
 import { createDaemonServer } from "./api/server.js";
 import { TerminalBridge } from "./terminal/bridge.js";
 import { attachTerminalWebSocket } from "./terminal/ws-server.js";
@@ -99,6 +100,18 @@ async function startup(services: DaemonServices): Promise<void> {
   // terminal picker) running pi with the rendered orchestrator prompt.
   // The same shared instance also bootstraps mid-run project
   // registrations (issue #166).
+  // Node runtime vs pi's requirement (issue #202): a daemon booted on a
+  // stale private node spawns pi sessions that crash on first request
+  // (`zlib.createZstdDecompress is not a function`) — say so loudly here
+  // and in /api/status (nodeVersion/nodeTooOld) instead of leaving the
+  // user with a mystery error inside every worker.
+  const node = nodeStatus();
+  if (node.nodeTooOld) {
+    console.warn(
+      `[daemon] node ${node.nodeVersion} is too old for pi (needs >= ${PI_NODE_MIN_VERSION}) — spawned pi sessions will crash with "zlib.createZstdDecompress is not a function". Run 'pideck update' (it refreshes the private runtime and reinstalls pi together) or reinstall pi under a newer node.`,
+    );
+  }
+
   try {
     const pi = await services.piAuth.payload();
     if (!pi.ready) {

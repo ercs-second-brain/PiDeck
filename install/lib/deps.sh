@@ -177,7 +177,12 @@ ensure_pnpm() {
   # Real standalone pnpm via npm with a user-owned prefix — no corepack
   # involvement, so the build cannot hit an unpopulated corepack cache.
   run env NPM_CONFIG_PREFIX="$_pnpm_prefix" "$PD_NODE_BIN_DIR/npm" install -g "pnpm@$PD_PNPM_VERSION"
-  run ln -sfn "$_pnpm_prefix/bin/pnpm" "$PD_LOCAL_BIN/pnpm"
+  # Persist into ~/.local/bin (survives the installer process, issue #202
+  # addendum: a fresh shell running `pideck update` must find pnpm here).
+  for _pnpm_tool in pnpm pnpx; do
+    [ -e "$_pnpm_prefix/bin/$_pnpm_tool" ] || continue
+    run ln -sfn "$_pnpm_prefix/bin/$_pnpm_tool" "$PD_LOCAL_BIN/$_pnpm_tool"
+  done
   # The private prefix wins over any shim earlier on PATH.
   case ":$PATH:" in
     *":$_pnpm_prefix/bin:"*) ;;

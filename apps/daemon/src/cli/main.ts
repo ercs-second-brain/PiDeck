@@ -88,6 +88,13 @@ async function cmdStatus(ctx: CommandContext): Promise<number> {
         "warning: pi auth not ready — run 'pideck onboard' (or pi /login); worker prompts are queued until a provider is ready",
       );
     }
+    // Surface the node/pi pairing (issue #202): a daemon on an old node
+    // spawns pi sessions that crash on first request.
+    if (status.nodeTooOld === true) {
+      console.warn(
+        `warning: daemon runs node ${status.nodeVersion}, too old for pi (needs >= 22.19.0) — run 'pideck update' to refresh the runtime and reinstall pi together`,
+      );
+    }
   });
   return 0;
 }

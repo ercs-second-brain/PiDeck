@@ -12,6 +12,7 @@
 import { ACTIVE_WORKER_STATUSES, workerSchema, type Worker } from "@pideck/shared";
 
 import type { DaemonServices } from "./context.js";
+import { nodeStatus } from "./node-version.js";
 import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";
 import { requireOr404 } from "./handlers.js";
@@ -130,6 +131,9 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
         sessions: services.sessions.listSessions().length,
         piReady: pi.ready,
         piProviders: pi.providers,
+        // Node runtime vs pi's requirement (issue #202): a daemon booted on
+        // an old private node spawns pi sessions that crash on first request.
+        ...nodeStatus(),
         // Runtime health (issue #100): event-loop lag, memory, uptime —
         // first-line diagnostics for slow/unstable installs.
         ...services.runtimeStats.snapshot(),
