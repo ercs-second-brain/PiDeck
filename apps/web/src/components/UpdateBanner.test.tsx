@@ -9,7 +9,14 @@ import { renderToString } from "react-dom/server";
 import type { UpdateStatusResponse } from "@pideck/shared";
 import { updateStatusResponseSchema } from "@pideck/shared";
 
-import { UpdateBannerView, formatElapsed, updatingText, type UpdateBannerViewProps } from "./UpdateBanner";
+import {
+  UpdateBannerView,
+  clearStaleApplyError,
+  formatElapsed,
+  updatingText,
+  type ApplyError,
+  type UpdateBannerViewProps,
+} from "./UpdateBanner";
 
 function status(overrides: Partial<UpdateStatusResponse> = {}): UpdateStatusResponse {
   return updateStatusResponseSchema.parse({
@@ -154,6 +161,39 @@ describe("UpdateBannerView — reload affordances (issue #89)", () => {
     const html = view({ reconnecting: true });
     expect(html).toContain("Connection to the daemon was lost");
     expect(html).not.toContain("Reload new build");
+  });
+});
+
+describe("stale apply error across detection cycles (issue #186)", () => {
+  // The regression: apply A completes (or fails), then a NEW upstream SHA B
+  // is detected — the banner must render a clean 'update available' cycle,
+  // never the prior apply's failure.
+  const shaA = "a".repeat(40);
+  const shaB = "b".repeat(40);
+  const failedApply: ApplyError = { sha: shaA, message: "The update failed while applying — run `pideck update` …" };
+
+  it("clears the prior cycle's error once a different upstream SHA is detected", () => {
+    expect(clearStaleApplyError(failedApply, status({ remoteSha: shaB }))).toBeNull();
+  });
+
+  it("keeps the error while the failed cycle's SHA is still the upstream head", () => {
+    expect(clearStaleApplyError(failedApply, status({ remoteSha: shaA }))).toBe(failedApply);
+  });
+
+  it("keeps the error when the new check has no upstream SHA to compare against", () => {
+    expect(clearStaleApplyError(failedApply, status({ remoteSha: null, updateAvailable: false }))).toBe(failedApply);
+  });
+
+  it("renders a clean 'update available' banner for the new SHA — no error text", () => {
+    // The failed cycle's banner: available + error side by side.
+    const stale = view({ error: failedApply.message });
+    expect(stale).toContain("update-banner-error");
+    // A new update becomes available (sha B): the cycle starts clean.
+    const fresh = view({ status: status({ remoteSha: shaB, localSha: shaA }), error: null });
+    expect(fresh).toContain("Update available");
+    expect(fresh).toContain(shaB.slice(0, 7));
+    expect(fresh).not.toContain("update-banner-error");
+    expect(fresh).not.toContain("failed");
   });
 });
 

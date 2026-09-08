@@ -20,7 +20,7 @@
  */
 
 import { spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 import { defaultGhRunner, parseRepoUrl, type GhRunner } from "../github/gh.js";
@@ -193,6 +193,16 @@ export class UpdateChecker {
         409,
         `no pideck shim at ${shim} — click-to-update needs an installed pideck (dev checkouts apply via the CLI)`,
       );
+    }
+    // Fresh progress cycle (issue #186): a prior apply's terminal stage
+    // (done/failed) lingers in the progress file for its TTL — served fresh
+    // on every check, the webapp's apply polling would read the OLD cycle's
+    // outcome and resolve or report failure for THIS apply before the shim's
+    // first write. Each apply starts clean. Best effort only.
+    try {
+      unlinkSync(`${this.stateDir}/${PROGRESS_FILE}`);
+    } catch {
+      // nothing to clear (no prior apply) — fine
     }
     // Detached + unref'd: the shim outlives this process (the service
     // restart kills the daemon mid-apply, on purpose).
