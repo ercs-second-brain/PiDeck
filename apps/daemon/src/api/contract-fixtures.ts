@@ -74,7 +74,14 @@ export const ghRoutes = {
       html_url: "https://github.com/o/r/pull/9",
       updated_at: UPDATED_AT,
     },
+    "/repos/o/pidecktest": {
+      html_url: "https://github.com/o/pidecktest",
+      private: true,
+      owner: { login: "o" },
+      name: "pidecktest",
+    },
   },
+  repoCreate: "https://github.com/o/pidecktest",
   prDiff: [
     "diff --git a/src/a.ts b/src/a.ts",
     "index 111..222 100644",
