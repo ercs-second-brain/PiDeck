@@ -17,7 +17,7 @@ import {
   MAX_NOTIFICATIONS,
   markNotificationRead,
 } from "./notifications";
-import { notificationTarget, NotificationList, notificationTime } from "./NotificationCenter";
+import { notificationTarget, NotificationList, notificationTime, PermissionRequest, permissionState, requestNotificationPermission } from "./NotificationCenter";
 
 const NOW = "2026-01-02T03:04:05.000Z";
 
@@ -121,5 +121,43 @@ describe("notificationTarget (issue #178)", () => {
     expect(notificationTarget({ key: "k", projectId: "kisstest", prNumber: 42, title: "t", at: NOW, read: false })).toBe(
       "/projects/kisstest/pulls/42",
     );
+  });
+});
+
+describe("permission flow (issue #180)", () => {
+  type NotifCtor = { permission: string; requestPermission: () => Promise<string> };
+  const setNotification = (ctor: NotifCtor | undefined): void => {
+    (globalThis as { Notification?: NotifCtor }).Notification = ctor;
+  };
+
+  it("reports unsupported when the Notification API is missing (iOS in-browser)", () => {
+    setNotification(undefined);
+    expect(permissionState()).toBe("unsupported");
+    expect(renderToString(<PermissionRequest state="unsupported" onEnable={() => {}} />)).toBe("");
+  });
+
+  it("maps granted/denied/default, and the enable button shows only for default", () => {
+    setNotification({ permission: "granted", requestPermission: async () => "granted" });
+    expect(permissionState()).toBe("granted");
+    setNotification({ permission: "denied", requestPermission: async () => "denied" });
+    expect(permissionState()).toBe("denied");
+    setNotification({ permission: "default", requestPermission: async () => "granted" });
+    expect(permissionState()).toBe("default");
+    expect(renderToString(<PermissionRequest state={permissionState()} onEnable={() => {}} />)).toContain(
+      "Enable browser notifications",
+    );
+    expect(renderToString(<PermissionRequest state="granted" onEnable={() => {}} />)).toBe("");
+  });
+
+  it("requestNotificationPermission asks only from the default state", async () => {
+    setNotification(undefined);
+    await expect(requestNotificationPermission()).resolves.toBe("unsupported");
+    setNotification({ permission: "denied", requestPermission: async () => "granted" });
+    await expect(requestNotificationPermission()).resolves.toBe("denied");
+    setNotification({ permission: "default", requestPermission: async () => "granted" });
+    await expect(requestNotificationPermission()).resolves.toBe("granted");
+    setNotification({ permission: "default", requestPermission: async () => "denied" });
+    await expect(requestNotificationPermission()).resolves.toBe("denied");
+    setNotification(undefined);
   });
 });
