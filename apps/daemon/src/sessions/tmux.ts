@@ -7,6 +7,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { shQuote } from "./tmux-commands.js";
 
 export interface CommandResult {
   stdout: string;
@@ -79,20 +80,25 @@ export interface NewSessionOptions {
    */
   command?: string[];
   /**
-   * Environment injected into the session's initial pane via
-   * `new-session -e KEY=VAL` (tmux >= 3.2).
+   * Canonical runtime env the session must start with (see
+   * {@link agentSessionEnv} and issue #253).
    *
    * Why: a pane inherits the TMUX SERVER's global environment — captured
    * when that server first started. On a long-lived user tmux server every
    * daemon-created session would keep running agents under a stale PATH
    * (e.g. the pre-update system Node), no matter how the daemon's own
-   * runtime was refreshed. Injecting the daemon's resolved env explicitly
-   * makes each session's initial pane match the daemon, without ever
-   * mutating the server's global environment (`setenv` without `-t`),
-   * which would pollute the user's own sessions when this wrapper runs on
-   * the default server. A post-creation `setenv -t <name>` is NOT a
-   * substitute: the initial pane process has already started by then, so
-   * only `-e` reaches it.
+   * runtime was refreshed.
+   *
+   * The guaranteed path is pane-side ({@link sessionCommandWithEnv}): the
+   * command itself is wrapped so the pane process exports this env before
+   * exec'ing its payload — that works on every tmux version regardless of
+   * how stale the server's global environment is. Additionally the entries
+   * are passed as `new-session -e KEY=VAL` (tmux >= 3.2) so the SESSION's
+   * environment (used by later panes/windows opened inside it) matches too;
+   * on an older server that part is silently skipped by the retry below.
+   * Neither mechanism mutates the server's global environment (`setenv`
+   * without `-t`), which would pollute the user's own sessions when this
+   * wrapper runs on the default server.
    */
   env?: Record<string, string>;
 }
@@ -115,6 +121,42 @@ function newSessionArgs(name: string, options: NewSessionOptions, envArgs: strin
 function newSessionEnvArgs(env: Record<string, string> | undefined): string[] {
   if (env === undefined) return [];
   return Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
+}
+
+/** Env keys that are safe to embed in the wrapper's `export` script. */
+const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Wraps a pane command so the PANE process itself starts with the canonical
+ * runtime env (issue #253): the payload is exec'd from a small `sh -c`
+ * wrapper that first exports the env. This is version-independent — it does
+ * not rely on `new-session -e` (tmux >= 3.2) or on the tmux server's global
+ * environment ever being fresh.
+ *
+ * - With a command: `sh -c 'export ...; exec "$@"' sh <command...>` — the
+ *   payload travels as separate argv entries, so commands containing spaces
+ *   or quotes survive verbatim (only the env VALUES are embedded in the
+ *   script, via {@link shQuote}).
+ * - Without a command (plain orchestrator panes, where pi is typed in
+ *   later): the wrapper exports the env then exec's the user's shell as a
+ *   login shell — mirroring tmux's own default-command behavior — so typed
+ *   commands (`pi` via sendKeys) resolve the canonical runtime too.
+ *
+ * Returns the command unchanged when there is nothing to inject.
+ */
+function sessionCommandWithEnv(
+  command: string[] | undefined,
+  env: Record<string, string>,
+): string[] | undefined {
+  const assignments = Object.entries(env)
+    .filter(([key]) => ENV_KEY.test(key))
+    .map(([key, value]) => `export ${key}=${shQuote(value)}`)
+    .join("; ");
+  if (assignments === "") return command;
+  if (command === undefined || command.length === 0) {
+    return ["sh", "-c", `${assignments}; exec "\${SHELL:-/bin/sh}" -l`];
+  }
+  return ["sh", "-c", `${assignments}; exec "$@"`, "sh", ...command];
 }
 
 export interface CapturePaneOptions {
@@ -216,26 +258,33 @@ export class Tmux {
    * — never mutates any other session on the server, even when this wrapper
    * runs on the user's default tmux server (no private socket).
    *
-   * When {@link NewSessionOptions.env} is given, each entry is passed as
-   * `new-session -e KEY=VAL` so the session's INITIAL pane starts with that
-   * environment instead of the tmux server's possibly stale global one.
-   * `-e` needs tmux >= 3.2 (2020); on an older server the daemon still
-   * works — the invocation is retried without the env injection when tmux
-   * rejects the flag as a usage error — and the pane simply falls back to
-   * the server's inherited environment (the pre-fix behavior).
+   * When {@link NewSessionOptions.env} is given, the pane command is
+   * wrapped by {@link sessionCommandWithEnv} so the pane process itself
+   * starts with that environment — the version-independent, guaranteed
+   * path (issue #253: a stale tmux server global environment must never
+   * leak into agent panes). Additionally each entry is passed as
+   * `new-session -e KEY=VAL` so the session's environment (used by panes
+   * and windows opened later inside it) matches too. `-e` needs
+   * tmux >= 3.2 (2020); on an older server the session is still created —
+   * the invocation is retried without the `-e` flags when tmux rejects
+   * them as a usage error, and the wrapper keeps the pane env correct.
    */
   async newSession(name: string, options: NewSessionOptions = {}): Promise<void> {
     const env = options.env ?? this.defaultSessionEnv;
     const envArgs = newSessionEnvArgs(env);
+    const effective: NewSessionOptions = env !== undefined && envArgs.length > 0
+      ? { ...options, command: sessionCommandWithEnv(options.command, env) }
+      : options;
     try {
-      await this.run(newSessionArgs(name, options, envArgs));
+      await this.run(newSessionArgs(name, effective, envArgs));
     } catch (err) {
       // tmux < 3.2 rejects `-e` as a usage error (session not created —
-      // nothing to clean up): retry without the injection rather than
-      // failing session creation entirely on an old tmux server.
+      // nothing to clean up): retry without the session-env injection
+      // rather than failing session creation entirely. The pane-side
+      // wrapper above stays — it is the guaranteed path.
       const isUsageError = err instanceof TmuxError && err.exitCode === 1 && /invalid option|usage:/i.test(err.stderr);
       if (envArgs.length === 0 || !isUsageError) throw err;
-      await this.run(newSessionArgs(name, options, []));
+      await this.run(newSessionArgs(name, effective, []));
     }
     await this.run(["set-option", "-t", name, "extended-keys", "on"]);
   }
