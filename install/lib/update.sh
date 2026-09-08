@@ -342,6 +342,19 @@ update_apply() {
     step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"
     resolve_source
     update_progress building
+    # Issue #213: build with the install's own runtime, not whatever node
+    # happens to be first on PATH — the old shim never put the private node
+    # dir on PATH, so the suite/build ran under a random PATH node (observed
+    # live: the webapp vite build died instantly). The shim always derives
+    # PD_NODE_BIN_DIR now; when update.sh runs without it (direct sourcing),
+    # leave PATH alone rather than guess.
+    if [ -n "${PD_NODE_BIN_DIR:-}" ]; then
+      case ":$PATH:" in
+        *":$PD_NODE_BIN_DIR:"*) ;;
+        *) PATH="$PD_NODE_BIN_DIR:$PATH" ;;
+      esac
+      export PATH
+    fi
     ensure_pnpm_for_build
     build_from_source
   fi
