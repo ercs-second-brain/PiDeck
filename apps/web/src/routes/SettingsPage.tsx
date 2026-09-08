@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useParams } from "react-router";
 import type { Project, Settings } from "@pideck/shared";
 import { apiGetSettings, apiUpdateProject, apiUpdateSettings, errorMessage } from "../lib/api";
 import { useProject } from "../lib/use-project";
@@ -27,9 +27,6 @@ export function SettingsPage() {
       <p className="project-repo">{project.repoUrl}</p>
       <GlobalWorkerSettings />
       <SettingsForm key={project.id} project={project} />
-      <Link to={`/projects/${project.id}`} className="back-link">
-        ← Board
-      </Link>
     </main>
   );
 }
