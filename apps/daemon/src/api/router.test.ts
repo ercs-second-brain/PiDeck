@@ -80,6 +80,8 @@ describe("static serving", () => {
   mkdirSync(path.join(webRoot, "assets"), { recursive: true });
   writeFileSync(path.join(webRoot, "index.html"), "<html><body>pideck</body></html>");
   writeFileSync(path.join(webRoot, "assets/app.js"), "console.log(1)");
+  writeFileSync(path.join(webRoot, "assets/app-B4jTh9Kx.js"), "console.log(2)");
+  writeFileSync(path.join(webRoot, "sw.js"), "self.onfetch=()=>{};");
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -110,6 +112,17 @@ describe("static serving", () => {
     const spa = await fetch(`${base}/projects/o-r/board`);
     expect(spa.status).toBe(200);
     expect(await spa.text()).toContain("pideck");
+  });
+
+  it("always revalidates the HTML shell and service worker; long-caches hashed assets (issue #228)", async () => {
+    const noCache = "no-cache";
+    for (const url of ["/", "/projects/o-r/board", "/sw.js", "/assets/app.js"]) {
+      const res = await fetch(`${base}${url}`);
+      expect(res.headers.get("cache-control"), url).toBe(noCache);
+    }
+
+    const hashed = await fetch(`${base}/assets/app-B4jTh9Kx.js`);
+    expect(hashed.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 
   it("blocks path traversal outside the root", async () => {
