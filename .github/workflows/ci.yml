@@ -30,6 +30,7 @@ jobs:
           shellcheck install/bootstrap.sh install/onboard.sh install/uninstall.sh \
             install/bin/pideck install/bin/pideck-daemon install/lib/*.sh install/test/*.sh
           sh install/test/cli-forwarding.sh
+          sh install/test/deps.sh
           sh install/test/update.sh
           sh install/test/onboard.sh
 
