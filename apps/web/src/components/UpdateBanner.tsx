@@ -279,7 +279,7 @@ function CheckErrorStrip({ error }: { error: string }) {
  * would crash on first request (`zlib.createZstdDecompress is not a
  * function`) — warn loudly here instead of letting the crash be invisible.
  */
-export function NodeTooOldStrip({ nodeVersion, minVersion }: { nodeVersion: string; minVersion: string }) {
+function NodeTooOldStrip({ nodeVersion, minVersion }: { nodeVersion: string; minVersion: string }) {
   return (
     <div className="update-banner" role="alert">
       <span className="update-banner-error">
