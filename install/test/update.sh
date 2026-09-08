@@ -538,6 +538,57 @@ check_grep 'too-old-node apply records failed progress' '"stage":"failed"' "$(ca
 check_no_grep 'too-old-node apply never restarts the daemon' 'SVC restart' "$(cat "$ORDER_LOG" 2>/dev/null)"
 check_no_grep 'too-old-node apply never installs pi' 'PI install' "$(cat "$ORDER_LOG" 2>/dev/null)"
 
+# --- apply path: corrupt/missing source checkout self-heals (issue #221) -----
+# A crashed apply (or manual rm) can leave ~/.pideck/src missing or corrupt:
+# `git rev-parse HEAD` fails, every update check errors, and only a manual
+# rm -rf + installer re-run used to recover. The apply must detect the dead
+# checkout, re-clone it via the installer's own resolve_source, and — since a
+# fresh clone has no build artifacts — always rebuild + refresh + restart
+# instead of taking the early "up to date" exit.
+set_pd_node "$OLD_NODE_DIR/node"
+stub_node_refresh
+cat > "$PD_HOME/lib/service.sh" <<'EOF'
+svc_restart() { printf 'SVC restart\n'; }
+register_service() { printf 'REGISTER service\n'; }
+EOF
+cat > "$PD_HOME/lib/source.sh" <<EOF
+resolve_source() {
+  # "re-clone": rebuild a fresh tree at \$PD_SRC (where update.sh pointed it)
+  # with the current revision — mimicking the real fetch + reset --hard.
+  mkdir -p "\$PD_SRC/install/bin" "\$PD_SRC/install/lib" "\$PD_SRC/install/service"
+  cp "$INSTALL_DIR/lib/"*.sh "\$PD_SRC/install/lib/"
+  cp "$INSTALL_DIR/onboard.sh" "\$PD_SRC/install/onboard.sh"
+  cp "$INSTALL_DIR/bin/pideck" "$INSTALL_DIR/bin/pideck-daemon" "\$PD_SRC/install/bin/"
+  FAKE_LOCAL_SHA="$LOCAL_SHA"; export FAKE_LOCAL_SHA
+  printf 'RESOLVE re-clone %s\n' "\$PD_REPO_REF"
+}
+build_from_source() { printf 'BUILD\n'; }
+EOF
+rm -f "$PD_HOME/var/running-sha" "$PD_HOME/var/update-state.json"
+
+out=$(run_shim "" "$REMOTE_SAME" update 2>&1); rc=$?
+check_eq 'self-heal apply exits 0 (issue #221)' '0' "$rc"
+check_grep 'self-heal apply notices the dead checkout (issue #221)' 'missing or corrupt' "$out"
+check_grep 'self-heal apply re-clones via resolve_source (issue #221)' 'RESOLVE re-clone dev-branch' "$out"
+check_grep 'self-heal apply rebuilds the fresh clone (issue #221)' 'BUILD' "$out"
+check_grep 'self-heal apply refreshes the installed layer (issue #221)' 'installed shell layer refreshed' "$out"
+check_grep 'self-heal apply restarts the daemon (issue #221)' 'SVC restart' "$out"
+check_grep 'self-heal apply ends with done progress (issue #221)' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
+
+# A re-clone that fails (or still leaves no usable revision) must fall back
+# to the honest check error + failed progress — not loop or fake success.
+rm -f "$PD_HOME/config.json"
+cat > "$PD_HOME/lib/source.sh" <<'EOF'
+resolve_source() { return 1; }
+build_from_source() { printf 'BUILD\n'; }
+EOF
+out=$(run_shim "" "$REMOTE_SAME" update 2>&1); rc=$?
+check_eq 'failed re-clone apply exits nonzero (issue #221)' '1' "$rc"
+check_grep 'failed re-clone apply keeps the honest check error (issue #221)' 'cannot apply an update' "$out"
+check_grep 'failed re-clone apply records failed progress (issue #221)' '"stage":"failed"' "$(cat "$PD_HOME/var/update-state.json")"
+check_no_grep 'failed re-clone apply never rebuilds (issue #221)' 'BUILD' "$out"
+write_config
+
 # --- summary ----------------------------------------------------------------
 if [ "$failures" -eq 0 ]; then
   printf '# all update tests passed\n'

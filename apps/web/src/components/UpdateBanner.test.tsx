@@ -86,10 +86,35 @@ describe("UpdateBannerView — update available (idle)", () => {
     expect(view({ status: status({ localSha: "b".repeat(40), updateAvailable: false }) })).not.toContain("update-banner");
   });
 
-  it("renders nothing when the check failed", () => {
-    expect(
-      view({ status: status({ remoteSha: null, updateAvailable: false, error: "gh exploded" }) }),
-    ).not.toContain("update-banner");
+  it("renders the check error honestly instead of going quiet (issue #221)", () => {
+    const html = view({ status: status({ remoteSha: null, updateAvailable: false, error: "gh exploded" }) });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Update check failed:");
+    expect(html).toContain("gh exploded");
+  });
+
+  it("renders the live apply stage while a CLI-initiated apply runs (issue #221)", () => {
+    const html = view({
+      status: status({
+        updateAvailable: false,
+        applyProgress: { stage: "building", updatedAt: "2026-01-02T03:04:00Z" },
+      }),
+    });
+    expect(html).toContain('role="status"');
+    expect(html).toContain("rebuilding");
+  });
+
+  it("stays quiet once the apply reaches a terminal stage (no phantom strips, issue #221)", () => {
+    // A failed apply keeps the regular (retryable) banner path — the failure
+    // detail reaches users through the apply flow's own error state.
+    const html = view({
+      status: status({
+        applyProgress: { stage: "failed", updatedAt: "2026-01-02T03:04:00Z", error: "build died" },
+      }),
+    });
+    expect(html).toContain("Update available");
+    expect(html).not.toContain("rebuilding");
+    expect(html).not.toContain("build died");
   });
 
   it("renders nothing while the status is loading", () => {

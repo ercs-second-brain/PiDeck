@@ -5,7 +5,7 @@
  * the status cache. The apply path lives in update-apply.test.ts.
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -14,6 +14,8 @@ import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
 
 import { checker, fakeGit, fakeGh } from "./update-testutil.js";
+import { GhError } from "../github/gh.js";
+import { withPrivateGhFallback } from "./update.js";
 
 describe("UpdateChecker", () => {
   it("reports up-to-date when local HEAD matches the upstream head", async () => {
@@ -241,4 +243,56 @@ describe("UpdateChecker caching (issue #76)", () => {
     const second = await instance.check();
     expect(second).toEqual(forced);
     expect(counted.calls()).toBe(2);
-  });});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gh resolution in the daemon context (issue #221)
+// ---------------------------------------------------------------------------
+
+describe("withPrivateGhFallback (issue #221)", () => {
+  /** A GhError shaped like the default runner's ENOENT (gh missing on PATH). */
+  const enoentError = (): GhError =>
+    new GhError(["api", "repos/o/r/commits/main"], null, "", Object.assign(new Error("spawn gh ENOENT"), { code: "ENOENT" }));
+
+  it("uses the base runner when it resolves gh (fallback never consulted)", async () => {
+    const base: GhRunner = async () => ({ stdout: "{}", stderr: "" });
+    // Even a nonsense private path must not matter while the base works.
+    const wrapped = withPrivateGhFallback(base, "/nonexistent/opt/gh/bin/gh");
+    expect((await wrapped(["api", "x"])).stdout).toBe("{}");
+  });
+
+  it("falls back to the installer's private gh copy on ENOENT", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ak-gh-"));
+    const privateGh = path.join(dir, "gh");
+    writeFileSync(privateGh, '#!/bin/sh\n[ "$1" = api ] && printf \'{"sha":"private-sha"}\'\n');
+    chmodSync(privateGh, 0o755);
+    const wrapped = withPrivateGhFallback(async () => {
+      throw enoentError();
+    }, privateGh);
+    const result = await wrapped(["api", "repos/o/r/commits/main"]);
+    expect((JSON.parse(result.stdout) as { sha: string }).sha).toBe("private-sha");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("explains honestly when neither the PATH nor the private copy has gh", async () => {
+    const wrapped = withPrivateGhFallback(
+      async () => {
+        throw enoentError();
+      },
+      "/nonexistent/opt/gh/bin/gh",
+    );
+    await expect(wrapped(["api", "x"])).rejects.toThrow(/not found on the daemon's PATH/);
+  });
+
+  it("propagates non-ENOENT failures untouched (auth errors etc.)", async () => {
+    const failure = new GhError(["api", "x"], 1, "authentication required");
+    const wrapped = withPrivateGhFallback(
+      async () => {
+        throw failure;
+      },
+      "/nonexistent/opt/gh/bin/gh",
+    );
+    await expect(wrapped(["api", "x"])).rejects.toBe(failure);
+  });
+});

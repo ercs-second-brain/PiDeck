@@ -234,6 +234,79 @@ export interface UpdateBannerViewProps {
 }
 
 /**
+ * A live (non-terminal) apply stage from the daemon's status, or `null` when
+ * no apply is running (issue #221): `done`/`failed` are terminal — they stay
+ * with the apply flow's own error/completion handling, not a phantom strip.
+ */
+function activeApplyProgress(status: UpdateStatusResponse | null): UpdateStatusResponse["applyProgress"] {
+  const progress = status?.applyProgress ?? null;
+  if (progress === null || progress.stage === "done" || progress.stage === "failed") return null;
+  return progress;
+}
+
+/** Idle-page strip for a genuinely running apply the page didn't initiate. */
+function ActiveApplyStrip({ stage }: { stage: string }) {
+  return (
+    <div className="update-banner updating" role="status">
+      {updatingText(stage, true)}&hellip;
+    </div>
+  );
+}
+
+/** CLI-path completion: reload into the new build on click. */
+function ReloadStrip({ sha, onReload }: { sha: string; onReload: () => void }) {
+  return (
+    <div className="update-banner" role="status">
+      PiDeck was updated to <code>{sha.slice(0, 7)}</code> while this page was open — reload to switch to the new build.
+      <button className="update-apply" type="button" onClick={onReload}>
+        Reload new build
+      </button>
+    </div>
+  );
+}
+
+/** Idle-page strip for a failed check — visible, not silent (issue #221). */
+function CheckErrorStrip({ error }: { error: string }) {
+  return (
+    <div className="update-banner" role="alert">
+      <span className="update-banner-error">Update check failed: {error}</span>
+    </div>
+  );
+}
+
+/** The offer to apply a detected update, with the server's worker gate. */
+function UpdateAvailableStrip({
+  remoteSha,
+  repo,
+  ref,
+  activeWorkers,
+  error,
+  onApply,
+}: {
+  remoteSha: string;
+  repo: string;
+  ref: string;
+  activeWorkers: number;
+  error: string | null;
+  onApply: () => void;
+}) {
+  const blocked = activeWorkers > 0;
+  return (
+    <div className="update-banner" role="status">
+      Update available — new version <code>{remoteSha.slice(0, 7)}</code> on{" "}
+      <code>{`${repo}@${ref}`}</code>.
+      {error !== null && <span className="update-banner-error"> {error}</span>}
+      <button className="update-apply" type="button" onClick={onApply} disabled={blocked}>
+        Update now
+      </button>
+      {blocked && (
+        <span className="update-banner-hint">{` ${activeWorkers} agent${activeWorkers === 1 ? "" : "s"} still working — updating waits until all agents are idle.`}</span>
+      )}
+    </div>
+  );
+}
+
+/**
  * Pure view for the banner states — kept separate so tests exercise the
  * rendering without React effects/fetch. Active-apply and completion
  * states render through {@link UpdateApplyModal} (issue #113).
@@ -269,34 +342,32 @@ export function UpdateBannerView({
 
   // CLI-path completion: a build with a different SHA is live; reload into it
   // on click (auto-navigating mid-work — e.g. an attached terminal — is rude).
-  if (reloadSha !== null) {
-    return (
-      <div className="update-banner" role="status">
-        PiDeck was updated to <code>{reloadSha.slice(0, 7)}</code> while this page was open — reload to switch to the
-        new build.
-        <button className="update-apply" type="button" onClick={onReload}>
-          Reload new build
-        </button>
-      </div>
-    );
-  }
+  if (reloadSha !== null) return <ReloadStrip sha={reloadSha} onReload={onReload} />;
 
-  // Quiet when up to date / check failed / loading.
+  // Issue #221: a genuinely running apply (CLI-initiated, or the daemon
+  // rebooted mid-apply under this page) must be visible — the daemon only
+  // serves live, non-terminal stages here, so show the real stage instead of
+  // pretending all is quiet. Banner-initiated applies render through the
+  // modal above; this strip covers every other observer.
+  const progress = activeApplyProgress(status);
+  if (progress !== null) return <ActiveApplyStrip stage={progress.stage} />;
+
+  // Issue #221: a failed check must be visible, not silent — before this,
+  // an error state (stale apply progress, broken source checkout, gh PATH
+  // failure) rendered NO banner at all and looked exactly like "up to date".
+  if (status?.error != null) return <CheckErrorStrip error={status.error} />;
+
+  // Quiet when up to date / loading.
   if (status === null || status.updateAvailable !== true || status.remoteSha === null) return null;
 
-  const active = status.activeWorkers;
-  const blocked = active > 0;
   return (
-    <div className="update-banner" role="status">
-      Update available — new version <code>{status.remoteSha.slice(0, 7)}</code> on{" "}
-      <code>{`${status.repo}@${status.ref}`}</code>.
-      {error !== null && <span className="update-banner-error"> {error}</span>}
-      <button className="update-apply" type="button" onClick={onApply} disabled={blocked}>
-        Update now
-      </button>
-      {blocked && (
-        <span className="update-banner-hint">{` ${active} agent${active === 1 ? "" : "s"} still working — updating waits until all agents are idle.`}</span>
-      )}
-    </div>
+    <UpdateAvailableStrip
+      remoteSha={status.remoteSha}
+      repo={status.repo}
+      ref={status.ref}
+      activeWorkers={status.activeWorkers}
+      error={error}
+      onApply={onApply}
+    />
   );
 }

@@ -19,7 +19,7 @@
  * route handlers (apps/daemon/src/api/handlers.ts), not here.
  */
 
-import { spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
+import { execFile, spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
 import {
   appendFileSync,
   closeSync,
@@ -31,8 +31,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 
-import { defaultGhRunner, parseRepoUrl, type GhRunner } from "../github/gh.js";
+import { defaultGhRunner, GhError, parseRepoUrl, type GhRunner } from "../github/gh.js";
 import { defaultGitRunner, type GitRunner } from "../github/repos.js";
 import { TtlSwrCache } from "./swr-cache.js";
 import { HttpError } from "./router.js";
@@ -56,6 +57,15 @@ const PROGRESS_FILE = "var/update-state.json";
 const PROGRESS_TTL_MS = 30 * 60 * 1000;
 /** The shim writes `date -u +%Y-%m-%dT%H:%M:%SZ` — no sub-second precision. */
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+/**
+ * Progress stages that END an apply cycle (issue #221): everything else in
+ * the file means an apply is genuinely running right now (within the liveness
+ * TTL above) — the check must serve that fact instead of racing the shim's
+ * git/gh operations with its own probes.
+ */
+const TERMINAL_PROGRESS_STAGES = new Set(["done", "failed"]);
+
+const execFileAsync = promisify(execFile);
 
 /** Injectable detached-process spawner for {@link UpdateChecker.apply} (tests). */
 export type UpdateSpawn = (
@@ -112,6 +122,15 @@ export class UpdateChecker {
    */
   private readonly cache: TtlSwrCache<UpdateStatus>;
   /**
+   * Last completed check result (issue #221): while an apply is genuinely
+   * running, `check()` serves this — with the live stage attached — instead
+   * of probing git/gh against a source tree the shim is actively fetching,
+   * resetting and rebuilding. `null` until the first check completes (a
+   * daemon that boots mid-apply has nothing to serve yet and falls through
+   * to a real check; the shim's git work is done by the restarting stage).
+   */
+  private lastBase: UpdateStatus | null = null;
+  /**
    * SHA of the build this daemon process runs (issue #89): captured exactly
    * once, at construction (daemon boot) — the source checkout moves to the
    * new commit mid-update, so a check-time read would mistake the new HEAD
@@ -128,7 +147,13 @@ export class UpdateChecker {
     this.stateDir = options.stateDir;
     this.repoUrl = options.repoUrl;
     this.repoRef = options.repoRef;
-    this.gh = options.gh ?? defaultGhRunner;
+    // Issue #221 diagnosis: the daemon's service PATH (`_serve_path` in
+    // install/lib/service.sh) does not include the installer's private gh dir
+    // — gh normally resolves through the ~/.local/bin symlink, which env
+    // rewrites / shim refreshes can break. Fall back to the installer's own
+    // copy at <stateDir>/opt/gh/bin/gh when the bare `gh` lookup fails with
+    // ENOENT, and say so honestly when neither resolves.
+    this.gh = options.gh ?? withPrivateGhFallback(defaultGhRunner, `${this.stateDir}/opt/gh/bin/gh`);
     this.git = options.git ?? defaultGitRunner;
     this.spawn = options.spawn ?? nodeSpawn;
     this.now = options.now ?? (() => new Date());
@@ -171,13 +196,26 @@ export class UpdateChecker {
    * webapp's banner tracks the rebuild in real time while it polls.
    */
   async check(options: { force?: boolean } = {}): Promise<UpdateStatus> {
+    // The shim's progress file is read fresh on every check so the webapp's
+    // banner tracks the rebuild in real time while it polls.
+    const progress = this.readProgress();
+    // Issue #221: a live, non-terminal stage means an apply is genuinely
+    // running — serve the last completed status (SHAs are still meaningful;
+    // the webapp's apply polling keys on runningSha/progress) instead of
+    // racing the shim's git fetch/reset and gh calls with our own probes.
+    if (progress !== null && !TERMINAL_PROGRESS_STAGES.has(progress.stage) && this.lastBase !== null) {
+      return { ...this.lastBase, applyProgress: progress };
+    }
+    // `force` (the webapp's `?refresh=1` on page load / window focus) skips
+    // the cache read; the fresh result still becomes the new cache entry.
     // `force` (the webapp's `?refresh=1` on page load / window focus) skips
     // the cache read; the fresh result still becomes the new cache entry.
     const base = await (options.force === true
       ? this.cache.refresh(CHECK_KEY, () => this.runCheck())
       : this.cache.get(CHECK_KEY, () => this.runCheck()));
-    // The shim's progress file is read fresh even on cache hits so the
-    // webapp's banner tracks the rebuild in real time while it polls.
+    this.lastBase = base;
+    // Read fresh again after the (possibly slow) gh round trip: an apply may
+    // have started while the check ran.
     return { ...base, applyProgress: this.readProgress() };
   }
 
@@ -196,7 +234,16 @@ export class UpdateChecker {
       if (typeof parsed.stage !== "string" || parsed.stage.length === 0) return null;
       if (typeof parsed.updatedAt !== "string" || !ISO_UTC_RE.test(parsed.updatedAt)) return null;
       const at = Date.parse(parsed.updatedAt);
-      if (Number.isNaN(at) || this.now().getTime() - at > PROGRESS_TTL_MS) return null;
+      if (Number.isNaN(at) || this.now().getTime() - at > PROGRESS_TTL_MS) {
+        // Stale (crashed/killed shim — issue #221): treat as dead AND clear
+        // the debris so it can never resurface; the next apply starts clean.
+        try {
+          unlinkSync(`${this.stateDir}/${PROGRESS_FILE}`);
+        } catch {
+          // already gone / unreadable dir — nothing to clear
+        }
+        return null;
+      }
       const error = typeof parsed.error === "string" && parsed.error.length > 0 ? parsed.error : undefined;
       return error === undefined
         ? { stage: parsed.stage, updatedAt: parsed.updatedAt }
@@ -262,7 +309,9 @@ export class UpdateChecker {
     try {
       localSha = (await this.git(["rev-parse", "HEAD"], { cwd: this.srcDir })).stdout.trim() || null;
     } catch (err) {
-      errors.push(`no local source revision at ${this.srcDir}: ${errorMessage(err)}`);
+      errors.push(
+        `no local source revision at ${this.srcDir}: ${errorMessage(err)} — run 'pideck update' to re-clone and rebuild (self-heals a corrupt checkout)`,
+      );
     }
 
     // Upstream repo/ref resolution + remote head via `gh api`.
@@ -360,4 +409,47 @@ export class UpdateChecker {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** An ENOENT spawn failure (gh missing) — GhError keeps the original as `cause`;
+ * a raw execFile rejection carries the code top-level. */
+function spawnEnoent(err: unknown): boolean {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  return e?.code === "ENOENT" || e?.cause?.code === "ENOENT";
+}
+
+/**
+ * Wraps a gh runner with a fallback to the installer's private gh binary
+ * (issue #221): the daemon's service PATH can lose its gh entry (env
+ * rewrites, a stale ~/.local/bin shim), but the installer's copy under
+ * `<stateDir>/opt/gh/bin/gh` is exactly what `ensure_gh` (deps.sh) put
+ * there — resolving it directly self-heals the daemon context instead of
+ * failing every upstream check forever. When neither the bare `gh` nor the
+ * private copy exists, the error says both were tried (the banner surfaces
+ * the check error verbatim).
+ */
+export function withPrivateGhFallback(base: GhRunner, privateGh: string): GhRunner {
+  return async (args, options) => {
+    try {
+      return await base(args, options);
+    } catch (err) {
+      if (!spawnEnoent(err)) throw err;
+      try {
+        const { stdout, stderr } = await execFileAsync(privateGh, args, {
+          ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
+          maxBuffer: 128 * 1024 * 1024,
+          windowsHide: true,
+        });
+        return { stdout, stderr };
+      } catch (fallbackErr) {
+        const e = fallbackErr as { code?: number | string; stderr?: string };
+        if (spawnEnoent(fallbackErr)) {
+          throw new Error(
+            `gh CLI not found on the daemon's PATH nor at ${privateGh} — reinstall pideck (or fix the daemon service PATH) and check 'gh auth login'`,
+          );
+        }
+        throw new GhError(args, typeof e.code === "number" ? e.code : null, e.stderr ?? "", fallbackErr);
+      }
+    }
+  };
 }

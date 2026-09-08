@@ -14,6 +14,8 @@ import type { SpawnOptions } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 import { checker } from "./update-testutil.js";
+import type { GhRunner } from "../github/gh.js";
+import type { GitRunner } from "../github/repos.js";
 
 describe("UpdateChecker.applyProgress (issue #89)", () => {
   /** Real tmp state dir so the shim's progress file can actually be written. */
@@ -86,6 +88,83 @@ describe("UpdateChecker.applyProgress (issue #89)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Progress liveness + apply-in-progress reporting (issue #221): a crashed
+// apply's debris is cleared, and a genuinely running apply is reported
+// instead of raced.
+// ---------------------------------------------------------------------------
+
+describe("UpdateChecker.applyProgress liveness (issue #221)", () => {
+  function progressState(): {
+    dir: string;
+    write: (stage: string, updatedAt?: string, error?: string) => void;
+    file: string;
+  } {
+    const dir = mkdtempSync(path.join(tmpdir(), "ak-progress-"));
+    const file = path.join(dir, "var", "update-state.json");
+    return {
+      dir,
+      file,
+      write: (stage, updatedAt = "2026-01-02T03:00:00Z", error) => {
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, JSON.stringify(error === undefined ? { stage, updatedAt } : { stage, updatedAt, error }));
+      },
+    };
+  }
+
+  it("clears stale progress debris so a crashed apply cannot resurface (issue #221)", async () => {
+    const state = progressState();
+    state.write("building", "2026-01-02T02:33:00Z"); // 31 min old — dead
+    expect((await checker({ stateDir: state.dir }).check()).applyProgress).toBeNull();
+    // The dead entry must be gone from disk, not just ignored: the next
+    // check (and the next apply's progress cycle) starts clean.
+    expect(existsSync(state.file)).toBe(false);
+  });
+
+  it("serves the last completed status with the live stage while an apply runs, without re-probing git/gh (issue #221)", async () => {
+    const state = progressState();
+    writeFileSync(
+      path.join(state.dir, "config.json"),
+      JSON.stringify({ repoUrl: "https://github.com/o/r.git", repoRef: "main" }),
+    );
+    const AAA = "a".repeat(40);
+    const BBB = "b".repeat(40);
+    let revParseCalls = 0;
+    let ghCalls = 0;
+    const git: GitRunner = async (args) => {
+      if (args[0] === "rev-parse" && args[1] === "HEAD") {
+        revParseCalls += 1;
+        return { stdout: `${AAA}\n`, stderr: "" };
+      }
+      throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
+    };
+    const gh: GhRunner = async () => {
+      ghCalls += 1;
+      return { stdout: JSON.stringify({ sha: BBB }), stderr: "" };
+    };
+    const instance = checker({ stateDir: state.dir, git, gh });
+    const before = await instance.check({ force: true }); // primes lastBase
+    const probesAfterPrime = { revParse: revParseCalls, gh: ghCalls };
+    state.write("building", "2026-01-02T03:04:00Z"); // 5s old — genuinely running
+    // `force: true` proves the point: even a forced check must not race the
+    // shim's git/gh operations — it serves the last completed status with
+    // the live stage attached instead.
+    const during = await instance.check({ force: true });
+    expect(during.applyProgress).toEqual({ stage: "building", updatedAt: "2026-01-02T03:04:00Z" });
+    expect(during.localSha).toBe(before.localSha);
+    expect(during.runningSha).toBe(before.runningSha);
+    expect(revParseCalls).toBe(probesAfterPrime.revParse);
+    expect(ghCalls).toBe(probesAfterPrime.gh);
+    // Terminal stage (done/failed): probing resumes for the next cycle.
+    state.write("done", "2026-01-02T03:04:30Z");
+    const after = await instance.check({ force: true });
+    expect(ghCalls).toBe(probesAfterPrime.gh + 1);
+    expect(after.applyProgress?.stage).toBe("done");
+  });
+;
+});
+
+// ---------------------------------------------------------------------------
 describe("UpdateChecker.apply (issue #76)", () => {
   /** An installed shim in a tmp state dir; returns its bin path. */
   function installedStateDir(): string {

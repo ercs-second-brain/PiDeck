@@ -50,6 +50,8 @@ repo_slug() {
 # Sets (and clears first):
 #   UPDATE_LOCAL_SHA   full SHA of the local checkout ('' when unavailable)
 #   UPDATE_REMOTE_SHA  full SHA of the upstream ref head ('' when unavailable)
+#   UPDATE_LOCAL_MISSING  1 when the local checkout had no usable revision
+#                      (missing or corrupt — issue #221); '' otherwise
 #   UPDATE_REPO        owner/name (or the raw URL when it has no slug)
 #   UPDATE_REF         tracked upstream ref
 #   UPDATE_ERROR       human-readable failure detail ('' on success)
@@ -58,6 +60,7 @@ repo_slug() {
 update_check() {
   UPDATE_LOCAL_SHA=
   UPDATE_REMOTE_SHA=
+  UPDATE_LOCAL_MISSING=
   UPDATE_REPO=
   UPDATE_REF=
   UPDATE_ERROR=
@@ -86,6 +89,7 @@ update_check() {
 
   UPDATE_LOCAL_SHA=$(git -C "$UPDATE_SRC" rev-parse HEAD 2>/dev/null) || UPDATE_LOCAL_SHA=
   if [ -z "$UPDATE_LOCAL_SHA" ]; then
+    UPDATE_LOCAL_MISSING=1
     UPDATE_ERROR="no local source revision at $UPDATE_SRC — run the pideck installer first"
     return 1
   fi
@@ -314,6 +318,7 @@ refresh_pi_assets() {
 # no unnecessary rebuilds.
 update_apply() {
   UPDATE_APPLY_ERROR=
+  UPDATE_SELF_HEALED=
   # Progress file (issue #89): the webapp banner reads the stage live. On any
   # death (die/kill of the shim), the EXIT trap records `failed` — with the
   # reason when one was captured (issue #198) — unless we reached `done`,
@@ -322,19 +327,52 @@ update_apply() {
   update_progress checking
   step "checking for updates"
   if ! update_check; then
-    UPDATE_APPLY_ERROR="update check failed: $UPDATE_ERROR"
-    warn "cannot apply an update: $UPDATE_ERROR"
-    return 1
+    # Issue #221: a missing or corrupt source checkout (crashed apply debris,
+    # wiped ~/.pideck/src) must self-heal instead of erroring forever — the
+    # installer machinery already re-clones a missing checkout, so reuse it
+    # for corrupt ones: drop the broken tree and clone afresh. Only possible
+    # when an upstream URL is known (config.json or the old clone's remote).
+    if [ "${UPDATE_LOCAL_MISSING:-}" = "1" ] && [ -n "${PD_REPO_URL:-}" ] && [ -f "$PD_LIB/source.sh" ]; then
+      warn "source checkout at $UPDATE_SRC is missing or corrupt — re-cloning to self-heal"
+      # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
+      . "$PD_LIB/source.sh"
+      PD_SRC=$UPDATE_SRC
+      PD_REPO_REF=$UPDATE_REF
+      update_progress fetching
+      step "re-cloning $UPDATE_REPO@$UPDATE_REF (the old checkout was unusable)"
+      run_ignore rm -rf "$PD_SRC"
+      resolve_source
+      if ! update_check; then
+        UPDATE_APPLY_ERROR="update check failed: $UPDATE_ERROR"
+        warn "cannot apply an update: $UPDATE_ERROR"
+        return 1
+      fi
+      UPDATE_SELF_HEALED=1
+    else
+      UPDATE_APPLY_ERROR="update check failed: $UPDATE_ERROR"
+      warn "cannot apply an update: $UPDATE_ERROR"
+      return 1
+    fi
   fi
   UPDATE_RUNNING_SHA=$(read_running_sha)
+  UPDATE_NEEDS_BUILD=
   if [ "$UPDATE_LOCAL_SHA" = "$UPDATE_REMOTE_SHA" ]; then
     if [ -z "$UPDATE_RUNNING_SHA" ] || [ "$UPDATE_RUNNING_SHA" = "$UPDATE_REMOTE_SHA" ]; then
-      update_report
-      update_progress "done"
-      trap - EXIT
-      return 0
+      if [ -z "$UPDATE_SELF_HEALED" ]; then
+        update_report
+        update_progress "done"
+        trap - EXIT
+        return 0
+      fi
+      # Self-healed checkout with the daemon already running the upstream
+      # build: the fresh clone has no build artifacts and the installed
+      # layer predates it — rebuild and refresh instead of reporting done.
+      UPDATE_NEEDS_BUILD=1
+      info "self-healed checkout is current — rebuilding the fresh clone"
     fi
-    info "source is current, but the daemon still runs $(short_sha "$UPDATE_RUNNING_SHA") — restarting to pick it up"
+    if [ -z "$UPDATE_NEEDS_BUILD" ]; then
+      info "source is current, but the daemon still runs $(short_sha "$UPDATE_RUNNING_SHA") — restarting to pick it up"
+    fi
   else
     info "update available: $(short_sha "$UPDATE_LOCAL_SHA") -> $(short_sha "$UPDATE_REMOTE_SHA") (upstream $UPDATE_REPO@$UPDATE_REF)"
     [ -f "$PD_LIB/source.sh" ] || die "install broken: $PD_LIB/source.sh missing (re-run the installer)"
@@ -344,6 +382,9 @@ update_apply() {
     update_progress fetching
     step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"
     resolve_source
+    UPDATE_NEEDS_BUILD=1
+  fi
+  if [ -n "$UPDATE_NEEDS_BUILD" ]; then
     update_progress building
     # Issue #213: build with the install's own runtime, not whatever node
     # happens to be first on PATH — the old shim never put the private node
