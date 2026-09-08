@@ -18,7 +18,9 @@ PD_NONINTERACTIVE="${PD_NONINTERACTIVE:-0}"
 export PD_REPO_URL="${PD_REPO_URL:-https://github.com/ercs-second-brain/PiDeck.git}"
 export PD_REPO_REF="${PD_REPO_REF:-main}"
 export PD_WEB_PORT="${PD_WEB_PORT:-8321}"
-export PD_NODE_VERSION="${PD_NODE_VERSION:-22.14.0}"
+export PD_NODE_VERSION="${PD_NODE_VERSION:-22.23.2}" # newest 22.x on nodejs.org (pi 0.75.0+ needs >= 22.19.0)
+export PD_NODE_MIN_VERSION="${PD_NODE_MIN_VERSION:-22.19.0}" # floor enforced by ensure_node
+export PD_PNPM_VERSION="${PD_PNPM_VERSION:-12}" # major; the monorepo pins the exact version
 export PD_GH_VERSION="${PD_GH_VERSION:-2.63.2}"
 export PD_PI_NPM_PACKAGE="${PD_PI_PACKAGE:-@earendil-works/pi-coding-agent}"
 export PD_PI_DIR="${PD_PI_DIR:-${PD_PI_DIR:-$HOME/.pi/agent}}"

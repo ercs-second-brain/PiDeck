@@ -60,23 +60,35 @@ ensure_git() {
 }
 
 # ---------------------------------------------------------------------------
-# Node.js >= 22
+# Node.js >= PD_NODE_MIN_VERSION (22.19.0: pi 0.75.0+ refuses older Node)
 # ---------------------------------------------------------------------------
-_node_major() {
-  node -v 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/'
+_node_majmin() { # -> _node_maj/_node_min from `node -v` (vMAJ.MIN.PATCH)
+  _nm_v=$(node -v 2>/dev/null | sed 's/^v//')
+  _node_maj=${_nm_v%%.*}
+  _nm_rest=${_nm_v#*.}
+  _node_min=${_nm_rest%%.*}
+}
+
+_node_meets_min() { # _node_meets_min <major> <minor> -> 0 when >= PD_NODE_MIN_VERSION
+  _nmm_min_maj=${PD_NODE_MIN_VERSION%%.*}
+  _nmm_rest=${PD_NODE_MIN_VERSION#*.}
+  _nmm_min_min=${_nmm_rest%%.*}
+  [ "$1" -gt "$_nmm_min_maj" ] 2>/dev/null && return 0
+  [ "$1" -eq "$_nmm_min_maj" ] 2>/dev/null || return 1
+  [ "$2" -ge "$_nmm_min_min" ] 2>/dev/null
 }
 
 ensure_node() {
-  step "Checking Node.js >= 22"
+  step "Checking Node.js >= $PD_NODE_MIN_VERSION"
   if command -v node >/dev/null 2>&1; then
-    _node_maj=$(_node_major)
-    if [ "${_node_maj:-0}" -ge 22 ] 2>/dev/null; then
+    _node_majmin
+    if _node_meets_min "$_node_maj" "$_node_min"; then
       PD_NODE_BIN=$(command -v node)
       PD_NODE_BIN_DIR=$(dirname "$PD_NODE_BIN")
       ok "using $(node -v) at $PD_NODE_BIN"
       return 0
     fi
-    warn "found Node $(node -v) but pideck needs >= 22; installing a private Node v$PD_NODE_VERSION"
+    warn "found Node $(node -v) but pi needs >= $PD_NODE_MIN_VERSION; installing a private Node v$PD_NODE_VERSION"
   fi
   _install_node_tarball
   # Make sure the freshly installed node wins for the rest of the install.
@@ -118,34 +130,66 @@ _install_node_tarball() {
 }
 
 # ---------------------------------------------------------------------------
-# pnpm (pinned by packageManager in the monorepo; corepack resolves it)
+# pnpm (pinned by packageManager in the monorepo; installed standalone)
+#
+# "installed pnpm" must mean "pnpm runs", not "pnpm exists" (issue #162): a
+# corepack shim passes command -v but resolves the monorepo's packageManager
+# pin at build time with a possibly-empty corepack cache and dies with
+# MODULE_NOT_FOUND mid-build. So corepack shims never count as usable and
+# build_from_source always gets a real standalone pnpm from npm with a
+# user-owned prefix, prepended to PATH ahead of any shim.
 # ---------------------------------------------------------------------------
+_pnpm_maj_ok() { # _pnpm_maj_ok <version> -> 0 when >= 9 (lockfile requirement)
+  _pmo_maj=${1%%.*}
+  [ "${_pmo_maj:-0}" -ge 9 ] 2>/dev/null
+}
+
+# A usable pnpm: on PATH, actually runs, is >= 9, and is not a corepack shim.
+# Sets _pnpm_bin/_pnpm_ver on success (globals: POSIX sh has no locals).
+_pnpm_usable() {
+  command -v pnpm >/dev/null 2>&1 || return 1
+  _pnpm_bin=$(command -v pnpm)
+  grep -q corepack "$_pnpm_bin" 2>/dev/null && return 1
+  _pnpm_ver=$(pnpm --version 2>/dev/null) || return 1
+  _pnpm_maj_ok "$_pnpm_ver"
+}
+
 ensure_pnpm() {
   step "Checking pnpm"
+  if _pnpm_usable; then
+    # Keep this pnpm first on PATH for the rest of the install (build
+    # included) so a broken shim earlier on PATH cannot shadow it later.
+    _pnpm_dir=$(dirname "$_pnpm_bin")
+    case ":$PATH:" in
+      *":$_pnpm_dir:"*) ;;
+      *) PATH="$_pnpm_dir:$PATH" ;;
+    esac
+    export PATH
+    ok "using pnpm $_pnpm_ver at $_pnpm_bin"
+    return 0
+  fi
   if command -v pnpm >/dev/null 2>&1; then
-    _pnpm_ver=$(pnpm --version 2>/dev/null || echo 0)
-    _pnpm_maj=${_pnpm_ver%%.*}
-    if [ "${_pnpm_maj:-0}" -ge 9 ] 2>/dev/null; then
-      ok "using pnpm $_pnpm_ver at $(command -v pnpm)"
-      return 0
-    fi
-    warn "pnpm $_pnpm_ver is too old; installing a current one"
+    warn "pnpm at $(command -v pnpm) is a corepack shim, does not run, or is too old; installing a standalone one"
   fi
 
   ensure_local_bin_path
-  _pnpm_corepack="$PD_NODE_BIN_DIR/corepack"
-  if [ -x "$_pnpm_corepack" ]; then
-    # corepack shims respect the monorepo's packageManager pin.
-    run env COREPACK_ENABLE_DOWNLOAD_PROMPT=0 "$_pnpm_corepack" enable --install-directory "$PD_LOCAL_BIN" pnpm
-  else
-    # Some distro Node builds strip corepack — fall back to npm with a
-    # user-owned prefix.
-    run env NPM_CONFIG_PREFIX="$PD_HOME/opt/npm-global" "$PD_NODE_BIN_DIR/npm" install -g pnpm
-    run ln -sfn "$PD_HOME/opt/npm-global/bin/pnpm" "$PD_LOCAL_BIN/pnpm"
-  fi
+  _pnpm_prefix="$PD_HOME/opt/npm-global"
+  # Real standalone pnpm via npm with a user-owned prefix — no corepack
+  # involvement, so the build cannot hit an unpopulated corepack cache.
+  run env NPM_CONFIG_PREFIX="$_pnpm_prefix" "$PD_NODE_BIN_DIR/npm" install -g "pnpm@$PD_PNPM_VERSION"
+  run ln -sfn "$_pnpm_prefix/bin/pnpm" "$PD_LOCAL_BIN/pnpm"
+  # The private prefix wins over any shim earlier on PATH.
+  case ":$PATH:" in
+    *":$_pnpm_prefix/bin:"*) ;;
+    *) PATH="$_pnpm_prefix/bin:$PATH" ;;
+  esac
+  export PATH
 
-  command -v pnpm >/dev/null 2>&1 || die "pnpm installation failed"
-  ok "installed pnpm $(pnpm --version)"
+  # Verify it RUNS before claiming success (issue #162).
+  if ! _pnpm_ver=$(pnpm --version 2>/dev/null) || ! _pnpm_maj_ok "$_pnpm_ver"; then
+    die "pnpm was installed but 'pnpm --version' failed — try 'npm install -g pnpm@$PD_PNPM_VERSION' manually, or check your npm registry access"
+  fi
+  ok "installed pnpm $_pnpm_ver at $(command -v pnpm)"
 }
 
 # ---------------------------------------------------------------------------
