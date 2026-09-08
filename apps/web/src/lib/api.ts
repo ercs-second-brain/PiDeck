@@ -230,6 +230,26 @@ export async function apiGetPiAuth(): Promise<PiAuth> {
   return piAuthSchema.parse(await response.json());
 }
 
+// --- node runtime probe (pi compatibility) -----------------------------------
+//
+// `GET /api/status` is a non-contract daemon route (like `/api/gh-auth`):
+// only its node-vs-pi fields are read here (the daemon spreads `nodeStatus()`
+// into the payload, apps/daemon/src/api/node-version.ts), validated with a
+// local schema so a daemon shape change cannot crash the webapp.
+
+const nodeStatusSchema = z.object({
+  nodeVersion: z.string(),
+  nodeTooOld: z.boolean(),
+});
+
+export type NodeStatus = z.infer<typeof nodeStatusSchema>;
+
+export async function apiGetNodeStatus(): Promise<NodeStatus> {
+  const response = await fetch("/api/status", { headers: { accept: "application/json" } });
+  if (!response.ok) throw new ApiError(response.status, "GET", "/api/status", response.statusText);
+  return nodeStatusSchema.parse(await response.json());
+}
+
 // --- onboarding state (wizard, issue #165) -----------------------------------
 //
 // `GET /api/onboarding` is the one shared source of truth for onboarding

@@ -229,8 +229,19 @@ refresh_node_runtime() {
     *) return 0 # system node (or none) — updates never touch it
   esac
   _rn_ver=$("$_rn_cur" -v 2>/dev/null) || return 0 # vMAJ.MIN.PATCH
-  if _node_version_ge "${_rn_ver#v}" "$PD_NODE_VERSION"; then
-    return 0 # private node already meets the pin
+  # Two floors: the moving pin AND pi's Node floor (PD_NODE_MIN_VERSION,
+  # install/lib/common.sh — pi's vendored undici decodes zstd responses with
+  # zlib.createZstdDecompress, which only exists on Node >= 22.15). The pin
+  # alone is not enough on a real box whose installed lib still pins a
+  # pre-floor Node: this refresh runs BEFORE refresh_installed_layer, so the
+  # first apply would compare against the stale pin and skip a refresh the
+  # floor still requires — leaving the daemon on a node that crashes every
+  # pi session. When the floor is unknown (pre-floor common.sh), fall back
+  # to pin-only behavior.
+  _rn_floor=${PD_NODE_MIN_VERSION:-$PD_NODE_VERSION}
+  if _node_version_ge "${_rn_ver#v}" "$PD_NODE_VERSION" &&
+    _node_version_ge "${_rn_ver#v}" "$_rn_floor"; then
+    return 0 # private node meets both the pin and the pi floor
   fi
   if [ ! -f "$PD_LIB/deps.sh" ]; then
     warn "$PD_LIB/deps.sh missing — cannot refresh the Node runtime (still on $_rn_ver)"

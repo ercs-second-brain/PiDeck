@@ -235,6 +235,26 @@ check_grep 'up-to-date stale-node apply restarts the daemon (issue #224)' 'SVC r
 check_grep 'up-to-date stale-node apply repoints env PD_NODE (issue #224)' "PD_NODE=\"$NEW_NODE_DIR/node\"" "$(cat "$PD_HOME/env")"
 check_grep 'up-to-date stale-node apply ends with done progress (issue #224)' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
 
+# --- node below the pi floor even at a stale installed pin -------------------
+# refresh_node_runtime runs BEFORE refresh_installed_layer, so an install
+# whose installed lib still pins a pre-floor Node (PD_NODE_VERSION <
+# PD_NODE_MIN_VERSION) compares its old private node against that stale pin
+# and used to skip the refresh — the daemon then restarted onto a node that
+# crashes every pi session (`zlib.createZstdDecompress is not a function`).
+# The pi floor must be enforced regardless of what the installed layer pins.
+set_pd_node "$OLD_NODE_DIR/node"
+: > "$ORDER_LOG"
+out=$(run_update "$LOCAL_SHA" "$REMOTE_SAME" '' '
+  PD_LIB="$PD_HOME/lib" # the bare harness shell lacks the shim-set PD_LIB
+  PD_NODE_VERSION=22.14.0 # a stale installed-layer pin (pre-floor)
+  refresh_node_runtime
+  printf "node=%s" "$PD_NODE"
+'); rc=$?
+check_eq 'node below the pi floor refreshes even at a stale pin' '0' "$rc"
+check_grep 'the floor refresh installs the pinned node' 'NODE refresh' "$(cat "$ORDER_LOG")"
+check_grep 'the floor refresh repoints the active node' "node=$NEW_NODE_DIR/node" "$out"
+check_grep 'the floor refresh repoints env PD_NODE' "PD_NODE=\"$NEW_NODE_DIR/node\"" "$(cat "$PD_HOME/env")"
+
 # --- apply path: outdated pi on a current install (issue #223) ---------------
 # With the node current, the apply still checks the installed pi version vs
 # npm latest and reinstalls when newer (logged old -> new), then restarts.
