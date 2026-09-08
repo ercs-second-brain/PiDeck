@@ -186,7 +186,7 @@ export type PullRequestSummary = PullRequest;
 
 /**
  * Result of a self-update check (issue #55): the daemon's local source
- * revision (`git rev-parse HEAD` at `$AK_HOME/src`) compared against the
+ * revision (`git rev-parse HEAD` at `~/.pideck/src`) compared against the
  * upstream repo/ref via `gh api repos/:owner/:repo/commits/<ref>` — the same
  * repo/ref the installer used (see install/lib/source.sh), so private repos
  * and dev refs check like public ones.

@@ -1,6 +1,6 @@
 /**
  * Self-update check (issue #55): compares the local source revision
- * (`git rev-parse HEAD` at the installed checkout, `$AK_HOME/src`) against
+ * (`git rev-parse HEAD` at the installed checkout, `~/.pideck/src`) against
  * the upstream repo/ref through the `gh` CLI
  * (`gh api repos/:owner/:repo/commits/<ref>`), so private repos and dev refs
  * check exactly like public ones.
@@ -55,7 +55,7 @@ export type UpdateSpawn = (
   options: SpawnOptions,
 ) => { unref(): void };
 
-/** Repo/ref config as persisted by the installer in `$AK_HOME/config.json`. */
+/** Repo/ref config as persisted by the installer in `~/.pideck/config.json`. */
 interface InstallConfig {
   repoUrl?: string;
   repoRef?: string;
@@ -278,7 +278,7 @@ export class UpdateChecker {
     }
   }
 
-  /** Reads the installer's `$AK_HOME/config.json` (best effort). */
+  /** Reads the installer's `~/.pideck/config.json` (best effort). */
   private async readInstallConfig(): Promise<InstallConfig & { error?: string }> {
     try {
       const raw = await readFile(`${this.stateDir}/config.json`, "utf8");
