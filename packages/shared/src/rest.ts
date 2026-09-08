@@ -308,6 +308,12 @@ export type UpdateStatus = z.infer<typeof updateStatusSchema>;
 export const updateStatusResponseSchema = updateStatusSchema.extend({
   /** Workers in an `ACTIVE_WORKER_STATUSES` status; > 0 blocks applying. */
   activeWorkers: z.number().int().min(0),
+  /** The node version this daemon process runs on (issue #202). */
+  nodeVersion: z.string(),
+  /** pi's node floor the daemon validates against (install: PD_NODE_MIN_VERSION). */
+  nodeMinVersion: z.string(),
+  /** `true` when the daemon's node is too old for the pi sessions it spawns. */
+  nodeTooOld: z.boolean(),
 });
 export type UpdateStatusResponse = z.infer<typeof updateStatusResponseSchema>;
 

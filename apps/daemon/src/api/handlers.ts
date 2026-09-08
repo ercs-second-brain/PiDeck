@@ -31,6 +31,7 @@ import {
 import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";
 import { listAccessibleRepos } from "../github/repos.js";
+import { nodeStatus } from "./node-version.js";
 import type { DaemonServices } from "./context.js";
 
 // ---------------------------------------------------------------------------
@@ -334,7 +335,8 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     getUpdateStatus: async ({ query = "" }) => {
       const refresh = new URLSearchParams(query).get("refresh") === "1";
       const status = await services.update.check({ force: refresh });
-      return { ...status, activeWorkers: countActiveWorkers(services) };
+      // nodeVersion/nodeTooOld ride the same poll (issue #202): warn before pi crashes.
+      return { ...status, activeWorkers: countActiveWorkers(services), ...nodeStatus() };
     },
 
     /**

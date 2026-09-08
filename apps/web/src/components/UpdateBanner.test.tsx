@@ -31,6 +31,9 @@ function status(overrides: Partial<UpdateStatusResponse> = {}): UpdateStatusResp
     checkedAt: "2026-01-02T03:04:05.000Z",
     error: null,
     activeWorkers: 0,
+    nodeVersion: "v22.23.2",
+    nodeMinVersion: "22.19.0",
+    nodeTooOld: false,
     ...overrides,
   });
 }
@@ -220,6 +223,29 @@ describe("stale apply error across detection cycles (issue #186)", () => {
     expect(fresh).toContain(shaB.slice(0, 7));
     expect(fresh).not.toContain("update-banner-error");
     expect(fresh).not.toContain("failed");
+  });
+});
+
+describe("NodeTooOldStrip (issue #202: warn before pi crashes at runtime)", () => {
+  it("warns loudly when the daemon's node is too old for pi", () => {
+    const html = view({ status: status({ nodeTooOld: true, nodeVersion: "v22.14.0" }) });
+    expect(html).toContain("update-banner");
+    expect(html).toContain("v22.14.0");
+    expect(html).toContain("too old for pi");
+    expect(html).toContain("22.19.0");
+    expect(html).toContain("pideck update");
+  });
+
+  it("stays quiet on a current node", () => {
+    expect(view({ status: status({ nodeTooOld: false, updateAvailable: false }) })).not.toContain("too old for pi");
+  });
+
+  it("stacks the warning above the update offer when both apply", () => {
+    const html = view({ status: status({ nodeTooOld: true }) });
+    expect(html).toContain("too old for pi");
+    expect(html).toContain("Update now");
+    // The warning appears before the update offer in the document.
+    expect(html.indexOf("too old for pi")).toBeLessThan(html.indexOf("Update now"));
   });
 });
 
