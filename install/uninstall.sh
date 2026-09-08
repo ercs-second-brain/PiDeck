@@ -20,7 +20,7 @@ ASSUME_YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --purge) PURGE=1 ;;
-    -y | --yes) ASSUME_YES=1; PD_NONINTERACTIVE=1 ;;
+    -y | --yes) ASSUME_YES=1; export PD_NONINTERACTIVE=1 ;;
     -h | --help) printf 'Usage: uninstall.sh [--purge] [-y]\n'; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
@@ -32,13 +32,11 @@ detect_arch
 
 info "uninstalling PiDeck"
 
-# Load install config (node paths, src, port) if present.
+# Load install config (src, for the pi skill symlinks below) if present.
 PD_SRC=""
-PD_NODE_BIN_DIR=""
 if [ -f "$PD_HOME/env" ]; then
   # shellcheck disable=SC1090
   . "$PD_HOME/env"
-  [ -n "${PD_NODE:-}" ] && PD_NODE_BIN_DIR=$(dirname "$PD_NODE")
 fi
 
 confirm() {
