@@ -45,7 +45,7 @@ describe("parseArgs", () => {
   });
 
   it("requires flags via requireFlag with usage text", () => {
-    expect(() => requireFlag({}, "project", "usage: agentskiss kanban --project <id>")).toThrow(CliError);
+    expect(() => requireFlag({}, "project", "usage: pideck kanban --project <id>")).toThrow(CliError);
     expect(() => requireFlag({ project: "p" }, "project")).not.toThrow();
   });
 });
@@ -55,7 +55,7 @@ describe("run() command dispatch", () => {
     readonly calls: Array<[string, unknown]> = [];
     override async status() {
       this.calls.push(["status", null]);
-      return { ok: true, name: "agentskiss-daemon", projects: 2, sessions: 3, at: "2026-01-01T00:00:00.000Z" };
+      return { ok: true, name: "pideck-daemon", projects: 2, sessions: 3, at: "2026-01-01T00:00:00.000Z" };
     }
     override async getProject(id: string): Promise<Project> {
       this.calls.push(["getProject", id]);
@@ -172,10 +172,10 @@ describe("run() command dispatch", () => {
     const code = await run(
       ["report-pr", "42"],
       client,
-      { tmuxSession: async () => "agentskiss-p1-worker-1" },
+      { tmuxSession: async () => "pideck-p1-worker-1" },
     );
     expect(code).toBe(0);
-    expect(client.calls.at(-1)).toEqual(["reportPr", { tmuxSession: "agentskiss-p1-worker-1", prNumber: 42 }]);
+    expect(client.calls.at(-1)).toEqual(["reportPr", { tmuxSession: "pideck-p1-worker-1", prNumber: 42 }]);
   });
 
   it("report-pr requires a numeric PR argument and a tmux context", async () => {
@@ -188,7 +188,7 @@ describe("run() command dispatch", () => {
     await expect(
       run(["report-pr", "42"], client, {
         tmuxSession: async () => {
-          throw new CliError("report-pr must run inside an agentskiss worker tmux session");
+          throw new CliError("report-pr must run inside an pideck worker tmux session");
         },
       }),
     ).rejects.toThrow(/tmux session/);
@@ -198,16 +198,16 @@ describe("run() command dispatch", () => {
 
 describe("currentTmuxSession (report-pr context resolution)", () => {
   it("throws when not inside tmux (no TMUX env)", async () => {
-    await expect(currentTmuxSession({})).rejects.toThrow(/inside an agentskiss worker tmux session/);
+    await expect(currentTmuxSession({})).rejects.toThrow(/inside an pideck worker tmux session/);
   });
 
   it("resolves the session name via tmux display-message in the pane's context", async () => {
     const calls: string[][] = [];
     const name = await currentTmuxSession({ TMUX: "/tmp/tmux-0/default,1,0" }, async (args) => {
       calls.push(args);
-      return "agentskiss-p1-worker-1\n";
+      return "pideck-p1-worker-1\n";
     });
-    expect(name).toBe("agentskiss-p1-worker-1");
+    expect(name).toBe("pideck-p1-worker-1");
     expect(calls).toEqual([["display-message", "-p", "#S"]]);
   });
 
@@ -229,7 +229,7 @@ describe("DaemonClient against a live daemon", () => {
       const url = new URL(req.url ?? "/", "http://localhost");
       if (url.pathname === "/api/status") {
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ ok: true, name: "agentskiss-daemon", projects: 0, sessions: 0, at: "2026-01-01T00:00:00.000Z" }));
+        res.end(JSON.stringify({ ok: true, name: "pideck-daemon", projects: 0, sessions: 0, at: "2026-01-01T00:00:00.000Z" }));
         return;
       }
       if (url.pathname.endsWith("/spawn")) {
@@ -263,6 +263,6 @@ describe("DaemonClient against a live daemon", () => {
     const client = new DaemonClient("http://127.0.0.1:1"); // nothing listens there
     const err = await client.status().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CliError);
-    expect((err as CliError).message).toContain("cannot reach the agentskiss daemon");
+    expect((err as CliError).message).toContain("cannot reach the pideck daemon");
   });
 });

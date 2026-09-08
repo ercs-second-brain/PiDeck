@@ -92,7 +92,7 @@ export function testDaemon(
   ghRoutes: FakeGhRoutes = {},
   contextOptions: Partial<DaemonContextOptions> = {},
 ): TestDaemon {
-  const stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-api-"));
+  const stateDir = mkdtempSync(path.join(tmpdir(), "pideck-api-"));
   const tmux = new FakeTmuxRunner();
   const cloned = new Set<string>();
   const services = createDaemonContext({

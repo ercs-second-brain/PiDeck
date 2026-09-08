@@ -18,7 +18,7 @@ import { Tmux } from "../sessions/tmux.js";
 import { TerminalBridge } from "./bridge.js";
 import { attachTerminalWebSocket } from "./ws-server.js";
 
-const SOCKET = `agentskiss-term-test-${process.pid}`;
+const SOCKET = `pideck-term-test-${process.pid}`;
 const tmuxAvailable = await Tmux.isAvailable();
 
 let stateDir = "";
@@ -29,7 +29,7 @@ let baseUrl = "";
 
 beforeAll(async () => {
   if (!tmuxAvailable) return;
-  stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-term-it-"));
+  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-term-it-"));
   tmux = new Tmux({ socketName: SOCKET });
   registry = new SessionRegistry(path.join(stateDir, "sessions.json"));
   const bridge = new TerminalBridge({ tmux, registry }, { activePollMs: 30, idlePollMs: 50 });
@@ -107,7 +107,7 @@ async function awaitEcho(client: ClientEvents, marker: string, timeoutMs = 5000)
 
 /** Creates a tmux session running an echoing `cat` pane + its registry entry. */
 async function seedCatSession(role: "orchestrator" | "worker", marker?: string) {
-  const tmuxName = `agentskiss-term-it-${role}`;
+  const tmuxName = `pideck-term-it-${role}`;
   const command = marker === undefined ? ["bash", "-c", "exec cat"] : ["bash", "-c", `echo ${marker}; exec cat`];
   await tmux.newSession(tmuxName, { cwd: stateDir, command });
   return registry.createSession({ projectId: "term-it", role, tmuxSession: tmuxName, workerId: null });

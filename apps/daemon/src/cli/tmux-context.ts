@@ -1,5 +1,5 @@
 /**
- * Worker-session self-identification for `agentskiss report-pr` (issue #49).
+ * Worker-session self-identification for `pideck report-pr` (issue #49).
  *
  * The CLI runs inside a daemon-managed tmux pane (the worker's session), so
  * it resolves the *calling* tmux session from its own live context — the
@@ -41,7 +41,7 @@ export async function currentTmuxSession(
 ): Promise<string> {
   if (env["TMUX"] === undefined || env["TMUX"].length === 0) {
     throw new CliError(
-      "report-pr must run inside an agentskiss worker tmux session (no TMUX environment — run it from the worker pane)",
+      "report-pr must run inside an pideck worker tmux session (no TMUX environment — run it from the worker pane)",
     );
   }
   let stdout: string;

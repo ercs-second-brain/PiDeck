@@ -19,7 +19,7 @@ import { Tmux } from "./tmux.js";
 let stateDir: string;
 
 beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-archive-log-"));
+  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-archive-log-"));
 });
 
 function makeManager(): { manager: SessionManager; fake: FakeTmuxRunner; layout: ProjectLayout } {

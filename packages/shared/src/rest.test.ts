@@ -47,8 +47,8 @@ describe("REST endpoint map", () => {
   });
 
   it("formats paths with params", () => {
-    expect(formatPath("getPullRequestDiff", { projectId: "agentskiss", prNumber: 42 })).toBe(
-      "/api/projects/agentskiss/pulls/42/diff",
+    expect(formatPath("getPullRequestDiff", { projectId: "pideck", prNumber: 42 })).toBe(
+      "/api/projects/pideck/pulls/42/diff",
     );
     expect(formatPath("getProject", { projectId: "a b/c" })).toBe("/api/projects/a%20b%2Fc");
   });

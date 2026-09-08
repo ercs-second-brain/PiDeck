@@ -1,7 +1,7 @@
 /**
  * CLI argument parsing (dependency-free).
  *
- * Grammar: `agentskiss <command...> [--flag value | --flag=value | --bool]...`
+ * Grammar: `pideck <command...> [--flag value | --flag=value | --bool]...`
  * Flags are collected into a record; `--json` and repeated flags become
  * booleans / arrays respectively. `--` stops flag parsing.
  */

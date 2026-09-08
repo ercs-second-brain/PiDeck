@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
- * `agentskiss` CLI — the daemon-facing commands the pi orchestration skills
- * invoke (agent/README.md "agentskiss CLI surface"; the exact invocations
+ * `pideck` CLI — the daemon-facing commands the pi orchestration skills
+ * invoke (agent/README.md "pideck CLI surface"; the exact invocations
  * live in agent/skills/):
  *
- *   agentskiss status [--json]
- *   agentskiss project get <id> [--json] | agentskiss project ls [--json]
- *   agentskiss kanban --project <id> [--json]
- *   agentskiss sessions --project <id> [--json]
- *   agentskiss workers --project <id> [--json]
- *   agentskiss pulls --project <id> [--json]
- *   agentskiss diff --project <id> <pr-number>
- *   agentskiss spawn --project <id> [--issue <number>] --name <label ≤20> [--prompt <task>]
- *   agentskiss send --session <id> --message <text>
- *   agentskiss report-pr <pr-number>   (worker panes only: self-identifies via tmux)
+ *   pideck status [--json]
+ *   pideck project get <id> [--json] | pideck project ls [--json]
+ *   pideck kanban --project <id> [--json]
+ *   pideck sessions --project <id> [--json]
+ *   pideck workers --project <id> [--json]
+ *   pideck pulls --project <id> [--json]
+ *   pideck diff --project <id> <pr-number>
+ *   pideck spawn --project <id> [--issue <number>] --name <label ≤20> [--prompt <task>]
+ *   pideck send --session <id> --message <text>
+ *   pideck report-pr <pr-number>   (worker panes only: self-identifies via tmux)
  *
- * (Service control — `agentskiss start|stop|...` — is the installer shim in
- * install/bin/agentskiss, which forwards agent commands here.)
+ * (Service control — `pideck start|stop|...` — is the installer shim in
+ * install/bin/pideck, which forwards agent commands here.)
  */
 
 import path from "node:path";
@@ -32,23 +32,23 @@ export interface RunDeps {
   tmuxSession?: () => Promise<string>;
 }
 
-const USAGE = `agentskiss — talk to the agentsKISS daemon
+const USAGE = `pideck — talk to the PiDeck daemon
 
 Usage:
-  agentskiss status [--json]
-  agentskiss project get <id> [--json]
-  agentskiss project ls [--json]
-  agentskiss kanban --project <id> [--json]
-  agentskiss sessions --project <id> [--json]
-  agentskiss workers --project <id> [--json]
-  agentskiss pulls --project <id> [--json]
-  agentskiss diff --project <id> <pr-number>
-  agentskiss spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]
-  agentskiss send --session <id> --message <text>
-  agentskiss report-pr <pr-number>
+  pideck status [--json]
+  pideck project get <id> [--json]
+  pideck project ls [--json]
+  pideck kanban --project <id> [--json]
+  pideck sessions --project <id> [--json]
+  pideck workers --project <id> [--json]
+  pideck pulls --project <id> [--json]
+  pideck diff --project <id> <pr-number>
+  pideck spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]
+  pideck send --session <id> --message <text>
+  pideck report-pr <pr-number>
 
 Environment:
-  AGENTSKISS_DAEMON_URL   daemon base URL (default http://127.0.0.1:$AGENTSKISS_WEB_PORT or :8321)
+  PD_DAEMON_URL   daemon base URL (default http://127.0.0.1:$PD_WEB_PORT or :8321)
 `;
 
 /** Everything a command handler needs; assembled once by {@link run}. */
@@ -79,13 +79,13 @@ async function cmdStatus(ctx: CommandContext): Promise<number> {
   const status = await ctx.client.status();
   emit(ctx.json, status, () => {
     console.log(
-      `agentskiss daemon: up (${status.projects} project(s), ${status.sessions} session(s))`,
+      `pideck daemon: up (${status.projects} project(s), ${status.sessions} session(s))`,
     );
     // Surface pi auth honestly (issue #57): an unauthenticated daemon
     // must never read as fully healthy.
     if (status.piReady === false) {
       console.warn(
-        "warning: pi auth not ready — run 'agentskiss onboard' (or pi /login); worker prompts are queued until a provider is ready",
+        "warning: pi auth not ready — run 'pideck onboard' (or pi /login); worker prompts are queued until a provider is ready",
       );
     }
   });
@@ -96,7 +96,7 @@ async function cmdProject(ctx: CommandContext): Promise<number> {
   const sub = positional(ctx.parsed, 1);
   if (sub === "get") {
     const id = ctx.rest[0];
-    if (id === undefined) throw new CliError("usage: agentskiss project get <id> [--json]");
+    if (id === undefined) throw new CliError("usage: pideck project get <id> [--json]");
     const project = await ctx.client.getProject(id);
     emit(ctx.json, project, () =>
       console.log(
@@ -113,14 +113,14 @@ async function cmdProject(ctx: CommandContext): Promise<number> {
     });
     return 0;
   }
-  throw new CliError(`usage: agentskiss project get <id> | project ls [--json]`);
+  throw new CliError(`usage: pideck project get <id> | project ls [--json]`);
 }
 
 async function cmdKanban(ctx: CommandContext): Promise<number> {
   const projectId = requireFlag(
     ctx.parsed.flags,
     "project",
-    "agentskiss kanban --project <id> [--json]",
+    "pideck kanban --project <id> [--json]",
   );
   const board = await ctx.client.kanban(projectId);
   emit(ctx.json, board, () => {
@@ -138,7 +138,7 @@ async function cmdSessions(ctx: CommandContext): Promise<number> {
   const projectId = requireFlag(
     ctx.parsed.flags,
     "project",
-    "agentskiss sessions --project <id> [--json]",
+    "pideck sessions --project <id> [--json]",
   );
   const sessions = await ctx.client.sessions(projectId);
   emit(ctx.json, sessions, () => {
@@ -155,7 +155,7 @@ async function cmdWorkers(ctx: CommandContext): Promise<number> {
   const projectId = requireFlag(
     ctx.parsed.flags,
     "project",
-    "agentskiss workers --project <id> [--json]",
+    "pideck workers --project <id> [--json]",
   );
   const workers = await ctx.client.workers(projectId);
   emit(ctx.json, workers, () => {
@@ -171,7 +171,7 @@ async function cmdWorkers(ctx: CommandContext): Promise<number> {
 }
 
 async function cmdPulls(ctx: CommandContext): Promise<number> {
-  const projectId = requireFlag(ctx.parsed.flags, "project", "agentskiss pulls --project <id> [--json]");
+  const projectId = requireFlag(ctx.parsed.flags, "project", "pideck pulls --project <id> [--json]");
   const pulls = await ctx.client.pulls(projectId);
   emit(ctx.json, pulls, () => {
     if (pulls.length === 0) console.log("no pull requests");
@@ -184,10 +184,10 @@ async function cmdPulls(ctx: CommandContext): Promise<number> {
 }
 
 async function cmdDiff(ctx: CommandContext): Promise<number> {
-  const projectId = requireFlag(ctx.parsed.flags, "project", "agentskiss diff --project <id> <pr-number>");
+  const projectId = requireFlag(ctx.parsed.flags, "project", "pideck diff --project <id> <pr-number>");
   const prRaw = ctx.rest[0] ?? optionalFlag(ctx.parsed.flags, "pr");
   if (prRaw === undefined || !/^\d+$/.test(prRaw)) {
-    throw new CliError("usage: agentskiss diff --project <id> <pr-number>");
+    throw new CliError("usage: pideck diff --project <id> <pr-number>");
   }
   const diff = await ctx.client.diff(projectId, Number(prRaw));
   emit(ctx.json, diff, () => {
@@ -201,7 +201,7 @@ async function cmdDiff(ctx: CommandContext): Promise<number> {
 }
 
 async function cmdSpawn(ctx: CommandContext): Promise<number> {
-  const usage = "agentskiss spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]";
+  const usage = "pideck spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]";
   const projectId = requireFlag(ctx.parsed.flags, "project", usage);
   const name = requireFlag(ctx.parsed.flags, "name", usage);
   if (name.length > 20) throw new CliError(`--name must be ≤ 20 characters (got ${name.length})`);
@@ -225,8 +225,8 @@ async function cmdSpawn(ctx: CommandContext): Promise<number> {
 }
 
 async function cmdSend(ctx: CommandContext): Promise<number> {
-  const sessionId = requireFlag(ctx.parsed.flags, "session", "agentskiss send --session <id> --message <text>");
-  const message = requireFlag(ctx.parsed.flags, "message", "agentskiss send --session <id> --message <text>");
+  const sessionId = requireFlag(ctx.parsed.flags, "session", "pideck send --session <id> --message <text>");
+  const message = requireFlag(ctx.parsed.flags, "message", "pideck send --session <id> --message <text>");
   await ctx.client.send(sessionId, message);
   emit(ctx.json, { ok: true, sessionId }, () => console.log(`delivered to ${sessionId}`));
   return 0;
@@ -238,7 +238,7 @@ async function cmdReportPr(ctx: CommandContext): Promise<number> {
   // flag — the daemon associates the worker behind that session.
   const prRaw = ctx.rest[0] ?? optionalFlag(ctx.parsed.flags, "pr");
   if (prRaw === undefined || !/^\d+$/.test(prRaw)) {
-    throw new CliError("usage: agentskiss report-pr <pr-number>");
+    throw new CliError("usage: pideck report-pr <pr-number>");
   }
   const tmuxSession = await (ctx.deps.tmuxSession ?? currentTmuxSession)();
   const worker = await ctx.client.reportPr(tmuxSession, Number(prRaw));
@@ -260,7 +260,7 @@ const commands: Record<string, Command> = {
   "report-pr": cmdReportPr,
 };
 
-/** Prints the usage text (`agentskiss`, `agentskiss help|--help|-h`). */
+/** Prints the usage text (`pideck`, `pideck help|--help|-h`). */
 async function cmdHelp(): Promise<number> {
   process.stdout.write(USAGE);
   return 0;
@@ -285,13 +285,13 @@ export async function run(
   }
   if (cmd === undefined && argv.length > 0) {
     // Flags without a command are never valid (issue #134: parity with the
-    // old switch — `agentskiss --json` errors, bare `agentskiss` shows help).
+    // old switch — `pideck --json` errors, bare `pideck` shows help).
     throw new CliError(`unknown command: ${argv.join(" ")}\n\n${USAGE}`);
   }
   return handler({ argv, parsed, rest, json: parsed.flags["json"] === true, client, deps });
 }
 
-// Entry point when executed directly (`agentskiss ...` via the package bin).
+// Entry point when executed directly (`pideck ...` via the package bin).
 /* v8 ignore next */
 const invokedAs = process.argv[1] !== undefined ? pathToFileURL(path.resolve(process.argv[1])).href : undefined;
 if (invokedAs !== undefined && import.meta.url === invokedAs) {
@@ -302,7 +302,7 @@ if (invokedAs !== undefined && import.meta.url === invokedAs) {
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       const exit = err instanceof CliError ? err.exitCode : 1;
-      process.stderr.write(`agentskiss: ${message}\n`);
+      process.stderr.write(`pideck: ${message}\n`);
       process.exitCode = exit;
     });
 }

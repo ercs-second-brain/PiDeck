@@ -163,7 +163,7 @@ describe("reportWorkerPr (explicit PR→worker report, issue #49)", () => {
       reportWorkerPr(daemon.services, { tmuxSession: orchestrator.tmuxSession, prNumber: 1 }),
     ).rejects.toThrow(/not a worker session/);
     await expect(
-      reportWorkerPr(daemon.services, { tmuxSession: "agentskiss-x-worker-99", prNumber: 1 }),
+      reportWorkerPr(daemon.services, { tmuxSession: "pideck-x-worker-99", prNumber: 1 }),
     ).rejects.toThrow(NotFoundError);
   });
 });
@@ -297,7 +297,7 @@ describe("spawnWorker pi-auth readiness gate (issue #56)", () => {
     // Truthful: held at `spawning`, never `running`, with the fix spelled out.
     expect(worker.status).toBe("spawning");
     expect(worker.statusMessage).toContain("waiting for pi auth");
-    expect(worker.statusMessage).toContain("agentskiss onboard");
+    expect(worker.statusMessage).toContain("pideck onboard");
     expect(worker.statusMessage).toContain("initial prompt queued");
     // The prompt was not swallowed: it never reached the pane.
     const pane = await daemon.services.sessions.capturePane(worker.sessionId);

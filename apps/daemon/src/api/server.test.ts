@@ -37,12 +37,12 @@ describe("static serving + SPA fallback", () => {
   beforeAll(async () => {
     noDist = await startServer(null);
 
-    webDistDir = path.join(tmpdir(), `agentskiss-web-dist-${process.pid}`);
+    webDistDir = path.join(tmpdir(), `pideck-web-dist-${process.pid}`);
     mkdirSync(webDistDir, { recursive: true });
-    writeFileSync(path.join(webDistDir, "index.html"), "<html>agentskiss spa</html>");
+    writeFileSync(path.join(webDistDir, "index.html"), "<html>pideck spa</html>");
     withIndex = await startServer(webDistDir);
 
-    emptyDistDir = path.join(tmpdir(), `agentskiss-web-dist-empty-${process.pid}`);
+    emptyDistDir = path.join(tmpdir(), `pideck-web-dist-empty-${process.pid}`);
     mkdirSync(emptyDistDir, { recursive: true });
     emptyDist = await startServer(emptyDistDir);
   });
@@ -56,7 +56,7 @@ describe("static serving + SPA fallback", () => {
   it("serves the daemon status page when no webapp build is configured", async () => {
     const res = await fetch(`${noDist.base}/`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("agentskiss daemon");
+    expect(await res.text()).toBe("pideck daemon");
   });
 
   it("404s unclaimed API-ish paths (`/api` without the trailing slash)", async () => {
@@ -69,7 +69,7 @@ describe("static serving + SPA fallback", () => {
     const res = await fetch(`${withIndex.base}/some/client/route`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
-    expect(await res.text()).toContain("agentskiss spa");
+    expect(await res.text()).toContain("pideck spa");
   });
 
   it("404s when a webDist is configured but has no index.html to fall back to", async () => {

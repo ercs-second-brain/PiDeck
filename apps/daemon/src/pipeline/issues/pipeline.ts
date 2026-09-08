@@ -92,7 +92,7 @@ export class IssueSpawnPipeline {
     this.spawner = options.spawner;
     this.blockers = options.blockers ?? new GhBlockerResolver(options.gh as GhClient);
     this.now = options.now ?? (() => new Date());
-    this.onError = options.onError ?? ((err) => console.error("[agentskiss/pipeline] issue pipeline error:", err));
+    this.onError = options.onError ?? ((err) => console.error("[pideck/pipeline] issue pipeline error:", err));
     // Cap-aware by default: with no `workerConcurrency` set, queueing is
     // bypassed entirely and uncapped issues spawn immediately.
     this.scheduler =

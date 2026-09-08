@@ -308,7 +308,7 @@ describe("UpdateChecker.apply (issue #76)", () => {
   function installedStateDir(): string {
     const dir = mkdtempSync(path.join(tmpdir(), "ak-apply-"));
     mkdirSync(path.join(dir, "bin"), { recursive: true });
-    writeFileSync(path.join(dir, "bin", "agentskiss"), "#!/bin/sh\n");
+    writeFileSync(path.join(dir, "bin", "pideck"), "#!/bin/sh\n");
     return dir;
   }
 
@@ -325,7 +325,7 @@ describe("UpdateChecker.apply (issue #76)", () => {
     await instance.apply();
     expect(spawned).toEqual([
       {
-        file: path.join(stateDir, "bin", "agentskiss"),
+        file: path.join(stateDir, "bin", "pideck"),
         args: ["update"],
         options: { detached: true, stdio: "ignore", cwd: stateDir },
       },
@@ -342,7 +342,7 @@ describe("UpdateChecker.apply (issue #76)", () => {
         return { unref() {} };
       },
     });
-    await expect(instance.apply()).rejects.toThrow(/no agentskiss shim at .*bin\/agentskiss/);
+    await expect(instance.apply()).rejects.toThrow(/no pideck shim at .*bin\/pideck/);
     expect(spawned).toBe(0);
   });
 });

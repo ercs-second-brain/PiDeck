@@ -38,7 +38,7 @@ export class JsonStore<T> {
       const parsed = validate(JSON.parse(raw) as unknown);
       return parsed ?? fallback;
     } catch (err) {
-      console.error(`[agentskiss] corrupt state file ${this.filePath}; using defaults:`, err);
+      console.error(`[pideck] corrupt state file ${this.filePath}; using defaults:`, err);
       return fallback;
     }
   }

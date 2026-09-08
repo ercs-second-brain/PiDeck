@@ -67,7 +67,7 @@ export async function spawnWorker(
 }
 
 /**
- * Explicit PR→worker report (`agentskiss report-pr`, issue #49): the calling
+ * Explicit PR→worker report (`pideck report-pr`, issue #49): the calling
  * worker session reports the PR it opened. The CLI self-identifies the tmux
  * session from its own pane context, so the daemon resolves the worker
  * behind that session — no session id to guess or mistype.
@@ -124,7 +124,7 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
     return {
       body: {
         ok: true,
-        name: "agentskiss-daemon",
+        name: "pideck-daemon",
         projects: services.projects.list().length,
         sessions: services.sessions.listSessions().length,
         piReady: pi.ready,

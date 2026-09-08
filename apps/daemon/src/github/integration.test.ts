@@ -10,7 +10,7 @@
  * issues). Runs identically on a clean clone with or without network/gh auth.
  *
  * A read-only smoke suite against the real GitHub API exists below, but it is
- * opt-in: it only runs when `AGENTSKISS_LIVE_GH_TESTS=1` is set AND a gh token
+ * opt-in: it only runs when `PD_LIVE_GH_TESTS=1` is set AND a gh token
  * is available, and it never asserts on specific live entities — only that the
  * calls succeed and map onto the shared contract schemas.
  */
@@ -268,7 +268,7 @@ describe("integration: github flows end-to-end over a fake gh runner (hermetic)"
 // Opt-in live smoke suite — read-only, no assertions on live entities
 // ---------------------------------------------------------------------------
 
-const liveEnabled = process.env["AGENTSKISS_LIVE_GH_TESTS"] === "1";
+const liveEnabled = process.env["PD_LIVE_GH_TESTS"] === "1";
 // Only probe for a token when the live suite is actually enabled, so the
 // hermetic suite never touches the gh binary at all.
 const hasToken = liveEnabled ? await hasGhToken(defaultGhRunner) : false;
@@ -276,7 +276,7 @@ const LIVE_REPO = { owner: "ercs-second-brain", repo: "agentsKISS" };
 
 const dl = describe.skipIf(!liveEnabled || !hasToken);
 
-dl("integration: read-only live GitHub smoke (opt-in via AGENTSKISS_LIVE_GH_TESTS=1)", () => {
+dl("integration: read-only live GitHub smoke (opt-in via PD_LIVE_GH_TESTS=1)", () => {
   const gh = new GhClient(defaultGhRunner);
 
   it("probes auth", async () => {

@@ -20,7 +20,7 @@ import { Tmux } from "./tmux.js";
 let stateDir: string;
 
 beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-relaunch-"));
+  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-relaunch-"));
 });
 
 function makeManager(): {

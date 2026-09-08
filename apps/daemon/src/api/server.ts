@@ -72,7 +72,7 @@ export function createDaemonServer(options: DaemonServerOptions): { server: Serv
       const notFound = webDistConfigured || url.pathname.startsWith("/api");
       res.statusCode = notFound ? 404 : 200;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.end(notFound ? "not found" : "agentskiss daemon");
+      res.end(notFound ? "not found" : "pideck daemon");
     })().catch((err) => {
       if (!res.headersSent) {
         res.statusCode = 500;
@@ -104,7 +104,7 @@ function logSlowEndpoint(method: string, pathname: string, durationMs: number): 
 
 /** Resolves the default webapp dist dir relative to the daemon package (`apps/web/dist`). */
 export function defaultWebDist(): string | undefined {
-  const fromEnv = process.env["AGENTSKISS_WEB_DIST"];
+  const fromEnv = process.env["PD_WEB_DIST"];
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
   // This module lives at <repo>/apps/daemon/{src/api,dist/api}/server.js;
   // the webapp build is <repo>/apps/web/dist.

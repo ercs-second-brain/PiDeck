@@ -316,7 +316,7 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     /**
      * Apply update (issue #76): gates server-side on zero active workers
      * (never trust the client — a worker spawned since the last poll still
-     * aborts cleanly with 409), then spawns the `agentskiss update` shim
+     * aborts cleanly with 409), then spawns the `pideck update` shim
      * detached and returns immediately; the daemon restarts mid-apply, so
      * the webapp polls `GET /api/update` until the new SHA shows up.
      */

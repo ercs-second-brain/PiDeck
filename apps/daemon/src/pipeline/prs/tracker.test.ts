@@ -9,7 +9,7 @@ import { prCardId } from "@agentskiss/shared";
 let filePath: string;
 
 beforeEach(() => {
-  filePath = path.join(mkdtempSync(path.join(tmpdir(), "agentskiss-prtracker-")), "prs.json");
+  filePath = path.join(mkdtempSync(path.join(tmpdir(), "pideck-prtracker-")), "prs.json");
 });
 
 function register(tracker: PRTracker, prNumber = 12, workerId = "worker-1") {

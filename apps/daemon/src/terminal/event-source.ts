@@ -106,7 +106,7 @@ export class PaneEventSource {
    */
   async start(): Promise<boolean> {
     if (this.lifecycle === "stopped") return false;
-    this.streamDir = mkdtempSync(path.join(tmpdir(), "agentskiss-term-"));
+    this.streamDir = mkdtempSync(path.join(tmpdir(), "pideck-term-"));
     this.streamFile = path.join(this.streamDir, `${safeName(this.paneTarget)}.stream`);
 
     // Reserve the stream file (open the write end like the real pipe shell

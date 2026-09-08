@@ -64,7 +64,7 @@ describe("PromptGate.queue", () => {
     const held = h.workers.get("worker-1") as Worker;
     expect(held.status).toBe("spawning");
     expect(held.statusMessage).toContain("waiting for pi auth");
-    expect(held.statusMessage).toContain("agentskiss onboard");
+    expect(held.statusMessage).toContain("pideck onboard");
     expect(held.statusMessage).toContain("initial prompt queued");
     expect(h.gate.size).toBe(1);
   });

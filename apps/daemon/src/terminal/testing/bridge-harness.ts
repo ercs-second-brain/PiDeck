@@ -82,7 +82,7 @@ export function setupHarness(
   options: TerminalBridgeOptions = {},
   overrides: { tmuxRunner?: TmuxRunner } = {},
 ): BridgeHarness {
-  const dir = mkdtempSync(path.join(tmpdir(), "agentskiss-bridge-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "pideck-bridge-"));
   const fake = new FakeTmuxRunner();
   const tmux = new Tmux({ runner: overrides.tmuxRunner ?? fake.asRunner() });
   const registry = new SessionRegistry(path.join(dir, "sessions.json"));
@@ -110,7 +110,7 @@ export function setupHarness(
     async seedSession(seed: SeedOptions = {}) {
       const projectId = seed.projectId ?? "proj";
       const role = seed.role ?? "orchestrator";
-      const tmuxName = `agentskiss-${projectId}-${role}-1`;
+      const tmuxName = `pideck-${projectId}-${role}-1`;
       await tmux.newSession(tmuxName);
       const session = registry.createSession({
         projectId,

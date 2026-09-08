@@ -13,7 +13,7 @@ const REST_PR = {
   state: "open",
   merged_at: null,
   user: { login: "eric" },
-  head: { ref: "ao/agentskiss-4/shared-contracts", sha: "abc123" },
+  head: { ref: "ao/pideck-4/shared-contracts", sha: "abc123" },
   base: { ref: "main" },
   html_url: "https://github.com/ercs-second-brain/agentsKISS/pull/18",
   updated_at: "2026-09-06T12:00:00Z",
@@ -30,7 +30,7 @@ describe("mapRestPull", () => {
       state: "open",
       ciStatus: "unknown",
       reviewState: "none",
-      headBranch: "ao/agentskiss-4/shared-contracts",
+      headBranch: "ao/pideck-4/shared-contracts",
       baseBranch: "main",
       author: "eric",
       url: "https://github.com/ercs-second-brain/agentsKISS/pull/18",
@@ -226,7 +226,7 @@ describe("listOpenPullRequestsBatched", () => {
       url: "https://github.com/ercs-second-brain/agentsKISS/pull/18",
       updatedAt: "2026-09-06T12:00:00Z",
       author: { login: "eric" },
-      headRefName: "ao/agentskiss-4/shared-contracts",
+      headRefName: "ao/pideck-4/shared-contracts",
       baseRefName: "main",
       headRefOid: "abc123",
       reviewDecision: "CHANGES_REQUESTED",
@@ -253,7 +253,7 @@ describe("listOpenPullRequestsBatched", () => {
     expect(pr.ciStatus).toBe("failure");
     expect(pr.reviewState).toBe("changes_requested");
     expect(pr.state).toBe("open");
-    expect(pr.headBranch).toBe("ao/agentskiss-4/shared-contracts");
+    expect(pr.headBranch).toBe("ao/pideck-4/shared-contracts");
   });
 
   it("passes the recency limit via -F and maps missing rollup/review to unknown/none", async () => {

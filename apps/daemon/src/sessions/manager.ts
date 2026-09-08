@@ -3,7 +3,7 @@
  *
  * Responsibilities (issue #4):
  * - create/list/kill tmux sessions per project, named
- *   `agentskiss-<projectId>-<role>-<n>`
+ *   `pideck-<projectId>-<role>-<n>`
  * - one orchestrator session per project (`ensureOrchestrator`)
  * - worker spawn = launch a pi session in the project's workspace tmux
  *   pane and register it (Session + Worker records from shared contracts)
@@ -457,10 +457,10 @@ export class SessionManager {
   /**
    * Next free tmux session name for a project+role, considering both live
    * tmux sessions and registry records so names never collide across
-   * reloads: `agentskiss-<projectId>-<role>-<n>` with n starting at 1.
+   * reloads: `pideck-<projectId>-<role>-<n>` with n starting at 1.
    */
   async nextTmuxSessionName(projectId: string, role: SessionRole): Promise<string> {
-    const prefix = `agentskiss-${sanitizeTmuxSegment(projectId)}-${role}-`;
+    const prefix = `pideck-${sanitizeTmuxSegment(projectId)}-${role}-`;
     const known = new Set([
       ...(await this.tmux.listSessions()),
       ...this.registry.listSessions().map((s) => s.tmuxSession),

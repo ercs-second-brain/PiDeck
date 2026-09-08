@@ -26,15 +26,15 @@ const NOW = "2025-06-01T12:00:00.000Z";
 describe("domain: project", () => {
   it("parses a valid project", () => {
     const project = projectSchema.parse({
-      id: "agentskiss",
-      name: "agentsKISS",
+      id: "pideck",
+      name: "PiDeck",
       repoUrl: "https://github.com/ercs-second-brain/agentsKISS",
       defaultBranch: "main",
       settings: { autoAgentUsername: "eric", workerConcurrency: 2 },
       createdAt: NOW,
       updatedAt: NOW,
     });
-    expect(project.id).toBe("agentskiss");
+    expect(project.id).toBe("pideck");
     expectTypeOf(project).toEqualTypeOf<Project>();
     expectTypeOf(project.settings.workerConcurrency).toEqualTypeOf<number | undefined>();
   });
@@ -159,7 +159,7 @@ describe("domain: session and worker", () => {
       role: "worker",
       tmuxSession: "p-worker-1",
       workerId: "w1",
-      cwd: "/home/me/.agentskiss/projects/p/worktrees/issue-7",
+      cwd: "/home/me/.pideck/projects/p/worktrees/issue-7",
       command: "pi",
       createdAt: NOW,
     });
@@ -180,7 +180,7 @@ describe("domain: session and worker", () => {
       startedAt: NOW,
       updatedAt: NOW,
     });
-    const located = workerSchema.parse({ ...worker, worktreePath: "/home/me/.agentskiss/projects/p/worktrees/issue-2" });
+    const located = workerSchema.parse({ ...worker, worktreePath: "/home/me/.pideck/projects/p/worktrees/issue-2" });
     expect(located.worktreePath).toContain("worktrees");
     expect(workerSchema.safeParse({ ...worker, worktreePath: "" }).success).toBe(false);
     expect(worker.status).toBe("spawning");

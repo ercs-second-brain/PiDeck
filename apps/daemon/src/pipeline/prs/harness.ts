@@ -197,7 +197,7 @@ export function makeHarness(
   const gh = fakeGh(prs, openList);
   const sessions = fakeSessions(options.workers ?? [makeWorker()]);
   const trackerPath =
-    options.trackerPath ?? path.join(mkdtempSync(path.join(tmpdir(), "agentskiss-prpipeline-")), "prs.json");
+    options.trackerPath ?? path.join(mkdtempSync(path.join(tmpdir(), "pideck-prpipeline-")), "prs.json");
   const tracker = new PRTracker(trackerPath);
   const emitted: PRPipelineEvent[] = [];
   let clock = BASE_TIME;

@@ -76,9 +76,9 @@ describe("router", () => {
 describe("static serving", () => {
   let server: Server;
   let base: string;
-  const webRoot = mkdtempSync(path.join(tmpdir(), "agentskiss-web-"));
+  const webRoot = mkdtempSync(path.join(tmpdir(), "pideck-web-"));
   mkdirSync(path.join(webRoot, "assets"), { recursive: true });
-  writeFileSync(path.join(webRoot, "index.html"), "<html><body>agentskiss</body></html>");
+  writeFileSync(path.join(webRoot, "index.html"), "<html><body>pideck</body></html>");
   writeFileSync(path.join(webRoot, "assets/app.js"), "console.log(1)");
 
   beforeAll(async () => {
@@ -101,7 +101,7 @@ describe("static serving", () => {
     const index = await fetch(`${base}/`);
     expect(index.status).toBe(200);
     expect(index.headers.get("content-type")).toContain("text/html");
-    expect(await index.text()).toContain("agentskiss");
+    expect(await index.text()).toContain("pideck");
 
     const asset = await fetch(`${base}/assets/app.js`);
     expect(asset.headers.get("content-type")).toContain("text/javascript");
@@ -109,14 +109,14 @@ describe("static serving", () => {
     // SPA fallback: unknown client route serves index.html
     const spa = await fetch(`${base}/projects/o-r/board`);
     expect(spa.status).toBe(200);
-    expect(await spa.text()).toContain("agentskiss");
+    expect(await spa.text()).toContain("pideck");
   });
 
   it("blocks path traversal outside the root", async () => {
     const res = await fetch(`${base}/..%2F..%2Fetc%2Fpasswd`);
     // Either blocked by fetch normalization or by the traversal guard → not a passwd leak.
     if (res.status === 200) {
-      expect(await res.text()).toContain("agentskiss"); // fell back to index
+      expect(await res.text()).toContain("pideck"); // fell back to index
     }
   });
 });

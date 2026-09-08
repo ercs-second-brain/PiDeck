@@ -20,7 +20,7 @@ import { Tmux, TmuxError } from "./tmux.js";
 let stateDir: string;
 
 beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-manager-"));
+  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-manager-"));
 });
 
 function makeManager(): {
@@ -45,19 +45,19 @@ describe("sanitizeTmuxSegment", () => {
 
 describe("parseTmuxSessionName", () => {
   it("parses daemon-managed names and rejects foreign ones", () => {
-    expect(parseTmuxSessionName("agentskiss-my-proj-worker-12")).toEqual({
+    expect(parseTmuxSessionName("pideck-my-proj-worker-12")).toEqual({
       projectId: "my-proj",
       role: "worker",
       n: 12,
     });
-    expect(parseTmuxSessionName("agentskiss-proj-orchestrator-1")).toEqual({
+    expect(parseTmuxSessionName("pideck-proj-orchestrator-1")).toEqual({
       projectId: "proj",
       role: "orchestrator",
       n: 1,
     });
-    expect(parseTmuxSessionName("agentskiss-proj-worker-x")).toBeNull();
+    expect(parseTmuxSessionName("pideck-proj-worker-x")).toBeNull();
     expect(parseTmuxSessionName("my-personal-session")).toBeNull();
-    expect(parseTmuxSessionName("agentskiss-proj-chat-1")).toBeNull();
+    expect(parseTmuxSessionName("pideck-proj-chat-1")).toBeNull();
   });
 });
 
@@ -197,7 +197,7 @@ describe("SessionManager.reconcile (issue #15)", () => {
     const result = await manager2.reconcile();
 
     expect(result.alive.map((s) => s.tmuxSession)).toEqual(
-      expect.arrayContaining([spawned.session.tmuxSession, "agentskiss-proj-orchestrator-1"]),
+      expect.arrayContaining([spawned.session.tmuxSession, "pideck-proj-orchestrator-1"]),
     );
     expect(result.resurrected).toEqual([]);
     expect(result.lost).toEqual([]);
@@ -313,7 +313,7 @@ describe("SessionManager.reconcile (issue #15)", () => {
 
   it("adopts live daemon-named tmux sessions missing from the registry", async () => {
     const fake = new FakeTmuxRunner();
-    fake.sessions.set("agentskiss-lostproj-worker-1", fakePaneState(["pi"], undefined));
+    fake.sessions.set("pideck-lostproj-worker-1", fakePaneState(["pi"], undefined));
     fake.sessions.set("someone-elses-session", fakePaneState(["bash"], undefined));
     const layout = new ProjectLayout(stateDir);
     const manager = new SessionManager({
@@ -324,7 +324,7 @@ describe("SessionManager.reconcile (issue #15)", () => {
 
     const result = await manager.reconcile({ resurrect: false });
 
-    expect(result.adopted.map((s) => s.tmuxSession)).toEqual(["agentskiss-lostproj-worker-1"]);
+    expect(result.adopted.map((s) => s.tmuxSession)).toEqual(["pideck-lostproj-worker-1"]);
     const adopted = manager.listSessions("lostproj");
     expect(adopted).toHaveLength(1);
     expect(adopted[0]?.role).toBe("worker");
@@ -461,9 +461,9 @@ describe("SessionManager with a fake tmux server", () => {
     const session = await manager.ensureOrchestrator("proj");
 
     expect(session.role).toBe("orchestrator");
-    expect(session.tmuxSession).toBe("agentskiss-proj-orchestrator-1");
+    expect(session.tmuxSession).toBe("pideck-proj-orchestrator-1");
     expect(session.workerId).toBeNull();
-    expect(fake.sessions.has("agentskiss-proj-orchestrator-1")).toBe(true);
+    expect(fake.sessions.has("pideck-proj-orchestrator-1")).toBe(true);
 
     // Second call is a no-op while the tmux session is alive.
     const again = await manager.ensureOrchestrator("proj");
@@ -478,7 +478,7 @@ describe("SessionManager with a fake tmux server", () => {
 
     const second = await manager.ensureOrchestrator("proj");
     expect(second.id).not.toBe(first.id);
-    expect(second.tmuxSession).toBe("agentskiss-proj-orchestrator-2");
+    expect(second.tmuxSession).toBe("pideck-proj-orchestrator-2");
     expect(registry.getSession(first.id)).toBeDefined(); // stale record kept for audit
   });
 
@@ -486,7 +486,7 @@ describe("SessionManager with a fake tmux server", () => {
     const { manager, fake, layout } = makeManager();
     const { session, worker } = await manager.spawnWorker("proj", { issueNumber: 4 });
 
-    expect(session.tmuxSession).toBe("agentskiss-proj-worker-1");
+    expect(session.tmuxSession).toBe("pideck-proj-worker-1");
     expect(session.role).toBe("worker");
     expect(session.workerId).toBe(worker.id);
     expect(worker.sessionId).toBe(session.id);
@@ -494,7 +494,7 @@ describe("SessionManager with a fake tmux server", () => {
     expect(worker.prNumber).toBeNull();
     expect(worker.status).toBe("running");
 
-    const pane = fake.sessions.get("agentskiss-proj-worker-1");
+    const pane = fake.sessions.get("pideck-proj-worker-1");
     expect(pane?.cwd).toBe(layout.cloneDir("proj"));
     expect(pane?.command).toEqual(["pi"]);
   });
@@ -509,9 +509,9 @@ describe("SessionManager with a fake tmux server", () => {
     });
     const second = await manager.spawnWorker("proj", { issueNumber: 2 });
 
-    expect(first.session.tmuxSession).toBe("agentskiss-proj-worker-1");
-    expect(second.session.tmuxSession).toBe("agentskiss-proj-worker-2");
-    expect(fake.sessions.get("agentskiss-proj-worker-1")?.cwd).toBe(worktree);
+    expect(first.session.tmuxSession).toBe("pideck-proj-worker-1");
+    expect(second.session.tmuxSession).toBe("pideck-proj-worker-2");
+    expect(fake.sessions.get("pideck-proj-worker-1")?.cwd).toBe(worktree);
   });
 
   it("resumes numbering after reload without name collisions", async () => {
@@ -526,7 +526,7 @@ describe("SessionManager with a fake tmux server", () => {
         runner: (() => {
           const fake = new FakeTmuxRunner();
           // Simulate the live tmux server still knowing session 1.
-          fake.sessions.set("agentskiss-proj-worker-1", {
+          fake.sessions.set("pideck-proj-worker-1", {
             command: ["pi"],
             cwd: undefined,
             paneLines: [],
@@ -541,7 +541,7 @@ describe("SessionManager with a fake tmux server", () => {
     });
     const next = await manager2.spawnWorker("proj", { issueNumber: 3 });
     // Registry reload knows about workers 1 and 2; live tmux still has 1 → next free is 3.
-    expect(next.session.tmuxSession).toBe("agentskiss-proj-worker-3");
+    expect(next.session.tmuxSession).toBe("pideck-proj-worker-3");
   });
 
   it("captures panes and resizes via session ids", async () => {

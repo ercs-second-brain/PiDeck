@@ -7,18 +7,36 @@
  *   <stateDir>/sessions.json                   — session registry persistence
  */
 
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 /**
- * Default daemon state directory (`~/.agentskiss`), overridable via the
- * `AGENTSKISS_HOME` environment variable (set by the service units).
+ * Default daemon state directory (`~/.pideck`), overridable via the
+ * `PD_HOME` environment variable (set by the service units).
  */
 export function defaultStateDir(): string {
-  const fromEnv = process.env["AGENTSKISS_HOME"];
+  const fromEnv = process.env["PD_HOME"];
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
-  return path.join(os.homedir(), ".agentskiss");
+  return pickHomeStateDir(os.homedir(), existsSync);
+}
+
+/**
+ * Resolves the home-relative state dir with a read-only legacy fallback
+ * (issue #125 rebrand): if `~/.pideck` does not exist but the pre-rebrand
+ * `~/.agentskiss` does, keep using the legacy dir and warn — no migration
+ * happens here (the installer shim owns moving the data).
+ */
+export function pickHomeStateDir(home: string, exists: (p: string) => boolean): string {
+  const dir = path.join(home, ".pideck");
+  const legacyDir = path.join(home, ".agentskiss");
+  if (!exists(dir) && exists(legacyDir)) {
+    console.error(
+      `[pideck] warning: ${dir} not found; using legacy state dir ${legacyDir} (run the pideck installer to migrate)`,
+    );
+    return legacyDir;
+  }
+  return dir;
 }
 
 export interface ProjectDirs {

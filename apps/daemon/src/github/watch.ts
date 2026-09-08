@@ -279,5 +279,5 @@ function prSignature(pr: PullRequest): string {
 }
 
 function defaultOnError(err: unknown): void {
-  console.error("[agentskiss/github] watcher poll failed:", err);
+  console.error("[pideck/github] watcher poll failed:", err);
 }
