@@ -1,7 +1,7 @@
 /**
  * WebSocket ⇄ tmux terminal bridge (issues #7 and #67).
  *
- * The bridge speaks the terminal message family from `@agentskiss/shared`
+ * The bridge speaks the terminal message family from `@pideck/shared`
  * (`terminal.attach` / `data` / `resize` / `reconnect` / `detach` and the
  * `terminal.attached` / `data` / `exited` server events).
  *
@@ -37,7 +37,7 @@ import {
   terminalClientMessageSchema,
   type Session,
   type TerminalServerEvent,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 import type { SessionRegistry } from "../sessions/registry.js";
 import type { Tmux } from "../sessions/tmux.js";
 import {

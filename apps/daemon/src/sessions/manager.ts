@@ -20,7 +20,7 @@
  * parse/sanitize) live in `tmux-commands.ts` and are re-exported here.
  */
 
-import type { Session, Worker, WorkerKind, WorkerStatus } from "@agentskiss/shared";
+import type { Session, Worker, WorkerKind, WorkerStatus } from "@pideck/shared";
 import { ProjectLayout } from "./layout.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";

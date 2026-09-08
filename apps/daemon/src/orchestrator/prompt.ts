@@ -24,7 +24,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 
 /** Placeholder keys the orchestrator prompt supports (agent/README.md). */
 export type PromptPlaceholder =

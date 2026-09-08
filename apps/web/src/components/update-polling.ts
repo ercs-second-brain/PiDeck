@@ -15,7 +15,7 @@
  *   and shim-reported failure — polling always stops once resolved.
  */
 
-import type { UpdateStatusResponse } from "@agentskiss/shared";
+import type { UpdateStatusResponse } from "@pideck/shared";
 import { apiGetUpdateStatus } from "../lib/api";
 
 /** Idle polling fallback: slow — the daemon serves a cached gh check (~5 min

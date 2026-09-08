@@ -19,7 +19,7 @@
  * view pieces live in {@link ./picker-rows.tsx}.
  */
 
-import type { Project, Session, Worker } from "@agentskiss/shared";
+import type { Project, Session, Worker } from "@pideck/shared";
 import { ArchivedSection, ProjectRow, TerminateWorkerModal, WorkerRow, workerFor } from "./picker-rows";
 import { usePickerState } from "./use-picker-state";
 

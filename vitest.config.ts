@@ -3,12 +3,12 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    // Resolve @agentskiss/shared straight to its TypeScript sources so a
+    // Resolve @pideck/shared straight to its TypeScript sources so a
     // fresh clone (`pnpm install && pnpm test`) never depends on
     // packages/shared/dist existing first (issue #136). The webapp's vite
     // config already aliases the same way.
     alias: {
-      "@agentskiss/shared": fileURLToPath(
+      "@pideck/shared": fileURLToPath(
         new URL("./packages/shared/src/index.ts", import.meta.url),
       ),
     },

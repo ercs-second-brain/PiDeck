@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KANBAN_COLUMNS } from "@agentskiss/shared";
+import { KANBAN_COLUMNS } from "@pideck/shared";
 import { COLUMN_LABELS } from "./kanban";
 
 describe("COLUMN_LABELS", () => {

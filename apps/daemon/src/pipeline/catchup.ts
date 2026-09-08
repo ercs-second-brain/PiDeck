@@ -15,7 +15,7 @@
  * handled by the running daemon are not re-swept on the next restart.
  */
 
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 
 import type { GhClient } from "../github/gh.js";
 import { parseRepoUrl } from "../github/gh.js";

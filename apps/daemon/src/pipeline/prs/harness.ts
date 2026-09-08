@@ -7,7 +7,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Worker, WorkerStatus } from "@agentskiss/shared";
+import type { Worker, WorkerStatus } from "@pideck/shared";
 
 import { GhClient } from "../../github/gh.js";
 import { restPull } from "../../testing/fixtures.js";

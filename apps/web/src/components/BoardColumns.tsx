@@ -5,9 +5,9 @@
  * cards of all boards concatenated in board order.
  */
 
-import { KANBAN_COLUMNS, type KanbanBoard } from "@agentskiss/shared";
+import { KANBAN_COLUMNS, type KanbanBoard } from "@pideck/shared";
 import { BoardColumn, prKey, type CardDetails } from "./BoardColumn";
-import type { PullRequest } from "@agentskiss/shared";
+import type { PullRequest } from "@pideck/shared";
 
 /** Merges the given boards' PRs into a single card-detail lookup. */
 export function mergedCardDetails(boards: KanbanBoard[], pullRequests: Record<string, PullRequest[]>): CardDetails {

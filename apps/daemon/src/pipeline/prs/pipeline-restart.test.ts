@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { PullRequest } from "@agentskiss/shared";
+import type { PullRequest } from "@pideck/shared";
 
 import { restPull } from "../../testing/fixtures.js";
 import { PullRequestPipeline } from "./pipeline.js";

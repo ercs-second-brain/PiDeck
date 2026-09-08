@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { ciStatusSchema, reviewStateSchema, pullRequestSchema, type PullRequest } from "@agentskiss/shared";
+import { ciStatusSchema, reviewStateSchema, pullRequestSchema, type PullRequest } from "@pideck/shared";
 
 /** Derived from the shared schemas (shared does not export these as named types). */
 type CiStatus = z.infer<typeof ciStatusSchema>;

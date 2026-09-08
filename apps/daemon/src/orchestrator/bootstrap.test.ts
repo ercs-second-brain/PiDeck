@@ -12,7 +12,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 
 import { createDaemonServer } from "../api/server.js";
 import { testDaemon, type TestDaemon } from "../api/testutil.js";

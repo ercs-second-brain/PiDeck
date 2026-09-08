@@ -1,6 +1,6 @@
 /**
  * Session registry: in-memory map + JSON-file persistence for `Session`
- * and `Worker` records (types from `@agentskiss/shared`).
+ * and `Worker` records (types from `@pideck/shared`).
  *
  * The registry is the daemon's queryable source of truth for which tmux
  * sessions and workers exist. It is persisted to a single JSON file under
@@ -17,7 +17,7 @@ import {
   type Worker,
   type WorkerKind,
   type WorkerStatus,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { JsonStore } from "../json-store.js";
 

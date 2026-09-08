@@ -9,7 +9,7 @@
  * the worker's status message reflects why nothing is driven.
  */
 
-import type { PullRequest, WorkerStatus } from "@agentskiss/shared";
+import type { PullRequest, WorkerStatus } from "@pideck/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
 import { buildCiFixPrompt, buildReviewCommentsPrompt } from "./prompts.js";

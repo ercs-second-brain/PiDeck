@@ -10,7 +10,7 @@ import { CliError, parseArgs, positional, requireFlag } from "./args.js";
 import { DaemonClient } from "./client.js";
 import { run } from "./main.js";
 import { currentTmuxSession } from "./tmux-context.js";
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 
 describe("parseArgs", () => {
   it("separates command positionals from flags", () => {

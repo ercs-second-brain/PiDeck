@@ -28,7 +28,7 @@ import type { ProjectService } from "../api/projects.js";
 import { atomicWrite } from "../json-store.js";
 import { ProjectLayout } from "../sessions/layout.js";
 import { shQuote, type SessionManager } from "../sessions/manager.js";
-import type { Project, Session } from "@agentskiss/shared";
+import type { Project, Session } from "@pideck/shared";
 import type { Tmux } from "../sessions/tmux.js";
 
 import { findAgentPromptPath, renderOrchestratorPrompt } from "./prompt.js";

@@ -6,8 +6,8 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { UpdateStatusResponse } from "@agentskiss/shared";
-import { updateStatusResponseSchema } from "@agentskiss/shared";
+import type { UpdateStatusResponse } from "@pideck/shared";
+import { updateStatusResponseSchema } from "@pideck/shared";
 
 import { UpdateBannerView, formatElapsed, updatingText, type UpdateBannerViewProps } from "./UpdateBanner";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { issueSchema, type Issue } from "@agentskiss/shared";
+import { issueSchema, type Issue } from "@pideck/shared";
 
 import { GhClient } from "./gh.js";
 import { fetchIssuesWithBlockedBy, listIssues, listIssuesCreatedAfter, mapRestIssue, resolveBlockedBy } from "./issues.js";

@@ -1,6 +1,6 @@
 /**
  * Typed REST access to the daemon, driven by the shared endpoint map
- * (`@agentskiss/shared/src/rest.ts`). Same-origin: the daemon serves both
+ * (`@pideck/shared/src/rest.ts`). Same-origin: the daemon serves both
  * the webapp build and the API, so no base URL is needed.
  *
  * Every response is validated against the shared zod response schema, and
@@ -21,7 +21,7 @@ import {
   type RegisterProjectRequest,
   type UpdateProjectRequest,
   type UpdateSettingsRequest,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { shareInFlight, type InFlight } from "./in-flight";
 

@@ -25,7 +25,7 @@ import {
   type Session,
   type Settings,
   type Worker,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { CliError } from "./args.js";
 

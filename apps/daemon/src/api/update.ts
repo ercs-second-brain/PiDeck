@@ -28,7 +28,7 @@ import { defaultGitRunner, type GitRunner } from "../github/repos.js";
 import { TtlSwrCache } from "./swr-cache.js";
 import { HttpError } from "./router.js";
 
-import type { UpdateStatus } from "@agentskiss/shared";
+import type { UpdateStatus } from "@pideck/shared";
 
 /**
  * Default re-check throttle (issue #82): the webapp forces fresh checks on

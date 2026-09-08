@@ -15,7 +15,7 @@ import {
   type Project,
   type PullRequest,
   type Worker,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 import { applyKanbanEvent, boardStore, type AppState } from "./store";
 import { backoffDelayMs, nextBackoffMs } from "../lib/backoff";
 

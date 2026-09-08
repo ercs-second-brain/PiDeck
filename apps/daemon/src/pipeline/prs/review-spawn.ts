@@ -11,7 +11,7 @@
  * independently testable unit.
  */
 
-import type { Worker } from "@agentskiss/shared";
+import type { Worker } from "@pideck/shared";
 
 import type { PromptGate } from "../../agent/prompt-gate.js";
 import type { SessionManager } from "../../sessions/manager.js";

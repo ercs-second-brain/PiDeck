@@ -10,7 +10,7 @@
  *   `SessionManager` (sessions/ interface).
  */
 
-import { ACTIVE_WORKER_STATUSES, type Issue, type IssueBlocker, type Project } from "@agentskiss/shared";
+import { ACTIVE_WORKER_STATUSES, type Issue, type IssueBlocker, type Project } from "@pideck/shared";
 import type { SpawnedWorker } from "../../sessions/manager.js";
 import type { RepoRef } from "../../github/gh.js";
 import type { SessionManager } from "../../sessions/manager.js";

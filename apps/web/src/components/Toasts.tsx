@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { NotificationEvent, Project } from "@agentskiss/shared";
+import type { NotificationEvent, Project } from "@pideck/shared";
 import { apiGetSettings } from "../lib/api";
 import { boardStore, useAppState } from "../store/store";
 

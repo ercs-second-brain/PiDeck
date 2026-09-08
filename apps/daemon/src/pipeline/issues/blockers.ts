@@ -12,7 +12,7 @@
  * a blocker actually blocks work is an open-state question").
  */
 
-import type { Issue, IssueBlocker } from "@agentskiss/shared";
+import type { Issue, IssueBlocker } from "@pideck/shared";
 
 import { fetchBlockedByDetail } from "../../github/issues.js";
 import { formatRepoRef, type GhClient, type RepoRef } from "../../github/gh.js";

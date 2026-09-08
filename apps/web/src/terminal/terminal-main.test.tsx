@@ -13,7 +13,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 vi.mock("@xterm/xterm", () => ({ Terminal: class {} }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
-import type { Project, Session, Worker } from "@agentskiss/shared";
+import type { Project, Session, Worker } from "@pideck/shared";
 import { TerminalPage } from "./TerminalPage";
 import { SidebarContext, type SidebarContextValue } from "./sidebar";
 import type { ProjectEntry } from "./SessionPicker";

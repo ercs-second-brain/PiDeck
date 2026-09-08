@@ -16,7 +16,7 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import { terminalClientMessageSchema, wsServerEventSchema, type WsServerEvent } from "@agentskiss/shared";
+import { terminalClientMessageSchema, wsServerEventSchema, type WsServerEvent } from "@pideck/shared";
 
 import { monitorWebSocket } from "../ws-heartbeat.js";
 

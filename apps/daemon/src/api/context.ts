@@ -6,7 +6,7 @@
 
 import path from "node:path";
 
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 
 import { PiAuthProbe, type PiRunner } from "../agent/pi-auth.js";
 import { PromptGate } from "../agent/prompt-gate.js";

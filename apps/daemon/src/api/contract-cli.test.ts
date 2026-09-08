@@ -5,7 +5,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { formatPath, piAuthSchema, workerSchema } from "@agentskiss/shared";
+import { formatPath, piAuthSchema, workerSchema } from "@pideck/shared";
 
 import { startContractServer, type ContractServer } from "./contract-fixtures.js";
 

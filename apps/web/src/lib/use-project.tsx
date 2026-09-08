@@ -12,7 +12,7 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 import { boardStore, useAppState } from "../store/store";
 
 export function useProject(projectId: string | undefined): { project: Project | undefined; fallback: ReactNode } {

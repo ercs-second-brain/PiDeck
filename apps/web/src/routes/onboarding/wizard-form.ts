@@ -5,7 +5,7 @@
  * both live here so the step components stay presentational and the wizard
  * parent keeps owning the state machine.
  */
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 import { apiRegisterProject } from "../../lib/api";
 
 export type WizardForm = {

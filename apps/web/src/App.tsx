@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate } from "react-router";
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { AllProjectsBoard } from "./routes/AllProjectsBoard";
 import { BoardPage } from "./routes/BoardPage";

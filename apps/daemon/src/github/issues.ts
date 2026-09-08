@@ -17,7 +17,7 @@
  */
 
 import { z } from "zod";
-import { issueSchema, type Issue, type RefNumber } from "@agentskiss/shared";
+import { issueSchema, type Issue, type RefNumber } from "@pideck/shared";
 
 import { formatRepoRef, type GhClient, type RepoRef } from "./gh.js";
 

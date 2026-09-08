@@ -22,7 +22,7 @@
  * behalf.
  */
 
-import { ACTIVE_WORKER_STATUSES, type PullRequest, type Worker } from "@agentskiss/shared";
+import { ACTIVE_WORKER_STATUSES, type PullRequest, type Worker } from "@pideck/shared";
 
 import type { PRSessionControl } from "./pipeline.js";
 import { buildReReviewPrompt, buildReviewAgentPrompt, type ReviewAgentPromptOptions } from "./prompts.js";

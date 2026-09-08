@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { Worker } from "@agentskiss/shared";
+import type { Worker } from "@pideck/shared";
 
 import { PromptGate, type PromptGateDeps } from "./prompt-gate.js";
 

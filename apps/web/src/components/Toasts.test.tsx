@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { NotificationEvent, Project } from "@agentskiss/shared";
+import type { NotificationEvent, Project } from "@pideck/shared";
 
 import { appendToast, MAX_TOASTS, ToastStack, toastKey, toastText, type MergedPRToast } from "./Toasts";
 

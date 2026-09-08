@@ -19,7 +19,7 @@
 
 import path from "node:path";
 
-import type { Issue, IssueBlocker, KanbanColumn } from "@agentskiss/shared";
+import type { Issue, IssueBlocker, KanbanColumn } from "@pideck/shared";
 
 import type { GhClient, RepoRef } from "../github/gh.js";
 import { formatRepoRef, parseRepoUrl } from "../github/gh.js";

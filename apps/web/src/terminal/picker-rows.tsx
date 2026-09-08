@@ -7,7 +7,7 @@
  */
 
 import type { ReactNode } from "react";
-import type { Session, Worker } from "@agentskiss/shared";
+import type { Session, Worker } from "@pideck/shared";
 import { workerStatusClasses } from "../lib/worker-status";
 
 /** Issue #112: color-coded status indicator (blue/green/red, pulse while working). */

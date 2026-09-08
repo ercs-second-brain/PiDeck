@@ -24,7 +24,7 @@
  *   per kanban refresh.
  */
 
-import type { PullRequest } from "@agentskiss/shared";
+import type { PullRequest } from "@pideck/shared";
 
 import { listOpenPullRequestsBatched, parseRepoUrl, type GhClient } from "../github/index.js";
 import { TtlSwrCache } from "./swr-cache.js";

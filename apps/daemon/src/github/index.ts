@@ -1,5 +1,5 @@
 /**
- * @agentskiss/github — GitHub integration layer for the PiDeck daemon.
+ * @pideck/github — GitHub integration layer for the PiDeck daemon.
  *
  * A library (no pipeline wiring): gh CLI wrapper with auth/permission
  * detection, repo clone/create, issue & PR list/mapping onto the shared

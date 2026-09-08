@@ -10,7 +10,7 @@
  * stream is healthy and the primary signal when it is not.
  */
 
-import type { Session, TerminalServerEvent } from "@agentskiss/shared";
+import type { Session, TerminalServerEvent } from "@pideck/shared";
 import type { Tmux } from "../sessions/tmux.js";
 import { PaneEventSource } from "./event-source.js";
 import { InputPump } from "./input-pump.js";

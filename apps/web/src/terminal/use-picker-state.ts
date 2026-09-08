@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "react";
-import type { Session } from "@agentskiss/shared";
+import type { Session } from "@pideck/shared";
 import { loadCollapsedProjects, saveCollapsedProjects } from "../lib/sidebar-collapse";
 
 export function usePickerState(

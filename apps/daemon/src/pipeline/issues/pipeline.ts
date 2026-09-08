@@ -31,7 +31,7 @@
  * pipeline and piping watcher events into {@link IssueSpawnPipeline.handleEvent}.
  */
 
-import { issueCardId, type GithubWatcherEvent, type Issue, type IssueBlocker, type KanbanCard, type KanbanUpdateEvent, type RefNumber } from "@agentskiss/shared";
+import { issueCardId, type GithubWatcherEvent, type Issue, type IssueBlocker, type KanbanCard, type KanbanUpdateEvent, type RefNumber } from "@pideck/shared";
 
 import type { GhClient } from "../../github/gh.js";
 import { GhBlockerResolver } from "./blockers.js";

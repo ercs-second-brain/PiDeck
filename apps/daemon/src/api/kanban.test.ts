@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { projectSchema, type KanbanBoard, type PullRequest } from "@agentskiss/shared";
+import { projectSchema, type KanbanBoard, type PullRequest } from "@pideck/shared";
 
 import { GhClient, type GhRunner } from "../github/gh.js";
 import { KanbanService, deriveBoard } from "./kanban.js";

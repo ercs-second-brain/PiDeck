@@ -25,7 +25,7 @@ import {
   updateSettingsRequestSchema,
   workerSchema,
   type EndpointName,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";

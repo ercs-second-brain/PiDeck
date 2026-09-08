@@ -9,7 +9,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import type { Worker } from "@agentskiss/shared";
+import type { Worker } from "@pideck/shared";
 import {
   fetchProjects,
   fetchSessions,

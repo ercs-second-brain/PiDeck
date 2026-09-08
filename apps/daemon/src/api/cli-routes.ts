@@ -8,7 +8,7 @@
  */
 
 import { z } from "zod";
-import { refNumberSchema } from "@agentskiss/shared";
+import { refNumberSchema } from "@pideck/shared";
 
 /** `POST /api/projects/:projectId/spawn` — spawn a worker in a project. */
 export const projectSpawnSchema = z
