@@ -54,6 +54,14 @@ describe("project registration (issue #216)", () => {
     expect(project.name).toBe("pidecktest2");
   });
 
+  it("rejects the reserved global-agent project id with a conflict (workspace hierarchy)", async () => {
+    const { api } = server;
+    // Create mode: the 409 must fire BEFORE a GitHub repo is created.
+    const res = await api("POST", "/api/projects", { mode: "create", name: "global" });
+    expect(res.status).toBe(409);
+    expect((res.json as { error: string }).error).toContain("reserved for the global agent");
+  });
+
   it("returns a 4xx with an actionable message when the clone fails", async () => {
     const failing = await startContractServer({
       git: async (args) => {

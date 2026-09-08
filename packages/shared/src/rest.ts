@@ -390,6 +390,30 @@ export const endpoints = {
   },
 
   /**
+   * Every registered session across all projects, including the global
+   * agent's (projectId `GLOBAL_AGENT_PROJECT_ID`). Backs the webapp
+   * sidebar's global-agent row and `pideck sessions` without `--project` —
+   * the global agent discovers each project's orchestrator session from
+   * this list to address it with `pideck send`.
+   */
+  listAllSessions: {
+    method: "GET", path: "/api/sessions", params: z.object({}), request: null, response: z.array(sessionSchema),
+  },
+
+  /**
+   * Start (or attach to) the workspace-level global agent session — the
+   * top of the agent hierarchy (global agent → project orchestrators →
+   * workers → review agents). Idempotent like
+   * `ensureProjectOrchestrator`: returns the live session when one
+   * exists. The global agent session is an orchestrator-role session under
+   * the reserved `GLOBAL_AGENT_PROJECT_ID` pseudo-project, launched in the
+   * daemon state dir with the rendered global-agent prompt.
+   */
+  ensureGlobalAgent: {
+    method: "POST", path: "/api/global-agent", params: z.object({}), request: null, response: sessionSchema,
+  },
+
+  /**
    * Start (or attach to the existing) per-project orchestrator session
    * (issue #53): wraps `SessionManager.ensureOrchestrator` — idempotent, so
    * the daemon returns the live orchestrator session when one exists.
@@ -534,7 +558,6 @@ export type EndpointParams<N extends EndpointName> = z.output<(typeof endpoints)
 /** Request body for an endpoint (`undefined` when `request` is `null`). */
 export type EndpointRequest<N extends EndpointName> =
   (typeof endpoints)[N]["request"] extends null ? undefined : z.output<NonNullable<(typeof endpoints)[N]["request"]>>;
-
 /** Response body for an endpoint, inferred from its `response` schema. */
 export type EndpointResponse<N extends EndpointName> = z.output<(typeof endpoints)[N]["response"]>;
 
@@ -546,9 +569,7 @@ export function formatPath<N extends EndpointName>(name: N, params: EndpointPara
   const template = endpoints[name].path;
   return template.replace(/:([A-Za-z0-9_]+)/g, (_match, key: string) => {
     const value = (params as Record<string, unknown>)[key];
-    if (value === undefined) {
-      throw new Error(`Missing path param "${key}" for endpoint "${String(name)}"`);
-    }
+    if (value === undefined) throw new Error(`Missing path param "${key}" for endpoint "${String(name)}"`);
     return encodeURIComponent(String(value));
   });
 }

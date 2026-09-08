@@ -9,13 +9,14 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import type { Worker } from "@pideck/shared";
+import { GLOBAL_AGENT_PROJECT_ID, type Session, type Worker } from "@pideck/shared";
 import {
   fetchProjects,
-  fetchSessions,
+  fetchAllSessions,
   fetchWorkers,
   apiDeleteProject,
   startOrchestrator as apiStartOrchestrator,
+  startGlobalAgent as apiStartGlobalAgent,
   terminateWorker as apiTerminateWorker,
 } from "../lib/api";
 import type { ProjectEntry } from "./SessionPicker";
@@ -31,10 +32,16 @@ export interface SidebarContextValue {
   loaded: boolean;
   /** Project id currently starting its orchestrator (button pending state). */
   startingProjectId: string | null;
+  /** The workspace-level global agent session, once one exists (projectId `global`). */
+  globalAgent: Session | null;
+  /** True while the global agent start request is in flight. */
+  startingGlobalAgent: boolean;
   /** Forces an immediate sidebar refresh (e.g. after onboarding registers a project). */
   reload: () => void;
   /** Starts the project's orchestrator, then navigates to its terminal. */
   startOrchestrator: (projectId: string) => void;
+  /** Starts (or attaches to) the global agent, then navigates to its terminal. */
+  startGlobalAgent: () => void;
   /** Terminates a worker (issue #64): daemon kills the pane, worker archived; refreshes after. */
   terminateWorker: (workerId: string) => void;
   /** Deletes a project locally (issue #172): daemon teardown, GitHub repo kept.
@@ -43,6 +50,9 @@ export interface SidebarContextValue {
   /** Opens the project onboarding wizard (sidebar "+" / empty states). */
   openOnboarding: () => void;
 }
+
+/** What {@link useSidebarData} provides — the context value minus openOnboarding. */
+export type SidebarData = Omit<SidebarContextValue, "openOnboarding">;
 
 /**
  * Sidebar poll interval (#88). The websocket hub keeps kanban/worker state
@@ -62,21 +72,41 @@ export function shouldAutoOpenOnboarding(state: { loaded: boolean; error: string
   return state.loaded && state.error === null && state.entryCount === 0;
 }
 
+/**
+ * One sidebar poll: the project list plus ONE daemon-wide sessions fetch
+ * (per-project groups and the workspace-level global agent — the
+ * hierarchy's top layer, projectId `global`) and the per-project workers.
+ */
+async function loadSidebarData(): Promise<{ entries: ProjectEntry[]; globalAgent: Session | null }> {
+  const [projects, allSessions] = await Promise.all([fetchProjects(), fetchAllSessions()]);
+  const byProject = new Map<string, Session[]>();
+  let globalAgent: Session | null = null;
+  for (const session of allSessions) {
+    if (session.projectId === GLOBAL_AGENT_PROJECT_ID) {
+      if (session.role === "orchestrator") globalAgent = session;
+      continue;
+    }
+    const group = byProject.get(session.projectId);
+    if (group !== undefined) group.push(session);
+    else byProject.set(session.projectId, [session]);
+  }
+  const entries = await Promise.all(
+    projects.map(async (project) => {
+      const workers = await fetchWorkers(project.id).catch(() => [] as Worker[]);
+      return { project, sessions: byProject.get(project.id) ?? [], workers };
+    }),
+  );
+  return { entries, globalAgent };
+}
+
 /** Polls the daemon for the sidebar's project/session/worker data. */
-export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) => void): {
-  entries: ProjectEntry[];
-  error: string | null;
-  loaded: boolean;
-  startingProjectId: string | null;
-  reload: () => void;
-  startOrchestrator: (projectId: string) => void;
-  terminateWorker: (workerId: string) => void;
-  deleteProject: (projectId: string) => Promise<void>;
-} {
+export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) => void): SidebarData {
   const [entries, setEntries] = useState<ProjectEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [startingProjectId, setStartingProjectId] = useState<string | null>(null);
+  const [globalAgent, setGlobalAgent] = useState<Session | null>(null);
+  const [startingGlobalAgent, setStartingGlobalAgent] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
@@ -88,18 +118,10 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
       if (pending) return;
       pending = true;
       try {
-        const projects = await fetchProjects();
-        const nextEntries = await Promise.all(
-          projects.map(async (project) => {
-            const [sessions, workers] = await Promise.all([
-              fetchSessions(project.id),
-              fetchWorkers(project.id).catch(() => [] as Worker[]),
-            ]);
-            return { project, sessions, workers };
-          }),
-        );
+        const { entries: nextEntries, globalAgent } = await loadSidebarData();
         if (!cancelled) {
           setEntries(nextEntries);
+          setGlobalAgent(globalAgent);
           setError(null);
           setLoaded(true);
         }
@@ -119,21 +141,36 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
 
   const reload = useCallback(() => setReloadTick((tick) => tick + 1), []);
 
-  const startOrchestrator = useCallback(
-    (projectId: string) => {
-      setStartingProjectId(projectId);
-      apiStartOrchestrator(projectId)
+  // Shared start flow (orchestrator + global agent): pending state, then
+  // reload so the new row appears without waiting for the next poll tick
+  // (#88), then navigate to the session's terminal.
+  const startSession = useCallback(
+    (start: () => Promise<{ id: string }>, setPending: (pending: boolean) => void) => {
+      setPending(true);
+      start()
         .then((session) => {
-          // Reload now so the new orchestrator row (and its attachable
-          // terminal) appears without waiting for the next poll tick (#88:
-          // the slower fallback poll must not slow down starting work).
           reload();
           onStartOrchestratorNavigate(session.id);
         })
         .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
-        .finally(() => setStartingProjectId(null));
+        .finally(() => setPending(false));
     },
     [onStartOrchestratorNavigate, reload],
+  );
+
+  const startOrchestrator = useCallback(
+    (projectId: string) =>
+      startSession(
+        () => apiStartOrchestrator(projectId),
+        (pending) => setStartingProjectId(pending ? projectId : null),
+      ),
+    [startSession],
+  );
+
+  /** Starts (or attaches to) the global agent and refreshes so its row is live. */
+  const startGlobalAgent = useCallback(
+    () => startSession(apiStartGlobalAgent, setStartingGlobalAgent),
+    [startSession],
   );
 
   /** Terminates a worker (issue #64) and refreshes so the archive shows immediately. */
@@ -156,7 +193,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     [reload],
   );
 
-  return { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker, deleteProject };
+  return { entries, error, loaded, startingProjectId, globalAgent, startingGlobalAgent, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject };
 }
 
 /** Context through which the shell shares sidebar data with main-pane routes. */

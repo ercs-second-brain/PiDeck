@@ -136,6 +136,19 @@
   color: var(--accent);
 }
 
+/* The workspace-level global agent row (the hierarchy's top layer):
+   same row anatomy as a project row, set apart by a divider so it reads
+   as a workspace-level layer above the project list. */
+.picker-global-row {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.picker-global-name {
+  font-weight: 500;
+}
+
 /* Issue #114: per-project collapse chevron — quiet, no chrome. */
 .picker-project-chevron {
   flex: none;

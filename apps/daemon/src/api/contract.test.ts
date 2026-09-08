@@ -314,6 +314,28 @@ describe("orchestrator (issue #53)", () => {
   });
 });
 
+describe("global agent (workspace-level hierarchy top)", () => {
+  it("starts the global agent, is idempotent, and lists it daemon-wide", async () => {
+    const first = await api("POST", formatPath("ensureGlobalAgent", {}));
+    expect(first.status).toBe(200);
+    const session = sessionSchema.parse(first.json);
+    expect(session.projectId).toBe("global");
+    expect(session.role).toBe("orchestrator");
+
+    // Idempotent: a second call reuses the live global agent session.
+    const again = await api("POST", formatPath("ensureGlobalAgent", {}));
+    expect(again.status).toBe(200);
+    expect(sessionSchema.parse(again.json).id).toBe(session.id);
+
+    // The global agent shows up in the daemon-wide session list — how the
+    // global agent itself and the webapp sidebar discover it.
+    const all = await api("GET", formatPath("listAllSessions", {}));
+    expect(all.status).toBe(200);
+    const ids = (all.json as unknown[]).map((s) => sessionSchema.parse(s).id);
+    expect(ids).toContain(session.id);
+  });
+});
+
 describe("pull requests", () => {
   it("lists enriched PRs and serves a PR diff", async () => {
     const { services } = daemon;

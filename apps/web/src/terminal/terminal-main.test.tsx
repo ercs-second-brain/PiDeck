@@ -41,14 +41,26 @@ const sessions: Session[] = [
 
 const entry: ProjectEntry = { project, sessions, workers: [] as Worker[] };
 
+const globalAgentSession: Session = {
+  id: "sess-global-1",
+  projectId: "global",
+  role: "orchestrator",
+  tmuxSession: "pideck-global-orchestrator-1",
+  workerId: null,
+  createdAt: "2025-01-01T00:00:00.000Z",
+};
+
 function renderMain(path: string, context: Partial<SidebarContextValue>) {
   const value: SidebarContextValue = {
     entries: context.entries ?? [entry],
     error: context.error ?? null,
     loaded: context.loaded ?? true,
     startingProjectId: null,
+    globalAgent: context.globalAgent ?? null,
+    startingGlobalAgent: false,
     reload: () => {},
     startOrchestrator: () => {},
+    startGlobalAgent: () => {},
     terminateWorker: () => {},
     deleteProject: async () => {},
     openOnboarding: () => {},
@@ -75,6 +87,18 @@ describe("TerminalPage (main pane)", () => {
 
   it("shows the attach hint when no session is selected", () => {
     const html = renderMain("/terminal", {});
+    expect(html).toContain("Select a session to attach.");
+  });
+
+  it("attaches the global agent's terminal from the sidebar context (workspace hierarchy)", () => {
+    // The global agent belongs to no project entry — it arrives separately.
+    const html = renderMain("/terminal/sess-global-1", { entries: [], globalAgent: globalAgentSession });
+    expect(html).toContain("terminal-pane");
+    expect(html).toContain("terminal-statusbar");
+  });
+
+  it("keeps the attach hint when only an unknown session id is selected", () => {
+    const html = renderMain("/terminal/sess-unknown", { globalAgent: globalAgentSession });
     expect(html).toContain("Select a session to attach.");
   });
 

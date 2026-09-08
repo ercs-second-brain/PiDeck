@@ -170,6 +170,13 @@ export const fetchProjects = (): Promise<EndpointResponse<"listProjects">> => re
 export const fetchSessions = (projectId: string): Promise<EndpointResponse<"listProjectSessions">> =>
   request("listProjectSessions", { projectId });
 
+/**
+ * Every session daemon-wide, including the workspace-level global agent's
+ * (projectId `global`) — the sidebar's global-agent row and its start
+ * affordance are backed by this list plus `startGlobalAgent`.
+ */
+export const fetchAllSessions = (): Promise<EndpointResponse<"listAllSessions">> => request("listAllSessions", {});
+
 export const fetchWorkers = (projectId: string): Promise<EndpointResponse<"listProjectWorkers">> =>
   request("listProjectWorkers", { projectId });
 
@@ -179,6 +186,14 @@ export const fetchWorkers = (projectId: string): Promise<EndpointResponse<"listP
  */
 export const startOrchestrator = (projectId: string): Promise<EndpointResponse<"ensureProjectOrchestrator">> =>
   request("ensureProjectOrchestrator", { projectId });
+
+/**
+ * Starts (or attaches to) the workspace-level global agent — the top of the
+ * agent hierarchy (global agent → project orchestrators → workers → review
+ * agents). Daemon-side idempotent via `POST /api/global-agent`.
+ */
+export const startGlobalAgent = (): Promise<EndpointResponse<"ensureGlobalAgent">> =>
+  request("ensureGlobalAgent", {});
 
 /**
  * Terminates a worker (issue #64): the daemon kills its tmux session (which
@@ -228,6 +243,26 @@ export async function apiGetPiAuth(): Promise<PiAuth> {
   const response = await fetch("/api/pi-auth", { headers: { accept: "application/json" } });
   if (!response.ok) throw new ApiError(response.status, "GET", "/api/pi-auth", response.statusText);
   return piAuthSchema.parse(await response.json());
+}
+
+// --- node runtime probe (pi compatibility) -----------------------------------
+//
+// `GET /api/status` is a non-contract daemon route (like `/api/gh-auth`):
+// only its node-vs-pi fields are read here (the daemon spreads `nodeStatus()`
+// into the payload, apps/daemon/src/api/node-version.ts), validated with a
+// local schema so a daemon shape change cannot crash the webapp.
+
+const nodeStatusSchema = z.object({
+  nodeVersion: z.string(),
+  nodeTooOld: z.boolean(),
+});
+
+export type NodeStatus = z.infer<typeof nodeStatusSchema>;
+
+export async function apiGetNodeStatus(): Promise<NodeStatus> {
+  const response = await fetch("/api/status", { headers: { accept: "application/json" } });
+  if (!response.ok) throw new ApiError(response.status, "GET", "/api/status", response.statusText);
+  return nodeStatusSchema.parse(await response.json());
 }
 
 // --- onboarding state (wizard, issue #165) -----------------------------------

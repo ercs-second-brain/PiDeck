@@ -79,6 +79,14 @@ export class ProjectLayout {
     return path.join(this.stateDir, "archived-logs.json");
   }
 
+  /**
+   * Path of the rendered global-agent prompt file (`<stateDir>/global-agent-prompt.md`),
+   * written by the orchestrator bootstrap at session start.
+   */
+  globalAgentPromptFilePath(): string {
+    return path.join(this.stateDir, "global-agent-prompt.md");
+  }
+
   /** PR-tracker persistence for a project (`<stateDir>/pr-tracker/<projectId>.json`).
    * Same path {@link ../pipeline/unit-builder.js} builds for its trackers. */
   prTrackerFilePath(projectId: string): string {

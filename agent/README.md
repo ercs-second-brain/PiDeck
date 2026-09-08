@@ -9,6 +9,7 @@ agent/
 ├── README.md                  # this file — skill↔daemon interface contract
 ├── prompts/
 │   ├── orchestrator.md        # orchestrator system prompt (daemon assembles)
+│   ├── global-agent.md        # workspace-level global agent prompt (daemon assembles)
 │   └── worker.md              # worker system prompt (daemon assembles)
 └── skills/                    # pi skill dirs (SKILL.md + optional commands/)
     ├── using-pideck/      # daemon CLI catalog (SKILL.md + commands/)
@@ -35,6 +36,7 @@ Ported from [agent-orchestrator](https://github.com/Untrivial-ai/agent-orchestra
 | `{{PROJECT_REPO_URL}}` | `Project.repoUrl` |
 | `{{PROJECT_DEFAULT_BRANCH}}` | `Project.defaultBranch` |
 | `{{PROJECT_PATH}}` | Local checkout path of the project |
+| `{{WORKSPACE_PATH}}` | Daemon state dir root — the workspace spanning every project (global-agent prompt only, `agent/prompts/global-agent.md`) |
 | `{{ORCHESTRATOR_SESSION_ID}}` | The project's orchestrator session id (worker prompt only; daemon omits that section when no orchestrator exists) |
 
 Runtime environment: the daemon sets `PD_SESSION_ID` in every agent session so workers and docker container labels can reference their own session (worker prompt, "Docker Containers" section).

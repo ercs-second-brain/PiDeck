@@ -4,10 +4,12 @@
  * and session send.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { formatPath, piAuthSchema, workerSchema } from "@pideck/shared";
 
 import { startContractServer, type ContractServer } from "./contract-fixtures.js";
+import { DaemonClient } from "../cli/client.js";
+import { run } from "../cli/main.js";
 
 let server: ContractServer;
 
@@ -78,5 +80,38 @@ describe("CLI action routes", () => {
 
     const missing = await api("POST", "/api/sessions/sess-missing/send", { message: "hi" });
     expect(missing.status).toBe(404);
+  });
+});
+
+describe("pideck sessions CLI (workspace hierarchy)", () => {
+  it("lists sessions daemon-wide without --project, including the global agent", async () => {
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((line: string) => logs.push(line));
+    try {
+      const client = new DaemonClient(server.base);
+      // The global agent starts on demand (same idempotent ensure as the
+      // daemon boot sweep / webapp sidebar button).
+      await client.ensureGlobalAgent();
+      let project = server.daemon.services.projects.get("sp-rp");
+      if (project === undefined) {
+        project = await server.daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/sp/rp" });
+      }
+
+      // Without --project: every session, with its projectId column — how
+      // the global agent discovers each project's orchestrator session id.
+      expect(await run(["sessions"], client)).toBe(0);
+      const allRows = logs.filter((line) => line.includes("\t"));
+      expect(allRows.some((line) => line.split("\t")[1] === "global")).toBe(true);
+      expect(allRows.some((line) => line.split("\t")[1] === project.id)).toBe(true);
+
+      // With --project: only that project's sessions.
+      logs.length = 0;
+      expect(await run(["sessions", "--project", project.id], client)).toBe(0);
+      const scopedRows = logs.filter((line) => line.includes("\t"));
+      expect(scopedRows.length).toBeGreaterThan(0);
+      expect(scopedRows.every((line) => line.split("\t")[1] === project.id)).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });
