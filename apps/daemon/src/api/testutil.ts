@@ -88,16 +88,43 @@ export function fakeGh(routes: FakeGhRoutes): (repoUrl: string) => GhClient {
   return () => new GhClient(runner);
 }
 
-/** Fake git: records clones into a set; supports default-branch detection. */
-export function fakeGit(cloned: Set<string>): GitRunner {
+/** Fake git options: clone recording plus the self-update probes. */
+export interface FakeGitOptions {
+  /** `git clone <url> <dest>` destinations are recorded here (project tests). */
+  cloned?: Set<string>;
+  /** `git rev-parse HEAD` → this sha (or fails when absent). */
+  localSha?: string;
+  /** `git remote get-url origin` → this URL (or fails when absent). */
+  remoteUrl?: string;
+  /** Forces `git rev-parse HEAD` to fail (no git repo at the checkout). */
+  failRevParse?: boolean;
+}
+
+/**
+ * The one api-layer git fake, covering every command the daemon issues:
+ * `clone` (recorded into `cloned`), `symbolic-ref --short HEAD`
+ * (default-branch detection → `main`), and the self-update probes
+ * `rev-parse HEAD` + `remote get-url origin`. Unmatched invocations throw.
+ */
+export function fakeGit(options: FakeGitOptions = {}): GitRunner {
   return async (args) => {
     if (args[0] === "clone") {
       const dest = args[args.length - 1] ?? "";
-      cloned.add(dest);
+      options.cloned?.add(dest);
       mkdirSync(dest, { recursive: true });
       return { stdout: "", stderr: "" };
     }
     if (args[0] === "symbolic-ref") return { stdout: "main\n", stderr: "" };
+    if (args[0] === "rev-parse" && args[1] === "HEAD") {
+      if (options.failRevParse || options.localSha === undefined) {
+        throw new Error(`git ${args.join(" ")} failed`);
+      }
+      return { stdout: `${options.localSha}\n`, stderr: "" };
+    }
+    if (args[0] === "remote" && args[1] === "get-url" && args[2] === "origin") {
+      if (options.remoteUrl === undefined) throw new Error(`git ${args.join(" ")} failed`);
+      return { stdout: `${options.remoteUrl}\n`, stderr: "" };
+    }
     throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
   };
 }
@@ -124,7 +151,7 @@ export function testDaemon(
     stateDir,
     tmux: new Tmux({ runner: tmux.asRunner() }),
     gh: fakeGh(ghRoutes),
-    git: fakeGit(cloned),
+    git: fakeGit({ cloned }),
     // Hermetic default (issues #56/#57): pi auth ready without probing the
     // real CLI. Overridden by piRunner/piReady in the tests that exercise
     // the unauthenticated path. The fake runner also covers the pi version

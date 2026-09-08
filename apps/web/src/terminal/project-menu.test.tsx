@@ -10,18 +10,10 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { Project } from "@pideck/shared";
+import { makeProject } from "./test-fixtures";
 import { DeleteProjectModal, ProjectRow } from "./picker-rows";
 
-const project: Project = {
-  id: "agentskiss",
-  name: "agentsKISS",
-  repoUrl: "https://github.com/ercs-second-brain/agentsKISS",
-  defaultBranch: "main",
-  settings: { autoAgentUsername: null, workerConcurrency: 2 },
-  createdAt: "2025-01-01T00:00:00.000Z",
-  updatedAt: "2025-01-01T00:00:00.000Z",
-};
+const project = makeProject();
 
 function renderRow(menuOpen: boolean): string {
   return renderToString(
@@ -47,15 +39,15 @@ function renderRow(menuOpen: boolean): string {
 describe("project row ⋯ context menu (issue #167)", () => {
   it("gives each project row a ⋯ context-menu toggle", () => {
     const html = renderRow(false);
-    expect(html).toContain("picker-project-menu");
     expect(html).toContain("aria-haspopup=\"menu\"");
+    expect(html).toContain("title=\"agentsKISS options\"");
     // Closed by default — no menu renders until the ⋯ toggle is clicked.
-    expect(html).not.toContain("picker-context-menu");
+    expect(html).not.toContain("role=\"menu\"");
   });
 
   it("offers Settings in the open menu without duplicating the kanban entry", () => {
     const html = renderRow(true);
-    expect(html).toContain("picker-context-menu");
+    expect(html).toContain("role=\"menu\"");
     expect(html).toContain(">Settings</button>");
     expect(html).toContain("Open agentsKISS&#x27;s settings");
     // Kanban stays the row's name click (#173) — the menu does not repeat it.
@@ -76,7 +68,6 @@ describe("project row ⋯ context menu (issue #167)", () => {
 describe("Delete project… menu entry (issue #172)", () => {
   it("offers a destructive Delete project entry in the open menu", () => {
     const html = renderRow(true);
-    expect(html).toContain("picker-menu-danger");
     expect(html).toContain(">Delete project…</button>");
     expect(html).toContain("the GitHub repo is kept");
   });

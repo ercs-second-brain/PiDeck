@@ -13,7 +13,8 @@ import { describe, expect, it } from "vitest";
 import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
 
-import { checker, fakeGit, fakeGh } from "./update-testutil.js";
+import { checker, fakeGh } from "./update-testutil.js";
+import { fakeGit } from "./testutil.js";
 import { GhError } from "../github/gh.js";
 import { withPrivateGhFallback } from "./update.js";
 

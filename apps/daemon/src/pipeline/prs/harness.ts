@@ -54,7 +54,13 @@ export function redFakePR(number = 12, overrides: Parameters<typeof restPull>[1]
   return { pull: restPull(number, overrides), checkRuns: checkRuns("failure"), reviews: [], comments: [] };
 }
 
-export function fakeGh(prs: Map<number, FakePR>, openList: number[]): GhClient {
+/**
+ * PR-pipeline fake GitHub: answers the pipeline's exact gh call sequence
+ * (pull, check-runs by in-flight PR, reviews, comments, diff) from the
+ * `prs`/`openList` state — unlike api/testutil's route-table gh fake, this
+ * one models a fixed repo's PR set rather than arbitrary REST paths.
+ */
+function fakePipelineGh(prs: Map<number, FakePR>, openList: number[]): GhClient {
   // check-runs paths carry the commit SHA, not the PR number; the fake
   // tracks which PR's fetch is in flight (single pull first, then its
   // enrichment) to route those calls.
@@ -194,7 +200,7 @@ export function makeHarness(
 ): Harness {
   const prs = new Map<number, FakePR>();
   const openList: number[] = [];
-  const gh = fakeGh(prs, openList);
+  const gh = fakePipelineGh(prs, openList);
   const sessions = fakeSessions(options.workers ?? [makeWorker()]);
   const trackerPath =
     options.trackerPath ?? path.join(mkdtempSync(path.join(tmpdir(), "pideck-prpipeline-")), "prs.json");
