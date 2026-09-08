@@ -122,7 +122,12 @@ chmod +x "$FAKE_BIN/git" "$FAKE_BIN/gh"
 # HOME is pinned to the fake home so ~/.local/bin writes (the pideck
 # symlink the apply path re-creates) land in the tmp tree, not the real one.
 run_update() {
-  env PATH="$FAKE_BIN:$PATH" \
+  # -u: scrub the legacy node variables (issue #213) — a real box runs this
+  # suite from inside `pideck update`'s process, whose ambient environment
+  # can carry any stale subset of PD_NODE/PD_NODE_BIN/PD_NODE_BIN_DIR; the
+  # tests must see only what the fixture's env file provides.
+  env -u PD_NODE -u PD_NODE_BIN -u PD_NODE_BIN_DIR \
+    PATH="$FAKE_BIN:$PATH" \
     FAKE_LOCAL_SHA="$1" FAKE_REMOTE_SHA="$2" FAKE_REMOTE_URL="$3" UPDATE_SNIPPET="$4" \
     PD_HOME="$PD_HOME" HOME="$PD_HOME" \
     sh -c '
@@ -169,10 +174,13 @@ write_config
 # --- shim wiring ------------------------------------------------------------
 
 run_shim() { # run_shim <local-sha> <remote-sha|''> <args...>
+  # -u: scrub the legacy node variables (issue #213) — see run_update.
   _rs_local=$1; _rs_remote=$2; shift 2
-  env PATH="$FAKE_BIN:$PATH" FAKE_LOCAL_SHA="$_rs_local" FAKE_REMOTE_SHA="$_rs_remote" \
+  env -u PD_NODE -u PD_NODE_BIN -u PD_NODE_BIN_DIR \
+    PATH="$FAKE_BIN:$PATH" FAKE_LOCAL_SHA="$_rs_local" FAKE_REMOTE_SHA="$_rs_remote" \
     PD_HOME="$PD_HOME" HOME="$PD_HOME" sh "$SHIM" "$@"
 }
+
 
 out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update --check)
 check_grep 'shim update --check reports up to date' 'up to date' "$out"
@@ -221,6 +229,53 @@ out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
 check_eq 'shim without service-env PD_NODE_BIN still applies (issue #208)' '0' "$rc"
 check_grep 'shim derives the newest private node when env has no PD_NODE (issue #208)' 'node-v22.23.2-linux-x64/bin/node dir=' "$out"
 set_pd_node "$OLD_NODE_DIR/node"
+
+# --- shim: fe43fa0-era installed layout (issue #213) -------------------------
+# A fe43fa0-era install (pre-#208/#211) has an env file with only PD_NODE —
+# no PD_NODE_BIN/PD_NODE_BIN_DIR — and when `pideck update` runs the install
+# suite from inside the OLD shim's process, that process's exported legacy
+# variables leak into the ambient environment of every child (pnpm build ->
+# this suite -> run_shim). Observed live on the dev server: PD_NODE +
+# PD_NODE_BIN exported, PD_NODE_BIN_DIR missing -> `PD_NODE_BIN_DIR:
+# parameter not set` killed the apply with exit 2. The shim must normalize
+# the whole triple on every run regardless of which legacy generation the
+# ambient environment carries — it must not skip just because PD_NODE is
+# set to something stale. All variants below apply with the env file
+# pointing at the OLD private node (which sits under $PD_HOME/opt, so
+# refresh_node_runtime legitimately moves it to the pinned one before
+# register_service runs — the register output must show the refreshed,
+# complete triple either way).
+printf '%s\n' "$STALE_RUNNING" > "$PD_HOME/var/running-sha" # restart-only apply: register_service runs
+
+fe43_ambient_apply() { # fe43_ambient_apply <PD_NODE|''> <PD_NODE_BIN|''> <PD_NODE_BIN_DIR|''> — leaky-ambient apply
+  _fa_out=$(env PATH="$FAKE_BIN:$PATH" FAKE_LOCAL_SHA="$LOCAL_SHA" FAKE_REMOTE_SHA="$REMOTE_SAME" \
+    PD_HOME="$PD_HOME" HOME="$PD_HOME" \
+    ${1:+"PD_NODE=$1"} ${2:+"PD_NODE_BIN=$2"} ${3:+"PD_NODE_BIN_DIR=$3"} \
+    sh "$SHIM" update 2>&1)
+}
+
+# the exact field crash: ambient PD_NODE + PD_NODE_BIN, PD_NODE_BIN_DIR missing
+set_pd_node "$OLD_NODE_DIR/node"
+fe43_ambient_apply "$OLD_NODE_DIR/node" "$OLD_NODE_DIR/node" ""; rc=$?
+check_eq 'fe43fa0 layout: apply survives stale PD_NODE+PD_NODE_BIN with PD_NODE_BIN_DIR missing (issue #213)' '0' "$rc"
+check_grep 'fe43fa0 layout: the missing PD_NODE_BIN_DIR is derived from the active node (issue #213)' \
+  "node=$NEW_NODE_DIR/node dir=$NEW_NODE_DIR" "$_fa_out"
+check_no_grep 'fe43fa0 layout: no parameter-not-set ever reaches the output (issue #213)' 'parameter not set' "$_fa_out"
+
+# the old shim's own export set: ambient PD_NODE only (stale, executable)
+set_pd_node "$OLD_NODE_DIR/node"
+fe43_ambient_apply "$OLD_NODE_DIR/node" "" ""; rc=$?
+check_eq 'fe43fa0 layout: apply survives the old shim PD_NODE-only export set (issue #213)' '0' "$rc"
+check_grep 'fe43fa0 layout: stale env-file PD_NODE is normalized into the full triple (issue #213)' \
+  "node=$NEW_NODE_DIR/node dir=$NEW_NODE_DIR" "$_fa_out"
+
+# the post-#211 shim's derived set: all three stale but consistent
+set_pd_node "$OLD_NODE_DIR/node"
+fe43_ambient_apply "$OLD_NODE_DIR/node" "$OLD_NODE_DIR/node" "$OLD_NODE_DIR"; rc=$?
+check_eq 'fe43fa0 layout: apply survives a stale-but-complete legacy triple (issue #213)' '0' "$rc"
+check_grep 'fe43fa0 layout: a stale complete triple still refreshes and registers (issue #213)' \
+  "node=$NEW_NODE_DIR/node dir=$NEW_NODE_DIR" "$_fa_out"
+
 rm -f "$PD_HOME/var/running-sha"
 
 # --- apply path (update available → fetch, build, restart) ------------------
