@@ -35,11 +35,11 @@ function validated(event: GithubWatcherEvent): GithubWatcherEvent {
   return githubWatcherEventSchema.parse(event);
 }
 
-export type WatcherEventEmitter = (event: GithubWatcherEvent) => void;
+type WatcherEventEmitter = (event: GithubWatcherEvent) => void;
 
 export const DEFAULT_POLL_INTERVAL_MS = 30_000;
 
-export interface WatcherBaseOptions {
+interface WatcherBaseOptions {
   gh: GhClient;
   projectId: string;
   repo: RepoRef;
@@ -115,47 +115,21 @@ export class PollLoop {
 }
 
 // ---------------------------------------------------------------------------
-// Issue watcher
+// Watcher base
 // ---------------------------------------------------------------------------
 
-export interface IssueWatcherOptions extends WatcherBaseOptions {
-  /**
-   * Username to watch for: emits `issue.created` for issues authored by or
-   * assigned to this login, and `issue.assigned` when the login becomes an
-   * assignee of a previously-seen issue. `null` watches every issue.
-   */
-  username: string | null;
-}
-
-/** Watches issue created / assigned transitions. */
-export class IssueWatcher {
-  private readonly seen = new Map<number, IssueRecord>();
+/**
+ * Shared start/stop plumbing for the concrete watchers (issue #133): both
+ * wrap their {@link pollOnce} in a {@link PollLoop} whose tick emits each
+ * event validated against the shared contract.
+ */
+abstract class WatcherBase<O extends WatcherBaseOptions> {
   private loop: PollLoop | null = null;
 
-  constructor(private readonly options: IssueWatcherOptions) {}
+  constructor(protected readonly options: O) {}
 
   /** Runs one poll and returns the events it produced (without emitting). */
-  async pollOnce(): Promise<GithubWatcherEvent[]> {
-    const { gh, projectId, repo, username, now = () => new Date() } = this.options;
-    const records = await listIssues(gh, projectId, repo, { state: "open" });
-    const events: GithubWatcherEvent[] = [];
-    for (const record of records) {
-      const prev = this.seen.get(record.issue.number);
-      this.seen.set(record.issue.number, record);
-      if (prev === undefined) {
-        if (this.matches(record)) {
-          events.push({ type: "issue.created", at: now().toISOString(), issue: record.issue });
-        }
-        continue;
-      }
-      const becameAssigned =
-        username !== null && record.assignees.includes(username) && !prev.assignees.includes(username);
-      if (becameAssigned) {
-        events.push({ type: "issue.assigned", at: now().toISOString(), issue: record.issue });
-      }
-    }
-    return events;
-  }
+  abstract pollOnce(): Promise<GithubWatcherEvent[]>;
 
   /** Starts polling; every tick's events are passed to `options.emit`. */
   start(): void {
@@ -178,6 +152,51 @@ export class IssueWatcher {
 
   get isRunning(): boolean {
     return this.loop?.isRunning ?? false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Issue watcher
+// ---------------------------------------------------------------------------
+
+export interface IssueWatcherOptions extends WatcherBaseOptions {
+  /**
+   * Username to watch for: emits `issue.created` for issues authored by or
+   * assigned to this login, and `issue.assigned` when the login becomes an
+   * assignee of a previously-seen issue. `null` watches every issue.
+   */
+  username: string | null;
+}
+
+/** Watches issue created / assigned transitions. */
+export class IssueWatcher extends WatcherBase<IssueWatcherOptions> {
+  private readonly seen = new Map<number, IssueRecord>();
+
+  constructor(options: IssueWatcherOptions) {
+    super(options);
+  }
+
+  /** Runs one poll and returns the events it produced (without emitting). */
+  async pollOnce(): Promise<GithubWatcherEvent[]> {
+    const { gh, projectId, repo, username, now = () => new Date() } = this.options;
+    const records = await listIssues(gh, projectId, repo, { state: "open" });
+    const events: GithubWatcherEvent[] = [];
+    for (const record of records) {
+      const prev = this.seen.get(record.issue.number);
+      this.seen.set(record.issue.number, record);
+      if (prev === undefined) {
+        if (this.matches(record)) {
+          events.push({ type: "issue.created", at: now().toISOString(), issue: record.issue });
+        }
+        continue;
+      }
+      const becameAssigned =
+        username !== null && record.assignees.includes(username) && !prev.assignees.includes(username);
+      if (becameAssigned) {
+        events.push({ type: "issue.assigned", at: now().toISOString(), issue: record.issue });
+      }
+    }
+    return events;
   }
 
   private matches(record: IssueRecord): boolean {
@@ -225,11 +244,12 @@ export interface PullRequestWatcherOptions extends WatcherBaseOptions {
  * (title/state/CI/review/branches/updatedAt), so event fidelity is
  * preserved.
  */
-export class PullRequestWatcher {
+export class PullRequestWatcher extends WatcherBase<PullRequestWatcherOptions> {
   private readonly seen = new Map<number, PullRequest>();
-  private loop: PollLoop | null = null;
 
-  constructor(private readonly options: PullRequestWatcherOptions) {}
+  constructor(options: PullRequestWatcherOptions) {
+    super(options);
+  }
 
   /** Runs one poll and returns the events it produced (without emitting). */
   async pollOnce(): Promise<GithubWatcherEvent[]> {
@@ -250,28 +270,6 @@ export class PullRequestWatcher {
     return events;
   }
 
-  /** Starts polling; every tick's events are passed to `options.emit`. */
-  start(): void {
-    if (this.loop === null) {
-      const { pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, emit, onError = defaultOnError } = this.options;
-      this.loop = new PollLoop(
-        async () => {
-          for (const event of await this.pollOnce()) emit(validated(event));
-        },
-        pollIntervalMs,
-        onError,
-      );
-    }
-    this.loop.start();
-  }
-
-  stop(): void {
-    this.loop?.stop();
-  }
-
-  get isRunning(): boolean {
-    return this.loop?.isRunning ?? false;
-  }
 }
 
 // ---------------------------------------------------------------------------
