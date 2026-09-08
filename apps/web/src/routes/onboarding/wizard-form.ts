@@ -43,7 +43,7 @@ function normalizeRepoUrl(input: string): string {
 /** Step 3 validation: the clone flow needs a repo URL, the create flow a name. */
 export function sourceFormError(form: WizardForm): string | null {
   if (form.mode === "clone" && normalizeRepoUrl(form.repoUrl).trim().length === 0) {
-    return "Enter a repository URL (or owner/repo).";
+    return "Select a repository to clone.";
   }
   if (form.mode === "create" && form.repoName.trim().length === 0) {
     return "Enter a name for the new repository.";

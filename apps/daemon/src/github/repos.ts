@@ -7,6 +7,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import type { AccessibleRepo } from "@pideck/shared";
+
 import { GhClient, parseRepoUrl } from "./gh.js";
 
 const execFileAsync = promisify(execFile);
@@ -88,6 +90,22 @@ export async function cloneRepo(git: GitRunner, repoUrl: string, destDir: string
     throw new GitError(args, typeof e.code === "number" ? e.code : null, e.stderr ?? "");
   }
   return { destDir, repoUrl };
+}
+
+// ---------------------------------------------------------------------------
+// gh repo list (issue #217)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lists the repositories the authenticated gh user owns (issue #217):
+ * `gh repo list --json name,owner,isPrivate`. Scope decision: **user-owned
+ * repos only** — `gh repo list` defaults to the authenticated account, so
+ * no extra flags and no org pagination; the onboarding selector stays simple.
+ */
+export async function listAccessibleRepos(gh: GhClient, limit = 200): Promise<AccessibleRepo[]> {
+  const { stdout } = await gh.exec(["repo", "list", "--limit", String(limit), "--json", "name,owner,isPrivate"]);
+  const parsed = JSON.parse(stdout) as Array<{ name: string; owner: { login: string }; isPrivate: boolean }>;
+  return parsed.map((repo) => ({ owner: repo.owner.login, name: repo.name, isPrivate: repo.isPrivate }));
 }
 
 // ---------------------------------------------------------------------------

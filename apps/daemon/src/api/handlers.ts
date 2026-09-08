@@ -30,6 +30,7 @@ import {
 
 import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";
+import { listAccessibleRepos } from "../github/repos.js";
 import type { DaemonServices } from "./context.js";
 
 // ---------------------------------------------------------------------------
@@ -319,6 +320,9 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     },
 
     getSettings: () => services.settings.get(),
+
+    /** Accessible repos for the onboarding selector (issue #217). */
+    listAccessibleRepos: () => listAccessibleRepos(services.gh("https://github.com/list")),
 
     updateSettings: ({ body }) => services.settings.update(updateSettingsRequestSchema.parse(body)),
 

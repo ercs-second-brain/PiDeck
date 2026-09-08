@@ -159,6 +159,10 @@ export const apiGetUpdateStatus = (refresh = false): Promise<EndpointResponse<"g
  * daemon restarts mid-apply, so the caller polls `apiGetUpdateStatus` after. */
 export const apiApplyUpdate = (): Promise<EndpointResponse<"applyUpdate">> => request("applyUpdate", {});
 
+/** Repos accessible via the daemon's gh auth — the onboarding selector (issue #217). */
+export const apiListAccessibleRepos = (): Promise<EndpointResponse<"listAccessibleRepos">> =>
+  request("listAccessibleRepos", {});
+
 // --- Terminals page (sidebar + panes) -----------------------------------------
 
 export const fetchProjects = (): Promise<EndpointResponse<"listProjects">> => request("listProjects", {});

@@ -57,4 +57,15 @@ describe("project registration (issue #216)", () => {
       await failing.close();
     }
   });
+
+  it("lists the gh-accessible repos for the selector (issue #217)", async () => {
+    const res = await server.api("GET", "/api/gh/repos");
+    expect(res.status).toBe(200);
+    // Verbatim real repo data — the selector derives the clone URL from
+    // these exact strings, so no case transformation is possible.
+    expect(res.json).toEqual([
+      { owner: "o", name: "pidecktest", isPrivate: true },
+      { owner: "o", name: "MixedCase", isPrivate: false },
+    ]);
+  });
 });

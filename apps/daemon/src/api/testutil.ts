@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { GhClient, type GhRunner } from "../github/gh.js";
+import { GhClient, type GhRunner, type GhRunResult } from "../github/gh.js";
 import { FakeTmuxRunner } from "../sessions/testing/fake-tmux.js";
 import { Tmux } from "../sessions/tmux.js";
 import type { GitRunner } from "../github/repos.js";
@@ -21,46 +21,67 @@ export interface FakeGhRoutes {
   api?: Record<string, unknown>;
   /** `gh repo create` output (the new repo's URL). */
   repoCreate?: string;
+  /** `gh repo list --json name,owner,isPrivate` output (issue #217). */
+  repoList?: Array<{ name: string; owner: { login: string }; isPrivate: boolean }>;
   /** `gh pr diff <n>` output. */
   prDiff?: string;
   /** Failing paths (prefix → stderr). */
   errors?: Record<string, string>;
 }
 
+/** Matches the `gh api graphql` invocation against the in-memory routes. */
+function graphqlRoute(graphql: Record<string, unknown>, args: string[]): GhRunResult {
+  const vars = new Map<string, string>();
+  for (let i = 2; i < args.length - 1; i++) {
+    if (args[i] === "-f" || args[i] === "-F") {
+      const kv = args[i + 1] ?? "";
+      const eq = kv.indexOf("=");
+      if (eq > 0) vars.set(kv.slice(0, eq), kv.slice(eq + 1));
+    }
+  }
+  const query = vars.get("query") ?? "";
+  for (const [needle, response] of Object.entries(graphql)) {
+    if (query.includes(needle)) return { stdout: JSON.stringify({ data: response }), stderr: "" };
+  }
+  throw new Error(`fake gh: unmatched graphql query: ${query.slice(0, 120)}`);
+}
+
+/** Matches the simple single-invocation gh commands (create/list/diff). */
+function simpleRoutes(routes: FakeGhRoutes, args: string[]): GhRunResult | undefined {
+  if (args[0] !== "repo" && args[0] !== "pr") return undefined;
+  if (args[0] === "repo" && args[1] === "create") {
+    if (routes.repoCreate === undefined) throw new Error("fake gh: no repoCreate configured");
+    return { stdout: `${routes.repoCreate}\n`, stderr: "" };
+  }
+  if (args[0] === "repo" && args[1] === "list") {
+    if (routes.repoList === undefined) throw new Error("fake gh: no repoList configured");
+    return { stdout: JSON.stringify(routes.repoList), stderr: "" };
+  }
+  if (args[0] === "pr" && args[1] === "diff") {
+    if (routes.prDiff === undefined) throw new Error("fake gh: no prDiff configured");
+    return { stdout: routes.prDiff, stderr: "" };
+  }
+  return undefined;
+}
+
+/** Matches the `gh api <path>` invocations (REST route table). */
+function apiRoute(routes: FakeGhRoutes, args: string[]): GhRunResult | undefined {
+  if (args[0] !== "api" || typeof args[1] !== "string" || args[1] === "graphql") return undefined;
+  const basePath = args[1].split("?")[0] ?? "";
+  if (routes.errors?.[basePath] !== undefined) throw new Error(routes.errors[basePath]);
+  const response = routes.api?.[basePath];
+  if (response === undefined) return undefined;
+  return { stdout: JSON.stringify(response), stderr: "" };
+}
+
 /** Builds a GhClient whose runner answers from in-memory route tables. */
 export function fakeGh(routes: FakeGhRoutes): (repoUrl: string) => GhClient {
   const runner: GhRunner = async (args) => {
-    if (args[0] === "api" && args[1] === "graphql") {
-      const vars = new Map<string, string>();
-      for (let i = 2; i < args.length - 1; i++) {
-        if (args[i] === "-f" || args[i] === "-F") {
-          const kv = args[i + 1] ?? "";
-          const eq = kv.indexOf("=");
-          if (eq > 0) vars.set(kv.slice(0, eq), kv.slice(eq + 1));
-        }
-      }
-      const query = vars.get("query") ?? "";
-      for (const [needle, response] of Object.entries(routes.graphql ?? {})) {
-        if (query.includes(needle)) {
-          return { stdout: JSON.stringify({ data: response }), stderr: "" };
-        }
-      }
-      throw new Error(`fake gh: unmatched graphql query: ${query.slice(0, 120)}`);
-    }
-    if (args[0] === "repo" && args[1] === "create") {
-      if (routes.repoCreate === undefined) throw new Error("fake gh: no repoCreate configured");
-      return { stdout: `${routes.repoCreate}\n`, stderr: "" };
-    }
-    if (args[0] === "pr" && args[1] === "diff") {
-      if (routes.prDiff === undefined) throw new Error("fake gh: no prDiff configured");
-      return { stdout: routes.prDiff, stderr: "" };
-    }
-    if (args[0] === "api" && typeof args[1] === "string") {
-      const basePath = args[1].split("?")[0] ?? "";
-      if (routes.errors?.[basePath] !== undefined) throw new Error(routes.errors[basePath]);
-      const response = routes.api?.[basePath];
-      if (response !== undefined) return { stdout: JSON.stringify(response), stderr: "" };
-    }
+    if (args[0] === "api" && args[1] === "graphql") return graphqlRoute(routes.graphql ?? {}, args);
+    const simple = simpleRoutes(routes, args);
+    if (simple !== undefined) return simple;
+    const api = apiRoute(routes, args);
+    if (api !== undefined) return api;
     throw new Error(`fake gh: unmatched invocation: gh ${args.join(" ")}`);
   };
   return () => new GhClient(runner);
