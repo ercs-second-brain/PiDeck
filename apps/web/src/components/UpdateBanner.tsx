@@ -3,10 +3,10 @@ import type { UpdateStatusResponse } from "@agentskiss/shared";
 import { apiApplyUpdate, errorMessage } from "../lib/api";
 import {
   RELOAD_DELAY_MS,
-  RECOVERY_HINT_MS,
   startApplyPolling,
   startIdleStatusPolling,
 } from "./update-polling";
+import { UpdateApplyModal } from "./UpdateApplyModal";
 
 /**
  * Self-update banner (issues #55, #76, #82, #89): polls the daemon's update
@@ -33,8 +33,12 @@ import {
  *   `updateAvailable`, which flips false mid-update while the source
  *   checkout is already reset but the old daemon still runs.
  * - During the (multi-minute) rebuild the shim writes a live stage file the
- *   daemon serves as `applyProgress`; the banner shows that stage plus an
+ *   daemon serves as `applyProgress`; the user sees that stage plus an
  *   honest elapsed timer instead of a silent wait.
+ * - While a banner-initiated apply runs (and for the completion beat before
+ *   the reload) this state is a **full-screen modal over the dimmed app**
+ *   (issue #113, `UpdateApplyModal`) — the update is app-wide, so the
+ *   presentation matches the scope. Normal browsing is unaffected.
  * - When the update is done, polling stops and the page reloads into the
  *   new build. A page that merely had the daemon restart under it (CLI
  *   update path) detects the new `runningSha` after the API returns and
@@ -201,7 +205,8 @@ export interface UpdateBannerViewProps {
 
 /**
  * Pure view for the banner states — kept separate so tests exercise the
- * rendering without React effects/fetch.
+ * rendering without React effects/fetch. Active-apply and completion
+ * states render through {@link UpdateApplyModal} (issue #113).
  */
 export function UpdateBannerView({
   status,
@@ -214,25 +219,12 @@ export function UpdateBannerView({
   onApply,
   onReload,
 }: UpdateBannerViewProps) {
-  // Banner-initiated apply resolved: say so for a beat, then reload (the
-  // wrapper schedules it — this render is the last thing the user sees).
-  if (reloading) {
-    return <div className="update-banner updating" role="status">Update complete — reloading into the new build&hellip;</div>;
-  }
-
-  if (phase === "updating" && updating !== null) {
-    return (
-      <div className="update-banner updating" role="status">
-        Updating agentsKISS to <code>{updating.targetSha.slice(0, 7)}</code>&hellip;{" "}
-        <strong>{formatElapsed(updating.elapsedMs)}</strong> elapsed — {updatingText(updating.stage, updating.apiUp)}.
-        {updating.downMs > RECOVERY_HINT_MS && (
-          <span className="update-banner-hint">
-            {" "}Still waiting — if this page doesn't recover within a few minutes, run <code>agentskiss update</code> in a
-            terminal or check <code>agentskiss service status</code>.
-          </span>
-        )}
-      </div>
-    );
+  // Banner-initiated apply resolved: the modal says so for a beat, then we
+  // reload (the wrapper schedules it — this render is the last thing the
+  // user sees). Same for the active apply: the state lives in the modal
+  // over the dimmed app, not in a strip (issue #113).
+  if (reloading || (phase === "updating" && updating !== null)) {
+    return <UpdateApplyModal updating={reloading ? null : updating} reloading={reloading} />;
   }
 
   // Idle page lost the daemon (e.g. a CLI update restarted it): say so, the

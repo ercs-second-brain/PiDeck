@@ -464,6 +464,60 @@ code {
   color: var(--issue);
 }
 
+/* --- Update-apply modal (issue #113) ----------------------------------------- */
+
+/* Full-screen overlay while a banner-initiated apply runs (and for the
+   completion beat before the reload): the app underneath is dimmed — the
+   update is app-wide, the presentation matches the scope. */
+.update-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.update-modal {
+  width: 100%;
+  max-width: 480px;
+  padding: 24px 28px;
+  border: 1px solid var(--issue);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.update-modal-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.update-modal-detail {
+  margin: 0 0 4px;
+  color: var(--text-dim);
+}
+
+.update-modal-detail code {
+  color: var(--issue);
+}
+
+.update-modal-elapsed {
+  margin: 0 0 8px;
+}
+
+.update-modal-elapsed strong {
+  color: var(--issue);
+  font-variant-numeric: tabular-nums;
+}
+
+.update-modal .update-banner-hint {
+  margin: 8px 0 0;
+}
+
 .update-banner-hint {
   color: var(--text-dim);
   font-size: 13px;
@@ -1141,6 +1195,14 @@ code {
 
   .modal-overlay {
     padding: 20px 10px;
+  }
+
+  .update-modal-overlay {
+    padding: 12px 10px;
+  }
+
+  .update-modal {
+    padding: 18px 16px;
   }
 
   .modal-card {
