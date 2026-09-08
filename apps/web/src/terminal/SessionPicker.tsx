@@ -1,9 +1,11 @@
 /**
  * Sidebar for the terminals page — the app's only navigation (issue #62):
- * every registered project is a top-level entry (clicking it opens the
- * project's kanban board in the main pane), with the project's agents nested
- * underneath — the orchestrator first, its worker sessions indented beneath
- * it (issue #63) with live worker status badges, then a collapsed
+ * every registered project is a top-level entry whose NAME is the
+ * orchestrator entry (issue #108): clicking it attaches the project's
+ * orchestrator terminal, starting it first when absent (#53's idempotent
+ * ensure endpoint). A kanban icon in the same row opens the project's
+ * board. Worker sessions are nested beneath the row (issue #63) with live
+ * worker status badges, then a collapsed "Archived" section for terminated
  * "Archived" section for terminated workers (issue #64). Clicking a session
  * attaches its terminal; clicking an archived worker opens its read-only
  * captured log (issue #104); active worker rows carry a terminate
@@ -144,9 +146,9 @@ function WorkerRow(props: {
 }
 
 /**
- * One project's sidebar section: the board-opening project row, its
- * orchestrator session (or the start-orchestrator affordance, issue #53),
- * live worker rows, and the collapsed archived section (issue #64).
+ * One project's sidebar section: the project row (name = orchestrator
+ * entry + kanban icon, issue #108), its nested live worker rows, and the
+ * collapsed archived section (issue #64).
  * Pure rendering — interaction state (termination confirmation, archived
  * expansion) comes in through props so the picker stays a thin shell.
  */
@@ -178,20 +180,10 @@ function ProjectSection(props: {
   const orchestrator = sessions.find((session) => session.role === "orchestrator");
   const workerSessions = sessions.filter((session) => session.role === "worker");
   // Issue #64: terminated workers move to the collapsed archived section;
-  // only live workers render under the orchestrator.
+  // only live workers render under the project row.
   const activeWorkers = workerSessions.filter((session) => workerFor(session, workers)?.status !== "archived");
   const archivedWorkers = workerSessions.filter((session) => workerFor(session, workers)?.status === "archived");
-
-  const sessionButton = (session: Session) => (
-    <button
-      type="button"
-      className={`picker-session${session.id === props.selectedSessionId ? " selected" : ""}`}
-      onClick={() => props.onSelectSession(session.id)}
-    >
-      <span className={`role-badge role-${session.role}`}>{session.role}</span>
-      <span className="picker-session-name">{session.tmuxSession}</span>
-    </button>
-  );
+  const starting = props.startingProjectId === project.id;
 
   const workerRow = (session: Session, archived: boolean) => {
     const worker = workerFor(session, workers);
@@ -214,18 +206,28 @@ function ProjectSection(props: {
 
   return (
     <section className="picker-project">
-      <button type="button" className={`picker-project-name${project.id === props.selectedProjectId ? " selected" : ""}`} title={`Open ${project.name}'s board`} onClick={() => props.onSelectProject(project.id)}>
-        {project.name}
-      </button>
-      {orchestrator ? (
-        <ul className="picker-list">
-          <li key={orchestrator.id}>{sessionButton(orchestrator)}</li>
-        </ul>
-      ) : (
-        <button type="button" className="picker-start-orchestrator" disabled={props.startingProjectId === project.id} onClick={() => props.onStartOrchestrator(project.id)}>
-          {props.startingProjectId === project.id ? "Starting…" : "Start orchestrator"}
+      <div className="picker-project-row">
+        {/* Issue #108: the project NAME is the orchestrator entry — clicking
+            it attaches (or starts, #53) the orchestrator terminal. */}
+        <button
+          type="button"
+          className={`picker-project-name${orchestrator && orchestrator.id === props.selectedSessionId ? " selected" : ""}`}
+          title={orchestrator ? `Attach ${project.name}'s orchestrator terminal` : `Start ${project.name}'s orchestrator`}
+          disabled={starting}
+          onClick={() => props.onStartOrchestrator(project.id)}
+        >
+          {starting ? "Starting…" : project.name}
         </button>
-      )}
+        <button
+          type="button"
+          className={`picker-project-board${project.id === props.selectedProjectId ? " selected" : ""}`}
+          title={`Open ${project.name}'s kanban board`}
+          disabled={starting}
+          onClick={() => props.onSelectProject(project.id)}
+        >
+          ▦
+        </button>
+      </div>
       {activeWorkers.length > 0 && (
         <ul className="picker-list picker-workers">{activeWorkers.map((session) => workerRow(session, false))}</ul>
       )}
@@ -251,7 +253,7 @@ function ProjectSection(props: {
   );
 }
 
-/** Sidebar listing every project with its orchestrator + worker sessions nested beneath. */
+/** Sidebar: project name = orchestrator entry (#108), workers nested beneath. */
 export function SessionPicker(props: {
   entries: ProjectEntry[];
   error: string | null;
@@ -271,6 +273,7 @@ export function SessionPicker(props: {
   onSelectAllProjects: () => void;
   /** Opens the project onboarding wizard (the "+" button). */
   onStartOnboarding: () => void;
+  /** Starts (or attaches to) the project's orchestrator — the project-name click (#108, #53). */
   onStartOrchestrator: (projectId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
 }) {

@@ -97,10 +97,19 @@
   margin-top: 18px;
 }
 
+/* Issue #108: the project row holds the name (= orchestrator entry) and
+   the kanban icon side by side. */
+.picker-project-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+
 .picker-project-name {
   display: block;
-  width: 100%;
-  margin: 0 0 6px;
+  flex: 1;
+  min-width: 0;
   padding: 2px 4px;
   border: none;
   border-radius: var(--radius);
@@ -109,6 +118,9 @@
   font-size: 14px;
   font-weight: 600;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -118,6 +130,27 @@
 
 .picker-project-name.selected {
   color: var(--accent);
+}
+
+.picker-project-board {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.picker-project-board:hover,
+.picker-project-board.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-hover);
 }
 
 .picker-list {
@@ -168,11 +201,6 @@
   letter-spacing: 0.5px;
   padding: 2px 6px;
   border-radius: 999px;
-}
-
-.role-orchestrator {
-  background: rgba(224, 93, 68, 0.18);
-  color: var(--accent);
 }
 
 .role-worker {
@@ -331,28 +359,6 @@
   background: var(--bg-hover);
   color: var(--text-dim);
   font-style: italic;
-}
-
-.picker-start-orchestrator {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.picker-start-orchestrator:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--bg-hover);
-}
-
-.picker-start-orchestrator:disabled {
-  cursor: default;
-  opacity: 0.6;
 }
 
 .picker-error {
@@ -634,6 +640,12 @@
     font-size: 15px;
   }
 
+  .picker-project-board {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
   .picker-terminate-confirm-yes,
   .picker-terminate-confirm-no {
     padding: 8px 12px;
@@ -643,11 +655,6 @@
   .picker-archived-toggle {
     padding: 10px 6px;
     font-size: 12px;
-  }
-
-  .picker-start-orchestrator {
-    padding: 12px 10px;
-    font-size: 13px;
   }
 }
 

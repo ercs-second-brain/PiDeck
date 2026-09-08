@@ -86,18 +86,22 @@ describe("SessionPicker", () => {
     expect(html).toContain("picker-add");
   });
 
-  it("renders project names as board-opening rows", () => {
+  it("renders the project name as the orchestrator entry with a kanban icon (issue #108)", () => {
     const html = renderPicker();
+    expect(html).toContain("picker-project-row");
     expect(html).toContain("picker-project-name");
     expect(html).toContain("agentsKISS");
+    expect(html).toContain("picker-project-board");
+    expect(html).toContain("Attach agentsKISS&#x27;s orchestrator terminal");
   });
 
-  it("lists orchestrator and worker sessions with role badges", () => {
+  it("lists worker sessions with role badges; the orchestrator row is gone (issue #108)", () => {
     const html = renderPicker();
-    expect(html).toContain("role-orchestrator");
     expect(html).toContain("role-worker");
-    expect(html).toContain("agentskiss-agentskiss-orchestrator-1");
     expect(html).toContain("agentskiss-agentskiss-worker-1");
+    // Issue #108: no separate orchestrator row — the project name is the entry.
+    expect(html).not.toContain("agentskiss-agentskiss-orchestrator-1");
+    expect(html).not.toContain("role-orchestrator");
   });
 
   it("shows the active worker status on worker sessions", () => {
@@ -106,14 +110,12 @@ describe("SessionPicker", () => {
     expect(html).toContain("running");
   });
 
-  it("nests workers beneath the project with the orchestrator first (issue #63)", () => {
+  it("nests workers beneath the project row (issue #63)", () => {
     const html = renderPicker();
-    const orchestrator = html.indexOf("agentskiss-agentskiss-orchestrator-1");
     const project = html.indexOf("agentsKISS");
     const worker = html.indexOf("agentskiss-agentskiss-worker-1");
-    expect(project).toBeLessThan(orchestrator);
-    expect(orchestrator).toBeLessThan(worker);
-    // The worker list is a tree-indented list under the orchestrator.
+    expect(project).toBeLessThan(worker);
+    // The worker list is a tree-indented list under the project row.
     expect(html).toContain("picker-workers");
     expect(html).toContain("picker-worker-row");
   });
@@ -126,20 +128,17 @@ describe("SessionPicker", () => {
     expect(html).toContain("role-worker");
   });
 
-  it("shows the start-orchestrator affordance when the project has no orchestrator", () => {
-    const html = renderPicker();
-    expect(html).not.toContain("Start orchestrator");
+  it("uses the project-name click to start the orchestrator when absent (issue #108)", () => {
     const withoutOrchestrator = renderPicker({
       entries: [{ project, sessions: sessions.filter((s) => s.role === "worker"), workers }],
     });
-    expect(withoutOrchestrator).toContain("picker-start-orchestrator");
-    expect(withoutOrchestrator).toContain("Start orchestrator");
+    expect(withoutOrchestrator).not.toContain("picker-start-orchestrator");
+    expect(withoutOrchestrator).toContain("Start agentsKISS&#x27;s orchestrator");
   });
 
-  it("shows the start affordance for projects with no sessions at all", () => {
+  it("offers the orchestrator start through the project name for projects with no sessions", () => {
     const html = renderPicker({ entries: [{ project, sessions: [], workers: [] }] });
-    expect(html).toContain("picker-start-orchestrator");
-    expect(html).toContain("Start orchestrator");
+    expect(html).toContain("Start agentsKISS&#x27;s orchestrator");
     expect(html).not.toContain("No active sessions.");
   });
 
@@ -160,6 +159,11 @@ describe("SessionPicker", () => {
 
   it("marks the project whose board is open in the main pane", () => {
     const html = renderPicker({ selectedProjectId: project.id });
+    expect(html).toContain("picker-project-board selected");
+  });
+
+  it("marks the project name as selected while its orchestrator is attached (issue #108)", () => {
+    const html = renderPicker({ selectedSessionId: "sess-orch-1" });
     expect(html).toContain("picker-project-name selected");
   });
 
@@ -184,11 +188,11 @@ describe("SessionPicker", () => {
 describe("SessionPicker (worker termination + archive, issue #64)", () => {
   it("shows the terminate affordance on active worker rows only", () => {
     const html = renderPicker({ onTerminateWorker: () => {} });
-    // ✕ on the worker row, nothing on the orchestrator row.
+    // ✕ on the worker row, nothing on the project row.
     expect(html).toContain("picker-terminate");
     expect(html).toContain('title="Terminate worker"');
-    const orchestratorRow = html.slice(html.indexOf("agentskiss-agentskiss-orchestrator-1"), html.indexOf("picker-worker-row"));
-    expect(orchestratorRow).not.toContain("picker-terminate");
+    const projectRow = html.slice(0, html.indexOf("picker-worker-row"));
+    expect(projectRow).not.toContain("picker-terminate");
   });
 
   it("shows no terminate affordance when no handler is wired", () => {
