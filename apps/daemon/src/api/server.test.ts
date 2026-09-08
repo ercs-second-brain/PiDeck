@@ -72,6 +72,13 @@ describe("static serving + SPA fallback", () => {
     expect(await res.text()).toContain("pideck spa");
   });
 
+  it("serves the web manifest with the correct content type (issue #179)", async () => {
+    writeFileSync(path.join(webDistDir, "manifest.webmanifest"), JSON.stringify({ name: "PiDeck" }));
+    const res = await fetch(`${withIndex.base}/manifest.webmanifest`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/manifest+json");
+  });
+
   it("404s when a webDist is configured but has no index.html to fall back to", async () => {
     // Previously this answered 200 with a "not found" body — the inverted
     // ternary fixed in issue #73.
