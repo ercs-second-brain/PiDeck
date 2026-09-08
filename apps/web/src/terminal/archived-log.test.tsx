@@ -83,6 +83,7 @@ describe("ArchivedLogPanel (issue #104)", () => {
           projectId: "agentskiss",
           issueNumber: 104,
           prNumber: 110,
+          prompt: "Implement #104: archived log viewer",
           finalStatus: "archived",
           finalStatusMessage: "archived: terminated from the webapp",
           startedAt: "2025-01-01T00:00:00.000Z",
@@ -97,6 +98,7 @@ describe("ArchivedLogPanel (issue #104)", () => {
     expect(html).toContain("line one");
     expect(html).toContain("line two");
     expect(html).toContain("issue #104");
+    expect(html).toContain("Implement #104: archived log viewer");
     expect(html).toContain("pull/110");
     expect(html).toContain("archived: terminated from the webapp");
     expect(html).toContain("Read-only");
@@ -110,6 +112,7 @@ describe("ArchivedLogPanel (issue #104)", () => {
           projectId: "agentskiss",
           issueNumber: 0,
           prNumber: null,
+          prompt: null,
           finalStatus: "archived",
           finalStatusMessage: null,
           startedAt: "2025-01-01T00:00:00.000Z",
@@ -121,6 +124,7 @@ describe("ArchivedLogPanel (issue #104)", () => {
     );
     expect(html).toContain("no scrollback captured");
     expect(html).toContain("freeform task");
+    expect(html).not.toContain("archived-log-prompt");
     expect(html).not.toContain("PR");
   });
 });

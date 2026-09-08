@@ -307,6 +307,13 @@ export const workerSchema = z.object({
    */
   parentWorkerId: idSchema.nullable().optional(),
   /**
+   * Initial prompt typed into the worker's pane at spawn (issue #120): the
+   * `agentskiss spawn --issue/--prompt` input, or a review agent's review
+   * prompt. Optional for backward compatibility: absent for pre-#120
+   * records and auto-spawned workers (which are typed no prompt at spawn).
+   */
+  prompt: z.string().min(1).optional(),
+  /**
    * Filesystem path the worker's agent runs in — the project clone or a
    * per-issue worktree (e.g. under `<stateDir>/projects/<projectId>/worktrees/`).
    * Optional: producers that derive location from project layout may omit it.
@@ -336,6 +343,8 @@ export const archivedWorkerLogSchema = z.object({
   issueNumber: z.number().int().min(0),
   /** PR the worker had opened, if any. */
   prNumber: refNumberSchema.nullable(),
+  /** Initial prompt the worker was spawned with (`null` when not recorded — pre-#120 workers). */
+  prompt: z.string().nullable(),
   finalStatus: workerStatusSchema,
   /** Last status message at termination. */
   finalStatusMessage: z.string().nullable(),

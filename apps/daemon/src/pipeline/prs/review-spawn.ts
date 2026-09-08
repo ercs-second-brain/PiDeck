@@ -48,6 +48,7 @@ export async function spawnReviewAgent(projectId: string, request: ReviewSpawnRe
       kind: "reviewer",
       prNumber: request.prNumber,
       parentWorkerId: request.parentWorkerId,
+      prompt: request.prompt,
       statusMessage: "review agent launching",
     });
     deps.broadcastSpawned(worker);

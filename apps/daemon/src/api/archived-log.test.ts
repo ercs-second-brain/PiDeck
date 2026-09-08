@@ -40,7 +40,7 @@ describe("archived worker log endpoint (issue #104)", () => {
   it("serves the captured scrollback plus final metadata after termination", async () => {
     const { services } = daemon;
     services.projects.register({ mode: "clone", repoUrl: "https://github.com/log/rep" });
-    const { session, worker } = await services.sessions.spawnWorker("log-rep", { issueNumber: 9 });
+    const { session, worker } = await services.sessions.spawnWorker("log-rep", { issueNumber: 9, prompt: "Do the work for issue #9" });
     daemon.tmux.sessions.get(session.tmuxSession)?.paneLines.push("work output");
 
     // Live worker → no archived log yet (404; its pane is still attachable).
@@ -56,6 +56,7 @@ describe("archived worker log endpoint (issue #104)", () => {
     expect(log.projectId).toBe(worker.projectId);
     expect(log.issueNumber).toBe(9);
     expect(log.prNumber).toBeNull();
+    expect(log.prompt).toBe("Do the work for issue #9");
     expect(log.finalStatus).toBe("archived");
     expect(log.startedAt).toBe(worker.startedAt);
     expect(log.capturedAt).not.toBeNull();
@@ -79,5 +80,7 @@ describe("archived worker log endpoint (issue #104)", () => {
     const log = archivedWorkerLogSchema.parse(res.json);
     expect(log.capturedAt).toBeNull();
     expect(log.scrollback).toBe("");
+    // No prompt recorded at spawn (pre-#120 path) → null in the log metadata.
+    expect(log.prompt).toBeNull();
   });
 });
