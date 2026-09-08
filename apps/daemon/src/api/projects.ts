@@ -53,7 +53,12 @@ export function resolveSettings(
   if (patch === undefined) return base;
   return {
     autoAgentUsername: patch.autoAgentUsername !== undefined ? patch.autoAgentUsername : base.autoAgentUsername,
-    workerConcurrency: patch.workerConcurrency !== undefined ? patch.workerConcurrency : base.workerConcurrency,
+    // Issue #168: `undefined` = field not sent (keep the base); `null` =
+    // explicitly cleared → unbounded (issue #14 semantics); a number = cap.
+    // Normalizing `null` → `undefined` here keeps every stored project and
+    // consumer seeing plain unset semantics.
+    workerConcurrency:
+      patch.workerConcurrency === undefined ? base.workerConcurrency : (patch.workerConcurrency ?? undefined),
   };
 }
 

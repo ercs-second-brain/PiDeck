@@ -121,7 +121,7 @@ export class IssueSpawnPipeline {
       {
         projectId: issue.projectId,
         issueNumber: issue.number,
-        maxConcurrentWorkers: registered.project.settings.workerConcurrency,
+        maxConcurrentWorkers: registered.project.settings.workerConcurrency ?? undefined,
       },
     );
   }

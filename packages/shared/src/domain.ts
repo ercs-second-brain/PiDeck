@@ -49,9 +49,12 @@ export const projectSettingsSchema = z.object({
    * Unset = unbounded: every unblocked issue spawns a worker immediately —
    * the default per #14's planning decision. With a cap, further unblocked
    * issues queue and spawn FIFO as slots free (a worker reaching a terminal
-   * state — done/failed/stopped — frees its slot).
+   * state — done/failed/stopped — frees its slot). `null` is accepted on
+   * input and means the same as unset (issue #168: the settings UI sends
+   * `null` explicitly to clear a cap; the service layer normalizes it to
+   * unset, so a stored project never carries `null`).
    */
-  workerConcurrency: z.number().int().min(1).max(16).optional(),
+  workerConcurrency: z.number().int().min(1).max(16).nullish(),
 });
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
 export type ProjectSettingsInput = z.input<typeof projectSettingsSchema>;
