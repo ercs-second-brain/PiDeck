@@ -17,8 +17,9 @@ import { shouldAutoOpenOnboarding, SidebarContext, useSidebarData } from "./term
  * single page *is* the terminals view (issue #103) and deep links to
  * `/terminal/:sessionId` keep working. The sidebar
  * (SessionPicker) is the app's navigation — "Projects" header with a "+"
- * onboarding button, per-project rows that open the project's kanban in the
- * main pane, and per-agent rows that attach terminals — while the main pane
+ * onboarding button, per-project rows whose NAME attaches/starts the
+ * project's orchestrator (#108) with a kanban icon opening the project
+ * board, and per-agent rows that attach terminals — while the main pane
  * renders the terminal, the all-projects combined board, a project board,
  * settings, or a PR diff. Deep links keep working (`/terminal/:sessionId`,
  * `/projects/:projectId`, …).
