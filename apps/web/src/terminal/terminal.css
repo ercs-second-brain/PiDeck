@@ -460,6 +460,10 @@
 .terminal-main {
   flex: 1;
   min-width: 0;
+  /* Without min-height:0 the flex item cannot shrink below the xterm's
+     rendered content height, so once the pane has been tall the row count
+     never follows the viewport back down (issue #124). */
+  min-height: 0;
   display: flex;
 }
 
@@ -468,6 +472,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .terminal-container {

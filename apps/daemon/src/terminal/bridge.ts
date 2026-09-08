@@ -228,11 +228,15 @@ export class TerminalBridge {
     }
 
     // Adopt the attaching client's size (last attach wins, like tmux's own
-    // client handling) unless the streamer already matches.
-    if (streamer.rows !== rows) {
-      streamer.rows = rows;
-      await this.deps.tmux.resize(session.tmuxSession, cols, rows).catch(() => {});
-    }
+    // client handling) — and push it to tmux on every attach. A fresh
+    // streamer inherits its size from this very attach message, and the
+    // tmux window may still sit at the detached default (80x24) or at a
+    // previous client's size; skipping the resize left the pane rendering
+    // at a stale, fixed size regardless of the browser viewport (issue
+    // #124).
+    streamer.rows = rows;
+    streamer.cols = cols;
+    await this.deps.tmux.resize(session.tmuxSession, cols, rows).catch(() => {});
 
     // Capture the replay before joining the broadcast group, so the scrollback
     // snapshot and the stream cannot interleave mid-frame.
