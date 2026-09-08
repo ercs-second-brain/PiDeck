@@ -652,10 +652,22 @@
   min-height: 0;
 }
 
+/* Visual inset for the terminal text. The padding must stay on this
+   container: the fit addon measures the xterm mount element's parent
+   border-box and subtracts only the mount element's own padding, so
+   padding on the measured box makes fit propose rows/cols for more space
+   than is visible — the screen and its scrollbar overflow, backgrounds
+   misalign, and the last row clips under the status bar (issue #258). */
 .terminal-container {
   flex: 1;
   min-height: 0;
   padding: 6px 0 0 8px;
+}
+
+/* The fit-measurement box xterm mounts into: unpadded and exactly the
+   visible space inside the container's padding. */
+.terminal-screen {
+  height: 100%;
 }
 
 .terminal-statusbar {

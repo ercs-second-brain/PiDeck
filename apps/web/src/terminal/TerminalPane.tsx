@@ -143,7 +143,15 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="terminal-pane">
-      <div ref={containerRef} className="terminal-container" />
+      {/* The ref targets the inner, unpadded `.terminal-screen` box: the fit
+          addon measures this element's parent and subtracts only the xterm
+          element's own padding, so the padded `.terminal-container` must not
+          be the measurement box — otherwise rows/cols are proposed for more
+          space than is visible and the screen (background + scrollbar)
+          overflows the pane (issue #258). */}
+      <div className="terminal-container">
+        <div ref={containerRef} className="terminal-screen" />
+      </div>
       <KeyRow onSend={(data) => sendRef.current?.(data)} />
       <StatusBar
         status={status}
