@@ -37,7 +37,7 @@ import { TtlSwrCache } from "./swr-cache.js";
 // Column derivation (single source of truth — the PR pipeline reuses these)
 // ---------------------------------------------------------------------------
 
-export function issueColumn(issue: Issue, worker: Worker | undefined): KanbanColumn {
+function issueColumn(issue: Issue, worker: Worker | undefined): KanbanColumn {
   if (issue.state === "closed") return "done";
   return worker !== undefined || issue.assignee !== null ? "in_progress" : "backlog";
 }

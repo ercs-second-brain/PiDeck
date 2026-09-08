@@ -6,7 +6,7 @@
 
 import path from "node:path";
 
-import { ACTIVE_WORKER_STATUSES, type Project } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES } from "@pideck/shared";
 
 import { PiAuthProbe, type PiRunner } from "../agent/pi-auth.js";
 import { PromptGate } from "../agent/prompt-gate.js";
@@ -120,7 +120,7 @@ export interface DaemonContextOptions {
 }
 
 /** Resolves the daemon state dir honoring `PD_HOME`. */
-export function resolveStateDir(explicit?: string): string {
+function resolveStateDir(explicit?: string): string {
   if (explicit !== undefined && explicit.length > 0) return explicit;
   return defaultStateDir();
 }
@@ -280,5 +280,3 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     runtimeStats: new RuntimeStats(),
   };
 }
-
-export type { Project };

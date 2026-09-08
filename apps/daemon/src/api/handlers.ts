@@ -212,7 +212,7 @@ async function relaunchSessionPayload(services: DaemonServices, sessionId: strin
 /** Workers in an active status — the click-to-update gate (issue #76), via
  * the shared `ACTIVE_WORKER_STATUSES` (issue #70). Orchestrator sessions are
  * not workers (they persist across updates and never block). */
-export function countActiveWorkers(services: DaemonServices): number {
+function countActiveWorkers(services: DaemonServices): number {
   return services.sessions.listWorkers().filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status)).length;
 }
 

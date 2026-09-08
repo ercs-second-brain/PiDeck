@@ -13,7 +13,7 @@ import { JsonStore } from "../json-store.js";
 
 const persistedSchema = settingsSchema.extend({ version: z.literal(1) });
 
-export const DEFAULT_SETTINGS: Settings = {
+const DEFAULT_SETTINGS: Settings = {
   autoAgentUsername: null,
   defaultWorkerConcurrency: 1,
   terminateOnMerge: true,

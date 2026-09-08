@@ -1,7 +1,6 @@
 {
   "$schema": "./node_modules/knip/schema.json",
   "ignore": [
-    ".pi/**",
     "apps/web/public/**"
   ],
   "ignoreBinaries": [
