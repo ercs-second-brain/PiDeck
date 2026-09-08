@@ -20,6 +20,7 @@
 
 import { useState } from "react";
 import type { Project, Session, Worker } from "@agentskiss/shared";
+import { workerStatusClasses } from "../lib/worker-status";
 
 export interface ProjectEntry {
   project: Project;
@@ -27,15 +28,12 @@ export interface ProjectEntry {
   workers: Worker[];
 }
 
-const WORKER_ACTIVE = new Set(["spawning", "running", "awaiting_ci", "fixing_ci", "addressing_review"]);
-
+/** Issue #112: color-coded status indicator (blue/green/red, pulse while working). */
 function workerBadge(worker: Worker): { label: string; className: string } {
   if (worker.status === "archived") {
-    return { label: "archived", className: "worker-badge archived" };
+    return { label: "archived", className: "worker-badge worker-badge-archived" };
   }
-  return WORKER_ACTIVE.has(worker.status)
-    ? { label: worker.status, className: "worker-badge active" }
-    : { label: worker.status, className: "worker-badge idle" };
+  return { label: worker.status, className: workerStatusClasses(worker.status, "worker-badge") };
 }
 
 /** The worker record behind a session, if any. */

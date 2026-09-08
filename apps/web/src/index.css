@@ -768,23 +768,67 @@ code {
   border-color: color-mix(in srgb, var(--amber) 40%, transparent);
 }
 
-.badge-status-running,
-.badge-status-spawning,
-.badge-status-awaiting_ci,
-.badge-status-fixing_ci,
-.badge-status-addressing_review {
+.badge-status-running {
   color: var(--green);
   border-color: color-mix(in srgb, var(--green) 40%, transparent);
 }
 
-.badge-status-done {
+/* --- Worker status indicators (issue #112) ------------------------------
+
+   Color-coded dot + status text shared by the terminal sidebar and the
+   workers panel: blue = working, green = PR up / ready again, red = fixing
+   CI or addressing review, neutral = idle/terminal. The dot pulses slowly
+   while the agent is actively working; disabled under reduced motion. */
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-indicator::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-indicator-working {
+  color: var(--issue);
+}
+
+.status-indicator-pr-ready {
+  color: var(--green);
+}
+
+.status-indicator-fixing {
+  color: var(--red);
+}
+
+.status-indicator-idle {
   color: var(--text-dim);
 }
 
-.badge-status-failed,
-.badge-status-stopped {
-  color: var(--red);
-  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+.status-indicator-pulse::before {
+  animation: status-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-indicator-pulse::before {
+    animation: none;
+  }
 }
 
 /* --- Diff review view --------------------------------------------------------- */

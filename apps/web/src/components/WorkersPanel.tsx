@@ -1,11 +1,7 @@
 import { Link } from "react-router";
 import type { Worker } from "@agentskiss/shared";
-
-function formatTimestamp(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
+import { workerStatusClasses } from "../lib/worker-status";
+import { formatTimestamp } from "../lib/format-timestamp";
 
 /**
  * Workers panel for one project. Freeform workers (`issueNumber: 0`, spawned
@@ -32,7 +28,7 @@ export function WorkersPanel({ projectId, workers: allWorkers }: { projectId: st
             <span className="worker-id" title={worker.id}>
               {worker.id}
             </span>
-            <span className={`badge badge-status badge-status-${worker.status}`}>{worker.status}</span>
+            <span className={workerStatusClasses(worker.status, "badge badge-status")}>{worker.status}</span>
             <span className="worker-scope">
               {worker.issueNumber === 0 ? (
                 <span className="badge badge-freeform">freeform</span>
