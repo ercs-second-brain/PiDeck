@@ -11,8 +11,8 @@
  * timeout loop for long-running daemon use.
  */
 
-import { githubWatcherEventSchema, type PullRequest } from "@agentskiss/shared";
-import type { GithubWatcherEvent } from "@agentskiss/shared";
+import { githubWatcherEventSchema, type PullRequest } from "@pideck/shared";
+import type { GithubWatcherEvent } from "@pideck/shared";
 
 import type { GhClient, RepoRef } from "./gh.js";
 import { listIssues, type IssueRecord } from "./issues.js";
@@ -24,7 +24,7 @@ import { listOpenPullRequestsBatched } from "./pulls.js";
 
 /**
  * Typed events emitted by the watchers — the shared contract
- * (`githubWatcherEventSchema` in @agentskiss/shared), re-exported for
+ * (`githubWatcherEventSchema` in @pideck/shared), re-exported for
  * consumers. Emitted values are validated against the schema at the emit
  * boundary.
  */

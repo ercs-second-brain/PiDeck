@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pullRequestSchema } from "@agentskiss/shared";
+import { pullRequestSchema } from "@pideck/shared";
 
 import { GhClient } from "./gh.js";
 import { fetchReviewComments, getCiStatus, getReviewState, listOpenPullRequestsBatched, listPullRequests, listPullRequestsWithMeta, mapRestPull } from "./pulls.js";

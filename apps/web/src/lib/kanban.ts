@@ -6,7 +6,7 @@
  * webapp renders whatever board it receives.
  */
 
-import { KANBAN_COLUMNS, type KanbanColumn } from "@agentskiss/shared";
+import { KANBAN_COLUMNS, type KanbanColumn } from "@pideck/shared";
 
 /** Human-readable column labels, keyed by shared `KanbanColumn`. */
 export const COLUMN_LABELS: Record<KanbanColumn, string> = {

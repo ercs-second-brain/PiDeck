@@ -7,8 +7,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Project } from "@agentskiss/shared";
-import { workerSchema } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
+import { workerSchema } from "@pideck/shared";
 
 import { deriveBoard } from "./kanban.js";
 import { NotFoundError, ProjectStore, slugify } from "./projects.js";

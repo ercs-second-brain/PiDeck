@@ -31,7 +31,7 @@ import {
   type PullRequest,
   type TerminalServerEvent,
   type Worker,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { apiGetKanban, apiListPullRequests, apiListProjects, apiListWorkers, errorMessage } from "../lib/api";
 import { shareInFlight, type InFlight } from "../lib/in-flight";

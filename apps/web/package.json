@@ -1,8 +1,8 @@
 {
-  "name": "@agentskiss/web",
+  "name": "@pideck/web",
   "version": "0.1.0",
   "private": true,
-  "description": "agentsKISS web app — single-page terminals app: projects sidebar (onboarding, boards) + kanban, browser terminals, diff review",
+  "description": "PiDeck web app — single-page terminals app: projects sidebar (onboarding, boards) + kanban, browser terminals, diff review",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agentskiss/shared": "workspace:*",
+    "@pideck/shared": "workspace:*",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "react": "^19.2.4",

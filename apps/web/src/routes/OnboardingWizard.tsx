@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 import { apiGetGhAuth, apiGetPiAuth, errorMessage, type GhAuth, type PiAuth } from "../lib/api";
 import { AutoAgentStep } from "./onboarding/AutoAgentStep";
 import { GhPermissionStep } from "./onboarding/GhPermissionStep";

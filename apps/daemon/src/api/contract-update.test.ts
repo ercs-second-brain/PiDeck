@@ -10,7 +10,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { endpoints, updateStatusResponseSchema } from "@agentskiss/shared";
+import { endpoints, updateStatusResponseSchema } from "@pideck/shared";
 
 import { LOCAL_SHA, shimBinPath, startContractServer, type ContractServer } from "./contract-fixtures.js";
 

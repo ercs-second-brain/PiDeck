@@ -28,7 +28,7 @@ import {
   type Project,
   type PullRequest,
   type Worker,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { fetchIssuesWithBlockedBy, listPullRequestsWithMeta, parseRepoUrl, type GhClient } from "../github/index.js";
 import { TtlSwrCache } from "./swr-cache.js";

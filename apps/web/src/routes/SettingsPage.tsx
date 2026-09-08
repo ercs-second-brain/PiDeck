@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import type { Project, Settings } from "@agentskiss/shared";
+import type { Project, Settings } from "@pideck/shared";
 import { apiGetSettings, apiUpdateProject, apiUpdateSettings, errorMessage } from "../lib/api";
 import { PiAuthBanner } from "../components/PiAuthBanner";
 import { useProject } from "../lib/use-project";

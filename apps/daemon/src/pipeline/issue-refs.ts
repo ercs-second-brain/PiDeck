@@ -10,7 +10,7 @@
  * fills workers whose `prNumber` is still null.
  */
 
-import type { PullRequest, Worker, WorkerStatus } from "@agentskiss/shared";
+import type { PullRequest, Worker, WorkerStatus } from "@pideck/shared";
 
 import type { PRTracker } from "./prs/tracker.js";
 

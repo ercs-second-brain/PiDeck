@@ -10,7 +10,7 @@ import { createServer, type Server } from "node:http";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { terminalServerEventSchema, type TerminalServerEvent } from "@agentskiss/shared";
+import { terminalServerEventSchema, type TerminalServerEvent } from "@pideck/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { SessionRegistry } from "../sessions/registry.js";

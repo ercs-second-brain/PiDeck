@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import type { KanbanBoard, PullRequest, Worker } from "@agentskiss/shared";
-import { kanbanBoardSchema, workerSchema } from "@agentskiss/shared";
+import type { KanbanBoard, PullRequest, Worker } from "@pideck/shared";
+import { kanbanBoardSchema, workerSchema } from "@pideck/shared";
 import { BoardColumn, prKey } from "../components/BoardColumn";
 import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { KanbanCardView } from "../components/KanbanCardView";

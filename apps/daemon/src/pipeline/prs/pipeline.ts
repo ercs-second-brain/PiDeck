@@ -24,7 +24,7 @@
  * resumes the loop where it left off.
  */
 
-import { ACTIVE_WORKER_STATUSES, type KanbanCard, type KanbanColumn, type PullRequest, type Worker, type WorkerStatus } from "@agentskiss/shared";
+import { ACTIVE_WORKER_STATUSES, type KanbanCard, type KanbanColumn, type PullRequest, type Worker, type WorkerStatus } from "@pideck/shared";
 
 import type { GhClient, RepoRef } from "../../github/gh.js";
 import { pullRequestColumn } from "../../api/kanban.js";
@@ -35,7 +35,7 @@ import { driveLoop } from "./drive.js";
 import { archiveReviewAgent } from "./review.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import { PRTracker, type TrackedPR } from "./tracker.js";
-import { prCardId } from "@agentskiss/shared";
+import { prCardId } from "@pideck/shared";
 
 /** Default bound on consecutive CI-fix attempts per PR. */
 export const DEFAULT_MAX_FIX_ATTEMPTS = 5;

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { KanbanBoard } from "@agentskiss/shared";
+import type { KanbanBoard } from "@pideck/shared";
 import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { WorkersPanel } from "../components/WorkersPanel";
 import { boardStore, useAppState } from "../store/store";

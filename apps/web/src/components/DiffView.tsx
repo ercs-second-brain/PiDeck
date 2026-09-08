@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DiffFile } from "@agentskiss/shared";
+import type { DiffFile } from "@pideck/shared";
 
 /**
  * The files-changed body shared by the PR diff view and the per-worker

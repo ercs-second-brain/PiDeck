@@ -13,7 +13,7 @@
  * is stopped/rebuilt.
  */
 
-import type { KanbanColumn, WsServerEvent } from "@agentskiss/shared";
+import type { KanbanColumn, WsServerEvent } from "@pideck/shared";
 
 import type { PRPipelineEvent } from "./prs/events.js";
 

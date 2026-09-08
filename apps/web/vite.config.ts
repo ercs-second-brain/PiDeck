@@ -8,7 +8,7 @@ import { defineConfig } from "vite";
  * existing first. Types resolve the same way via `tsconfig.json` paths.
  */
 const sharedAlias: Record<string, string> = {
-  "@agentskiss/shared": fileURLToPath(
+  "@pideck/shared": fileURLToPath(
     new URL("../../packages/shared/src/index.ts", import.meta.url),
   ),
 };

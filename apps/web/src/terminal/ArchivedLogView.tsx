@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "react";
-import type { ArchivedWorkerLog } from "@agentskiss/shared";
+import type { ArchivedWorkerLog } from "@pideck/shared";
 import { fetchArchivedWorkerLog } from "../lib/api";
 import { formatTimestamp } from "../lib/format-timestamp";
 

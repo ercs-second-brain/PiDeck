@@ -7,7 +7,7 @@
 
 import { type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { archivedWorkerLogSchema, formatPath } from "@agentskiss/shared";
+import { archivedWorkerLogSchema, formatPath } from "@pideck/shared";
 
 import { createDaemonServer } from "./server.js";
 import { testDaemon, type TestDaemon } from "./testutil.js";

@@ -10,7 +10,7 @@
  * - `captures` — pane output arriving at a high rate: counts captures per
  *   second and bytes captured per second with the event source active.
  *
- * Run: `pnpm --filter @agentskiss/daemon bench:terminal`
+ * Run: `pnpm --filter @pideck/daemon bench:terminal`
  */
 
 import { mkdtempSync } from "node:fs";

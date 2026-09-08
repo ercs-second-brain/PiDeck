@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import type { DiffFile, PullRequestDiff, WorkerFilesChanged } from "@agentskiss/shared";
+import type { DiffFile, PullRequestDiff, WorkerFilesChanged } from "@pideck/shared";
 import { apiGetPullRequestDiff, apiGetWorkerFilesChanged, errorMessage } from "../lib/api";
 import { DiffView } from "../components/DiffView";
 

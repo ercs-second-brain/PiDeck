@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { Worker } from "@agentskiss/shared";
+import type { Worker } from "@pideck/shared";
 
 import { GhClient, GhError, type GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";

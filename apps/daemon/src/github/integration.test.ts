@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { issueSchema, pullRequestSchema, type Issue, type PullRequest } from "@agentskiss/shared";
+import { issueSchema, pullRequestSchema, type Issue, type PullRequest } from "@pideck/shared";
 
 import { getAuthStatus, hasGhToken } from "./auth.js";
 import { defaultGhRunner, GhClient, type GhRunner, type RepoRef } from "./gh.js";

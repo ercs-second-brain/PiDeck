@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { settingsSchema, type Settings } from "@agentskiss/shared";
+import { settingsSchema, type Settings } from "@pideck/shared";
 
 import { JsonStore } from "../json-store.js";
 

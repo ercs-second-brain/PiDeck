@@ -1,5 +1,5 @@
 /**
- * @agentskiss/daemon — entry point.
+ * @pideck/daemon — entry point.
  *
  * Wires the full daemon (issue #9): REST contract + CLI action routes,
  * websocket hub (`/api/ws`, kanban updates), the terminal bridge (`/ws`,

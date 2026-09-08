@@ -5,7 +5,7 @@ import {
   type Issue,
   type IssueBlocker,
   type Project,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { Emitter } from "./emitter.js";
 import { QueueingScheduler } from "./scheduler.js";

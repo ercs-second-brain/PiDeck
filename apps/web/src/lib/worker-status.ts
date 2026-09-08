@@ -11,7 +11,7 @@
  * review) and the neutral tones stay solid.
  */
 
-import type { WorkerStatus } from "@agentskiss/shared";
+import type { WorkerStatus } from "@pideck/shared";
 
 type WorkerStatusTone = "working" | "pr-ready" | "fixing" | "idle";
 

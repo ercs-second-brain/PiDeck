@@ -9,7 +9,7 @@
  * - `GET  /api/pi-auth` — pi provider readiness probe (issue #57)
  */
 
-import { ACTIVE_WORKER_STATUSES, workerSchema, type Worker } from "@agentskiss/shared";
+import { ACTIVE_WORKER_STATUSES, workerSchema, type Worker } from "@pideck/shared";
 
 import type { DaemonServices } from "./context.js";
 import { HttpError, Router } from "./router.js";

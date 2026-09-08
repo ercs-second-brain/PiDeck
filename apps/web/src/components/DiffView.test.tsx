@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import type { DiffFile } from "@agentskiss/shared";
+import type { DiffFile } from "@pideck/shared";
 
 import { DiffView, splitPatchSections } from "./DiffView";
 

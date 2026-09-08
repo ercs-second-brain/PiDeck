@@ -1,6 +1,6 @@
 /**
  * Browser-side terminal connection: WebSocket lifecycle for one tmux
- * session, speaking the terminal message family from `@agentskiss/shared`.
+ * session, speaking the terminal message family from `@pideck/shared`.
  *
  * Behavior:
  * - `attach()` opens the socket and sends `terminal.attach`.
@@ -18,7 +18,7 @@ import {
   wsServerEventSchema,
   type TerminalClientMessage,
   type WsServerEvent,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { nextBackoffMs } from "../lib/backoff";
 

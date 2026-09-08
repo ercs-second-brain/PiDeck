@@ -141,7 +141,7 @@ importers:
 
   apps/daemon:
     dependencies:
-      '@agentskiss/shared':
+      '@pideck/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       ws:
@@ -157,7 +157,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@agentskiss/shared':
+      '@pideck/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@xterm/addon-fit':

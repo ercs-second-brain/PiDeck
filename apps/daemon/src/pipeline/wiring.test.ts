@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Issue, PullRequest, WsServerEvent } from "@agentskiss/shared";
+import type { Issue, PullRequest, WsServerEvent } from "@pideck/shared";
 
 import { testDaemon, type FakeGhRoutes, type TestDaemon } from "../api/testutil.js";
 import { makeIssue as sharedMakeIssue, makePullRequest as sharedMakePullRequest, restPull as sharedRestPull } from "../testing/fixtures.js";

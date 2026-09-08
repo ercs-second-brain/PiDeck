@@ -9,7 +9,7 @@
  * Enter — embedded newlines would submit early).
  */
 
-import type { PullRequest } from "@agentskiss/shared";
+import type { PullRequest } from "@pideck/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
 

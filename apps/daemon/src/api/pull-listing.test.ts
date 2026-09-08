@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { PullRequest } from "@agentskiss/shared";
+import type { PullRequest } from "@pideck/shared";
 
 import { GhClient, type GhRunner } from "../github/gh.js";
 import { PullListingService } from "./pull-listing.js";

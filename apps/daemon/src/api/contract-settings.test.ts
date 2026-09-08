@@ -5,7 +5,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { endpoints, settingsSchema } from "@agentskiss/shared";
+import { endpoints, settingsSchema } from "@pideck/shared";
 
 import { startContractServer, type ContractServer } from "./contract-fixtures.js";
 

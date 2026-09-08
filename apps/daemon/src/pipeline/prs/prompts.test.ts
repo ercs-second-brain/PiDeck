@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PullRequest } from "@agentskiss/shared";
+import type { PullRequest } from "@pideck/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
 import { buildCiFixPrompt, buildReReviewPrompt, buildReviewAgentPrompt, buildReviewCommentsPrompt } from "./prompts.js";

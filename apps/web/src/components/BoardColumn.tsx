@@ -1,4 +1,4 @@
-import type { KanbanCard, KanbanColumnSummary, PullRequest } from "@agentskiss/shared";
+import type { KanbanCard, KanbanColumnSummary, PullRequest } from "@pideck/shared";
 import { COLUMN_LABELS } from "../lib/kanban";
 import { KanbanCardView } from "./KanbanCardView";
 

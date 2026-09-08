@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import type { KanbanCard } from "@agentskiss/shared";
+import type { KanbanCard } from "@pideck/shared";
 
 import { KanbanCardView } from "./KanbanCardView";
 

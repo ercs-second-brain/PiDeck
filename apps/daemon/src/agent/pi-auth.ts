@@ -28,7 +28,7 @@ import path from "node:path";
 
 import { z } from "zod";
 
-import { piAuthSchema, type PiAuth } from "@agentskiss/shared";
+import { piAuthSchema, type PiAuth } from "@pideck/shared";
 
 import { TtlSwrCache } from "../api/swr-cache.js";
 

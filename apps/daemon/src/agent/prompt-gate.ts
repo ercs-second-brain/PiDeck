@@ -23,7 +23,7 @@
  * unauthenticated worker as `running` (issue #56).
  */
 
-import type { Worker } from "@agentskiss/shared";
+import type { Worker } from "@pideck/shared";
 
 /** Worker statuses after which a queued prompt is meaningless. */
 const TERMINAL_STATUSES = new Set(["done", "failed", "stopped", "archived"]);

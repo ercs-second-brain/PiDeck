@@ -3,7 +3,7 @@
  * new GitHub repo), CRUD, and persistence under the daemon state dir
  * (`<stateDir>/projects.json`).
  *
- * GitHub/git work is delegated to the `@agentskiss/daemon` github module
+ * GitHub/git work is delegated to the `@pideck/daemon` github module
  * (`cloneRepo`, `createRepo`); both are injectable so tests run without
  * network access.
  */
@@ -13,9 +13,9 @@ import {
   projectSchema,
   type Project,
   type ProjectSettings,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
-import type { UpdateProjectRequest } from "@agentskiss/shared";
+import type { UpdateProjectRequest } from "@pideck/shared";
 
 import { JsonStore } from "../json-store.js";
 import type { ProjectLayout } from "../sessions/layout.js";

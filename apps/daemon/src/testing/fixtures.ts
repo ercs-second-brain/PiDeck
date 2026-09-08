@@ -9,7 +9,7 @@
  * thin local wrapper instead of redefining the payload shape.
  */
 
-import type { Issue, PullRequest } from "@agentskiss/shared";
+import type { Issue, PullRequest } from "@pideck/shared";
 
 import type { IssueRecord } from "../github/issues.js";
 

@@ -25,7 +25,7 @@
  * the rest of the daemon tears down.
  */
 
-import { workerSchema } from "@agentskiss/shared";
+import { workerSchema } from "@pideck/shared";
 
 import type { GhClient } from "../github/gh.js";
 import { IssueSpawnPipeline } from "./issues/pipeline.js";

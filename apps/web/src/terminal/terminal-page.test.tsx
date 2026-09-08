@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { Project, Session, Worker } from "@agentskiss/shared";
+import type { Project, Session, Worker } from "@pideck/shared";
 import { SessionPicker } from "./SessionPicker";
 import { TerminateWorkerButton, TerminateWorkerModal } from "./picker-rows";
 

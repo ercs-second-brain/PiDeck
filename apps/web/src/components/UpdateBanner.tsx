@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { UpdateStatusResponse } from "@agentskiss/shared";
+import type { UpdateStatusResponse } from "@pideck/shared";
 import { apiApplyUpdate, errorMessage } from "../lib/api";
 import {
   RELOAD_DELAY_MS,

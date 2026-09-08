@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import type { Worker } from "@agentskiss/shared";
+import type { Worker } from "@pideck/shared";
 import { workerStatusClasses } from "../lib/worker-status";
 import { formatTimestamp } from "../lib/format-timestamp";
 

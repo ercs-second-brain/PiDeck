@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import type { KanbanCard, PullRequest } from "@agentskiss/shared";
+import type { KanbanCard, PullRequest } from "@pideck/shared";
 import { formatTimestamp } from "../lib/format-timestamp";
 
 const CI_LABELS = {

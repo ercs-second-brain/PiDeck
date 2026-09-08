@@ -9,8 +9,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router";
-import type { Worker } from "@agentskiss/shared";
-import { workerSchema } from "@agentskiss/shared";
+import type { Worker } from "@pideck/shared";
+import { workerSchema } from "@pideck/shared";
 
 import { WorkersPanel } from "./WorkersPanel";
 

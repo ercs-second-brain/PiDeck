@@ -26,7 +26,7 @@ import {
   workerFilesChangedSchema,
   workerSchema,
   type EndpointName,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import { createDaemonServer } from "./server.js";
 import { registerContractRoutes } from "./handlers.js";

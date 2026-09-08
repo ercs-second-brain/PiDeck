@@ -7,7 +7,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { Project } from "@agentskiss/shared";
+import type { Project } from "@pideck/shared";
 
 import { findAgentPromptPath, orchestratorPromptValues, renderOrchestratorPrompt, renderTemplate } from "./prompt.js";
 

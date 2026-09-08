@@ -15,7 +15,7 @@ import {
   type PullRequestDiff,
   type Worker,
   type WorkerFilesChanged,
-} from "@agentskiss/shared";
+} from "@pideck/shared";
 
 import {
   GhClient,

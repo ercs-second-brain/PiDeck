@@ -7,7 +7,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { terminalServerEventSchema, type TerminalServerEvent } from "@agentskiss/shared";
+import { terminalServerEventSchema, type TerminalServerEvent } from "@pideck/shared";
 import { SessionRegistry } from "../../sessions/registry.js";
 import { Tmux, type TmuxRunner } from "../../sessions/tmux.js";
 import { TerminalBridge, type TerminalBridgeOptions, type TerminalSocket } from "../bridge.js";

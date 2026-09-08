@@ -1,12 +1,12 @@
 {
-  "name": "@agentskiss/daemon",
+  "name": "@pideck/daemon",
   "version": "0.1.0",
   "private": true,
-  "description": "agentsKISS daemon \u2014 orchestration backend (tmux sessions, GitHub integration, REST/WS API, CLI)",
+  "description": "PiDeck daemon \u2014 orchestration backend (tmux sessions, GitHub integration, REST/WS API, CLI)",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "agentskiss": "./dist/cli/main.js"
+    "pideck": "./dist/cli/main.js"
   },
   "scripts": {
     "build": "tsc -b",
@@ -15,7 +15,7 @@
     "bench:terminal": "tsc -b && node dist/terminal/bench.js"
   },
   "dependencies": {
-    "@agentskiss/shared": "workspace:*",
+    "@pideck/shared": "workspace:*",
     "ws": "^8.21.3",
     "zod": "^4.5.4"
   },

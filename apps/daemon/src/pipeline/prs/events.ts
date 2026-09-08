@@ -17,7 +17,7 @@
  */
 
 import { z } from "zod";
-import { idSchema, isoDateTimeSchema, kanbanCardSchema, refNumberSchema } from "@agentskiss/shared";
+import { idSchema, isoDateTimeSchema, kanbanCardSchema, refNumberSchema } from "@pideck/shared";
 
 export const prPipelineEventSchema = z.discriminatedUnion("type", [
   z.object({
