@@ -116,6 +116,23 @@ export function defaultWebDist(): string | undefined {
   return existsSync(candidate) ? candidate : undefined;
 }
 
+/**
+ * Cache lifetime for content-hashed assets (vite emits `<name>-<hash>.<ext>`):
+ * effectively forever — a changed file always gets a new name.
+ */
+const HASHED_ASSET_MAX_AGE = "public, max-age=31536000, immutable";
+
+/**
+ * Cache-Control for a served static file (issue #228). The HTML shell and the
+ * service worker must always revalidate — a stale shell survives rebrands and
+ * breaks the update flow. Vite-hashed assets are immutable and long-cached;
+ * everything else (icons, manifest, offline fallback) revalidates too.
+ */
+export function cacheControlFor(filePath: string): string {
+  if (/-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/i.test(path.basename(filePath))) return HASHED_ASSET_MAX_AGE;
+  return "no-cache";
+}
+
 /** Serves a static file from `root`; SPA fallback to index.html. Returns false when nothing served. */
 export function serveStatic(root: string, pathname: string, res: import("node:http").ServerResponse): boolean {
   const decoded = decodeURIComponent(pathname);
@@ -129,6 +146,7 @@ export function serveStatic(root: string, pathname: string, res: import("node:ht
   const type = CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? "application/octet-stream";
   res.statusCode = 200;
   res.setHeader("Content-Type", type);
+  res.setHeader("Cache-Control", cacheControlFor(filePath));
   createReadStream(filePath).pipe(res);
   return true;
 }
