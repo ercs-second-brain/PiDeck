@@ -145,14 +145,16 @@ check_grep 'npm failure: exits nonzero' 'rc=1' "$out"
 check_grep 'npm failure: actionable guidance' 'npm install -g pnpm@' "$out"
 
 # --- node version floor: >= 22.19.0 enforced (pi 0.75.0+ requirement) ------
-_node_floor_probe() { # _node_floor_probe <major> <minor> -> "<exit code of deps.sh's _node_meets_min>"
+_node_floor_probe() { # _node_floor_probe <major> <minor> -> "<exit code of common.sh's _node_version_ge>"
   (
-    # consumed by the deps.sh sourced right below
+    # consumed by the libs sourced right below
     # shellcheck disable=SC2034
     export PD_NODE_MIN_VERSION="22.19.0"
     # shellcheck disable=SC1091 # installer lib, sourced on purpose
+    . "$INSTALL_DIR/lib/common.sh"
+    # shellcheck disable=SC1091 # installer lib, sourced on purpose
     . "$INSTALL_DIR/lib/deps.sh"
-    _node_meets_min "$1" "$2"
+    _node_version_ge "$1.$2.0" "$PD_NODE_MIN_VERSION"
     echo $? # command substitution captures stdout, not the exit code
   )
 }
