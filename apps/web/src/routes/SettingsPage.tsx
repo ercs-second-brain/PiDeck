@@ -2,15 +2,16 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import type { Project, Settings } from "@pideck/shared";
 import { apiGetSettings, apiUpdateProject, apiUpdateSettings, errorMessage } from "../lib/api";
-import { PiAuthBanner } from "../components/PiAuthBanner";
 import { useProject } from "../lib/use-project";
 import { boardStore } from "../store/store";
 
 /**
- * Project settings surface: auto-agent username, the worker concurrency
- * cap, the persistent pi auth status banner (issue #57), the daemon-
- * wide worker-pipeline toggles (issue #106), and the merged-PR browser-
- * notification toggle (issue #111).
+ * Project settings surface: auto-agent username and the worker concurrency
+ * cap, plus the daemon-wide worker-pipeline toggles (issue #106) and the
+ * merged-PR browser-notification toggle (issue #111).
+ * pi/gh auth is PiDeck-global, configured once (issue #183) — it is no
+ * longer surfaced per project here; the global onboarding modal opens
+ * whenever pi has no ready provider.
  * `workerConcurrency` unset means unbounded (issue #14 semantics: every
  * unblocked issue spawns a worker immediately); saving an empty field sends
  * `null` explicitly so the cap actually clears (issue #168).
@@ -24,7 +25,6 @@ export function SettingsPage() {
     <main className="page">
       <h1 className="page-title">{project.name} — settings</h1>
       <p className="project-repo">{project.repoUrl}</p>
-      <PiAuthBanner />
       <GlobalWorkerSettings />
       <SettingsForm key={project.id} project={project} />
       <Link to={`/projects/${project.id}`} className="back-link">

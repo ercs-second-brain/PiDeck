@@ -1,40 +1,35 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import type { Project } from "@pideck/shared";
-import { apiGetGhAuth, apiGetPiAuth, errorMessage, type GhAuth, type PiAuth } from "../lib/api";
+import { errorMessage } from "../lib/api";
 import { AutoAgentStep } from "./onboarding/AutoAgentStep";
-import { GhPermissionStep } from "./onboarding/GhPermissionStep";
-import { PiAuthStep } from "./onboarding/PiAuthStep";
-import { RecordedNote } from "./onboarding/RecordedNote";
 import { RepoSourceStep } from "./onboarding/RepoSourceStep";
-import { StepNav, type Step } from "./onboarding/StepNav";
-import { useOnboardingEntryStep } from "./onboarding/entry-step";
-import { INITIAL_FORM, autoAgentFormError, registerProject, sourceFormError, type WizardForm } from "./onboarding/wizard-form";
+import { StepNav } from "./onboarding/StepNav";
+import { INITIAL_FORM, autoAgentFormError, registerProject, sourceFormError, type ProjectStep, type WizardForm } from "./onboarding/wizard-form";
+
+/** The project flow's steps (issue #183): project things only — repo source, then agents. */
+const PROJECT_STEPS = [
+  { key: "source", label: "1 · repository" },
+  { key: "autoagent", label: "2 · agents" },
+] as const;
 
 /**
- * Project onboarding wizard (issue #62): the former first-run onboarding
- * page, now reachable from the terminals sidebar's "+" button (rendered as a
- * modal) or the empty-state CTA in the main pane.
+ * Project onboarding wizard (issues #62, #183): reachable from the terminals
+ * sidebar's "+" button (rendered as a modal) or the empty-state CTA in the
+ * main pane.
  *
- * Flow (PRD: repo connection):
- * 1. pi auth check (daemon-side probe via `GET /api/pi-auth`, issue #57):
- *    workers cannot run unauthenticated, so this step must pass (re-verify
- *    after the handoff: `pideck onboard`, or pi /login) before the
- *    wizard proceeds.
- * 2. gh permission check (daemon-side probe via `GET /api/gh-auth`).
- * 3. Choose the repo source: clone from git OR create a new GitHub repo —
+ * Flow (PRD: repo connection) — project things only:
+ * 1. Choose the repo source: clone from git OR create a new GitHub repo —
  *    created repos are **private by default** with an explicit public toggle.
- * 4. Auto-create-agents question: should issues auto-create agents? Captures
+ * 2. Auto-create-agents question: should issues auto-create agents? Captures
  *    the GitHub username stored as the project's `autoAgentUsername`.
+ *
+ * pi auth and gh auth are PiDeck-global, configured once — they live in the
+ * global onboarding flow (`./onboarding/GlobalOnboarding.tsx`, issue #183),
+ * never re-asked here.
  *
  * Registration goes through the real `POST /api/projects` endpoint; on
  * success `onRegistered(project)` hands the new project back to the shell
  * (which closes the modal and opens the project's board).
- *
- * Shared onboarding state (issue #165): the wizard reads `GET
- * /api/onboarding` — the daemon-side source of truth combining the shell
- * installer's recorded results with the live probes — and never re-asks a
- * step that is genuinely complete: the flow starts at the first incomplete
- * step and completed pi/gh steps render as done in the step indicator.
  *
  * The step state machine and the cross-step form live here; each step panel
  * is a presentational component under `./onboarding/` (frame: StepPanel,
@@ -42,48 +37,14 @@ import { INITIAL_FORM, autoAgentFormError, registerProject, sourceFormError, typ
  * wizard-form.ts).
  */
 function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) => void }) {
-  const [step, setStep] = useState<Step>("pi");
+  const [step, setStep] = useState<ProjectStep>("source");
   const [form, setForm] = useState<WizardForm>(INITIAL_FORM);
-  const [pi, setPi] = useState<PiAuth | null>(null);
-  const [piError, setPiError] = useState<string | null>(null);
-  const [checkingPi, setCheckingPi] = useState(true);
-  const [auth, setAuth] = useState<GhAuth | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // Issue #165: shared daemon-side onboarding state (recorded shell results
-  // in the header; flow entered at the first incomplete step).
-  const recorded = useOnboardingEntryStep(pi, auth, checkingPi, checking, setStep);
 
   const patchForm = (patch: Partial<WizardForm>): void => {
     setForm((current) => ({ ...current, ...patch }));
   };
-
-  const checkPi = useCallback(() => {
-    setCheckingPi(true);
-    setPiError(null);
-    apiGetPiAuth()
-      .then(setPi)
-      .catch((err: unknown) => setPiError(errorMessage(err)))
-      .finally(() => setCheckingPi(false));
-  }, []);
-
-  const checkPermissions = useCallback(() => {
-    setChecking(true);
-    setAuthError(null);
-    apiGetGhAuth()
-      .then((result) => {
-        setAuth(result);
-        // Seed the auto-agent username from the gh login (user can override).
-        setForm((current) => ({ ...current, username: current.username || result.login || "" }));
-      })
-      .catch((err: unknown) => setAuthError(errorMessage(err)))
-      .finally(() => setChecking(false));
-  }, []);
-
-  useEffect(checkPi, [checkPi]);
-  useEffect(checkPermissions, [checkPermissions]);
 
   const continueFromSource = (): void => {
     const message = sourceFormError(form);
@@ -104,37 +65,13 @@ function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) =
       });
   };
 
-  const piDone = pi?.ready === true;
-  const ghDone = auth?.authenticated === true;
-  const doneSteps: Step[] = [...(piDone ? (["pi"] as const) : []), ...(ghDone ? (["permission"] as const) : [])];
-
   return (
     <div className="wizard">
-      <h1 className="page-title">Welcome to PiDeck</h1>
-      <p className="empty">Connect a project to start orchestrating agents.</p>
-      {recorded !== null && <RecordedNote recorded={recorded} />}
-      <StepNav step={step} doneSteps={doneSteps} />
-      {step === "pi" && (
-        <PiAuthStep checking={checkingPi} auth={pi} error={piError} onRecheck={checkPi} onContinue={() => setStep("permission")} />
-      )}
-      {step === "permission" && (
-        <GhPermissionStep
-          checking={checking}
-          auth={auth}
-          error={authError}
-          onRecheck={checkPermissions}
-          onContinue={() => setStep("source")}
-        />
-      )}
+      <h1 className="page-title">Connect a project</h1>
+      <p className="empty">Point PiDeck at a repository to start orchestrating agents.</p>
+      <StepNav steps={PROJECT_STEPS} step={step} />
       {step === "source" && (
-        <RepoSourceStep
-          form={form}
-          onChange={patchForm}
-          onError={setFormError}
-          error={formError}
-          onContinue={continueFromSource}
-          onBack={() => setStep("permission")}
-        />
+        <RepoSourceStep form={form} onChange={patchForm} onError={setFormError} error={formError} onContinue={continueFromSource} />
       )}
       {step === "autoagent" && (
         <AutoAgentStep

@@ -1,20 +1,23 @@
 /**
- * The onboarding wizard's cross-step form state and registration call
- * (issue #62): the repository source (clone vs create) captured in step 3
- * and the auto-agent answer (with its GitHub username) captured in step 4
- * both live here so the step components stay presentational and the wizard
- * parent keeps owning the state machine.
+ * The project onboarding wizard's cross-step form state and registration
+ * call (issue #62): the repository source (clone vs create) captured in
+ * step 1 and the auto-agent answer (with its GitHub username) captured in
+ * step 2 both live here so the step components stay presentational and the
+ * wizard parent keeps owning the state machine.
  */
+
+/** The project flow's step keys (issue #183: pi/gh auth moved to the global flow). */
+export type ProjectStep = "source" | "autoagent";
 import type { Project } from "@pideck/shared";
 import { apiRegisterProject } from "../../lib/api";
 
 export type WizardForm = {
-  /** Step 3: register an existing repo, or create a new (private-by-default) one. */
+  /** Step 1: register an existing repo, or create a new (private-by-default) one. */
   mode: "clone" | "create";
   repoUrl: string;
   repoName: string;
   isPublic: boolean;
-  /** Step 4: should issues auto-create agents? */
+  /** Step 2: should issues auto-create agents? */
   autoAgent: "no" | "yes";
   username: string;
 };

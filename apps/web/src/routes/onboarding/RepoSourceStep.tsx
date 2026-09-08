@@ -2,7 +2,9 @@
  * Step 3 — repository source: clone from git, or create a new GitHub repo
  * (created repos are **private by default** with an explicit public toggle).
  * Form state lives in the wizard parent ({@link WizardForm}); this step
- * validates its own fields before handing control back.
+ * validates its own fields before handing control back. First step of the
+ * project flow, so there is no back target — `onBack` is only rendered when
+ * provided.
  */
 import type { WizardForm } from "./wizard-form";
 import { StepPanel } from "./StepPanel";
@@ -13,7 +15,7 @@ export function RepoSourceStep(props: {
   onError: (message: string | null) => void;
   error: string | null;
   onContinue: () => void;
-  onBack: () => void;
+  onBack?: () => void;
 }) {
   const { form, onChange, onError, error, onContinue, onBack } = props;
   return (
@@ -86,9 +88,11 @@ export function RepoSourceStep(props: {
         <button type="button" className="button button-primary" onClick={onContinue}>
           Continue
         </button>
-        <button type="button" className="button" onClick={onBack}>
-          Back
-        </button>
+        {onBack !== undefined && (
+          <button type="button" className="button" onClick={onBack}>
+            Back
+          </button>
+        )}
       </div>
     </StepPanel>
   );
