@@ -15,7 +15,11 @@
  * Settings entry opens that project's settings page in the main pane.
  *
  * The "Projects" header opens the all-projects combined board; the "+"
- * button launches the project onboarding wizard. Interaction state lives in
+ * button launches the project onboarding wizard. A persistent footer pinned
+ * to the sidebar's bottom (issue #176) opens the global settings page
+ * (worker pipeline, notifications, pi auth) in the main pane — visible
+ * regardless of scroll, collapse state, or project-list errors, including
+ * in the mobile drawer. Interaction state lives in
  * this component (which worker is confirming termination, which projects'
  * archived sections are expanded, which projects are collapsed); the pure
  * view pieces live in {@link ./picker-rows.tsx}.
@@ -149,6 +153,8 @@ export function SessionPicker(props: {
   onOpenSettings: (projectId: string) => void;
   /** Opens the all-projects combined board (the "Projects" header). */
   onSelectAllProjects: () => void;
+  /** Opens the global settings page in the main pane (the sidebar footer, #176). */
+  onOpenGlobalSettings: () => void;
   /** Opens the project onboarding wizard (the "+" button). */
   onStartOnboarding: () => void;
   /** Starts (or attaches to) the project's orchestrator — the chat-icon click (#173, #53). */
@@ -209,6 +215,20 @@ export function SessionPicker(props: {
         <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — hit + to connect one."}</p>
       )}
       {props.error && <p className="picker-error">Daemon unreachable: {props.error}</p>}
+      {/* Issue #176: persistent footer — sticky so it stays visible while
+          the project list scrolls; flex `margin-top: auto` pins it to the
+          bottom when the list is short. Renders even with no projects or a
+          daemon error, so global settings are always one click away. */}
+      <div className="picker-footer">
+        <button
+          type="button"
+          className="picker-footer-settings"
+          title="Global settings — worker pipeline, notifications, pi auth"
+          onClick={props.onOpenGlobalSettings}
+        >
+          ⚙ Settings
+        </button>
+      </div>
     </aside>
   );
 }

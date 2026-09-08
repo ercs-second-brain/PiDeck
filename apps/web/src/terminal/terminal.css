@@ -38,6 +38,8 @@
 /* --- Session picker ------------------------------------------------------- */
 
 .session-picker {
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--bg-raised);
   overflow-y: auto;
@@ -468,6 +470,40 @@
   color: var(--red);
 }
 
+/* Issue #176: the persistent sidebar footer. `margin-top: auto` pins it to
+   the bottom when the project list is short; `position: sticky` keeps it
+   visible while a long list scrolls; negative margins span the full
+   sidebar width over the container's padding. */
+.picker-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin: auto -16px -16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.picker-footer-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-footer-settings:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 /* --- Archived worker log view (issue #104) ---------------------------------- */
 
 .archived-log {
@@ -767,6 +803,16 @@
   .picker-archived-toggle {
     padding: 10px 6px;
     font-size: 12px;
+  }
+
+  /* Issue #176: the drawer's deeper bottom padding — keep the footer flush. */
+  .picker-footer {
+    margin-bottom: -24px;
+  }
+
+  .picker-footer-settings {
+    padding: 12px 8px;
+    font-size: 15px;
   }
 
   .terminate-modal-cancel,
