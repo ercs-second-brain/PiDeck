@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate } from "react-router";
 import type { Project } from "@pideck/shared";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { NodeVersionWarning } from "./components/NodeVersionWarning";
 import { NotificationBell } from "./components/NotificationCenter";
 import { AllProjectsBoard } from "./routes/AllProjectsBoard";
 import { BoardPage } from "./routes/BoardPage";
@@ -115,6 +116,7 @@ function Shell() {
         </div>
       </header>
       <UpdateBanner />
+      <NodeVersionWarning />
       <div className="app-body">
         <SidebarContext.Provider value={sidebar}>
           <SessionPicker
