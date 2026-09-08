@@ -335,8 +335,7 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     getUpdateStatus: async ({ query = "" }) => {
       const refresh = new URLSearchParams(query).get("refresh") === "1";
       const status = await services.update.check({ force: refresh });
-      // nodeVersion/nodeTooOld ride the same poll (issue #202): warn before pi crashes.
-      return { ...status, activeWorkers: countActiveWorkers(services), ...nodeStatus() };
+      return { ...status, activeWorkers: countActiveWorkers(services), ...nodeStatus() }; // issue #202 webapp warning
     },
 
     /**

@@ -298,7 +298,6 @@ export const updateStatusSchema = z.object({
   applyProgress: updateApplyProgressSchema.nullable(),
 });
 export type UpdateStatus = z.infer<typeof updateStatusSchema>;
-
 /**
  * Webapp-facing update status (issue #76): the check result (issue #55) plus
  * the live active-worker count that gates click-to-apply — the server is the
@@ -308,12 +307,8 @@ export type UpdateStatus = z.infer<typeof updateStatusSchema>;
 export const updateStatusResponseSchema = updateStatusSchema.extend({
   /** Workers in an `ACTIVE_WORKER_STATUSES` status; > 0 blocks applying. */
   activeWorkers: z.number().int().min(0),
-  /** The node version this daemon process runs on (issue #202). */
-  nodeVersion: z.string(),
-  /** pi's node floor the daemon validates against (install: PD_NODE_MIN_VERSION). */
-  nodeMinVersion: z.string(),
-  /** `true` when the daemon's node is too old for the pi sessions it spawns. */
-  nodeTooOld: z.boolean(),
+  /** Node runtime status (issue #202): the daemon's version, pi's floor, too-old flag. */
+  nodeVersion: z.string(), nodeMinVersion: z.string(), nodeTooOld: z.boolean(),
 });
 export type UpdateStatusResponse = z.infer<typeof updateStatusResponseSchema>;
 
@@ -510,13 +505,7 @@ export const endpoints = {
   },
 
   // Settings
-  getSettings: {
-    method: "GET",
-    path: "/api/settings",
-    params: z.object({}),
-    request: null,
-    response: settingsSchema,
-  },
+  getSettings: { method: "GET", path: "/api/settings", params: z.object({}), request: null, response: settingsSchema },
   updateSettings: {
     method: "PUT",
     path: "/api/settings",
