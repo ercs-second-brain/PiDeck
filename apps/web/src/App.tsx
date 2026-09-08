@@ -107,7 +107,7 @@ function Shell() {
           ☰
         </button>
         <Link to="/" className="brand">
-          agents<span className="brand-accent">KISS</span>
+          Pi<span className="brand-accent">Deck</span>
         </Link>
         <span className="brand-tag">agent orchestration, self-hosted</span>
         <div className="header-actions">
