@@ -40,7 +40,7 @@ install_pi_agent() {
     die "pi needs Node >= $PD_NODE_MIN_VERSION but the active node is $_pa_ver — run 'pideck update' (it refreshes the private runtime and reinstalls pi together)"
   fi
   step "installing pi coding agent (under node $_pa_ver at $_pa_node)"
-  run env NPM_CONFIG_PREFIX="$PD_HOME/opt/npm-global" "$_pa_node_dir/npm" install -g --ignore-scripts "$PD_PI_NPM_PACKAGE"
+  run env NPM_CONFIG_PREFIX="$PD_HOME/opt/npm-global" "$_pa_node_dir/npm" install -g --ignore-scripts "$PD_PI_PACKAGE"
   for _pi_bin in "$PD_HOME/opt/npm-global/bin/"*; do
     [ -e "$_pi_bin" ] || continue
     run ln -sfn "$_pi_bin" "$PD_LOCAL_BIN/$(basename "$_pi_bin")"
@@ -59,7 +59,7 @@ pi_installed_version() {
   pi --version 2>/dev/null | head -n 1 | sed -n 's/.*\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p'
 }
 
-# pi_npm_latest — the newest published version of $PD_PI_NPM_PACKAGE on npm,
+# pi_npm_latest — the newest published version of $PD_PI_PACKAGE on npm,
 # read with the ACTIVE node's npm (the same binary the reinstall would use).
 # Fails (empty, nonzero) when npm or the registry is unavailable — callers
 # skip the refresh then, never block the update on it.
@@ -68,14 +68,14 @@ pi_npm_latest() {
   [ -x "$_pnl_node" ] || _pnl_node=$(command -v node 2>/dev/null) || return 1
   _pnl_npm="$(dirname "$_pnl_node")/npm"
   [ -x "$_pnl_npm" ] || return 1
-  "$_pnl_npm" view "$PD_PI_NPM_PACKAGE" version 2>/dev/null | tail -n 1 | tr -d '[:space:]'
+  "$_pnl_npm" view "$PD_PI_PACKAGE" version 2>/dev/null | tail -n 1 | tr -d '[:space:]'
 }
 
 # refresh_pi_agent — reinstall pi only when npm has a newer version (issue
 # #223): an install can sit on a stale pi for weeks otherwise, because pi has
 # no self-update channel the apply could lean on. Runs on EVERY apply, after
 # refresh_node_runtime (the active node is already the refreshed one then).
-# $PD_PI_NPM_PACKAGE is unpinned, so the install resolves npm's `latest` tag.
+# $PD_PI_PACKAGE is unpinned, so the install resolves npm's `latest` tag.
 # Returns 1 when it (re)installed pi — callers treat that as "the agent
 # moved, restart the daemon" — and 0 when pi is already current (or the
 # latest version could not be read: never a dead end, just a skipped step).
