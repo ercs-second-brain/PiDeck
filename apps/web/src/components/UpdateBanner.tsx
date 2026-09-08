@@ -61,6 +61,31 @@ export interface UpdatingState {
   downMs: number;
 }
 
+/**
+ * An apply failure, tagged with the SHA the failed cycle targeted (issue
+ * #186): the error belongs to that cycle only — a NEW upstream SHA starts a
+ * fresh detection cycle and the old error must not render next to it.
+ */
+export interface ApplyError {
+  /** Target SHA of the failed apply (`null` when the apply never got one). */
+  sha: string | null;
+  /** Human-readable failure. */
+  message: string;
+}
+
+/**
+ * Drops a prior apply cycle's error once the daemon reports a different
+ * upstream SHA (issue #186): that detection starts a clean cycle, so the
+ * stale "update failed" must not leak into the new available-banner. An
+ * error whose SHA still matches (or an untagged one) persists — the failed
+ * apply stays explained until the user retries or the SHA moves.
+ */
+export function clearStaleApplyError(error: ApplyError | null, result: UpdateStatusResponse): ApplyError | null {
+  if (error === null) return null;
+  if (result.remoteSha !== null && result.remoteSha !== error.sha) return null;
+  return error;
+}
+
 /** Human text for a shim stage; honest fallbacks when nothing is known yet. */
 const STAGE_TEXT: Record<string, string> = {
   checking: "checking for updates",
@@ -98,7 +123,8 @@ export function UpdateBanner() {
   const [reloadSha, setReloadSha] = useState<string | null>(null);
   /** Idle page, API unreachable (e.g. a CLI update restarted the daemon). */
   const [reconnecting, setReconnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** Apply failure (gate conflict, spawn error, apply run) — cycle-tagged. */
+  const [error, setError] = useState<ApplyError | null>(null);
   /** The build SHA this page was loaded with; `null` until the first status. */
   const bootShaRef = useRef<string | null>(null);
 
@@ -110,6 +136,9 @@ export function UpdateBanner() {
   const adopt = useCallback((result: UpdateStatusResponse): void => {
     setStatus(result);
     setReconnecting(false);
+    // A new upstream SHA is a fresh detection cycle (issue #186): a prior
+    // apply's failure belongs to the old cycle and must not render here.
+    setError((e) => clearStaleApplyError(e, result));
     if (bootShaRef.current === null) {
       bootShaRef.current = result.runningSha;
     } else if (result.runningSha !== null && result.runningSha !== bootShaRef.current) {
@@ -140,6 +169,7 @@ export function UpdateBanner() {
         setStatus(result);
         setUpdating(null);
         setReloadSha(null);
+        setError(null); // the apply completed — its cycle is fully closed
         setReloading(true); // the view says "Update complete", then we reload
         setPhase("idle");
         setTimeout(() => window.location.reload(), RELOAD_DELAY_MS);
@@ -147,7 +177,7 @@ export function UpdateBanner() {
       onFailed: (message) => {
         setUpdating(null);
         setPhase("idle");
-        setError(message);
+        setError({ sha: targetSha, message });
       },
     });
   }, [phase, targetSha, startedAt]);
@@ -163,7 +193,7 @@ export function UpdateBanner() {
     } catch (err) {
       // 409 (a worker went active between poll and click) and spawn failures
       // land here — show the reason, stay clickable.
-      setError(errorMessage(err));
+      setError({ sha: status?.remoteSha ?? null, message: errorMessage(err) });
     }
   }, [status]);
 
@@ -179,7 +209,7 @@ export function UpdateBanner() {
       reloading={reloading}
       reloadSha={reloadSha}
       reconnecting={reconnecting}
-      error={error}
+      error={error?.message ?? null}
       onApply={() => void apply()}
       onReload={onReload}
     />

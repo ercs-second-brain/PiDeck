@@ -5,7 +5,7 @@
  * mid-update, the running build does not) + the shim's live progress file.
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SpawnOptions } from "node:child_process";
@@ -84,11 +84,8 @@ describe("UpdateChecker", () => {
   });
 
   it("resolves repo/ref from the installer config.json over git-remote fallback", async () => {
-    const realFs = await import("node:fs/promises");
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const dir = await realFs.mkdtemp(path.join(os.tmpdir(), "ak-update-"));
-    await realFs.writeFile(
+    const dir = mkdtempSync(path.join(tmpdir(), "ak-update-"));
+    writeFileSync(
       path.join(dir, "config.json"),
       JSON.stringify({ repoUrl: "git@github.com:some-org/private-dev.git", repoRef: "dev-branch" }),
     );
@@ -100,7 +97,7 @@ describe("UpdateChecker", () => {
     expect(status.repo).toBe("some-org/private-dev");
     expect(status.ref).toBe("dev-branch");
     expect(status.updateAvailable).toBe(true);
-    await realFs.rm(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("falls back to the git remote and main ref without config.json", async () => {
@@ -256,11 +253,7 @@ describe("UpdateChecker caching (issue #76)", () => {
   it("serves a cached status within the TTL instead of re-hitting gh", async () => {
     const counted = countingGh("b".repeat(40));
     let nowMs = 1_000;
-    const instance = checker({
-      gh: counted.gh,
-      now: () => new Date(nowMs),
-      cacheTtlMs: 5 * 60 * 1000,
-    });
+    const instance = checker({ gh: counted.gh, now: () => new Date(nowMs), cacheTtlMs: 5 * 60 * 1000 });
     const first = await instance.check();
     nowMs += 60_000; // 1 minute later — still fresh
     const second = await instance.check();
@@ -330,6 +323,19 @@ describe("UpdateChecker.apply (issue #76)", () => {
         options: { detached: true, stdio: "ignore", cwd: stateDir },
       },
     ]);
+  });
+
+  it("clears a prior apply's terminal progress before spawning the shim (issue #186)", async () => {
+    // A completed (or failed) prior apply leaves its terminal stage in the
+    // progress file for the TTL — the next apply's polling must never read
+    // that stale outcome as its own (false done/failed).
+    const stateDir = installedStateDir();
+    const progressFile = path.join(stateDir, "var", "update-state.json");
+    mkdirSync(path.dirname(progressFile), { recursive: true });
+    writeFileSync(progressFile, JSON.stringify({ stage: "failed", updatedAt: "2026-01-02T03:00:00Z" }));
+    const instance = checker({ stateDir, spawn: () => ({ unref() {} }) });
+    await instance.apply();
+    expect(existsSync(progressFile)).toBe(false);
   });
 
   it("rejects cleanly without an installed shim (dev checkout)", async () => {
