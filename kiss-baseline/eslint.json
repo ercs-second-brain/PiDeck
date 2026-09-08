@@ -5,7 +5,6 @@
     "complexity::apps/daemon/src/api/router.ts::Async method 'dispatch' has a complexity of 20. Maximum allowed is 15.",
     "complexity::apps/daemon/src/api/testutil.ts::Async arrow function has a complexity of 25. Maximum allowed is 15.",
     "complexity::apps/daemon/src/github/integration.test.ts::Async arrow function has a complexity of 16. Maximum allowed is 15.",
-    "complexity::apps/web/src/routes/OnboardingWizard.tsx::Function 'OnboardingWizard' has a complexity of 31. Maximum allowed is 15.",
     "max-lines-per-function::apps/daemon/src/agent/prompt-gate.test.ts::Arrow function has too many lines (103). Maximum allowed is 100.",
     "max-lines-per-function::apps/daemon/src/cli/main.test.ts::Arrow function has too many lines (135). Maximum allowed is 100.",
     "max-lines-per-function::apps/daemon/src/pipeline/issues/pipeline.test.ts::Arrow function has too many lines (188). Maximum allowed is 100.",
@@ -15,11 +14,9 @@
     "max-lines-per-function::apps/daemon/src/sessions/manager.test.ts::Arrow function has too many lines (150). Maximum allowed is 100.",
     "max-lines-per-function::apps/daemon/src/sessions/registry.test.ts::Arrow function has too many lines (183). Maximum allowed is 100.",
     "max-lines-per-function::apps/web/src/lib/render.test.tsx::Arrow function has too many lines (102). Maximum allowed is 100.",
-    "max-lines-per-function::apps/web/src/routes/OnboardingWizard.tsx::Function 'OnboardingWizard' has too many lines (293). Maximum allowed is 100.",
     "max-lines-per-function::packages/shared/src/index.test.ts::Arrow function has too many lines (109). Maximum allowed is 100.",
     "max-lines::apps/daemon/src/pipeline/issues/pipeline.test.ts::File has too many lines (459). Maximum allowed is 300.",
     "max-lines::apps/daemon/src/pipeline/wiring.test.ts::File has too many lines (418). Maximum allowed is 300.",
-    "max-lines::apps/daemon/src/sessions/manager.test.ts::File has too many lines (527). Maximum allowed is 300.",
-    "max-lines::apps/web/src/routes/OnboardingWizard.tsx::File has too many lines (355). Maximum allowed is 300."
+    "max-lines::apps/daemon/src/sessions/manager.test.ts::File has too many lines (527). Maximum allowed is 300."
   ]
 }
