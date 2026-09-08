@@ -31,6 +31,12 @@ export interface FakePaneState {
   cursorX?: number;
   cursorY?: number;
   cursorVisible?: boolean;
+  /**
+   * Value of the session-scoped `extended-keys` option (issue #222), as
+   * `set-option` left it. `new-session` initializes it to `off`, mirroring
+   * tmux's server-wide default; direct state seeds may leave it unset.
+   */
+  extendedKeys?: "on" | "off" | "external";
 }
 
 export interface FakeTmuxRunnerOptions {
@@ -159,6 +165,8 @@ export class FakeTmuxRunner {
         return this.pipePane(cmdArgs, args);
       case "display-message":
         return this.displayMessage(cmdArgs, args);
+      case "set-option":
+        return this.setOption(cmdArgs, args);
       default:
         return this.fail(`unknown command: ${cmd ?? "(none)"}`, args);
     }
@@ -182,6 +190,7 @@ export class FakeTmuxRunner {
       cursorX: 0,
       cursorY: 0,
       cursorVisible: true,
+      extendedKeys: "off",
     });
     return "";
   }
@@ -243,6 +252,23 @@ export class FakeTmuxRunner {
     // The real pipe shell creates/truncates the stream file at startup.
     if (match?.[1] !== undefined) createFile(match[1]);
     return "";
+  }
+
+  /**
+   * Applies a session option (issue #222): `set-option -t <session>
+   * extended-keys on|off|external`. Like the real tmux, fails on a missing
+   * target session or an unknown option.
+   */
+  private setOption(cmdArgs: string[], originalArgs: string[]): string {
+    const pane = this.paneOf(cmdArgs, originalArgs);
+    const tIdx = cmdArgs.indexOf("-t");
+    const rest = tIdx !== -1 ? cmdArgs.slice(tIdx + 2) : cmdArgs;
+    const [option, value] = rest;
+    if (option === "extended-keys" && (value === "on" || value === "off" || value === "external")) {
+      pane.extendedKeys = value;
+      return "";
+    }
+    return this.fail(`unknown option: ${option ?? "(none)"}`, originalArgs);
   }
 
   /**
