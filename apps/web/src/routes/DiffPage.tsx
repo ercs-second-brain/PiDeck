@@ -1,25 +1,79 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import type { PullRequestDiff } from "@agentskiss/shared";
-import { apiGetPullRequestDiff, errorMessage } from "../lib/api";
+import type { DiffFile, PullRequestDiff, WorkerFilesChanged } from "@agentskiss/shared";
+import { apiGetPullRequestDiff, apiGetWorkerFilesChanged, errorMessage } from "../lib/api";
+import { DiffView } from "../components/DiffView";
 
 /**
- * Diff review view: one PR's unified diff with per-file stats, rendered with
- * plain +/- line coloring (no diff library).
+ * Diff review view for one diff-route target. The route segment is either a
+ * PR number (PR-centric view, unchanged) or a worker id — the per-worker
+ * files-changed view (issue #126): the worker's PR files when one exists, or
+ * its branch diff vs the project's default branch while work is mid-flight.
+ * Both render through the shared {@link DiffView} with per-file navigation.
  */
+
+/** Normalized payload for the shared diff rendering, whichever mode resolved. */
+interface DiffPageModel {
+  /** Page heading: `PR #9` or the worker id. */
+  heading: string;
+  /** Note after the heading: `diff` for PRs, `files changed` for workers. */
+  note: string;
+  /** Provenance of a worker's file list (`null` for PRs). */
+  sourceNote: string | null;
+  headBranch: string;
+  baseBranch: string;
+  files: DiffFile[];
+  patch: string;
+}
+
+function isPrRef(ref: string): boolean {
+  return /^\d+$/.test(ref);
+}
+
+function prModel(diff: PullRequestDiff): DiffPageModel {
+  return {
+    heading: `PR #${diff.prNumber}`,
+    note: "diff",
+    sourceNote: null,
+    headBranch: diff.headBranch,
+    baseBranch: diff.baseBranch,
+    files: diff.files,
+    patch: diff.patch,
+  };
+}
+
+function workerModel(changed: WorkerFilesChanged): DiffPageModel {
+  return {
+    heading: changed.workerId,
+    note: "files changed",
+    sourceNote: changed.source === "pr" ? `via PR #${changed.prNumber}` : "branch diff — no PR yet",
+    headBranch: changed.headBranch,
+    baseBranch: changed.baseBranch,
+    files: changed.files,
+    patch: changed.patch,
+  };
+}
+
+/** Fetches and normalizes the diff for the route target (PR number or worker id). */
+function loadDiffModel(projectId: string, ref: string): Promise<DiffPageModel> {
+  return isPrRef(ref)
+    ? apiGetPullRequestDiff(projectId, Number(ref)).then(prModel)
+    : apiGetWorkerFilesChanged(ref).then(workerModel);
+}
+
 export function DiffPage() {
-  const { projectId, prNumber } = useParams();
-  const [diff, setDiff] = useState<PullRequestDiff | null>(null);
+  const { projectId, prNumber: ref } = useParams();
+  const [model, setModel] = useState<DiffPageModel | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (projectId === undefined || prNumber === undefined) return;
+    if (projectId === undefined || ref === undefined) return;
     let cancelled = false;
-    setDiff(null);
+    setModel(null);
     setError(null);
-    apiGetPullRequestDiff(projectId, Number(prNumber))
+    loadDiffModel(projectId, ref)
       .then((result) => {
-        if (!cancelled) setDiff(result);
+        if (!cancelled) setModel(result);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(errorMessage(err));
@@ -27,18 +81,23 @@ export function DiffPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, prNumber]);
+  }, [projectId, ref]);
+
+  // Title while loading, derived from the raw route segment (PR # or worker id).
+  const loadingTitle = ref === undefined ? "Diff" : isPrRef(ref) ? `PR #${ref} diff` : `${ref} files changed`;
 
   return (
     <main className="page page-wide">
       <div className="board-header">
         <div>
           <h1 className="page-title">
-            PR #{prNumber} <span className="diff-title-note">diff</span>
+            {model === null ? loadingTitle : model.heading}{" "}
+            <span className="diff-title-note">{model === null ? "" : model.note}</span>
           </h1>
-          {diff && (
+          {model !== null && (
             <span className="project-repo">
-              <code>{diff.headBranch}</code> → <code>{diff.baseBranch}</code>
+              <code>{model.headBranch}</code> → <code>{model.baseBranch}</code>
+              {model.sourceNote !== null && <span className="diff-source-note"> · {model.sourceNote}</span>}
             </span>
           )}
         </div>
@@ -48,76 +107,9 @@ export function DiffPage() {
       </div>
 
       {error !== null && <p className="error-note">Could not load diff: {error}</p>}
-      {diff === null && error === null && <p className="empty">Loading diff…</p>}
+      {model === null && error === null && <p className="empty">Loading diff…</p>}
 
-      {diff !== null && (
-        <>
-          <table className="diff-files">
-            <thead>
-              <tr>
-                <th>File</th>
-                <th>Status</th>
-                <th className="num">+adds</th>
-                <th className="num">−dels</th>
-              </tr>
-            </thead>
-            <tbody>
-              {diff.files.map((file) => (
-                <tr key={file.filename}>
-                  <td className="diff-path">{file.filename}</td>
-                  <td>
-                    <span className={`badge badge-diff-${file.status}`}>{file.status}</span>
-                  </td>
-                  <td className="num diff-add-count">+{file.additions}</td>
-                  <td className="num diff-del-count">−{file.deletions}</td>
-                </tr>
-              ))}
-              {diff.files.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="empty">
-                    No file changes.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-
-          <pre className="diff-patch">
-            {diff.patch.length === 0 ? (
-              <span className="diff-line diff-context empty">No changes.</span>
-            ) : (
-              diff.patch.split("\n").map((line, index) => <DiffLine key={index} line={line} />)
-            )}
-          </pre>
-        </>
-      )}
+      {model !== null && <DiffView files={model.files} patch={model.patch} />}
     </main>
   );
-}
-
-/** One colored line of the unified diff. */
-export function DiffLine({ line }: { line: string }) {
-  const className = diffLineClass(line);
-  return <span className={`diff-line ${className}`}>{line.length === 0 ? " " : line}</span>;
-}
-
-function diffLineClass(line: string): string {
-  if (line.startsWith("diff --git")) return "diff-file-header";
-  if (line.startsWith("@@")) return "diff-hunk";
-  if (line.startsWith("+")) return "diff-add";
-  if (line.startsWith("-")) return "diff-del";
-  if (
-    line.startsWith("index ") ||
-    line.startsWith("--- ") ||
-    line.startsWith("+++ ") ||
-    line.startsWith("rename ") ||
-    line.startsWith("new file") ||
-    line.startsWith("deleted file") ||
-    line.startsWith("similarity ") ||
-    line.startsWith("Binary files") ||
-    line.startsWith("GIT binary patch")
-  ) {
-    return "diff-meta";
-  }
-  return "diff-context";
 }

@@ -7,7 +7,7 @@ import { BoardColumn, prKey } from "../components/BoardColumn";
 import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { KanbanCardView } from "../components/KanbanCardView";
 import { WorkersPanel } from "../components/WorkersPanel";
-import { DiffLine } from "../routes/DiffPage";
+import { DiffLine } from "../components/DiffView";
 
 const projectId = "demo";
 
