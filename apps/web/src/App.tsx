@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate } from "react-router";
+import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate, useLocation } from "react-router";
 import type { Project } from "@pideck/shared";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { NodeVersionWarning } from "./components/NodeVersionWarning";
@@ -20,15 +20,16 @@ import { SidebarContext, useSidebarData } from "./terminal/sidebar";
  * carries only the brand and tag — the Terminals link is gone since the
  * single page *is* the terminals view (issue #103) and deep links to
  * `/terminal/:sessionId` keep working. The sidebar
- * (SessionPicker) is the app's navigation — "Projects" header with a "+"
- * onboarding button, per-project rows whose NAME opens the project's
- * kanban board (#173, the original #62 behavior) with a chat icon
+ * (SessionPicker) is the app's navigation — a "Workspace" row (issue #259:
+ * the renamed global-agent entry, disabled until a project exists) whose
+ * name opens the all-projects board, per-project rows whose NAME opens the
+ * project's kanban board (#173, the original #62 behavior) with a chat icon
  * attaching/starting the project's orchestrator (#108/#53) and a ⋯ menu
- * opening the project's settings (#167), and per-agent
- * rows that attach terminals — while the main pane
- * renders the terminal, the all-projects combined board, a project board,
- * settings, or a PR diff. Deep links keep working (`/terminal/:sessionId`,
- * `/projects/:projectId`, `/settings`, …).
+ * opening the project's settings (#167), an "+ Add project" bottom row
+ * (issue #259), and per-agent rows that attach terminals — while the main
+ * pane renders the terminal, the all-projects combined board, a project
+ * board, settings, or a PR diff. Deep links keep working
+ * (`/terminal/:sessionId`, `/projects/:projectId`, `/settings`, …).
  *
  * pi/gh auth is PiDeck-global (issues #183, #209): unless the daemon's
  * probes report ready or the recorded shell onboarding says done, the
@@ -83,6 +84,7 @@ function AppHeader(props: { sidebarOpen: boolean; onToggleSidebar: () => void })
 
 function Shell() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   // Layout route: params from the matched child (e.g. /terminal/:sessionId,
   // /projects/:projectId) are merged in, so the sidebar can mark the
   // currently attached session / open project.
@@ -145,6 +147,7 @@ function Shell() {
             loading={!loaded}
             selectedSessionId={sessionId ?? null}
             selectedProjectId={projectId ?? null}
+            allProjectsSelected={pathname === "/"}
             startingProjectId={startingProjectId}
             globalAgent={globalAgent}
             startingGlobalAgent={startingGlobalAgent}

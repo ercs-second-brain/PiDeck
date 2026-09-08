@@ -1,9 +1,9 @@
 /**
- * Tests for the terminal sidebar (SessionPicker, issue #62): the "Projects"
- * header with the "+" onboarding button, per-project IA (the project name
- * opens the kanban board and the chat icon attaches/starts the orchestrator,
- * issue #173; workers nested beneath, start affordance when absent),
- * role/worker badges, selection state, and empty/error
+ * Tests for the terminal sidebar (SessionPicker, issue #62): the "Workspace"
+ * row and "+ Add project" bottom row (issue #259), per-project IA (the
+ * project name opens the kanban board and the chat icon attaches/starts
+ * the orchestrator, issue #173; workers nested beneath, start affordance
+ * when absent), role/worker badges, selection state, and empty/error
  * handling. The sidebar is pure, so it is exercised directly without xterm
  * or effects.
  */
@@ -77,11 +77,14 @@ function renderPicker(overrides: Partial<PickerProps> = {}) {
 }
 
 describe("SessionPicker", () => {
-  it("renders the Projects header with the + onboarding button", () => {
+  it("renders the Workspace row and the + Add project bottom row", () => {
     const html = renderPicker();
-    expect(html).toContain("title=\"Open the all-projects board\"");
-    expect(html).toContain(">Projects</button>");
+    // Issue #259: the Workspace row (name = all-projects board entry) and
+    // the add-project row (the former header "+") replace the old header.
+    expect(html).toContain("title=\"Open the workspace board\"");
     expect(html).toContain("title=\"Connect a project\"");
+    expect(html).toContain("+ Add project");
+    expect(html).not.toContain("picker-header");
   });
 
   it("renders the project name as the kanban entry with a chat icon (issue #173)", () => {
@@ -159,7 +162,7 @@ describe("SessionPicker", () => {
     expect(html).not.toContain("No active sessions.");
   });
 
-  it("shows the no-projects empty state pointing at the + button", () => {
+  it("shows the no-projects empty state pointing at the add-project row", () => {
     const html = renderPicker({ entries: [] });
     expect(html).toContain("No projects yet");
   });

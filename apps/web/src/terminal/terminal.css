@@ -46,55 +46,6 @@
   padding: 16px;
 }
 
-.picker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.picker-title-button {
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  color: inherit;
-  text-align: left;
-}
-
-.picker-title-button:hover .picker-title {
-  color: var(--accent);
-}
-
-.picker-add {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text-dim);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.picker-add:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--bg-hover);
-}
-
-.picker-title {
-  margin: 0 0 12px;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--text-dim);
-}
-
 .picker-project + .picker-project {
   margin-top: 18px;
 }
@@ -136,13 +87,11 @@
   color: var(--accent);
 }
 
-/* The workspace-level global agent row (the hierarchy's top layer):
-   same row anatomy as a project row, set apart by a divider so it reads
-   as a workspace-level layer above the project list. */
+/* The workspace-level agent row (issue #259: labeled "Workspace", name =
+   all-projects board entry): same row anatomy as a project row, first in
+   the sidebar above the project list. */
 .picker-global-row {
-  margin-top: 2px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+  margin-bottom: 12px;
 }
 
 .picker-global-name {
@@ -516,6 +465,20 @@
   color: var(--red);
 }
 
+/* Issue #259 (B7): the add-project row at the sidebar's bottom — the
+   former header "+", styled like a project row and set apart by a
+   divider above it. */
+.picker-add-row {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.picker-add-name {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
 /* Issue #176: the persistent sidebar footer. `margin-top: auto` pins it to
    the bottom when the project list is short; `position: sticky` keeps it
    visible while a long list scrolls; negative margins span the full
@@ -830,7 +793,6 @@
   }
 
   /* Finger-sized targets for the picker's small controls. */
-  .picker-add,
   .picker-terminate {
     width: 40px;
     height: 40px;

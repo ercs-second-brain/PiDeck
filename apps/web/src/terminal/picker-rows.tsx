@@ -2,9 +2,10 @@
  * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114/#167/#172/#173):
  * worker rows (live + archived), the terminate affordance, the project row
  * (chevron + name-as-kanban-entry + chat/orchestrator icon), the per-project
- * archived section, the sidebar header, the ⋯ menu's delete entry, and the
- * confirmation modals. Stateless — interaction state flows in through props,
- * so these render (and unit-test) without xterm or effects.
+ * archived section, the bottom add-project row (issue #259), the ⋯ menu's
+ * delete entry, and the confirmation modals. Stateless — interaction state
+ * flows in through props, so these render (and unit-test) without xterm or
+ * effects.
  */
 
 import type { ReactNode } from "react";
@@ -160,28 +161,24 @@ export function DeleteProjectModal(props: {
 }
 
 /**
- * The sidebar header: the "Projects" title opens the all-projects combined
- * board; "+" launches the project onboarding wizard. Pure rendering.
+ * The sidebar's add-project row (issue #259, B7): the former header "+"
+ * affordance, now the last row of the sidebar (below the project list),
+ * styled like a project row and set apart by a divider. Launches the
+ * project onboarding wizard. Pure rendering.
  */
-export function PickerHeader(props: {
-  onSelectAllProjects: () => void;
-  /** Opens the project onboarding wizard (the "+" button). */
+export function AddProjectRow(props: {
+  /** Opens the project onboarding wizard. */
   onStartOnboarding: () => void;
 }) {
   return (
-    <div className="picker-header">
-      <h2 className="picker-title">
-        <button
-          type="button"
-          className="picker-title-button"
-          title="Open the all-projects board"
-          onClick={props.onSelectAllProjects}
-        >
-          Projects
-        </button>
-      </h2>
-      <button type="button" className="picker-add" title="Connect a project" onClick={props.onStartOnboarding}>
-        +
+    <div className="picker-project-row picker-add-row">
+      <button
+        type="button"
+        className="picker-project-name picker-add-name"
+        title="Connect a project"
+        onClick={props.onStartOnboarding}
+      >
+        + Add project
       </button>
     </div>
   );
