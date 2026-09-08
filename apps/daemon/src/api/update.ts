@@ -25,6 +25,7 @@ import { readFile } from "node:fs/promises";
 
 import { defaultGhRunner, parseRepoUrl, type GhRunner } from "../github/gh.js";
 import { defaultGitRunner, type GitRunner } from "../github/repos.js";
+import { TtlSwrCache } from "./swr-cache.js";
 import { HttpError } from "./router.js";
 
 import type { UpdateStatus } from "@agentskiss/shared";
@@ -81,11 +82,8 @@ export interface UpdateCheckerOptions {
   now?: () => Date;
 }
 
-interface CachedStatus {
-  status: UpdateStatus;
-  /** `now()` reading when the check ran (ms epoch). */
-  at: number;
-}
+/** Single-entry cache key ({@link UpdateChecker} caches one daemon-wide status). */
+const CHECK_KEY = "update-status";
 
 export class UpdateChecker {
   private readonly srcDir: string;
@@ -94,11 +92,16 @@ export class UpdateChecker {
   private readonly repoRef?: string;
   private readonly gh: GhRunner;
   private readonly git: GitRunner;
-  private readonly cacheTtlMs: number;
   private readonly spawn: UpdateSpawn;
   private readonly now: () => Date;
-  /** Last check result within the TTL — webapp polling must not re-hit gh. */
-  private cache: CachedStatus | undefined;
+  /**
+   * Last check result within the TTL — webapp polling must not re-hit gh.
+   * Throttle mode (`swr: false`, #131): past the TTL callers wait for a
+   * fresh check instead of being served a stale status, so `checkedAt` and
+   * `updateAvailable` are never knowingly outdated. All cache mechanics
+   * (TTL, dedup, storage) live in the shared `TtlSwrCache`.
+   */
+  private readonly cache: TtlSwrCache<UpdateStatus>;
   /**
    * SHA of the build this daemon process runs (issue #89): captured exactly
    * once, at construction (daemon boot) — the source checkout moves to the
@@ -115,9 +118,13 @@ export class UpdateChecker {
     this.repoRef = options.repoRef;
     this.gh = options.gh ?? defaultGhRunner;
     this.git = options.git ?? defaultGitRunner;
-    this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.spawn = options.spawn ?? nodeSpawn;
     this.now = options.now ?? (() => new Date());
+    this.cache = new TtlSwrCache<UpdateStatus>({
+      ttlMs: options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
+      now: () => this.now().getTime(),
+      swr: false,
+    });
     this.runningSha = this.git(["rev-parse", "HEAD"], { cwd: this.srcDir })
       .then((result) => result.stdout.trim() || null)
       .catch(() => null);
@@ -140,17 +147,15 @@ export class UpdateChecker {
   async check(options: { force?: boolean } = {}): Promise<UpdateStatus> {
     const runningSha = await this.runningSha;
     const applyProgress = this.readProgress();
-    const cached = this.cache;
-    if (
-      options.force !== true &&
-      cached !== undefined &&
-      this.now().getTime() - cached.at < this.cacheTtlMs
-    ) {
-      return { ...cached.status, runningSha, applyProgress };
-    }
-    const status = await this.runCheck();
-    this.cache = { status, at: this.now().getTime() };
-    return { ...status, runningSha, applyProgress };
+    // `force` (the webapp's `?refresh=1` on page load / window focus) skips
+    // the cache read; the fresh result still becomes the new cache entry.
+    const base = await (options.force === true
+      ? this.cache.refresh(CHECK_KEY, () => this.runCheck())
+      : this.cache.get(CHECK_KEY, () => this.runCheck()));
+    // Every result overlays the boot-time build SHA (issue #89) and the
+    // shim's progress file, read fresh even on cache hits so the webapp's
+    // banner tracks the rebuild in real time while it polls.
+    return { ...base, runningSha, applyProgress };
   }
 
   /**

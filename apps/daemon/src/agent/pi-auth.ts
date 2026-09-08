@@ -30,6 +30,8 @@ import { z } from "zod";
 
 import { piAuthSchema, type PiAuth } from "@agentskiss/shared";
 
+import { TtlSwrCache } from "../api/swr-cache.js";
+
 /**
  * Providers probed for ready credentials. Mirrors `AK_PI_PROVIDERS` in
  * `install/onboard.sh` — keep the two lists in sync.
@@ -193,8 +195,13 @@ export interface PiAuthProbeOptions {
 
 const DEFAULT_TTL_MS = 300_000;
 
+/** Single-probe cache key ({@link PiAuthProbe} caches one daemon-wide verdict). */
+const PROBE_KEY = "pi-auth";
+
 /**
- * Cached pi-auth readiness probe with stale-while-revalidate (issue #100).
+ * Cached pi-auth readiness probe (issue #100) — a thin policy over the
+ * shared {@link TtlSwrCache} (#131): TTL, stale-while-revalidate,
+ * single-flight, and failure-verdict caching are all the cache's mechanics.
  *
  * A full probe costs one pi spawn per provider (parallel, but still seconds
  * on slow hosts), so no request-critical path may wait on it once the probe
@@ -202,9 +209,13 @@ const DEFAULT_TTL_MS = 300_000;
  *
  * - cache fresh (age < TTL): the cached payload is served — 0 spawns;
  * - cache stale: the last-known payload is served **immediately** (with
- *   `stale: true`) and at most 1 background refresh runs (single-flight);
+ *   `stale: true`, via the cache's `onStale` marker) and at most 1
+ *   background refresh runs (single-flight);
  * - cold (nothing cached yet, e.g. right after daemon start): the first
- *   caller awaits one probe pass, deduplicated across concurrent callers.
+ *   caller awaits one probe pass, deduplicated across concurrent callers;
+ * - a failed probe is cached for the TTL too (`cacheErrors`, the #100
+ *   pileup guard): without caching, every request past the TTL re-triggers
+ *   a full probe round on a host where pi is broken.
  *
  * {@link payload} backs `GET /api/status`, `GET /api/pi-auth`, and the
  * worker-spawn readiness gate; {@link readyProviders} is the raw list.
@@ -212,25 +223,24 @@ const DEFAULT_TTL_MS = 300_000;
 export class PiAuthProbe {
   private readonly run: PiRunner;
   private readonly piDir?: string;
-  private readonly ttlMs: number;
-  private readonly now: () => number;
   private readonly readyOverride?: boolean;
-  private cached: PiAuth | null = null;
-  private cachedAt = 0;
-  private inFlight: Promise<PiAuth> | null = null;
+  private readonly cache: TtlSwrCache<PiAuth>;
 
   constructor(options: PiAuthProbeOptions = {}) {
     this.run = options.run ?? spawnPi;
     this.piDir = options.piDir;
-    this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
-    this.now = options.now ?? Date.now;
     this.readyOverride = options.readyOverride;
+    this.cache = new TtlSwrCache<PiAuth>({
+      ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
+      now: options.now,
+      cacheErrors: true,
+      onStale: (payload) => ({ ...payload, stale: true }),
+    });
   }
 
   /** Drops the cached result so the next {@link payload} probes afresh. */
   invalidate(): void {
-    this.cached = null;
-    this.cachedAt = 0;
+    this.cache.invalidate();
   }
 
   /** Ready providers per the last probe (probing if the cache is stale). */
@@ -248,55 +258,32 @@ export class PiAuthProbe {
     if (this.readyOverride !== undefined) {
       return piAuthPayloadFrom(this.readyOverride ? ["anthropic"] : [], true, readPiStartupDefaults(this.piDir));
     }
-    const swr = this.ttlMs > 0;
-    if (swr && this.cached !== null && this.now() - this.cachedAt < this.ttlMs) return this.cached;
-    if (this.inFlight !== null) {
-      // Warm cache: serve the last-known payload instantly; the in-flight
-      // refresh will update it. Cold (or no-cache mode): wait for the probe.
-      return swr && this.cached !== null ? this.cached : this.inFlight;
-    }
-    const refresh = this.probe().finally(() => {
-      this.inFlight = null;
-    });
-    this.inFlight = refresh;
-    if (swr && this.cached !== null) {
-      // Stale-while-revalidate: never block the request path on a probe.
-      return { ...this.cached, stale: true };
-    }
-    return refresh;
-  }
-
-  private async probe(): Promise<PiAuth> {
-    const defaults = readPiStartupDefaults(this.piDir);
     try {
-      const providers = await piReadyProviders(this.run);
-      const payload = piAuthPayloadFrom(providers, true, defaults);
-      this.cache(payload);
-      return payload;
+      return await this.cache.get(PROBE_KEY, () => this.probe());
     } catch (err) {
-      if (err instanceof PiNotInstalledError) {
-        const payload = piAuthPayloadFrom([], false, defaults);
-        this.cache(payload);
-        return payload;
-      }
-      // An unexpected probe failure must never read as "ready". Cache the
-      // not-ready verdict for the TTL (issue #100): without caching, every
-      // request past the TTL re-triggers a full probe round on a host where
-      // pi is broken — exactly the pileup this probe exists to prevent.
-      const payload = piAuthSchema.parse({
+      // An unexpected probe failure must never read as "ready". The cache
+      // holds the verdict for the TTL (`cacheErrors`), so later callers get
+      // this same not-ready payload without re-probing (issue #100).
+      const defaults = readPiStartupDefaults(this.piDir);
+      return piAuthSchema.parse({
         ready: false,
         providers: [],
         defaultProvider: defaults.defaultProvider,
         defaultModel: defaults.defaultModel,
         detail: `pi auth probe failed: ${err instanceof Error ? err.message : String(err)}`,
       });
-      this.cache(payload);
-      return payload;
     }
   }
 
-  private cache(payload: PiAuth): void {
-    this.cached = payload;
-    this.cachedAt = this.now();
+  /** One probe pass: ready providers (or the not-installed verdict). */
+  private async probe(): Promise<PiAuth> {
+    const defaults = readPiStartupDefaults(this.piDir);
+    try {
+      const providers = await piReadyProviders(this.run);
+      return piAuthPayloadFrom(providers, true, defaults);
+    } catch (err) {
+      if (err instanceof PiNotInstalledError) return piAuthPayloadFrom([], false, defaults);
+      throw err; // cached by the TtlSwrCache (`cacheErrors`); converted in payload()
+    }
   }
 }
