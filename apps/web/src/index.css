@@ -63,11 +63,6 @@ code {
   color: var(--accent);
 }
 
-.brand-tag {
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
 /* --- Notification center (issue #178) -------------------------------------- */
 
 /* The bell sits top-right of the header; the dropdown hangs below it. The
