@@ -78,6 +78,43 @@ export interface NewSessionOptions {
    * When omitted the session starts a plain interactive shell.
    */
   command?: string[];
+  /**
+   * Environment injected into the session's initial pane via
+   * `new-session -e KEY=VAL` (tmux >= 3.2).
+   *
+   * Why: a pane inherits the TMUX SERVER's global environment — captured
+   * when that server first started. On a long-lived user tmux server every
+   * daemon-created session would keep running agents under a stale PATH
+   * (e.g. the pre-update system Node), no matter how the daemon's own
+   * runtime was refreshed. Injecting the daemon's resolved env explicitly
+   * makes each session's initial pane match the daemon, without ever
+   * mutating the server's global environment (`setenv` without `-t`),
+   * which would pollute the user's own sessions when this wrapper runs on
+   * the default server. A post-creation `setenv -t <name>` is NOT a
+   * substitute: the initial pane process has already started by then, so
+   * only `-e` reaches it.
+   */
+  env?: Record<string, string>;
+}
+
+/**
+ * Builds the `tmux new-session` argument vector: detached session `name`
+ * with the given cwd/command and `-e KEY=VAL` env entries (each as its own
+ * `-e` flag) before the command.
+ */
+function newSessionArgs(name: string, options: NewSessionOptions, envArgs: string[]): string[] {
+  const args = ["new-session", "-d", ...envArgs, "-s", name];
+  if (options.cwd !== undefined) args.push("-c", options.cwd);
+  if (options.command !== undefined && options.command.length > 0) {
+    args.push(...options.command);
+  }
+  return args;
+}
+
+/** Flattens an env map into repeated `-e KEY=VAL` flags. */
+function newSessionEnvArgs(env: Record<string, string> | undefined): string[] {
+  if (env === undefined) return [];
+  return Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
 }
 
 export interface CapturePaneOptions {
@@ -93,12 +130,17 @@ export interface CapturePaneOptions {
 
 /**
  * Wraps a tmux server (optionally a private one via `-L <socket>`).
+ *
+ * The daemon constructs it with `defaultSessionEnv` ({@link agentSessionEnv}):
+ * every session this wrapper creates starts with the daemon's resolved
+ * runtime environment instead of the tmux server's global one.
  */
 export class Tmux {
   private readonly runner: TmuxRunner;
   private readonly socketName: string | undefined;
   private readonly sendChunkBytes: number;
   private readonly sendEnterDelayMs: number;
+  private readonly defaultSessionEnv: Record<string, string> | undefined;
   /** Per-target serialization so concurrent `sendKeys` never interleave chunks. */
   private readonly sendQueues = new Map<string, Promise<void>>();
 
@@ -115,12 +157,21 @@ export class Tmux {
        * mirrors agent-orchestrator's EnterDelay. 0 disables the pause.
        */
       sendEnterDelayMs?: number;
+      /**
+       * Env injected into every session this wrapper creates unless the
+       * caller passes {@link NewSessionOptions.env} explicitly. The daemon
+       * wires {@link agentSessionEnv} here — its own resolved runtime — so
+       * agent panes never inherit the tmux server's stale global
+       * environment.
+       */
+      defaultSessionEnv?: Record<string, string>;
     } = {},
   ) {
     this.runner = options.runner ?? defaultTmuxRunner();
     this.socketName = options.socketName;
     this.sendChunkBytes = options.sendChunkBytes ?? DEFAULT_SEND_CHUNK_BYTES;
     this.sendEnterDelayMs = options.sendEnterDelayMs ?? DEFAULT_SEND_ENTER_DELAY_MS;
+    this.defaultSessionEnv = options.defaultSessionEnv;
   }
 
   /** Whether a `tmux` binary is available at all (used to skip integration tests). */
@@ -164,14 +215,28 @@ export class Tmux {
    * workers, relaunch/reconcile) and — because the option is session-scoped
    * — never mutates any other session on the server, even when this wrapper
    * runs on the user's default tmux server (no private socket).
+   *
+   * When {@link NewSessionOptions.env} is given, each entry is passed as
+   * `new-session -e KEY=VAL` so the session's INITIAL pane starts with that
+   * environment instead of the tmux server's possibly stale global one.
+   * `-e` needs tmux >= 3.2 (2020); on an older server the daemon still
+   * works — the invocation is retried without the env injection when tmux
+   * rejects the flag as a usage error — and the pane simply falls back to
+   * the server's inherited environment (the pre-fix behavior).
    */
   async newSession(name: string, options: NewSessionOptions = {}): Promise<void> {
-    const args = ["new-session", "-d", "-s", name];
-    if (options.cwd !== undefined) args.push("-c", options.cwd);
-    if (options.command !== undefined && options.command.length > 0) {
-      args.push(...options.command);
+    const env = options.env ?? this.defaultSessionEnv;
+    const envArgs = newSessionEnvArgs(env);
+    try {
+      await this.run(newSessionArgs(name, options, envArgs));
+    } catch (err) {
+      // tmux < 3.2 rejects `-e` as a usage error (session not created —
+      // nothing to clean up): retry without the injection rather than
+      // failing session creation entirely on an old tmux server.
+      const isUsageError = err instanceof TmuxError && err.exitCode === 1 && /invalid option|usage:/i.test(err.stderr);
+      if (envArgs.length === 0 || !isUsageError) throw err;
+      await this.run(newSessionArgs(name, options, []));
     }
-    await this.run(args);
     await this.run(["set-option", "-t", name, "extended-keys", "on"]);
   }
 

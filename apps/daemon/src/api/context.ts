@@ -16,6 +16,7 @@ import type { GitRunner } from "../github/repos.js";
 import { GithubAutomation, watcherOptionsFromEnv } from "../pipeline/wiring.js";
 import { OrchestratorBootstrap } from "../orchestrator/bootstrap.js";
 import { ProjectLayout, defaultStateDir } from "../sessions/layout.js";
+import { agentSessionEnv } from "../sessions/agent-env.js";
 import { SessionManager } from "../sessions/manager.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { Tmux } from "../sessions/tmux.js";
@@ -179,7 +180,9 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const stateDir = resolveStateDir(options.stateDir);
   const layout = new ProjectLayout(stateDir);
   const registry = options.registry ?? new SessionRegistry(layout.sessionsFilePath());
-  const tmux = options.tmux ?? new Tmux();
+  // Sessions get the daemon's resolved runtime env (agent-env.ts), never the
+  // tmux server's stale global environment.
+  const tmux = options.tmux ?? new Tmux({ defaultSessionEnv: agentSessionEnv() });
   const sessions = new SessionManager({ tmux, registry, layout });
 
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
