@@ -33,7 +33,7 @@ import { piAuthSchema, type PiAuth } from "@pideck/shared";
 import { TtlSwrCache } from "../api/swr-cache.js";
 
 /**
- * Providers probed for ready credentials. Mirrors `AK_PI_PROVIDERS` in
+ * Providers probed for ready credentials. Mirrors `PD_PI_PROVIDERS` in
  * `install/onboard.sh` — keep the two lists in sync.
  */
 export const PI_PROVIDERS = [

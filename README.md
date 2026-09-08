@@ -28,7 +28,7 @@ On Windows, use the WSL bootstrap from PowerShell (bootstraps WSL if missing, th
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
-.\install\windows\agentskiss-setup.ps1
+.\install\windows\pideck-setup.ps1
 ```
 
 The installer installs git/Node 22/pnpm/gh as needed (user-level, no sudo), fetches and builds the monorepo, installs the pi coding agent, links the pideck pi skills, registers the persistent service, and runs guided onboarding: pi auth + model selection, then gh CLI auth (a PAT from `~/.env` is used when present, else `gh auth login`). Details, flags, and the `--dry-run` mode: [install/README.md](install/README.md).
