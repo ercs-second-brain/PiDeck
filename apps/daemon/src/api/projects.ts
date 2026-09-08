@@ -227,7 +227,7 @@ export class ProjectService {
     const now = this.now().toISOString();
     const project: Project = {
       id,
-      name: input.name ?? id,
+      name: input.name ?? this.defaultName(repoUrl, id),
       repoUrl,
       defaultBranch,
       settings: resolveSettings(this.defaultSettings(), input.settings),
@@ -326,6 +326,20 @@ export class ProjectService {
     } catch {
       if (name === undefined) throw new Error(`cannot derive a project id from ${repoUrl}; pass a name`);
       return slugify(name);
+    }
+  }
+
+  /**
+   * Default display name for a clone-registered project: just the repo name,
+   * without the owner/author prefix (`.../pidecktest2` → `pidecktest2`).
+   * Falls back to the id when the URL is not a parseable GitHub URL. The
+   * project id keeps its own derivation ({@link deriveId}).
+   */
+  private defaultName(repoUrl: string, id: string): string {
+    try {
+      return parseRepoUrl(repoUrl).repo;
+    } catch {
+      return id;
     }
   }
 
