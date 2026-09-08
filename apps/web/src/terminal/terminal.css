@@ -132,6 +132,25 @@
   color: var(--accent);
 }
 
+/* Issue #114: per-project collapse chevron — quiet, no chrome. */
+.picker-project-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.picker-project-chevron:hover {
+  color: var(--text);
+}
+
 .picker-project-board {
   flex: none;
   width: 26px;
