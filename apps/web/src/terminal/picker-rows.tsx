@@ -24,40 +24,62 @@ export function workerFor(session: Session, workers: Worker[]): Worker | undefin
 }
 
 /**
- * Terminate affordance for an active worker row (issue #64): a small "✕"
- * that asks for confirmation in place before terminating — the first click
- * swaps it for "Terminate?" / "keep", so a stray click never kills a worker.
+ * Terminate affordance for an active worker row (issue #64): a small "✕".
+ * Issue #116: the confirmation is no longer inline — clicking ✕ opens the
+ * small terminate modal ({@link TerminateWorkerModal}), so a stray click
+ * never kills a worker.
  */
-export function TerminateWorkerButton(props: {
-  confirming: boolean;
-  /** The terminate request is in flight (confirm button shows "Terminating…"). */
+export function TerminateWorkerButton(props: { pending: boolean; onAsk: () => void }) {
+  return (
+    <button type="button" className="picker-terminate" title="Terminate worker" disabled={props.pending} onClick={props.onAsk}>
+      ✕
+    </button>
+  );
+}
+
+/**
+ * The terminate-confirmation modal (issue #116): small, centered, over a
+ * dimmed backdrop — "Terminate worker X?" with Cancel/Terminate. Escape
+ * dismisses (unless the terminate request is in flight). Pure rendering.
+ */
+export function TerminateWorkerModal(props: {
+  /** tmux session name of the worker about to be terminated. */
+  sessionName: string;
+  /** The terminate request is in flight (Terminate shows "Terminating…"). */
   pending: boolean;
-  onAsk: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  if (!props.confirming) {
-    return (
-      <button type="button" className="picker-terminate" title="Terminate worker" onClick={props.onAsk}>
-        ✕
-      </button>
-    );
-  }
   return (
-    <span className="picker-terminate-confirm">
-      <button
-        type="button"
-        className="picker-terminate-confirm-yes"
-        disabled={props.pending}
-        title="Terminate this worker (its pane is killed and it is archived)"
-        onClick={props.onConfirm}
-      >
-        {props.pending ? "Terminating…" : "Terminate?"}
-      </button>
-      <button type="button" className="picker-terminate-confirm-no" onClick={props.onCancel}>
-        keep
-      </button>
-    </span>
+    <div
+      className="modal-overlay terminate-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Terminate worker"
+      onClick={props.pending ? undefined : props.onCancel}
+    >
+      <div className="modal-card terminate-modal" onClick={(event) => event.stopPropagation()}>
+        <h3 className="terminate-modal-title">Terminate worker?</h3>
+        <p className="terminate-modal-body">
+          <code>{props.sessionName}</code> will be killed and archived — its pane and agent stop, its history stays
+          inspectable.
+        </p>
+        <div className="terminate-modal-actions">
+          <button type="button" className="terminate-modal-cancel" disabled={props.pending} onClick={props.onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="terminate-modal-confirm"
+            disabled={props.pending}
+            title="Terminate this worker (its pane is killed and it is archived)"
+            onClick={props.onConfirm}
+          >
+            {props.pending ? "Terminating…" : "Terminate"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -71,12 +93,10 @@ export function WorkerRow(props: {
   workers: Worker[];
   archived: boolean;
   selectedSessionId: string | null;
-  confirming: boolean;
   pending: boolean;
   onSelectSession: (sessionId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
   onAskTerminate: (sessionId: string) => void;
-  onCancelTerminate: () => void;
 }) {
   const worker = workerFor(props.session, props.workers);
   const badge = worker ? workerBadge(worker) : null;
@@ -110,16 +130,7 @@ export function WorkerRow(props: {
         {badge && <span className={badge.className}>{badge.label}</span>}
       </button>
       {props.onTerminateWorker && worker && (
-        <TerminateWorkerButton
-          confirming={props.confirming}
-          pending={props.pending}
-          onAsk={() => props.onAskTerminate(props.session.id)}
-          onConfirm={() => {
-            props.onCancelTerminate();
-            props.onTerminateWorker?.(worker.id);
-          }}
-          onCancel={props.onCancelTerminate}
-        />
+        <TerminateWorkerButton pending={props.pending} onAsk={() => props.onAskTerminate(props.session.id)} />
       )}
     </li>
   );

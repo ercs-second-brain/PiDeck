@@ -289,45 +289,76 @@
   background: var(--bg-hover);
 }
 
-.picker-terminate-confirm {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.picker-terminate:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: var(--bg-hover);
 }
 
-.picker-terminate-confirm-yes,
-.picker-terminate-confirm-no {
-  padding: 2px 6px;
+/* --- Terminate-confirmation modal (issue #116) -------------------------
+
+   Small centered dialog over a dimmed backdrop, replacing the old inline
+   confirm. Reuses the onboarding modal overlay; Escape/Cancel dismisses. */
+
+.terminate-modal-overlay {
+  align-items: center;
+  padding: 16px;
+}
+
+.terminate-modal {
+  max-width: 380px;
+}
+
+.terminate-modal-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.terminate-modal-body {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.terminate-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.terminate-modal-cancel,
+.terminate-modal-confirm {
+  padding: 6px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
-  font-size: 11px;
-  line-height: 1.4;
-  white-space: nowrap;
+  font-size: 12px;
   cursor: pointer;
 }
 
-.picker-terminate-confirm-yes {
+.terminate-modal-cancel {
+  color: var(--text-dim);
+}
+
+.terminate-modal-cancel:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.terminate-modal-confirm {
   border-color: var(--red);
   color: var(--red);
 }
 
-.picker-terminate-confirm-yes:hover:not(:disabled) {
+.terminate-modal-confirm:hover:not(:disabled) {
   background: var(--bg-hover);
 }
 
-.picker-terminate-confirm-yes:disabled {
+.terminate-modal-cancel:disabled,
+.terminate-modal-confirm:disabled {
   cursor: default;
   opacity: 0.6;
-}
-
-.picker-terminate-confirm-no {
-  color: var(--text-dim);
-}
-
-.picker-terminate-confirm-no:hover {
-  background: var(--bg-hover);
 }
 
 /* Issue #64: collapsed per-project archive for terminated workers. */
@@ -663,15 +694,15 @@
     font-size: 16px;
   }
 
-  .picker-terminate-confirm-yes,
-  .picker-terminate-confirm-no {
-    padding: 8px 12px;
-    font-size: 12px;
-  }
-
   .picker-archived-toggle {
     padding: 10px 6px;
     font-size: 12px;
+  }
+
+  .terminate-modal-cancel,
+  .terminate-modal-confirm {
+    padding: 10px 16px;
+    font-size: 13px;
   }
 }
 
