@@ -29,6 +29,62 @@ export function notificationTarget(n: CenterNotification): string {
   return `/projects/${n.projectId}/pulls/${n.prNumber}`;
 }
 
+// --- Notification permission (issue #180) ----------------------------------
+
+/** Platform permission state, collapsing the missing-API case (iOS in-browser). */
+export type PermissionState = "unsupported" | "default" | "granted" | "denied";
+
+function toPermissionState(permission: string): PermissionState {
+  return permission === "granted" ? "granted" : permission === "denied" ? "denied" : "default";
+}
+
+/**
+ * Current Notification permission state. "unsupported" covers iOS Safari
+ * without the home-screen PWA install (no `Notification` API there) —
+ * notifications stay in-app on those platforms (docs/pwa.md).
+ */
+export function permissionState(): PermissionState {
+  if (typeof Notification === "undefined") return "unsupported";
+  return toPermissionState(Notification.permission);
+}
+
+/**
+ * Requests Notification permission (issue #180). Call from a user gesture;
+ * resolves to the resulting state, never throws. A no-op when not in the
+ * "default" state.
+ */
+export async function requestNotificationPermission(): Promise<PermissionState> {
+  if (permissionState() !== "default") return permissionState();
+  try {
+    return toPermissionState(await Notification.requestPermission());
+  } catch {
+    return "denied";
+  }
+}
+
+export interface PermissionRequestProps {
+  state: PermissionState;
+  onEnable: () => void;
+}
+
+/**
+ * Pure panel footer: the enable button only when the platform supports the
+ * API and the user has not decided yet ("default"). After granting, browser
+ * notifications still require the daemon-side `browserMergeNotifications`
+ * toggle (Settings, issue #111) — hence the hint.
+ */
+export function PermissionRequest({ state, onEnable }: PermissionRequestProps) {
+  if (state !== "default") return null;
+  return (
+    <div className="notif-perm">
+      <button type="button" className="notif-perm-enable" onClick={onEnable}>
+        Enable browser notifications
+      </button>
+      <span className="notif-perm-hint">then turn on the merge toggle in Settings — in-app only on iOS</span>
+    </div>
+  );
+}
+
 export interface NotificationListProps {
   notifications: CenterNotification[];
   projects: Project[];
@@ -71,6 +127,8 @@ export function NotificationBell() {
   const notifications = useSyncExternalStore(notificationStore.subscribe, notificationStore.getState);
   const { projects } = useAppStateProjects();
   const [open, setOpen] = useState(false);
+  // Re-read when the panel opens (the user may flip OS permissions meanwhile).
+  const [permission, setPermission] = useState<PermissionState>(() => permissionState());
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   // Record daemon events into the persisted history (#178).
@@ -112,7 +170,10 @@ export function NotificationBell() {
         aria-label={unread > 0 ? `Notifications (${unread} unread)` : "Notifications"}
         title="Notifications"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setPermission(permissionState());
+          setOpen((o) => !o);
+        }}
       >
         🔔
         {unread > 0 && <span className="notif-badge">{unread > 9 ? "9+" : unread}</span>}
@@ -130,6 +191,12 @@ export function NotificationBell() {
             projects={projects}
             onOpen={open_}
             onClear={(key) => notificationStore.clear(key)}
+          />
+          <PermissionRequest
+            state={permission}
+            onEnable={() => {
+              void requestNotificationPermission().then(setPermission);
+            }}
           />
         </div>
       )}

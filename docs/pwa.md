@@ -33,9 +33,21 @@ stale shells would break the update flow (#89/#95). Therefore:
 
 | Platform | Install | Notifications |
 | --- | --- | --- |
-| Android Chrome/Edge | Install prompt / Add to Home Screen; standalone window | Browser notifications supported (with the daemon-side `browserMergeNotifications` opt-in, issue #111) |
-| Desktop Chrome/Edge | Install prompt; standalone window | Supported |
-| iOS Safari | **No install prompt** — manual Share → "Add to Home Screen"; standalone via `apple-mobile-web-app-*` metas | **No web push.** `Notification` support on iOS is limited to installed home-screen web apps (iOS 16.4+); before that, and inside regular Safari tabs, notifications are **in-app only** (toasts + notification center, #178) |
+| Android Chrome/Edge | Install prompt / Add to Home Screen; standalone window | Browser notifications supported — enable via the notification center's **Enable browser notifications** (permission prompt) plus the daemon-side `browserMergeNotifications` toggle (issue #111) |
+| Desktop Chrome/Edge | Install prompt; standalone window | Supported (same flow) |
+| iOS Safari | **No install prompt** — manual Share → "Add to Home Screen"; standalone via `apple-mobile-web-app-*` metas | **No web push.** The `Notification` API is unavailable in regular iOS Safari tabs, so the permission flow hides itself and notifications are **in-app only** (toasts + notification center, #178/#180). An installed home-screen web app on iOS 16.4+ exposes the API and can ask for permission like Android |
+
+## Mobile behavior (issue #180)
+
+- Toasts span the viewport width at the bottom edge on small screens
+  (`≤ 640px`), so merged-PR popups stay readable and tappable.
+- The notification center (bell, top-right of the header) is reachable from
+  the mobile header on every viewport; the dropdown clamps to the screen
+  width.
+- The **Enable browser notifications** button appears only where the
+  platform can actually deliver them (`Notification` in `"default"` state):
+  Android (best inside the installed PWA) and desktop; iOS in-browser stays
+  in-app-only by design, as documented above.
 
 No offline-first behavior: offline you get the static fallback page, by
 design — a self-hosted dashboard without its daemon has nothing to show.
