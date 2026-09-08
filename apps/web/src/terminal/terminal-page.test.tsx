@@ -72,6 +72,7 @@ function renderPicker(overrides: Partial<PickerProps> = {}) {
       defaultCollapsedProjects={overrides.defaultCollapsedProjects}
       onSelectSession={overrides.onSelectSession ?? (() => {})}
       onSelectProject={overrides.onSelectProject ?? (() => {})}
+      onOpenSettings={overrides.onOpenSettings ?? (() => {})}
       onSelectAllProjects={overrides.onSelectAllProjects ?? (() => {})}
       onStartOnboarding={overrides.onStartOnboarding ?? (() => {})}
       onStartOrchestrator={overrides.onStartOrchestrator ?? (() => {})}
