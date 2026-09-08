@@ -6,7 +6,7 @@
  * ensure endpoint). A kanban icon in the same row opens the project's
  * board. Worker sessions are nested beneath the row (issue #63) with live
  * worker status badges, then a collapsed "Archived" section for terminated
- * "Archived" section for terminated workers (issue #64). Clicking a session
+ * workers (issue #64). Clicking a session
  * attaches its terminal; clicking an archived worker opens its read-only
  * captured log (issue #104); active worker rows carry a terminate
  * affordance (✕ → in-place confirm) that archives the worker.
@@ -14,133 +14,19 @@
  * The "Projects" header opens the all-projects combined board; the "+"
  * button launches the project onboarding wizard. Interaction state lives in
  * this component (which worker is confirming termination, which projects'
- * archived sections are expanded); the pure view pieces
- * ({@link TerminateWorkerButton}) are exported for tests.
+ * archived sections are expanded, which projects are collapsed); the pure
+ * view pieces live in {@link ./picker-rows.tsx}.
  */
 
 import { useState } from "react";
 import type { Project, Session, Worker } from "@agentskiss/shared";
-import { workerStatusClasses } from "../lib/worker-status";
+import { loadCollapsedProjects, saveCollapsedProjects } from "../lib/sidebar-collapse";
+import { ArchivedSection, ProjectRow, WorkerRow, workerFor } from "./picker-rows";
 
 export interface ProjectEntry {
   project: Project;
   sessions: Session[];
   workers: Worker[];
-}
-
-/** Issue #112: color-coded status indicator (blue/green/red, pulse while working). */
-function workerBadge(worker: Worker): { label: string; className: string } {
-  if (worker.status === "archived") {
-    return { label: "archived", className: "worker-badge worker-badge-archived" };
-  }
-  return { label: worker.status, className: workerStatusClasses(worker.status, "worker-badge") };
-}
-
-/** The worker record behind a session, if any. */
-function workerFor(session: Session, workers: Worker[]): Worker | undefined {
-  return session.workerId !== null ? workers.find((candidate) => candidate.id === session.workerId) : undefined;
-}
-
-/**
- * Terminate affordance for an active worker row (issue #64): a small "✕"
- * that asks for confirmation in place before terminating — the first click
- * swaps it for "Terminate?" / "keep", so a stray click never kills a worker.
- */
-export function TerminateWorkerButton(props: {
-  confirming: boolean;
-  /** The terminate request is in flight (confirm button shows "Terminating…"). */
-  pending: boolean;
-  onAsk: () => void;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  if (!props.confirming) {
-    return (
-      <button type="button" className="picker-terminate" title="Terminate worker" onClick={props.onAsk}>
-        ✕
-      </button>
-    );
-  }
-  return (
-    <span className="picker-terminate-confirm">
-      <button
-        type="button"
-        className="picker-terminate-confirm-yes"
-        disabled={props.pending}
-        title="Terminate this worker (its pane is killed and it is archived)"
-        onClick={props.onConfirm}
-      >
-        {props.pending ? "Terminating…" : "Terminate?"}
-      </button>
-      <button type="button" className="picker-terminate-confirm-no" onClick={props.onCancel}>
-        keep
-      </button>
-    </span>
-  );
-}
-
-/**
- * One worker session row (issue #64): live workers are attachable buttons
- * with a status badge and the terminate affordance; archived workers render
- * as plain history (no badge interaction, not attachable, not terminable).
- */
-function WorkerRow(props: {
-  session: Session;
-  workers: Worker[];
-  archived: boolean;
-  selectedSessionId: string | null;
-  confirming: boolean;
-  pending: boolean;
-  onSelectSession: (sessionId: string) => void;
-  onTerminateWorker?: (workerId: string) => void;
-  onAskTerminate: (sessionId: string) => void;
-  onCancelTerminate: () => void;
-}) {
-  const worker = workerFor(props.session, props.workers);
-  const badge = worker ? workerBadge(worker) : null;
-  if (props.archived) {
-    // Terminated worker: history only — visibly not active, not terminable,
-    // but clickable: opens the read-only archived log (issue #104).
-    return (
-      <li className="picker-worker-row archived">
-        <button
-          type="button"
-          className={`picker-session picker-archived-session${props.session.id === props.selectedSessionId ? " selected" : ""}`}
-          title="View the archived worker's log"
-          onClick={() => props.onSelectSession(props.session.id)}
-        >
-          <span className="role-badge role-worker">worker</span>
-          <span className="picker-session-name">{props.session.tmuxSession}</span>
-          {badge && <span className={badge.className}>{badge.label}</span>}
-        </button>
-      </li>
-    );
-  }
-  return (
-    <li className="picker-worker-row">
-      <button
-        type="button"
-        className={`picker-session${props.session.id === props.selectedSessionId ? " selected" : ""}`}
-        onClick={() => props.onSelectSession(props.session.id)}
-      >
-        <span className="role-badge role-worker">worker</span>
-        <span className="picker-session-name">{props.session.tmuxSession}</span>
-        {badge && <span className={badge.className}>{badge.label}</span>}
-      </button>
-      {props.onTerminateWorker && worker && (
-        <TerminateWorkerButton
-          confirming={props.confirming}
-          pending={props.pending}
-          onAsk={() => props.onAskTerminate(props.session.id)}
-          onConfirm={() => {
-            props.onCancelTerminate();
-            props.onTerminateWorker?.(worker.id);
-          }}
-          onCancel={props.onCancelTerminate}
-        />
-      )}
-    </li>
-  );
 }
 
 /**
@@ -164,7 +50,10 @@ function ProjectSection(props: {
   pendingTerminateWorkerId: string | null;
   /** Whether this project's archived section is expanded (issue #64). */
   archivedOpen: boolean;
+  /** Whether this project's children (workers, archive) are collapsed (issue #114). */
+  collapsed: boolean;
   onToggleArchived: (projectId: string) => void;
+  onToggleCollapsed: (projectId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSelectProject: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
@@ -204,48 +93,29 @@ function ProjectSection(props: {
 
   return (
     <section className="picker-project">
-      <div className="picker-project-row">
-        {/* Issue #108: the project NAME is the orchestrator entry — clicking
-            it attaches (or starts, #53) the orchestrator terminal. */}
-        <button
-          type="button"
-          className={`picker-project-name${orchestrator && orchestrator.id === props.selectedSessionId ? " selected" : ""}`}
-          title={orchestrator ? `Attach ${project.name}'s orchestrator terminal` : `Start ${project.name}'s orchestrator`}
-          disabled={starting}
-          onClick={() => props.onStartOrchestrator(project.id)}
-        >
-          {starting ? "Starting…" : project.name}
-        </button>
-        <button
-          type="button"
-          className={`picker-project-board${project.id === props.selectedProjectId ? " selected" : ""}`}
-          title={`Open ${project.name}'s kanban board`}
-          disabled={starting}
-          onClick={() => props.onSelectProject(project.id)}
-        >
-          ▦
-        </button>
-      </div>
-      {activeWorkers.length > 0 && (
+      <ProjectRow
+        projectName={project.name}
+        projectId={project.id}
+        hasOrchestrator={orchestrator !== undefined}
+        orchestratorSelected={orchestrator !== undefined && orchestrator.id === props.selectedSessionId}
+        boardSelected={project.id === props.selectedProjectId}
+        starting={starting}
+        collapsed={props.collapsed}
+        onToggleCollapsed={props.onToggleCollapsed}
+        onStartOrchestrator={props.onStartOrchestrator}
+        onSelectProject={props.onSelectProject}
+      />
+      {!props.collapsed && activeWorkers.length > 0 && (
         <ul className="picker-list picker-workers">{activeWorkers.map((session) => workerRow(session, false))}</ul>
       )}
-      {archivedWorkers.length > 0 && (
-        <div className="picker-archived">
-          <button
-            type="button"
-            className="picker-archived-toggle"
-            title={props.archivedOpen ? "Hide archived workers" : "Show archived workers"}
-            onClick={() => props.onToggleArchived(project.id)}
-          >
-            <span className="picker-archived-chevron">{props.archivedOpen ? "▾" : "▸"}</span>
-            Archived ({archivedWorkers.length})
-          </button>
-          {props.archivedOpen && (
-            <ul className="picker-list picker-archived-list">
-              {archivedWorkers.map((session) => workerRow(session, true))}
-            </ul>
-          )}
-        </div>
+      {!props.collapsed && archivedWorkers.length > 0 && (
+        <ArchivedSection
+          projectId={project.id}
+          count={archivedWorkers.length}
+          open={props.archivedOpen}
+          onToggle={props.onToggleArchived}
+          rows={archivedWorkers.map((session) => workerRow(session, true))}
+        />
       )}
     </section>
   );
@@ -264,6 +134,8 @@ export function SessionPicker(props: {
   terminatingWorkerId?: string | null;
   /** Initial expanded state of the per-project archived sections (tests/UX). */
   defaultArchivedOpen?: boolean;
+  /** Seeds the collapsed-project set (tests; live state comes from localStorage, issue #114). */
+  defaultCollapsedProjects?: Set<string>;
   onSelectSession: (sessionId: string) => void;
   /** Opens the project's kanban board in the main pane. */
   onSelectProject: (projectId: string) => void;
@@ -281,11 +153,24 @@ export function SessionPicker(props: {
   const [archivedOpen, setArchivedOpen] = useState<Set<string>>(() =>
     new Set(props.defaultArchivedOpen === true ? props.entries.map((entry) => entry.project.id) : []),
   );
+  // Issue #114: collapsed projects persist across reloads (localStorage;
+  // default expanded). Children = worker rows + the archived section.
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
+    () => props.defaultCollapsedProjects ?? loadCollapsedProjects(),
+  );
   const toggleArchived = (projectId: string) =>
     setArchivedOpen((open) => {
       const next = new Set(open);
       if (next.has(projectId)) next.delete(projectId);
       else next.add(projectId);
+      return next;
+    });
+  const toggleCollapsed = (projectId: string) =>
+    setCollapsedProjects((collapsed) => {
+      const next = new Set(collapsed);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      saveCollapsedProjects(next);
       return next;
     });
 
@@ -312,6 +197,8 @@ export function SessionPicker(props: {
           pendingTerminateWorkerId={props.terminatingWorkerId ?? null}
           archivedOpen={archivedOpen.has(entry.project.id)}
           onToggleArchived={toggleArchived}
+          collapsed={collapsedProjects.has(entry.project.id)}
+          onToggleCollapsed={toggleCollapsed}
           onSelectSession={props.onSelectSession}
           onSelectProject={props.onSelectProject}
           onStartOrchestrator={props.onStartOrchestrator}

@@ -10,7 +10,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { Project, Session, Worker } from "@agentskiss/shared";
-import { SessionPicker, TerminateWorkerButton } from "./SessionPicker";
+import { SessionPicker } from "./SessionPicker";
+import { TerminateWorkerButton } from "./picker-rows";
 
 const project: Project = {
   id: "agentskiss",
@@ -68,6 +69,7 @@ function renderPicker(overrides: Partial<PickerProps> = {}) {
       startingProjectId={overrides.startingProjectId}
       terminatingWorkerId={overrides.terminatingWorkerId}
       defaultArchivedOpen={overrides.defaultArchivedOpen}
+      defaultCollapsedProjects={overrides.defaultCollapsedProjects}
       onSelectSession={overrides.onSelectSession ?? (() => {})}
       onSelectProject={overrides.onSelectProject ?? (() => {})}
       onSelectAllProjects={overrides.onSelectAllProjects ?? (() => {})}
@@ -176,6 +178,37 @@ describe("SessionPicker", () => {
     const html = renderPicker({ entries: [], error: "connection refused" });
     expect(html).toContain("Daemon unreachable");
     expect(html).toContain("connection refused");
+  });
+});
+
+describe("SessionPicker (collapsible projects, issue #114)", () => {
+  it("renders a chevron per project row, expanded by default", () => {
+    const html = renderPicker();
+    expect(html).toContain("picker-project-chevron");
+    expect(html).toContain("▾");
+    expect(html).toContain('aria-expanded="true"');
+    // Default expanded: children visible.
+    expect(html).toContain("agentskiss-agentskiss-worker-1");
+  });
+
+  it("hides all children (workers + archived section) when collapsed", () => {
+    const archivedWorker: Worker = { ...workers[0]!, id: "worker-2", status: "archived" };
+    const secondWorkerSession: Session = { ...sessions[1]!, id: "sess-worker-2", tmuxSession: "agentskiss-agentskiss-worker-2", workerId: "worker-2" };
+    const html = renderPicker({
+      entries: [{ project, sessions: [...sessions, secondWorkerSession], workers: [...workers, archivedWorker] }],
+      defaultCollapsedProjects: new Set([project.id]),
+    });
+    expect(html).toContain("▸");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("agentskiss-agentskiss-worker-1");
+    expect(html).not.toContain("agentskiss-agentskiss-worker-2");
+    expect(html).not.toContain("picker-archived");
+  });
+
+  it("keeps the project row itself (name + board icon) visible when collapsed", () => {
+    const html = renderPicker({ defaultCollapsedProjects: new Set([project.id]) });
+    expect(html).toContain("agentsKISS");
+    expect(html).toContain("picker-project-board");
   });
 });
 
