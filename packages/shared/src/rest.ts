@@ -389,6 +389,38 @@ export const endpoints = {
   },
 
   /**
+   * Every registered session across all projects, including the global
+   * agent's (projectId `GLOBAL_AGENT_PROJECT_ID`). Backs the webapp
+   * sidebar's global-agent row and `pideck sessions` without `--project` —
+   * the global agent discovers each project's orchestrator session from
+   * this list to address it with `pideck send`.
+   */
+  listAllSessions: {
+    method: "GET",
+    path: "/api/sessions",
+    params: z.object({}),
+    request: null,
+    response: z.array(sessionSchema),
+  },
+
+  /**
+   * Start (or attach to) the workspace-level global agent session — the
+   * top of the agent hierarchy (global agent → project orchestrators →
+   * workers → review agents). Idempotent like
+   * `ensureProjectOrchestrator`: returns the live session when one
+   * exists. The global agent session is an orchestrator-role session under
+   * the reserved `GLOBAL_AGENT_PROJECT_ID` pseudo-project, launched in the
+   * daemon state dir with the rendered global-agent prompt.
+   */
+  ensureGlobalAgent: {
+    method: "POST",
+    path: "/api/global-agent",
+    params: z.object({}),
+    request: null,
+    response: sessionSchema,
+  },
+
+  /**
    * Start (or attach to the existing) per-project orchestrator session
    * (issue #53): wraps `SessionManager.ensureOrchestrator` — idempotent, so
    * the daemon returns the live orchestrator session when one exists.

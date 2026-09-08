@@ -266,6 +266,22 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
       return services.sessions.listSessions(params.projectId);
     },
 
+    /**
+     * Every session daemon-wide, including the global agent's (issue: the
+     * workspace-level agent layer). Backs the webapp sidebar's global-agent
+     * row and `pideck sessions` without `--project`, which the global agent
+     * uses to discover each project's orchestrator session id.
+     */
+    listAllSessions: () => services.sessions.listSessions(),
+
+    /**
+     * Start (or attach to) the workspace-level global agent (the top of the
+     * hierarchy): the same idempotent ensure the daemon startup sweep runs,
+     * exposed so the webapp sidebar's global-agent row can bring the agent
+     * up and attach to its pane.
+     */
+    ensureGlobalAgent: () => services.orchestratorBootstrap.ensureGlobalAgent(),
+
     listProjectWorkers: ({ params }) => {
       requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
       return services.sessions.listWorkers({ projectId: params.projectId });

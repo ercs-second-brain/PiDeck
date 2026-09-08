@@ -125,8 +125,10 @@ export class DaemonClient {
     return this.request("GET", formatPath("getProjectKanban", { projectId }), undefined, kanbanBoardSchema);
   }
 
-  async sessions(projectId: string): Promise<Session[]> {
-    return this.request("GET", formatPath("listProjectSessions", { projectId }), undefined, z.array(sessionSchema));
+  async sessions(projectId?: string): Promise<Session[]> {
+    return projectId !== undefined
+      ? this.request("GET", formatPath("listProjectSessions", { projectId }), undefined, z.array(sessionSchema))
+      : this.request("GET", endpoints.listAllSessions.path, undefined, z.array(sessionSchema));
   }
 
   async workers(projectId: string): Promise<Worker[]> {

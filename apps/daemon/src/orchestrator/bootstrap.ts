@@ -8,8 +8,16 @@
  * its pane with the rendered orchestrator prompt
  * (`pi --append-system-prompt <rendered prompt file>`).
  *
+ * The same machinery also ensures the workspace-level global agent (one
+ * per daemon, `SessionManager.ensureGlobalAgent` under the reserved
+ * `global` pseudo-project id) with the rendered global-agent prompt — the
+ * top of the agent hierarchy (global agent → project orchestrators →
+ * workers → review agents), which addresses each project's orchestrator
+ * via `pideck send`.
+ *
  * Idempotence:
- * - the session itself is `ensureOrchestrator`'s job (one per project);
+ * - the session itself is `ensureOrchestrator`/`ensureGlobalAgent`'s job
+ *   (one per project / per workspace);
  * - pi is only launched when the pane is not already running the agent
  *   (probed via tmux `#{pane_current_command}`), so re-running at every
  *   daemon boot never doubles a live conversation; after a reboot the
@@ -23,17 +31,20 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import type { Project, Session } from "@pideck/shared";
+import { GLOBAL_AGENT_PROJECT_ID, type Project, type Session } from "@pideck/shared";
 import type { ProjectService } from "../api/projects.js";
 import { atomicWrite } from "../json-store.js";
 import { ProjectLayout } from "../sessions/layout.js";
 import { shQuote, type SessionManager } from "../sessions/manager.js";
 import type { Tmux } from "../sessions/tmux.js";
 
-import { findAgentPromptPath, renderOrchestratorPrompt } from "./prompt.js";
+import { findAgentPromptPath, renderGlobalAgentPrompt, renderOrchestratorPrompt } from "./prompt.js";
 
 /** Rendered prompt file written into the project's state dir. */
 export const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
+
+/** Rendered prompt file for the workspace-level global agent. */
+export const GLOBAL_AGENT_PROMPT_FILENAME = "global-agent-prompt.md";
 
 /**
  * Pane commands that count as "the orchestrator agent is already running".
@@ -64,6 +75,8 @@ export interface OrchestratorBootstrapDeps {
   projects: ProjectService;
   /** Source path of the orchestrator prompt template. Default: auto-discovered. */
   promptPath?: string;
+  /** Source path of the global-agent prompt template. Default: auto-discovered. */
+  globalPromptPath?: string;
   /**
    * Whether the orchestrator pane is already running the agent. Default:
    * tmux `#{pane_current_command}` probe (errors treated as "not running").
@@ -99,6 +112,7 @@ export class OrchestratorBootstrap {
   private readonly layout: ProjectLayout;
   private readonly projects: ProjectService;
   private readonly promptPath: string;
+  private readonly globalPromptPath: string;
   private readonly isAgentRunning: (tmuxSession: string) => Promise<boolean>;
   private readonly onError: (err: unknown, projectId: string) => void;
 
@@ -108,6 +122,7 @@ export class OrchestratorBootstrap {
     this.layout = deps.layout;
     this.projects = deps.projects;
     this.promptPath = findAgentPromptPath(deps.promptPath);
+    this.globalPromptPath = findAgentPromptPath(deps.globalPromptPath, "global-agent.md");
     this.isAgentRunning = deps.isAgentRunning ?? ((name) => paneCommandProbe(this.tmux, name));
     this.onError = deps.onError ?? ((err, projectId) => {
       console.error(`[daemon] orchestrator bootstrap failed for project "${projectId}":`, err);
@@ -138,11 +153,44 @@ export class OrchestratorBootstrap {
   }
 
   /**
-   * Ensures orchestrators for every registered project. Per-project
-   * failures are reported through `onError` and do not stop the others.
+   * Ensures the workspace-level global agent session exists and is running
+   * the global-agent persona (the top of the hierarchy: it addresses each
+   * project's orchestrator with `pideck send`). Same idempotence rules as
+   * {@link ensureForProject}: the session is `ensureGlobalAgent`'s job
+   * (one per workspace); pi is only launched when the pane is not already
+   * running the agent.
+   */
+  async ensureGlobalAgent(): Promise<Session> {
+    const session = await this.sessions.ensureGlobalAgent();
+    // Render the global-agent placeholders into the state dir; pi reads the
+    // file via --append-system-prompt.
+    const template = readFileSync(this.globalPromptPath, "utf8");
+    const content = renderGlobalAgentPrompt(template, this.layout.root);
+    const promptFile = this.layout.globalAgentPromptFilePath();
+    atomicWrite(promptFile, content);
+
+    if (!(await this.isAgentRunning(session.tmuxSession))) {
+      await this.tmux.sendKeys(
+        session.tmuxSession,
+        orchestratorLaunchCommand({ sessionId: session.id, promptFile }),
+        { enter: true },
+      );
+    }
+    return session;
+  }
+
+  /**
+   * Ensures the global agent first (the hierarchy's top layer) and then the
+   * orchestrator of every registered project. Per-project failures are
+   * reported through `onError` and do not stop the others.
    */
   async ensureAll(): Promise<Session[]> {
     const sessions: Session[] = [];
+    try {
+      sessions.push(await this.ensureGlobalAgent());
+    } catch (err) {
+      this.onError(err, GLOBAL_AGENT_PROJECT_ID);
+    }
     for (const project of this.projects.list()) {
       try {
         sessions.push(await this.ensureForProject(project));

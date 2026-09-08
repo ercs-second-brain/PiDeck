@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import {
+  GLOBAL_AGENT_PROJECT_ID,
   projectSchema,
   type Project,
   type ProjectSettings,
@@ -211,6 +212,12 @@ export class ProjectService {
         ? (input.repoUrl as string)
         : await this.createRemoteRepo(input);
     const id = await this.deriveId(input.name, repoUrl, input.mode);
+    // `global` is the reserved pseudo-project id of the workspace-level
+    // global agent session — a registered project under it would collide
+    // with the global agent's registry records, dirs, and tmux names.
+    if (id === GLOBAL_AGENT_PROJECT_ID) {
+      throw new ConflictError(`project id "${id}" is reserved for the global agent`);
+    }
     if (this.store.get(id) !== undefined) {
       throw new ConflictError(`project id "${id}" is already registered`);
     }

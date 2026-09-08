@@ -7,7 +7,7 @@
  *   pideck status [--json]
  *   pideck project get <id> [--json] | pideck project ls [--json]
  *   pideck kanban --project <id> [--json]
- *   pideck sessions --project <id> [--json]
+ *   pideck sessions [--project <id>] [--json]
  *   pideck workers --project <id> [--json]
  *   pideck pulls --project <id> [--json]
  *   pideck diff --project <id> <pr-number>
@@ -39,7 +39,7 @@ Usage:
   pideck project get <id> [--json]
   pideck project ls [--json]
   pideck kanban --project <id> [--json]
-  pideck sessions --project <id> [--json]
+  pideck sessions [--project <id>] [--json]
   pideck workers --project <id> [--json]
   pideck pulls --project <id> [--json]
   pideck diff --project <id> <pr-number>
@@ -142,17 +142,18 @@ async function cmdKanban(ctx: CommandContext): Promise<number> {
 }
 
 async function cmdSessions(ctx: CommandContext): Promise<number> {
-  const projectId = requireFlag(
-    ctx.parsed.flags,
-    "project",
-    "pideck sessions --project <id> [--json]",
-  );
+  // `--project` is optional: with it, one project's sessions; without it,
+  // every session daemon-wide (including the global agent's) — how the
+  // global agent discovers each project's orchestrator session id.
+  const projectId = optionalFlag(ctx.parsed.flags, "project");
   const sessions = await ctx.client.sessions(projectId);
   emit(ctx.json, sessions, () => {
     if (sessions.length === 0) console.log("no sessions");
     else
       for (const session of sessions) {
-        console.log(`${session.id}\t${session.role}\ttmux:${session.tmuxSession}${session.workerId !== null ? `\tworker:${session.workerId}` : ""}`);
+        console.log(
+          `${session.id}\t${session.projectId}\t${session.role}\ttmux:${session.tmuxSession}${session.workerId !== null ? `\tworker:${session.workerId}` : ""}`,
+        );
       }
   });
   return 0;

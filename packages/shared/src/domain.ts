@@ -27,6 +27,21 @@ export const refNumberSchema = z.number().int().positive();
 export type RefNumber = z.infer<typeof refNumberSchema>;
 
 // ---------------------------------------------------------------------------
+// Global agent (workspace-level)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reserved pseudo-project id of the workspace-level global agent (the top
+ * of the agent hierarchy: global agent → project orchestrators → workers →
+ * review agents). The global agent is a regular orchestrator session under
+ * this id — so registry persistence, reconcile/adoption, the terminal
+ * bridge, relaunch, and `pideck send` all work unchanged — but it belongs
+ * to no registered project (registration rejects the id) and its pane runs
+ * in the daemon state dir root, the workspace spanning every project.
+ */
+export const GLOBAL_AGENT_PROJECT_ID = "global";
+
+// ---------------------------------------------------------------------------
 // Kanban columns (agent-orchestrator pattern)
 // ---------------------------------------------------------------------------
 
