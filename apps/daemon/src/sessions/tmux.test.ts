@@ -56,6 +56,21 @@ describe("Tmux against a fake server", () => {
     expect(await tmux.listSessions()).toEqual(["pideck-proj-orchestrator-1"]);
   });
 
+  it("sets extended-keys on for created sessions (issue #222)", async () => {
+    const { tmux, fake } = makeTmux();
+    await tmux.newSession("sess");
+    // Session-scoped option, applied with a targeted set-option right after
+    // creation (new-session has no flag for options).
+    expect(fake.sessions.get("sess")?.extendedKeys).toBe("on");
+    expect(fake.invocations.some((inv) =>
+      inv.args[0] === "set-option" && inv.args[1] === "-t" && inv.args[2] === "sess"
+        && inv.args[3] === "extended-keys" && inv.args[4] === "on",
+    )).toBe(true);
+    // Other sessions are untouched: the option is per-session.
+    await tmux.newSession("other");
+    expect(fake.sessions.get("other")?.extendedKeys).toBe("on");
+  });
+
   it("rejects duplicate session names", async () => {
     const { tmux } = makeTmux();
     await tmux.newSession("dup");

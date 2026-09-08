@@ -119,3 +119,31 @@ describe("SessionManager.relaunchSession (issue #117)", () => {
     await expect(manager.relaunchSession("sess-ghost")).rejects.toThrow("unknown session");
   });
 });
+
+describe("extended-keys on daemon-created sessions (issue #222)", () => {
+  it("sets extended-keys on at every session-creation path", async () => {
+    // pi warns (and modified Enter may not work) when the session-scoped
+    // extended-keys option is off — tmux's server-wide default. Every path
+    // that creates a daemon session must enable it.
+    const { manager, fake } = makeManager();
+    const worktree = path.join(stateDir, "worktrees", "issue-222");
+    const spawned = await manager.spawnWorker("proj", {
+      issueNumber: 222,
+      cwd: worktree,
+      command: ["bash", "-c", "sleep 300"],
+    });
+    const orch = await manager.ensureOrchestrator("proj");
+
+    expect(fake.sessions.get(spawned.session.tmuxSession)?.extendedKeys).toBe("on");
+    expect(fake.sessions.get(orch.tmuxSession)?.extendedKeys).toBe("on");
+
+    // Relaunch (#117) and reconcile-resurrect (#27) re-run the same path.
+    fake.sessions.delete(spawned.session.tmuxSession);
+    await manager.relaunchSession(spawned.session.id);
+    expect(fake.sessions.get(spawned.session.tmuxSession)?.extendedKeys).toBe("on");
+
+    fake.sessions.delete(orch.tmuxSession);
+    await manager.reconcile();
+    expect(fake.sessions.get(orch.tmuxSession)?.extendedKeys).toBe("on");
+  });
+});

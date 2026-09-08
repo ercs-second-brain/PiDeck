@@ -152,6 +152,19 @@ export class Tmux {
     }
   }
 
+  /**
+   * Creates a detached session and enables `extended-keys` on it (issue
+   * #222): pi warns — and modified Enter (shift/ctrl+Enter) may not work —
+   * when the option is off, and tmux's server-wide default is off.
+   *
+   * `extended-keys` is a **session** option (it lives in `show-options`, not
+   * `show-options -g`), and `new-session` has no flag to set options, so it
+   * is applied with a targeted `set-option -t <session>` right after
+   * creation. That covers every session this wrapper creates (orchestrator,
+   * workers, relaunch/reconcile) and — because the option is session-scoped
+   * — never mutates any other session on the server, even when this wrapper
+   * runs on the user's default tmux server (no private socket).
+   */
   async newSession(name: string, options: NewSessionOptions = {}): Promise<void> {
     const args = ["new-session", "-d", "-s", name];
     if (options.cwd !== undefined) args.push("-c", options.cwd);
@@ -159,6 +172,7 @@ export class Tmux {
       args.push(...options.command);
     }
     await this.run(args);
+    await this.run(["set-option", "-t", name, "extended-keys", "on"]);
   }
 
   /**
