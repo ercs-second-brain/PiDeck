@@ -29,10 +29,12 @@ import { SidebarContext, useSidebarData } from "./terminal/sidebar";
  * settings, or a PR diff. Deep links keep working (`/terminal/:sessionId`,
  * `/projects/:projectId`, `/settings`, …).
  *
- * pi/gh auth is PiDeck-global (issue #183): whenever pi has no ready
- * provider — first run or a later breakage — the global onboarding modal
- * opens ahead of any project work; finishing it chains into project
- * onboarding when no project exists yet.
+ * pi/gh auth is PiDeck-global (issues #183, #209): unless the daemon's
+ * probes report ready or the recorded shell onboarding says done, the
+ * global onboarding modal opens ahead of any project work; finishing it
+ * chains into project onboarding when no project exists yet. The order is
+ * strict — global first, project second, never both at once — and a
+ * fully-configured machine opens zero modals.
  *
  * The app header contains `<Link>`s, so it must render *inside* the router
  * context — it lives in the root layout route (`Shell`), not around
