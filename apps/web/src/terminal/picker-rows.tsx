@@ -1,9 +1,9 @@
 /**
- * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114/#167):
+ * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114/#167/#173):
  * worker rows (live + archived), the terminate affordance, the project row
- * (chevron + name-as-orchestrator-entry + kanban icon), and the per-project
- * archived section. Stateless — interaction state flows in through props, so
- * these render (and unit-test) without xterm or effects.
+ * (chevron + name-as-kanban-entry + chat/orchestrator icon), and the
+ * per-project archived section. Stateless — interaction state flows in
+ * through props, so these render (and unit-test) without xterm or effects.
  */
 
 import type { ReactNode } from "react";
@@ -137,19 +137,19 @@ export function WorkerRow(props: {
 }
 
 /**
- * The project row (issue #108 + #114 + #167): collapse chevron, the project
- * NAME as the orchestrator entry, the kanban board icon, and the ⋯ context
- * menu. Pure rendering.
+ * The project row (issue #108 + #114 + #167 + #173): collapse chevron, the
+ * project NAME as the kanban entry, the chat icon as the orchestrator entry
+ * (starting it when absent), and the ⋯ context menu. Pure rendering.
  */
 export function ProjectRow(props: {
   projectName: string;
   projectId: string;
   /** Whether the project has an orchestrator session yet (#108). */
   hasOrchestrator: boolean;
-  /** The orchestrator session is the one attached in the main pane. */
-  orchestratorSelected: boolean;
-  /** The project's board is open in the main pane. */
+  /** The project's board is open in the main pane (the NAME is selected). */
   boardSelected: boolean;
+  /** The orchestrator terminal is the one attached in the main pane (the chat icon is selected). */
+  chatSelected: boolean;
   starting: boolean;
   collapsed: boolean;
   /** The project's ⋯ context menu is open (issue #167). */
@@ -174,29 +174,32 @@ export function ProjectRow(props: {
       >
         {props.collapsed ? "▸" : "▾"}
       </button>
-      {/* Issue #108: the project NAME is the orchestrator entry — clicking
-          it attaches (or starts, #53) the orchestrator terminal. */}
+      {/* Issue #173: the project NAME opens the project's kanban board in
+          the main pane (the original #62 behavior). */}
       <button
         type="button"
-        className={`picker-project-name${props.orchestratorSelected ? " selected" : ""}`}
-        title={props.hasOrchestrator ? `Attach ${props.projectName}'s orchestrator terminal` : `Start ${props.projectName}'s orchestrator`}
-        disabled={props.starting}
-        onClick={() => props.onStartOrchestrator(props.projectId)}
-      >
-        {props.starting ? "Starting…" : props.projectName}
-      </button>
-      <button
-        type="button"
-        className={`picker-project-board${props.boardSelected ? " selected" : ""}`}
+        className={`picker-project-name${props.boardSelected ? " selected" : ""}`}
         title={`Open ${props.projectName}'s kanban board`}
         disabled={props.starting}
         onClick={() => props.onSelectProject(props.projectId)}
       >
-        ▦
+        {props.projectName}
+      </button>
+      {/* Issue #173: the row icon is a chat bubble — clicking it attaches
+          (or starts, #53) the orchestrator's pi terminal (the #108/#53
+          affordance, moved off the name). */}
+      <button
+        type="button"
+        className={`picker-project-chat${props.chatSelected ? " selected" : ""}${props.starting ? " pending" : ""}`}
+        title={props.hasOrchestrator ? `Attach ${props.projectName}'s orchestrator terminal` : `Start ${props.projectName}'s orchestrator`}
+        disabled={props.starting}
+        onClick={() => props.onStartOrchestrator(props.projectId)}
+      >
+        💬
       </button>
       {/* Issue #167: the ⋯ context menu. Settings opens the project's
-          settings page in the main pane; kanban stays the row's board icon
-          (#108), so it is not duplicated here. */}
+          settings page in the main pane; kanban stays the row's name click
+          (#173), so it is not duplicated here. */}
       <button
         type="button"
         className="picker-project-menu"

@@ -1,9 +1,9 @@
 /**
  * Tests for the project row's ⋯ context menu (issue #167): every project
  * row in the sidebar carries a ⋯ toggle whose menu opens that project's
- * settings in the main pane. Row click stays the orchestrator entry
- * (issue #108), and kanban is not duplicated into the menu — it is already
- * the row's board icon. The row/menu pieces are pure, so they are
+ * settings in the main pane. Row click opens the project's kanban board
+ * (issue #173), and kanban is not duplicated into the menu — it is already
+ * the row's name click. The row/menu pieces are pure, so they are
  * exercised directly without xterm or effects.
  */
 
@@ -28,8 +28,8 @@ function renderRow(menuOpen: boolean): string {
       projectName={project.name}
       projectId={project.id}
       hasOrchestrator
-      orchestratorSelected={false}
       boardSelected={false}
+      chatSelected={false}
       starting={false}
       collapsed={false}
       menuOpen={menuOpen}
@@ -51,18 +51,22 @@ describe("project row ⋯ context menu (issue #167)", () => {
     expect(html).not.toContain("picker-context-menu");
   });
 
-  it("offers Settings in the open menu without duplicating the kanban icon", () => {
+  it("offers Settings in the open menu without duplicating the kanban entry", () => {
     const html = renderRow(true);
     expect(html).toContain("picker-context-menu");
     expect(html).toContain(">Settings</button>");
     expect(html).toContain("Open agentsKISS&#x27;s settings");
-    // Kanban stays the row's board icon (#108) — the menu does not repeat it.
+    // Kanban stays the row's name click (#173) — the menu does not repeat it.
     expect(html).not.toContain(">Open board</button>");
   });
 
-  it("keeps the project-name click the orchestrator entry (issue #108)", () => {
+  it("keeps the project-name click the kanban entry and the chat icon the orchestrator entry (issue #173)", () => {
     const html = renderRow(true);
-    expect(html).toContain("Attach agentsKISS&#x27;s orchestrator terminal");
+    expect(html).toContain("Open agentsKISS&#x27;s kanban board");
     expect(html).toContain("picker-project-name");
+    // Issue #173: the row icon is a chat bubble that attaches/starts the
+    // orchestrator's pi terminal (the #53 affordance).
+    expect(html).toContain("picker-project-chat");
+    expect(html).toContain("Attach agentsKISS&#x27;s orchestrator terminal");
   });
 });
