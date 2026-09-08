@@ -177,6 +177,17 @@ export function piAuthPayloadFrom(providers: string[], installed: boolean, defau
   });
 }
 
+/**
+ * First `x.y.z` (optionally with a prerelease/build suffix) in pi's
+ * `--version` output; null when there is none (pi missing, garbage output).
+ * `pi --version` may decorate the number, so a substring match wins over
+ * trusting the whole line.
+ */
+function parsePiVersion(output: string): string | null {
+  const match = /(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/.exec(output);
+  return match?.[1] ?? null;
+}
+
 export interface PiAuthProbeOptions {
   /** pi CLI runner. Default: spawn the real binary. */
   run?: PiRunner;
@@ -225,6 +236,8 @@ export class PiAuthProbe {
   private readonly piDir?: string;
   private readonly readyOverride?: boolean;
   private readonly cache: TtlSwrCache<PiAuth>;
+  /** Memoized `pi --version` result ({@link version}, issue #223). */
+  private versionPromise?: Promise<string | null>;
 
   constructor(options: PiAuthProbeOptions = {}) {
     this.run = options.run ?? spawnPi;
@@ -246,6 +259,21 @@ export class PiAuthProbe {
   /** Ready providers per the last probe (probing if the cache is stale). */
   async readyProviders(): Promise<string[]> {
     return (await this.payload()).providers;
+  }
+
+  /**
+   * The installed pi version (issue #223), or null when pi is missing or its
+   * `--version` output is unparseable. Memoized per probe instance (= per
+   * daemon process): /api/status polls this on every request, and the
+   * installed pi only changes through an update apply — which restarts the
+   * daemon and freshens the memo with it. Like the auth probe, a failed run
+   * reads as "unknown" (null), never as an error.
+   */
+  version(): Promise<string | null> {
+    this.versionPromise ??= this.run(["--version"])
+      .then((result) => parsePiVersion(result.stdout))
+      .catch(() => null);
+    return this.versionPromise;
   }
 
   /**

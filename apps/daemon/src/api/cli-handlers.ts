@@ -122,7 +122,11 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
     // pi auth readiness in the status payload (issue #57): an unauthenticated
     // daemon says so here (and warns at startup) instead of failing silently
     // when the first worker spawn queues its prompt.
-    const pi = await services.piAuth.payload();
+    // The installed pi version (issue #223), alongside nodeVersion below:
+    // staleness of the agent itself becomes observable from the API. Run
+    // concurrently with the auth probe so a cold status pays one round trip,
+    // not two (issue #100: the status path never serializes pi spawns).
+    const [pi, piVersion] = await Promise.all([services.piAuth.payload(), services.piAuth.version()]);
     return {
       body: {
         ok: true,
@@ -131,6 +135,7 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
         sessions: services.sessions.listSessions().length,
         piReady: pi.ready,
         piProviders: pi.providers,
+        piVersion,
         // Node runtime vs pi's requirement (issue #202): a daemon booted on
         // an old private node spawns pi sessions that crash on first request.
         ...nodeStatus(),

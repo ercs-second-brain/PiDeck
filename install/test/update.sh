@@ -16,11 +16,13 @@ set -u
 LOCAL_SHA="1111111111111111111111111111111111111111"
 REMOTE_SAME="$LOCAL_SHA"
 REMOTE_NEW="2222222222222222222222222222222222222222"
+# The running-build SHA the #198/#223 restart-only scenarios publish.
+STALE_RUNNING="3333333333333333333333333333333333333333"
 
 # --- install layout under test ---------------------------------------------
 PD_HOME="$tmp/home"
 PD_SRC="$PD_HOME/src"
-mkdir -p "$PD_HOME/lib" "$PD_HOME/bin" "$PD_SRC/.git"
+mkdir -p "$PD_HOME/lib" "$PD_HOME/bin" "$PD_HOME/.local/bin" "$PD_SRC/.git"
 cp "$INSTALL_DIR/lib/common.sh" "$INSTALL_DIR/lib/source.sh" "$INSTALL_DIR/lib/update.sh" "$INSTALL_DIR/lib/assets.sh" "$PD_HOME/lib/"
 cat > "$PD_HOME/lib/service.sh" <<'EOF'
 # register_service dereferences PD_NODE_BIN/PD_NODE_BIN_DIR like the real
@@ -50,12 +52,16 @@ printf '#!/bin/sh\nprintf "1.0.0\\n"\n' > "$PI_SHIM_SRC"
 chmod +x "$PI_SHIM_SRC"
 cat > "$NEW_NODE_DIR/npm" <<'EOF'
 #!/bin/sh
+case "$1" in
+  view) printf '%s\n' "$NPM_PI_LATEST"; exit 0 ;; # refresh_pi_agent's latest check (issue #223)
+esac
 printf 'PI install %s\n' "$*" >> "$ORDER_LOG"
 mkdir -p "$NPM_CONFIG_PREFIX/bin"
 cp "$PI_SHIM_SRC" "$NPM_CONFIG_PREFIX/bin/pi"
 EOF
 chmod +x "$NEW_NODE_DIR/npm"
 export ORDER_LOG PI_SHIM_SRC
+NPM_PI_LATEST="1.0.0"; export NPM_PI_LATEST
 
 # env file (as bootstrap writes it) + config.json pointing at a private repo/ref
 cat > "$PD_HOME/env" <<EOF
@@ -116,6 +122,10 @@ printf 'gh: not authenticated\n' >&2
 exit 4
 EOF
 chmod +x "$FAKE_BIN/git" "$FAKE_BIN/gh"
+# The installed pi (issue #223): refresh_pi_agent reads `pi --version` from
+# PATH, so the fixture ships the same 1.0.0 shim the npm stub installs.
+cp "$PI_SHIM_SRC" "$FAKE_BIN/pi"
+chmod +x "$FAKE_BIN/pi"
 
 # Runs an update.sh snippet with the fake git/gh and the fake install layout.
 # Usage: run_update <local-sha> <remote-sha|''> <remote-url|''> <snippet>
@@ -193,13 +203,66 @@ out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update bogus 2>&1); rc=$?
 check_eq 'unknown update command exits 1' '1' "$rc"
 check_grep 'unknown update command usage error' 'usage: pideck update' "$out"
 
-# --- apply path (up to date → no rebuild, no restart) -----------------------
+# --- apply path (fully current → no rebuild, no restart) ---------------------
+# The fixture's install is fully current here: node at the pin (no refresh),
+# pi 1.0.0 == npm latest (no reinstall, issue #223). Only then does the apply
+# take the no-op exit (issues #224/#223 moved the runtime checks BEFORE it).
+set_pd_node "$NEW_NODE_DIR/node"
 
 out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
 check_eq 'apply when up to date exits 0' '0' "$rc"
 check_no_grep 'apply when up to date does not restart the service' 'SVC restart' "$out"
 check_grep 'apply when up to date says so' 'up to date' "$out"
 check_grep 'apply when up to date records done progress (issue #89)' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
+
+# --- apply path: stale private node on an up-to-date install (issue #224) ----
+# The #224 bug: restart-only (and up-to-date) applies used to skip the node
+# freshness check, so the private runtime stayed on v22.14.0 while pi 0.85.1
+# refused to run — "Update Requires Newer Node" as a dead end. Every apply
+# must now check the private node against PD_NODE_VERSION: refresh when
+# older (regardless of whether the source moved), reinstall pi under it,
+# then restart.
+set_pd_node "$OLD_NODE_DIR/node"
+: > "$ORDER_LOG"
+rm -f "$PD_HOME/var/update-state.json"
+
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
+check_eq 'up-to-date apply with a stale node exits 0 (issue #224)' '0' "$rc"
+check_eq 'up-to-date stale-node apply refreshes node, reinstalls pi (issue #224)' \
+  'NODE refresh
+PI install install -g --ignore-scripts @earendil-works/pi-coding-agent' "$(cat "$ORDER_LOG")"
+check_grep 'up-to-date stale-node apply restarts the daemon (issue #224)' 'SVC restart' "$out"
+check_grep 'up-to-date stale-node apply repoints env PD_NODE (issue #224)' "PD_NODE=\"$NEW_NODE_DIR/node\"" "$(cat "$PD_HOME/env")"
+check_grep 'up-to-date stale-node apply ends with done progress (issue #224)' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
+
+# --- apply path: outdated pi on a current install (issue #223) ---------------
+# With the node current, the apply still checks the installed pi version vs
+# npm latest and reinstalls when newer (logged old -> new), then restarts.
+set_pd_node "$NEW_NODE_DIR/node"
+NPM_PI_LATEST="2.0.0"; export NPM_PI_LATEST
+printf '%s\n' "$STALE_RUNNING" > "$PD_HOME/var/running-sha" # restart-only apply, node already current
+: > "$ORDER_LOG"
+rm -f "$PD_HOME/var/update-state.json"
+
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
+check_eq 'restart-only apply with an outdated pi exits 0 (issue #223)' '0' "$rc"
+check_grep 'the pi refresh logs old -> new (issue #223)' 'updating pi (1.0.0 -> 2.0.0)' "$out"
+check_grep 'the outdated pi is reinstalled (issue #223)' 'PI install install -g --ignore-scripts @earendil-works/pi-coding-agent' "$(cat "$ORDER_LOG")"
+check_grep 'the pi refresh restarts the daemon (issue #223)' 'SVC restart' "$out"
+check_grep 'the pi refresh apply ends with done progress (issue #223)' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
+
+# ...and a current pi leaves the install alone (no reinstall, but the
+# restart-only daemon staleness still restarts).
+NPM_PI_LATEST="1.0.0"; export NPM_PI_LATEST
+: > "$ORDER_LOG"
+rm -f "$PD_HOME/var/update-state.json"
+
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
+check_eq 'restart-only apply with a current pi exits 0 (issue #223)' '0' "$rc"
+check_grep 'a current pi is reported, not reinstalled (issue #223)' 'pi is current (1.0.0; npm latest 1.0.0)' "$out"
+check_no_grep 'a current pi never triggers an npm install (issue #223)' 'PI install' "$(cat "$ORDER_LOG")"
+check_grep 'the restart-only apply still restarts (issue #223)' 'SVC restart' "$out"
+rm -f "$PD_HOME/var/running-sha"
 
 # --- apply path: source current but the running build is stale (issue #198) --
 # A previous apply can die between the source reset and the restart: the

@@ -259,6 +259,11 @@ refresh_node_runtime() {
     *) PATH="$PD_NODE_BIN_DIR:$PATH" ;;
   esac
   export PATH
+  # Issue #224 bookkeeping: the caller (update_apply) restarts the daemon
+  # whenever the runtime moved, even on an otherwise up-to-date apply, and
+  # refresh_pi_assets must then reinstall pi under the NEW node unconditionally
+  # (the #211 ordering) instead of version-checking against npm.
+  UPDATE_NODE_REFRESHED=1
 }
 
 # ensure_pnpm_for_build — the apply's build needs pnpm on PATH (issue #202
@@ -276,24 +281,47 @@ ensure_pnpm_for_build() {
   ensure_pnpm
 }
 
-# refresh_pi_assets — reinstall the pi npm package under the ACTIVE node
-# (issue #202). Runs AFTER refresh_node_runtime/refresh_installed_layer and
-# BEFORE svc_restart: an apply that advances the Node pin must move node and
-# pi together (pi lives in $PD_HOME/opt/npm-global under whatever node
-# installed it), or the restarted daemon spawns pi sessions against a node
-# that cannot run them (pi 0.75+ crashes on Node < 22.19 with
-# `zlib.createZstdDecompress is not a function` — observed live on the dev
-# server). Sources the freshly installed assets.sh (refresh_installed_layer
-# has already copied the fetched tree over $PD_LIB) so the reinstall uses
-# the same code the current installer would.
+# refresh_pi_assets — reinstall the pi npm package under the ACTIVE node.
+# Runs on EVERY apply, AFTER refresh_node_runtime/refresh_installed_layer and
+# BEFORE svc_restart: node and pi must move together (pi lives in
+# $PD_HOME/opt/npm-global under whatever node installed it), or the restarted
+# daemon spawns pi sessions against a node that cannot run them (pi 0.75+
+# crashes on Node < 22.19 with `zlib.createZstdDecompress is not a function`
+# — observed live on the dev server).
+#
+# Two reinstall triggers (issues #211 + #223):
+#   - the Node pin moved this apply (UPDATE_NODE_REFRESHED): reinstall
+#     unconditionally, under the NEW runtime;
+#   - otherwise: reinstall only when npm has a newer pi than the installed
+#     one (refresh_pi_agent, which logs old -> new) — pi is not pinned, so
+#     every apply is also a pi freshness check (#223).
+#
+# Sources the freshly installed assets.sh (refresh_installed_layer has
+# already copied the fetched tree over $PD_LIB on layer-moving applies) so
+# the reinstall uses the same code the current installer would. Sets
+# UPDATE_PI_REFRESHED=1 when an install actually ran — update_apply restarts
+# the daemon then, even on an otherwise up-to-date apply.
 refresh_pi_assets() {
+  UPDATE_PI_REFRESHED=
   if [ ! -f "$PD_LIB/assets.sh" ]; then
     warn "$PD_LIB/assets.sh missing — cannot reinstall pi under the active node (re-run the installer)"
     return 0
   fi
   # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
   . "$PD_LIB/assets.sh"
-  install_pi_agent
+  if [ -n "${UPDATE_NODE_REFRESHED:-}" ]; then
+    install_pi_agent # the node pin moved — pi must move with it (#211 ordering)
+    UPDATE_PI_REFRESHED=1
+  elif command -v refresh_pi_agent >/dev/null 2>&1; then
+    if ! refresh_pi_agent; then
+      UPDATE_PI_REFRESHED=1 # npm had a newer pi (or pi was missing) — installed
+    fi
+  else
+    # Installed assets.sh predates #223 (first run after this fix lands):
+    # fall back to the plain reinstall instead of a command-not-found error.
+    install_pi_agent
+    UPDATE_PI_REFRESHED=1
+  fi
 }
 
 # update_apply — fetch, rebuild and restart when the upstream ref advanced.
@@ -314,8 +342,10 @@ refresh_pi_assets() {
 # the daemon still serves the old build; that state restarts (no fetch or
 # rebuild needed) instead of reporting done.
 #
-# No-op (exit 0) when the running build already matches the upstream ref —
-# no unnecessary rebuilds.
+# No rebuild (and no restart, when the runtime checks find nothing to move)
+# when the running build already matches the upstream ref — no unnecessary
+# work. Issues #224/#223: the private-node and pi freshness checks still run
+# on that no-op path, and a node/pi refresh there restarts the daemon.
 update_apply() {
   UPDATE_APPLY_ERROR=
   UPDATE_SELF_HEALED=
@@ -356,21 +386,26 @@ update_apply() {
   fi
   UPDATE_RUNNING_SHA=$(read_running_sha)
   UPDATE_NEEDS_BUILD=
+  UPDATE_IDLE=
   if [ "$UPDATE_LOCAL_SHA" = "$UPDATE_REMOTE_SHA" ]; then
     if [ -z "$UPDATE_RUNNING_SHA" ] || [ "$UPDATE_RUNNING_SHA" = "$UPDATE_REMOTE_SHA" ]; then
       if [ -z "$UPDATE_SELF_HEALED" ]; then
-        update_report
-        update_progress "done"
-        trap - EXIT
-        return 0
+        # Source and daemon both current (#198). The runtime checks below
+        # still run on every apply (issues #224/#223): a private node older
+        # than the pin, or an outdated pi, refreshes + restarts even here —
+        # "Update Requires Newer Node" must never be a dead end. Only a
+        # fully current install (no node/pi movement) reports done without
+        # restarting (UPDATE_IDLE).
+        UPDATE_IDLE=1
+      else
+        # Self-healed checkout with the daemon already running the upstream
+        # build: the fresh clone has no build artifacts and the installed
+        # layer predates it — rebuild and refresh instead of reporting done.
+        UPDATE_NEEDS_BUILD=1
+        info "self-healed checkout is current — rebuilding the fresh clone"
       fi
-      # Self-healed checkout with the daemon already running the upstream
-      # build: the fresh clone has no build artifacts and the installed
-      # layer predates it — rebuild and refresh instead of reporting done.
-      UPDATE_NEEDS_BUILD=1
-      info "self-healed checkout is current — rebuilding the fresh clone"
     fi
-    if [ -z "$UPDATE_NEEDS_BUILD" ]; then
+    if [ -z "$UPDATE_IDLE" ] && [ -z "$UPDATE_NEEDS_BUILD" ]; then
       info "source is current, but the daemon still runs $(short_sha "$UPDATE_RUNNING_SHA") — restarting to pick it up"
     fi
   else
@@ -403,13 +438,27 @@ update_apply() {
     build_from_source
   fi
   update_progress installing
-  # Issue #202 ordering: refresh the private node FIRST, reinstall the pi
-  # assets under it SECOND (after the shell layer refresh has put the fresh
-  # assets.sh in place), restart the daemon LAST — node and pi move together
-  # or not at all.
+  UPDATE_NODE_REFRESHED=
+  # Issue #202 ordering (extended by #224/#223): refresh the private node
+  # FIRST — on EVERY apply, not just when the source moved (#224: a
+  # restart-only apply must still lift a stale runtime) — reinstall the pi
+  # assets SECOND (after the shell layer refresh has put the fresh assets.sh
+  # in place; pi itself is version-checked against npm on every apply,
+  # #223), restart the daemon LAST — node and pi move together or not at
+  # all. On a fully current install (UPDATE_IDLE) the layer is already
+  # current, so only the runtime checks run; the restart is skipped unless
+  # one of them actually moved something.
   refresh_node_runtime
-  refresh_installed_layer
+  if [ -z "$UPDATE_IDLE" ]; then
+    refresh_installed_layer
+  fi
   refresh_pi_assets
+  if [ -n "$UPDATE_IDLE" ] && [ -z "${UPDATE_NODE_REFRESHED:-}" ] && [ -z "${UPDATE_PI_REFRESHED:-}" ]; then
+    update_report
+    update_progress "done"
+    trap - EXIT
+    return 0
+  fi
   update_progress restarting
   step "restarting the service"
   svc_restart
