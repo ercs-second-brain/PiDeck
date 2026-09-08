@@ -12,7 +12,6 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "start": "node dist/index.js",
-    "standalone": "tsc -b && node dist/terminal/standalone.js",
     "bench:terminal": "tsc -b && node dist/terminal/bench.js"
   },
   "dependencies": {

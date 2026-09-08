@@ -74,6 +74,17 @@ export interface SpawnedWorker {
  */
 const ARCHIVED_SCROLLBACK_LINES = 2000;
 
+/**
+ * Worker statuses that are terminal: guard helpers must never overwrite them
+ * (a `done` worker's pipeline state must not regress, an `archived` worker
+ * stays in the archived log view). Shared by {@link SessionManager.reconcile}'s
+ * {@link SessionManager.markWorkerStopped} and {@link SessionManager.killSession}
+ * so the two guards cannot drift (issue #132).
+ */
+const TERMINAL_WORKER_STATUSES: ReadonlySet<WorkerStatus> = new Set<WorkerStatus>([
+  "done", "failed", "stopped", "archived",
+]);
+
 /** Result of {@link SessionManager.reconcile}. */
 export interface ReconcileResult {
   /** Registry sessions whose tmux session is alive (re-attachable as-is). */
@@ -245,20 +256,7 @@ export class SessionManager {
         continue;
       }
       try {
-        const cwd =
-          session.cwd ??
-          (session.role === "worker"
-            ? this.layout.cloneDir(session.projectId)
-            : this.layout.projectDir(session.projectId));
-        // Recorded commands are re-run through the reboot-resilient guard
-        // (binary on PATH → verbatim, else interactive shell); legacy
-        // records without a recorded command keep the role default.
-        const command =
-          session.command !== undefined
-            ? resurrectionCommand(deserializeCommand(session.command))
-            : session.role === "worker"
-              ? [...RESURRECT_WORKER_COMMAND]
-              : undefined;
+        const { cwd, command } = this.launchPath(session);
         await this.tmux.newSession(session.tmuxSession, {
           cwd,
           ...(command === undefined ? {} : { command }),
@@ -291,12 +289,38 @@ export class SessionManager {
     return result;
   }
 
+  /**
+   * Resolves a session's launch path — the cwd and command used to
+   * (re)create its tmux pane. Shared by {@link reconcile} (reboot recovery,
+   * issue #27) and {@link relaunchSession} (user relaunch, issue #117) so
+   * the two launch paths cannot drift (issue #132): workers re-run their
+   * recorded command through the reboot-resilient guard
+   * {@link resurrectionCommand} (binary on PATH → verbatim, else
+   * interactive shell; legacy records without a recorded command keep the
+   * role default); orchestrators get a plain interactive shell the way
+   * {@link ensureOrchestrator} created them.
+   */
+  private launchPath(session: Session): { cwd: string; command?: string[] } {
+    const cwd =
+      session.cwd ??
+      (session.role === "worker"
+        ? this.layout.cloneDir(session.projectId)
+        : this.layout.projectDir(session.projectId));
+    const command =
+      session.role === "worker"
+        ? session.command !== undefined
+          ? resurrectionCommand(deserializeCommand(session.command))
+          : [...RESURRECT_WORKER_COMMAND]
+        : undefined;
+    return { cwd, ...(command === undefined ? {} : { command }) };
+  }
+
   /** Marks a session's worker `stopped` (unless already terminal). */
   private markWorkerStopped(session: Session, message: string): void {
     if (session.workerId === null) return;
     const worker = this.registry.getWorker(session.workerId);
     if (!worker) return;
-    if (worker.status === "done" || worker.status === "failed" || worker.status === "stopped") {
+    if (TERMINAL_WORKER_STATUSES.has(worker.status)) {
       return;
     }
     this.registry.updateWorkerStatus(worker.id, "stopped", message);
@@ -374,13 +398,7 @@ export class SessionManager {
     if (await this.tmux.hasSession(session.tmuxSession)) {
       await this.tmux.killSession(session.tmuxSession);
     }
-    const cwd = session.cwd ?? (session.role === "worker" ? this.layout.cloneDir(session.projectId) : this.layout.projectDir(session.projectId));
-    const command =
-      session.role === "worker"
-        ? session.command !== undefined
-          ? resurrectionCommand(deserializeCommand(session.command))
-          : [...RESURRECT_WORKER_COMMAND]
-        : undefined;
+    const { cwd, command } = this.launchPath(session);
     await this.tmux.newSession(session.tmuxSession, { cwd, ...(command === undefined ? {} : { command }) });
     if (session.workerId !== null) {
       const worker = this.registry.getWorker(session.workerId);
@@ -404,7 +422,7 @@ export class SessionManager {
     }
     if (session.workerId !== null) {
       const worker = this.registry.getWorker(session.workerId);
-      if (worker && worker.status !== "done" && worker.status !== "failed" && worker.status !== "archived") {
+      if (worker && !TERMINAL_WORKER_STATUSES.has(worker.status)) {
         this.registry.updateWorkerStatus(worker.id, "stopped", "tmux session killed");
       }
     }
