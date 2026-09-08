@@ -8,7 +8,7 @@ import { BoardPage } from "./routes/BoardPage";
 import { DiffPage } from "./routes/DiffPage";
 import { GlobalOnboardingModal } from "./routes/onboarding/GlobalOnboarding";
 import { OnboardingModal } from "./routes/OnboardingWizard";
-import { SettingsPage } from "./routes/SettingsPage";
+import { SettingsPage, GlobalSettingsPage } from "./routes/SettingsPage";
 import { useOnboardingGates } from "./routes/use-onboarding-gates";
 import { TerminalPage } from "./terminal/TerminalPage";
 import { SessionPicker } from "./terminal/SessionPicker";
@@ -27,7 +27,7 @@ import { SidebarContext, useSidebarData } from "./terminal/sidebar";
  * rows that attach terminals — while the main pane
  * renders the terminal, the all-projects combined board, a project board,
  * settings, or a PR diff. Deep links keep working (`/terminal/:sessionId`,
- * `/projects/:projectId`, …).
+ * `/projects/:projectId`, `/settings`, …).
  *
  * pi/gh auth is PiDeck-global (issue #183): whenever pi has no ready
  * provider — first run or a later breakage — the global onboarding modal
@@ -48,6 +48,7 @@ const router = createBrowserRouter([
       { path: "terminal/:sessionId", element: <TerminalPage /> },
       { path: "projects/:projectId", element: <BoardPage /> },
       { path: "projects/:projectId/settings", element: <SettingsPage /> },
+      { path: "settings", element: <GlobalSettingsPage /> },
       { path: "projects/:projectId/pulls/:prNumber", element: <DiffPage /> },
       { path: "*", element: <NotFound /> },
     ],
@@ -119,6 +120,7 @@ function Shell() {
             onOpenSettings={(projectId) => navigateFromSidebar(`/projects/${projectId}/settings`)}
             onSelectAllProjects={() => navigateFromSidebar("/")}
             onStartOnboarding={onboarding.openProject}
+            onOpenGlobalSettings={() => navigateFromSidebar("/settings")}
             onStartOrchestrator={(projectId) => startOrchestrator(projectId)}
             onTerminateWorker={terminateWorker}
           />

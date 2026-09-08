@@ -6,6 +6,27 @@ import { useProject } from "../lib/use-project";
 import { boardStore } from "../store/store";
 
 /**
+ * Global settings surface (issue #176): the daemon-wide worker-pipeline
+ * toggles (#106) and the merged-PR browser-notification toggle (#111),
+ * reachable from the sidebar footer without picking a project first.
+ * pi/gh auth is PiDeck-global, configured once (issue #183) — it surfaces
+ * via the global onboarding modal, not here. The per-project form lives in
+ * {@link SettingsPage}.
+ */
+export function GlobalSettingsPage() {
+  return (
+    <main className="page">
+      <h1 className="page-title">Global settings</h1>
+      <p className="project-repo">Daemon-wide — applies to every project.</p>
+      <GlobalWorkerSettings />
+      <Link to="/" className="back-link">
+        ← All projects
+      </Link>
+    </main>
+  );
+}
+
+/**
  * Project settings surface: auto-agent username and the worker concurrency
  * cap, plus the daemon-wide worker-pipeline toggles (issue #106) and the
  * merged-PR browser-notification toggle (issue #111).
@@ -67,7 +88,8 @@ type ToggleKey = (typeof WORKER_TOGGLES)[number]["key"] | (typeof NOTIFICATION_T
  * persisted by the daemon, read fresh on every pipeline decision — a
  * change here takes effect without a daemon restart. Each toggle saves
  * immediately. Enabling browser notifications first asks the browser for
- * Notification permission (a denied grant keeps the toggle off).
+ * Notification permission (a denied grant keeps the toggle off). Also
+ * rendered by the sidebar-footer GlobalSettingsPage (issue #176).
  */
 function GlobalWorkerSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
