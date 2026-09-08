@@ -107,7 +107,7 @@ _register_systemd() {
 }
 
 # ---------------------------------------------------------------------------
-# Control (used by the pideck CLI)
+# Control (used by the pideck CLI and the update apply path)
 # ---------------------------------------------------------------------------
 svc_start() {
   case "$DETECTED_OS" in
@@ -131,9 +131,65 @@ svc_stop() {
   esac
 }
 
+_launchd_job_pid() {
+  launchctl print "gui/$(id -u)/$PD_SERVICE_LABEL" 2>/dev/null | sed -n 's/^[[:space:]]*pid = //p' | head -n 1
+}
+
+_systemd_main_pid() {
+  systemctl --user show -p MainPID --value "$PD_SERVICE_NAME" 2>/dev/null
+}
+
+# _svc_wait_restart <what> <old-pid> <pid-fn> — poll (up to ~15s) until the
+# service's main pid differs from <old-pid>, proving the restart actually
+# happened (issue #198: an apply that reports done without a restart is
+# indistinguishable from success). Dies loudly on timeout.
+_svc_wait_restart() {
+  _sw_what=$1
+  _sw_old=$2
+  _sw_fn=$3
+  _sw_i=0
+  while [ "$_sw_i" -lt 30 ]; do
+    _sw_new=$("$_sw_fn")
+    if [ -n "$_sw_new" ] && [ "$_sw_new" != "0" ] && [ "$_sw_new" != "$_sw_old" ]; then
+      ok "service restarted ($_sw_what: pid $_sw_old -> $_sw_new)"
+      return 0
+    fi
+    _sw_i=$((_sw_i + 1))
+    sleep 0.5
+  done
+  die "service restart did not take ($_sw_what still runs pid ${_sw_old:-unknown} after 15s) — check 'pideck service status'"
+}
+
 svc_restart() {
-  svc_stop
-  svc_start
+  case "$DETECTED_OS" in
+    darwin)
+      if ! launchctl print "gui/$(id -u)/$PD_SERVICE_LABEL" >/dev/null 2>&1; then
+        die "service not loaded ($PD_SERVICE_LABEL) — run 'pideck service start' first (or restart the daemon manually)"
+      fi
+      _sr_old=$(_launchd_job_pid)
+      if ! run launchctl kickstart -k "gui/$(id -u)/$PD_SERVICE_LABEL"; then
+        die "launchctl kickstart -k $PD_SERVICE_LABEL failed — check 'pideck service status'"
+      fi
+      _svc_wait_restart "launchd $PD_SERVICE_LABEL" "$_sr_old" _launchd_job_pid
+      ;;
+    linux | wsl)
+      if ! command -v systemctl >/dev/null 2>&1; then
+        die "systemctl not found — restart the daemon manually (this machine has no systemd user session)"
+      fi
+      if ! systemctl --user is-active --quiet "$PD_SERVICE_NAME" 2>/dev/null; then
+        die "service $PD_SERVICE_NAME is not active — the daemon is not service-managed; run 'pideck service start' first (or restart it manually)"
+      fi
+      _sr_old=$(_systemd_main_pid)
+      # KillMode=process (unit template): the restart kills only the daemon's
+      # main process — the tmux/agent sessions it spawned and THIS process
+      # (the detached apply child, which lives in the same cgroup) survive it.
+      if ! run systemctl --user restart "$PD_SERVICE_NAME"; then
+        die "systemctl --user restart $PD_SERVICE_NAME failed — check 'journalctl --user -u $PD_SERVICE_NAME'"
+      fi
+      _svc_wait_restart "systemd $PD_SERVICE_NAME" "$_sr_old" _systemd_main_pid
+      ;;
+    *) die "unsupported OS" ;;
+  esac
 }
 
 svc_status() {

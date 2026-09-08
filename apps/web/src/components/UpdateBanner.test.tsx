@@ -25,6 +25,7 @@ function status(overrides: Partial<UpdateStatusResponse> = {}): UpdateStatusResp
     localSha: "a".repeat(40),
     remoteSha: "b".repeat(40),
     runningSha: "a".repeat(40),
+    runningBehindSource: false,
     applyProgress: null,
     updateAvailable: true,
     checkedAt: "2026-01-02T03:04:05.000Z",

@@ -232,6 +232,12 @@ export const updateApplyProgressSchema = z.object({
   stage: z.string().min(1),
   /** When the shim last rewrote the state file (ISO timestamp). */
   updatedAt: z.iso.datetime(),
+  /**
+   * Human-readable failure detail, written by the shim when `stage` is
+   * `failed` (issue #198: a bare `failed` is undebuggable — the dev server's
+   * apply died silently because the child's output went nowhere).
+   */
+  error: z.string().min(1).optional(),
 });
 export type UpdateApplyProgress = z.infer<typeof updateApplyProgressSchema>;
 
@@ -255,8 +261,21 @@ export const updateStatusSchema = z.object({
   localSha: z.string().min(1).nullable(),
   /** Full SHA of the upstream ref head; `null` when the check failed. */
   remoteSha: z.string().min(1).nullable(),
-  /** `true` only when both revisions resolved and differ (→ `pideck update`). */
+  /**
+   * `true` only when the RUNNING build and the upstream head both resolved
+   * and differ (issue #198): the comparison is against `runningSha` (falling
+   * back to `localSha` when the boot SHA could not be captured), not the
+   * source checkout — a crashed apply leaves the source already reset to the
+   * target while the daemon still runs the old build, and a source-only
+   * comparison reported "up to date" with the stale build still serving.
+   */
   updateAvailable: z.boolean(),
+  /**
+   * `true` when the running build is older than the source checkout (issue
+   * #198): the apply fetched/built but its restart did not happen yet — the
+   * daemon needs a restart, not (another) fetch.
+   */
+  runningBehindSource: z.boolean(),
   /** When the check ran (ISO timestamp). */
   checkedAt: z.iso.datetime(),
   /** Human-readable failure detail (`null` when the check succeeded). */
