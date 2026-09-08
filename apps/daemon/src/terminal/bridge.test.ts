@@ -109,6 +109,38 @@ describe("TerminalBridge: streaming lifecycle", () => {
     });
   });
 
+  it("applies the attaching client's size to tmux on attach (issue #124)", async () => {
+    // A fresh tmux session sits at the detached default (80x24); the first
+    // browser attach must resize it to the viewport-fitted size, or the
+    // pane renders at a small fixed width no matter the browser size.
+    const session = await env.seedSession();
+    const pane = env.fake.sessions.get(session.tmuxSession);
+    expect(pane?.cols).toBe(80);
+    expect(pane?.rows).toBe(24);
+
+    const socket = env.open();
+    env.send(socket, { type: "terminal.attach", sessionId: session.id, cols: 154, rows: 51 });
+    await vi.waitFor(() => {
+      expect(pane?.cols).toBe(154);
+      expect(pane?.rows).toBe(51);
+    });
+  });
+
+  it("re-adopted size wins on a later attach with a different size (issue #124)", async () => {
+    const session = await env.seedSession();
+    const pane = env.fake.sessions.get(session.tmuxSession);
+    const first = env.open();
+    env.send(first, { type: "terminal.attach", sessionId: session.id, cols: 154, rows: 51 });
+    await vi.waitFor(() => expect(pane?.cols).toBe(154));
+
+    const second = env.open();
+    env.send(second, { type: "terminal.attach", sessionId: session.id, cols: 100, rows: 40 });
+    await vi.waitFor(() => {
+      expect(pane?.cols).toBe(100);
+      expect(pane?.rows).toBe(40);
+    });
+  });
+
   it("propagates resize to the tmux window", async () => {
     const session = await env.seedSession();
     const socket = env.open();

@@ -12,6 +12,7 @@ import "@xterm/xterm/css/xterm.css";
 import { relaunchSession } from "./api";
 import { InputBatcher } from "./input-batcher";
 import { TerminalConnection, type TerminalStatus } from "./connection";
+import { createFitController } from "./terminal-fit";
 import { TERMINAL_KEYS } from "./keys";
 
 const STATUS_LABELS: Record<TerminalStatus, string> = {
@@ -116,23 +117,14 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
     term.onData((data) => batcher.add(data));
     sendRef.current = (data) => batcher.add(data);
 
-    let lastSent = { cols: term.cols, rows: term.rows };
-    const propagateResize = () => {
-      sizeRef.current = { cols: term.cols, rows: term.rows };
-      if (term.cols !== lastSent.cols || term.rows !== lastSent.rows) {
-        lastSent = { cols: term.cols, rows: term.rows };
-        connection.resize(term.cols, term.rows);
-      }
-    };
-    const fitNow = () => {
-      try {
-        fit.fit();
-      } catch {
-        // Container not measurable yet (hidden during transition) — the
-        // next observer event will fit.
-      }
-      propagateResize();
-    };
+    const fitNow = createFitController({
+      terminal: term,
+      fit: () => fit.fit(),
+      connection,
+      onFitted: (size) => {
+        sizeRef.current = size;
+      },
+    });
     const observer = new ResizeObserver(fitNow);
     observer.observe(container);
     fitNow();

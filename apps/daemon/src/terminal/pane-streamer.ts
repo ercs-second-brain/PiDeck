@@ -75,6 +75,8 @@ export class PaneStreamer {
   private model: string[] = [];
   /** The row count the model is split against (last client-reported size). */
   rows = 24;
+  /** The column count of the last client-reported size (issue #124). */
+  cols = 80;
   /** Coalesces keystroke bursts into few `send-keys` invocations (issue #67). */
   private readonly inputPump: InputPump;
   /** Event-driven output source (`pipe-pane` + `fs.watch`), if healthy. */
