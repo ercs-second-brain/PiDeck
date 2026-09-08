@@ -89,14 +89,15 @@ describe("UpdateBannerView — update available (idle)", () => {
   });
 });
 
-describe("UpdateBannerView — updating (apply accepted)", () => {
+describe("UpdateBannerView — updating (apply accepted, modal over the dimmed app #113)", () => {
   function updating(overrides: Partial<UpdateBannerViewProps["updating"]> = {}): NonNullable<UpdateBannerViewProps["updating"]> {
     return { targetSha: "b".repeat(40), startedAt: 0, elapsedMs: 5_000, stage: null, apiUp: true, downMs: 0, ...overrides };
   }
 
-  it("shows the updating state with the target short SHA and an elapsed clock", () => {
+  it("renders the full-screen updating modal with the target short SHA and an elapsed clock", () => {
     const html = view({ phase: "updating", updating: updating() });
-    expect(html).toContain("update-banner updating");
+    expect(html).toContain("update-modal-overlay");
+    expect(html).toContain("update-modal");
     expect(html).toContain("Updating agentsKISS");
     expect(html).toContain("b".repeat(7));
     expect(html).toContain("5s</strong> elapsed");
@@ -127,6 +128,10 @@ describe("UpdateBannerView — updating (apply accepted)", () => {
     expect(html).toContain("agentskiss update");
     expect(html).toContain("agentskiss service status");
   });
+
+  it("renders no modal while browsing normally (only an actual apply)", () => {
+    expect(view()).not.toContain("update-modal");
+  });
 });
 
 describe("UpdateBannerView — reload affordances (issue #89)", () => {
@@ -138,8 +143,9 @@ describe("UpdateBannerView — reload affordances (issue #89)", () => {
     expect(html).toContain("while this page was open");
   });
 
-  it("shows the completion state while a banner-initiated apply reloads the page", () => {
+  it("shows the completion state in the modal while a banner-initiated apply reloads the page", () => {
     const html = view({ reloading: true });
+    expect(html).toContain("update-modal-overlay");
     expect(html).toContain("Update complete");
     expect(html).not.toContain("Reload new build");
   });
