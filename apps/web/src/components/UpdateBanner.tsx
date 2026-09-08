@@ -274,6 +274,22 @@ function CheckErrorStrip({ error }: { error: string }) {
   );
 }
 
+/**
+ * Daemon on a node too old for pi (issue #202 class): every spawned session
+ * would crash on first request (`zlib.createZstdDecompress is not a
+ * function`) — warn loudly here instead of letting the crash be invisible.
+ */
+function NodeTooOldStrip({ nodeVersion, minVersion }: { nodeVersion: string; minVersion: string }) {
+  return (
+    <div className="update-banner" role="alert">
+      <span className="update-banner-error">
+        The daemon runs node {nodeVersion}, which is too old for pi (needs &gt;= {minVersion}) — spawned agents will
+        crash on start. Run <code>pideck update</code> to refresh the private runtime and reinstall pi.
+      </span>
+    </div>
+  );
+}
+
 /** The offer to apply a detected update, with the server's worker gate. */
 function UpdateAvailableStrip({
   remoteSha,
@@ -357,10 +373,28 @@ export function UpdateBannerView({
   // failure) rendered NO banner at all and looked exactly like "up to date".
   if (status?.error != null) return <CheckErrorStrip error={status.error} />;
 
-  // Quiet when up to date / loading.
-  if (status === null || status.updateAvailable !== true || status.remoteSha === null) return null;
+  // Idle-page strips: node-too-old warning plus the update offer.
+  return <IdleStrips status={status} error={error} onApply={onApply} />;
+}
 
-  return (
+/**
+ * The idle-page tail strips: the node-too-old alert (issue #202 class — a
+ * daemon whose node cannot run pi gets a loud warning, on its own or stacked
+ * above an update offer) and the update-available strip. Quiet (`null`) when
+ * up to date / loading.
+ */
+function IdleStrips(props: {
+  status: UpdateStatusResponse | null;
+  error: string | null;
+  onApply: () => void;
+}) {
+  const { status, error, onApply } = props;
+  if (status === null) return null;
+  const nodeStrip = status.nodeTooOld ? (
+    <NodeTooOldStrip nodeVersion={status.nodeVersion} minVersion={status.nodeMinVersion} />
+  ) : null;
+  if (status.updateAvailable !== true || status.remoteSha === null) return nodeStrip;
+  const updateStrip = (
     <UpdateAvailableStrip
       remoteSha={status.remoteSha}
       repo={status.repo}
@@ -369,5 +403,11 @@ export function UpdateBannerView({
       error={error}
       onApply={onApply}
     />
+  );
+  return nodeStrip === null ? updateStrip : (
+    <>
+      {nodeStrip}
+      {updateStrip}
+    </>
   );
 }

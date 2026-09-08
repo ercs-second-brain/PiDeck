@@ -23,6 +23,7 @@ import {
   pullRequestDiffSchema,
   pullRequestSchema,
   sessionSchema,
+  updateStatusResponseSchema,
   workerFilesChangedSchema,
   workerSchema,
   type EndpointName,
@@ -30,6 +31,7 @@ import {
 
 import { createDaemonServer } from "./server.js";
 import { registerContractRoutes } from "./handlers.js";
+import { PI_NODE_MIN_VERSION, nodeSupportsPi } from "./node-version.js";
 import { Router } from "./router.js";
 import { startContractServer, type ContractServer } from "./contract-fixtures.js";
 
@@ -101,6 +103,15 @@ describe("contract endpoint coverage", () => {
 });
 
 describe("projects", () => {
+  it("GET /api/update carries the daemon's node runtime status (issue #202 webapp warning)", async () => {
+    const res = await api("GET", "/api/update");
+    expect(res.status).toBe(200);
+    const body = updateStatusResponseSchema.parse(res.json);
+    expect(body.nodeVersion).toBe(process.version);
+    expect(body.nodeMinVersion).toBe(PI_NODE_MIN_VERSION);
+    expect(body.nodeTooOld).toBe(!nodeSupportsPi(body.nodeVersion));
+  });
+
   it("registers (clone), lists, gets, updates, and deletes a project", async () => {
     // registerProject
     const registered = await api("POST", "/api/projects", { mode: "clone", repoUrl: "https://github.com/o/r" });

@@ -36,7 +36,7 @@ export function nodeSupportsPi(version: string, minVersion: string = PI_NODE_MIN
  * spawns. The startup sequence (index.ts) logs a warning from the same
  * data so a stale private runtime is visible without hitting the API.
  */
-export function nodeStatus(): { nodeVersion: string; nodeTooOld: boolean } {
+export function nodeStatus(): { nodeVersion: string; nodeMinVersion: string; nodeTooOld: boolean } {
   const nodeVersion = process.version;
-  return { nodeVersion, nodeTooOld: !nodeSupportsPi(nodeVersion) };
+  return { nodeVersion, nodeMinVersion: PI_NODE_MIN_VERSION, nodeTooOld: !nodeSupportsPi(nodeVersion) };
 }
