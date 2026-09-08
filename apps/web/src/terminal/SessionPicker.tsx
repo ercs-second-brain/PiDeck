@@ -31,6 +31,7 @@ import { useEffect, useState } from "react";
 import type { Project, Session, Worker } from "@pideck/shared";
 import {
   ArchivedSection,
+  DeleteProjectModal,
   PickerHeader,
   ProjectRow,
   TerminateWorkerModal,
@@ -93,6 +94,8 @@ function ProjectSection(props: {
   onSelectProject: (projectId: string) => void;
   /** Opens the project's settings page in the main pane (issue #167). */
   onOpenSettings: (projectId: string) => void;
+  /** Opens the delete-confirmation modal (issue #172). */
+  onAskDeleteProject: (projectId: string) => void;
   onToggleMenu: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
@@ -142,6 +145,9 @@ function ProjectSection(props: {
         onStartOrchestrator={props.onStartOrchestrator}
         onSelectProject={props.onSelectProject}
         onOpenSettings={props.onOpenSettings}
+        onDeleteProject={(projectId) => {
+          props.onAskDeleteProject(projectId);
+        }}
       />
       {!props.collapsed && activeWorkers.length > 0 && (
         <ul className="picker-list picker-workers">{activeWorkers.map((session) => workerRow(session, false))}</ul>
@@ -156,6 +162,43 @@ function ProjectSection(props: {
         />
       )}
     </section>
+  );
+}
+
+/**
+ * The sidebar's confirmation modals (issues #116/#172): the terminate-worker
+ * confirm and the delete-project confirm (whose body states the GitHub repo
+ * is kept; a rejected delete — the 409 active-worker guard — shows inside
+ * the modal). Extracted so SessionPicker stays a thin shell.
+ */
+function ConfirmModals(props: {
+  state: ReturnType<typeof usePickerState>;
+  entries: ProjectEntry[];
+  onTerminateWorker?: (workerId: string) => void;
+  onDeleteProject?: (projectId: string) => Promise<void>;
+}) {
+  const { state } = props;
+  const deletingName = props.entries.find((entry) => entry.project.id === state.deleteConfirm.confirmingId)?.project.name;
+  return (
+    <>
+      {state.confirmingSession && props.onTerminateWorker && (
+        <TerminateWorkerModal
+          sessionName={state.confirmingSession.tmuxSession}
+          pending={state.pendingTerminate}
+          onConfirm={() => state.confirmTerminate(props.onTerminateWorker!)}
+          onCancel={state.cancelTerminate}
+        />
+      )}
+      {state.deleteConfirm.confirmingId !== null && props.onDeleteProject && (
+        <DeleteProjectModal
+          projectName={deletingName ?? ""}
+          pending={state.deleteConfirm.pending}
+          error={state.deleteConfirm.error}
+          onConfirm={() => void state.deleteConfirm.confirm(props.onDeleteProject!)}
+          onCancel={state.deleteConfirm.cancel}
+        />
+      )}
+    </>
   );
 }
 
@@ -187,6 +230,9 @@ export function SessionPicker(props: {
   onStartOnboarding: () => void;
   /** Starts (or attaches to) the project's orchestrator — the chat-icon click (#173, #53). */
   onStartOrchestrator: (projectId: string) => void;
+  /** Deletes a project locally (issue #172): daemon teardown, GitHub repo
+   * kept. Rejecting (e.g. 409 while workers drive a PR) surfaces in the modal. */
+  onDeleteProject?: (projectId: string) => Promise<void>;
   onTerminateWorker?: (workerId: string) => void;
 }) {
   const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
@@ -216,22 +262,17 @@ export function SessionPicker(props: {
             state.closeMenu();
             props.onOpenSettings(projectId);
           }}
+          onAskDeleteProject={(projectId) => {
+            state.closeMenu();
+            state.deleteConfirm.ask(projectId);
+          }}
           onToggleMenu={state.toggleMenu}
           onStartOrchestrator={props.onStartOrchestrator}
           onTerminateWorker={props.onTerminateWorker}
           onAskTerminate={state.askTerminate}
         />
       ))}
-      {/* Issue #116: the terminate confirmation is a small centered modal
-          over a dimmed backdrop; Escape/Cancel dismisses, Terminate runs. */}
-      {state.confirmingSession && props.onTerminateWorker && (
-        <TerminateWorkerModal
-          sessionName={state.confirmingSession.tmuxSession}
-          pending={state.pendingTerminate}
-          onConfirm={() => state.confirmTerminate(props.onTerminateWorker!)}
-          onCancel={state.cancelTerminate}
-        />
-      )}
+      <ConfirmModals state={state} entries={props.entries} onTerminateWorker={props.onTerminateWorker} onDeleteProject={props.onDeleteProject} />
       {props.entries.length === 0 && !props.error && (
         <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — hit + to connect one."}</p>
       )}

@@ -248,9 +248,10 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
 
     updateProject: ({ params, body }) => services.projects.update(params.projectId, updateProjectRequestSchema.parse(body)),
 
-    deleteProject: ({ params }) => {
-      requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
-      services.projects.delete(params.projectId);
+    /** Issue #172: full local teardown (watching, sessions, files, records,
+     * board cache, registration) — the ordering + guards live in ProjectService.delete. */
+    deleteProject: async ({ params }) => {
+      await services.projects.delete(params.projectId);
       return undefined;
     },
 

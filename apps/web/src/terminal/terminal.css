@@ -225,6 +225,16 @@
   color: var(--accent);
 }
 
+/* Issue #172: the delete entry is destructive — red, and it stays red on
+   hover instead of taking the accent color. */
+.picker-context-menu button.picker-menu-danger {
+  color: var(--red);
+}
+
+.picker-context-menu button.picker-menu-danger:hover {
+  color: var(--red);
+}
+
 .picker-list {
   list-style: none;
   margin: 0;
@@ -432,6 +442,15 @@
 .terminate-modal-confirm:disabled {
   cursor: default;
   opacity: 0.6;
+}
+
+/* Issue #172: rejection from the daemon (e.g. 409 while workers drive a
+   PR) surfaces inside the confirming modal instead of dying silently. */
+.terminate-modal-error {
+  margin: -8px 0 12px;
+  font-size: 12px;
+  color: var(--red);
+  overflow-wrap: anywhere;
 }
 
 /* Issue #64/#174: collapsed per-project archive for terminated workers —

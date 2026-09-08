@@ -429,6 +429,9 @@ export class SessionManager {
     return session;
   }
 
+  /** Deletes the captured scrollback of the given workers (issue #172 project teardown). */
+  deleteArchivedLogs(workerIds: string[]): void { this.archivedLogs.deleteWorkers(workerIds); }
+
   /** Whether the session's tmux session is still alive. */
   async isAlive(sessionId: string): Promise<boolean> {
     const session = this.registry.getSession(sessionId);

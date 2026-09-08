@@ -14,6 +14,7 @@ import {
   fetchProjects,
   fetchSessions,
   fetchWorkers,
+  apiDeleteProject,
   startOrchestrator as apiStartOrchestrator,
   terminateWorker as apiTerminateWorker,
 } from "../lib/api";
@@ -36,6 +37,9 @@ export interface SidebarContextValue {
   startOrchestrator: (projectId: string) => void;
   /** Terminates a worker (issue #64): daemon kills the pane, worker archived; refreshes after. */
   terminateWorker: (workerId: string) => void;
+  /** Deletes a project locally (issue #172): daemon teardown, GitHub repo kept.
+   * Rejects so callers (the delete modal) can surface the daemon's error. */
+  deleteProject: (projectId: string) => Promise<void>;
   /** Opens the project onboarding wizard (sidebar "+" / empty states). */
   openOnboarding: () => void;
 }
@@ -67,6 +71,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
   reload: () => void;
   startOrchestrator: (projectId: string) => void;
   terminateWorker: (workerId: string) => void;
+  deleteProject: (projectId: string) => Promise<void>;
 } {
   const [entries, setEntries] = useState<ProjectEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +146,17 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     [reload],
   );
 
-  return { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker };
+  /** Deletes a project locally (issue #172) and refreshes so the row
+   * disappears. Deliberately rethrows — the confirming modal owns the error. */
+  const deleteProject = useCallback(
+    async (projectId: string) => {
+      await apiDeleteProject(projectId);
+      reload();
+    },
+    [reload],
+  );
+
+  return { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker, deleteProject };
 }
 
 /** Context through which the shell shares sidebar data with main-pane routes. */

@@ -7,7 +7,7 @@
  *   <stateDir>/sessions.json                   — session registry persistence
  */
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -79,6 +79,18 @@ export class ProjectLayout {
     return path.join(this.stateDir, "archived-logs.json");
   }
 
+  /** PR-tracker persistence for a project (`<stateDir>/pr-tracker/<projectId>.json`).
+   * Same path {@link ../pipeline/unit-builder.js} builds for its trackers. */
+  prTrackerFilePath(projectId: string): string {
+    return path.join(this.stateDir, "pr-tracker", `${projectId}.json`);
+  }
+
+  /** Issue-cursor persistence for a project (`<stateDir>/issue-cursor/<projectId>.json`).
+   * Same path {@link ../pipeline/unit-builder.js} builds for its cursors. */
+  issueCursorFilePath(projectId: string): string {
+    return path.join(this.stateDir, "issue-cursor", `${projectId}.json`);
+  }
+
   /** Creates the on-disk layout for a project (idempotent). */
   ensureProject(projectId: string): ProjectDirs {
     const projectDir = this.projectDir(projectId);
@@ -87,5 +99,18 @@ export class ProjectLayout {
     mkdirSync(cloneDir, { recursive: true });
     mkdirSync(worktreesDir, { recursive: true });
     return { projectDir, cloneDir, worktreesDir };
+  }
+
+  /**
+   * Removes ALL of a project's local on-disk state (issue #172 project
+   * delete): the project dir (clone, worktrees, orchestrator prompt file)
+   * plus its PR-tracker and issue-cursor persistence. Idempotent on partial
+   * states (`force` tolerates already-deleted paths). Never touches the
+   * GitHub repo — only files under the daemon state dir.
+   */
+  removeProjectState(projectId: string): void {
+    rmSync(this.projectDir(projectId), { recursive: true, force: true });
+    rmSync(this.prTrackerFilePath(projectId), { force: true });
+    rmSync(this.issueCursorFilePath(projectId), { force: true });
   }
 }

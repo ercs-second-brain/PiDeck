@@ -61,6 +61,7 @@ function renderMain(sessionId: string, contextEntries: ProjectEntry[] = [entry])
     reload: () => {},
     startOrchestrator: () => {},
     terminateWorker: () => {},
+    deleteProject: async () => {},
     openOnboarding: () => {},
   };
   return renderToString(

@@ -97,6 +97,14 @@ export const apiUpdateProject = (
   body: UpdateProjectRequest,
 ): Promise<EndpointResponse<"updateProject">> => request("updateProject", { projectId }, body);
 
+/**
+ * Deletes a project locally (issue #172): daemon-side teardown of watching,
+ * tmux sessions, local state, and registration — the GitHub repo is kept.
+ * Rejects with `ApiError` (409) while workers are driving a PR.
+ */
+export const apiDeleteProject = (projectId: string): Promise<EndpointResponse<"deleteProject">> =>
+  request("deleteProject", { projectId });
+
 // --- Kanban / workers / PRs ---------------------------------------------------
 
 export const apiGetKanban = (projectId: string): Promise<EndpointResponse<"getProjectKanban">> =>

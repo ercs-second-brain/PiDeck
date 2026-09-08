@@ -13,6 +13,7 @@ import {
   projectSchema,
   type Project,
   type ProjectSettings,
+  type Worker,
 } from "@pideck/shared";
 
 import type { UpdateProjectRequest } from "@pideck/shared";
@@ -134,6 +135,34 @@ export interface ProjectServiceDeps {
    * wiring can re-sync per-project watchers/pipelines (issue #46).
    */
   onChange?: () => void;
+  /**
+   * Local project-deletion plumbing (issue #172): the pieces of the daemon
+   * a delete must tear down. Optional so standalone constructions (tests)
+   * keep the plain unregister behavior; the daemon context always wires it.
+   */
+  teardown?: ProjectTeardown;
+}
+
+/**
+ * The collaborators a local project delete (issue #172) drives, in the
+ * order {@link ProjectService.delete} calls them:
+ * stop pipeline watching → terminate orchestrator/worker tmux sessions →
+ * remove local state files → drop kanban cache → unregister. The GitHub
+ * repo is NEVER touched — there is deliberately no hook for it.
+ */
+export interface ProjectTeardown {
+  /** The project's workers in an active (non-terminal) status — the delete
+   * guard: active workers driving a PR refuse deletion (409). */
+  activeWorkers: (projectId: string) => Worker[];
+  /** Stops the project's watcher/pipelines ({@link GithubAutomation.stopProject}). */
+  stopWatching: (projectId: string) => void;
+  /** Kills the project's tmux sessions and drops their registry records
+   * (+ archived logs) ({@link SessionManager.teardownProject}). */
+  teardownSessions: (projectId: string) => Promise<unknown>;
+  /** Removes the project's local state dirs/files ({@link ProjectLayout.removeProjectState}). */
+  removeFiles: (projectId: string) => void;
+  /** Drops the project's cached kanban board (boards derive from GitHub + workers). */
+  forgetBoard: (projectId: string) => void;
 }
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
@@ -148,6 +177,7 @@ export class ProjectService {
   private readonly git: GitRunner;
   private readonly now: () => Date;
   private readonly onChange: () => void;
+  private readonly teardown: ProjectTeardown | undefined;
 
   constructor(deps: ProjectServiceDeps) {
     this.store = deps.store;
@@ -157,6 +187,7 @@ export class ProjectService {
     this.git = deps.git ?? defaultGitRunner;
     this.now = deps.now ?? (() => new Date());
     this.onChange = deps.onChange ?? (() => {});
+    this.teardown = deps.teardown;
   }
 
   list(): Project[] {
@@ -214,10 +245,44 @@ export class ProjectService {
     return updated;
   }
 
-  delete(id: string): boolean {
-    const deleted = this.store.delete(id);
-    if (deleted) this.onChange();
-    return deleted;
+  /**
+   * Deletes a project **locally** (issue #172): pipeline watching, the
+   * orchestrator + worker tmux sessions (and their registry records, incl.
+   * archived logs), the clone/state dirs, the kanban cache, and finally the
+   * registration. The GitHub repo is never touched.
+   *
+   * Ordering matters: stop watching first (no pipeline reacts to the
+   * disappearing sessions), then terminate sessions, then delete files,
+   * then unregister (+ `onChange` re-syncs the automation, a no-op here).
+   *
+   * Idempotent on partial states: every teardown step tolerates already-
+   * gone tmux sessions, files, and records. Refuses with a conflict while
+   * active workers are driving a PR — terminate or merge them first.
+   * Throws {@link NotFoundError} for unknown projects.
+   */
+  async delete(id: string): Promise<void> {
+    if (this.store.get(id) === undefined) throw new NotFoundError(`unknown project: ${id}`);
+    const teardown = this.teardown;
+    if (teardown === undefined) {
+      this.store.delete(id);
+      this.onChange();
+      return;
+    }
+    const driving = teardown
+      .activeWorkers(id)
+      .filter((worker) => worker.prNumber !== null);
+    if (driving.length > 0) {
+      throw new ConflictError(
+        `project "${id}" has ${driving.length} active worker(s) driving PR ` +
+          `(#${driving.map((worker) => worker.prNumber).join(", #")}) — terminate or finish them before deleting`,
+      );
+    }
+    teardown.stopWatching(id);
+    await teardown.teardownSessions(id);
+    teardown.removeFiles(id);
+    teardown.forgetBoard(id);
+    this.store.delete(id);
+    this.onChange();
   }
 
   /** Creates the project's on-disk layout (clone/worktrees dirs). Idempotent. */

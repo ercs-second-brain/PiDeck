@@ -1,9 +1,10 @@
 /**
- * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114/#167/#173):
+ * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114/#167/#172/#173):
  * worker rows (live + archived), the terminate affordance, the project row
- * (chevron + name-as-kanban-entry + chat/orchestrator icon), and the
- * per-project archived section, and the sidebar header. Stateless — interaction state flows in
- * through props, so these render (and unit-test) without xterm or effects.
+ * (chevron + name-as-kanban-entry + chat/orchestrator icon), the per-project
+ * archived section, the sidebar header, the ⋯ menu's delete entry, and the
+ * confirmation modals. Stateless — interaction state flows in through props,
+ * so these render (and unit-test) without xterm or effects.
  */
 
 import type { ReactNode } from "react";
@@ -39,9 +40,62 @@ export function TerminateWorkerButton(props: { pending: boolean; onAsk: () => vo
 }
 
 /**
+ * Shared shell for the sidebar's small centered confirmation modals
+ * (worker terminate #116, project delete #172): dimmed backdrop, title,
+ * body, Cancel/confirm actions; Escape is handled by the interaction-state
+ * hook — the backdrop click dismisses unless a request is in flight.
+ * Pure rendering.
+ */
+function ConfirmModal(props: {
+  ariaLabel: string;
+  title: string;
+  body: ReactNode;
+  /** Labels the confirm button ("Terminate" / "Delete agentsKISS"). */
+  confirmLabel: string;
+  /** Label while the request is in flight ("Terminating…"). */
+  pendingLabel: string;
+  /** Failure message from a rejected confirm, shown inside the modal. */
+  error?: string | null;
+  /** The confirm request is in flight (controls disabling). */
+  pending: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="modal-overlay terminate-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={props.ariaLabel}
+      onClick={props.pending ? undefined : props.onCancel}
+    >
+      <div className="modal-card terminate-modal" onClick={(event) => event.stopPropagation()}>
+        <h3 className="terminate-modal-title">{props.title}</h3>
+        <div className="terminate-modal-body">{props.body}</div>
+        {props.error && <p className="terminate-modal-error">{props.error}</p>}
+        <div className="terminate-modal-actions">
+          <button type="button" className="terminate-modal-cancel" disabled={props.pending} onClick={props.onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="terminate-modal-confirm"
+            disabled={props.pending}
+            title={props.confirmLabel}
+            onClick={props.onConfirm}
+          >
+            {props.pending ? props.pendingLabel : props.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The terminate-confirmation modal (issue #116): small, centered, over a
- * dimmed backdrop — "Terminate worker X?" with Cancel/Terminate. Escape
- * dismisses (unless the terminate request is in flight). Pure rendering.
+ * dimmed backdrop — "Terminate worker X?" with Cancel/Terminate. Pure
+ * rendering on top of {@link ConfirmModal}.
  */
 export function TerminateWorkerModal(props: {
   /** tmux session name of the worker about to be terminated. */
@@ -52,35 +106,56 @@ export function TerminateWorkerModal(props: {
   onCancel: () => void;
 }) {
   return (
-    <div
-      className="modal-overlay terminate-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Terminate worker"
-      onClick={props.pending ? undefined : props.onCancel}
-    >
-      <div className="modal-card terminate-modal" onClick={(event) => event.stopPropagation()}>
-        <h3 className="terminate-modal-title">Terminate worker?</h3>
-        <p className="terminate-modal-body">
+    <ConfirmModal
+      ariaLabel="Terminate worker"
+      title="Terminate worker?"
+      body={
+        <p>
           <code>{props.sessionName}</code> will be killed and archived — its pane and agent stop, its history stays
           inspectable.
         </p>
-        <div className="terminate-modal-actions">
-          <button type="button" className="terminate-modal-cancel" disabled={props.pending} onClick={props.onCancel}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="terminate-modal-confirm"
-            disabled={props.pending}
-            title="Terminate this worker (its pane is killed and it is archived)"
-            onClick={props.onConfirm}
-          >
-            {props.pending ? "Terminating…" : "Terminate"}
-          </button>
-        </div>
-      </div>
-    </div>
+      }
+      confirmLabel="Terminate"
+      pendingLabel="Terminating…"
+      pending={props.pending}
+      onConfirm={props.onConfirm}
+      onCancel={props.onCancel}
+    />
+  );
+}
+
+/**
+ * The delete-project confirmation modal (issue #172), same pattern as the
+ * terminate modal (#116): states that the LOCAL project — terminals, state,
+ * board data — is removed while the GitHub repo is NOT, and confirms with
+ * an explicit "Delete {name}" button. Pure rendering.
+ */
+export function DeleteProjectModal(props: {
+  projectName: string;
+  /** The delete request is in flight (confirm shows "Deleting…"). */
+  pending: boolean;
+  /** Failure from the daemon (e.g. 409 while workers drive a PR). */
+  error?: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <ConfirmModal
+      ariaLabel="Delete project"
+      title="Delete project?"
+      body={
+        <p>
+          <code>{props.projectName}</code> will be removed from PiDeck — its orchestrator and worker terminals, clones
+          and local state, and board data. <strong>The GitHub repository is not deleted.</strong>
+        </p>
+      }
+      confirmLabel={`Delete ${props.projectName}`}
+      pendingLabel="Deleting…"
+      pending={props.pending}
+      error={props.error}
+      onConfirm={props.onConfirm}
+      onCancel={props.onCancel}
+    />
   );
 }
 
@@ -199,6 +274,8 @@ export function ProjectRow(props: {
   onOpenSettings: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
   onSelectProject: (projectId: string) => void;
+  /** Opens the delete-confirmation modal (issue #172). */
+  onDeleteProject: (projectId: string) => void;
 }) {
   return (
     <div className="picker-project-row">
@@ -259,6 +336,17 @@ export function ProjectRow(props: {
             onClick={() => props.onOpenSettings(props.projectId)}
           >
             Settings
+          </button>
+          {/* Issue #172: delete is local-only — the GitHub repo is kept;
+              the confirmation modal states that explicitly. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="picker-menu-danger"
+            title={`Delete ${props.projectName} locally (the GitHub repo is kept)`}
+            onClick={() => props.onDeleteProject(props.projectId)}
+          >
+            Delete project…
           </button>
         </div>
       )}

@@ -64,4 +64,17 @@ export class ArchivedLogStore {
   get(workerId: string): ArchivedScrollback | undefined {
     return this.logs[workerId];
   }
+
+  /** Deletes the captured scrollback of the given workers (issue #172 project
+   * teardown: deleting a project deletes its archived logs too). Idempotent. */
+  deleteWorkers(workerIds: Iterable<string>): void {
+    let changed = false;
+    for (const workerId of workerIds) {
+      if (workerId in this.logs) {
+        delete this.logs[workerId];
+        changed = true;
+      }
+    }
+    if (changed) this.store.save({ version: STATE_VERSION, logs: this.logs });
+  }
 }
