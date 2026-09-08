@@ -23,7 +23,6 @@ import { fileURLToPath } from "node:url";
 
 import { createDaemonContext, type DaemonServices } from "./api/context.js";
 import { createDaemonServer } from "./api/server.js";
-import { ensureProjectOrchestrators } from "./orchestrator/bootstrap.js";
 import { TerminalBridge } from "./terminal/bridge.js";
 import { attachTerminalWebSocket } from "./terminal/ws-server.js";
 
@@ -96,8 +95,10 @@ async function startup(services: DaemonServices): Promise<void> {
   // provider says so loudly here and in /api/status + /api/pi-auth instead
   // of failing later when workers queue their initial prompts (issue #56).
   // Orchestrator bootstrap (issue #12): after reconcile, ensure one
-  // orchestrator session per registered project, listed in the web
-  // terminal picker, running pi with the rendered orchestrator prompt.
+  // orchestrator session per registered project (listed in the web
+  // terminal picker) running pi with the rendered orchestrator prompt.
+  // The same shared instance also bootstraps mid-run project
+  // registrations (issue #166).
   try {
     const pi = await services.piAuth.payload();
     if (!pi.ready) {
@@ -105,7 +106,7 @@ async function startup(services: DaemonServices): Promise<void> {
         `[daemon] pi auth not ready: ${pi.detail}. Workers spawned before auth is ready hold at "spawning" with their initial prompt queued until a provider is ready.`,
       );
     }
-    await ensureProjectOrchestrators(services);
+    await services.orchestratorBootstrap.ensureAll();
   } catch (err) {
     console.error("[daemon] orchestrator bootstrap failed:", err);
   }

@@ -12,9 +12,10 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Project } from "@pideck/shared";
+import { projectSchema, type Project } from "@pideck/shared";
 
 import { createDaemonServer } from "../api/server.js";
+import { startContractServer } from "../api/contract-fixtures.js";
 import { testDaemon, type TestDaemon } from "../api/testutil.js";
 import { DaemonClient } from "../cli/client.js";
 import { run } from "../cli/main.js";
@@ -234,5 +235,33 @@ describe("end-to-end: chat-requested spawn reaches the daemon spawn path", () =>
     //    and the worker is a separate session in the same project.
     expect(orchestratorSessions(h.daemon)).toBe(1);
     expect(h.daemon.tmux.sessions.size).toBe(2);
+  });
+});
+
+describe("webapp project registration (issue #166)", () => {
+  it("POST /api/projects ends with pi + persona running in the orchestrator pane", async () => {
+    // The daemon startup sweep only covers projects known at boot; a
+    // mid-run registration (the webapp wizard's POST /api/projects) must
+    // trigger the orchestrator bootstrap itself — not leave a bare shell.
+    const { daemon, api, close } = await startContractServer();
+    try {
+      const res = await api("POST", "/api/projects", { mode: "clone", repoUrl: "https://github.com/o/r" });
+      expect(res.status).toBe(200);
+      const project = projectSchema.parse(res.json);
+
+      const orchestrator = daemon.services.sessions
+        .listSessions(project.id)
+        .find((s) => s.role === "orchestrator");
+      expect(orchestrator).toBeDefined();
+
+      // The pane is not a plain interactive shell: the launch command (pi
+      // with the rendered persona prompt + its session id) was typed in.
+      const pane = daemon.tmux.sessions.get(orchestrator?.tmuxSession ?? "");
+      expect(pane?.paneLines).toHaveLength(1);
+      expect(pane?.paneLines[0]).toContain("PD_SESSION_ID=");
+      expect(pane?.paneLines[0]).toContain("pi --append-system-prompt");
+    } finally {
+      await close();
+    }
   });
 });
