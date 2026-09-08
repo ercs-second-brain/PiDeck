@@ -70,19 +70,19 @@ describe("renderOrchestratorPrompt", () => {
 });
 
 describe("findAgentPromptPath", () => {
-  const savedEnv = process.env["AGENTSKISS_AGENT_DIR"];
+  const savedEnv = process.env["PD_AGENT_DIR"];
 
   afterEach(() => {
-    if (savedEnv === undefined) delete process.env["AGENTSKISS_AGENT_DIR"];
-    else process.env["AGENTSKISS_AGENT_DIR"] = savedEnv;
+    if (savedEnv === undefined) delete process.env["PD_AGENT_DIR"];
+    else process.env["PD_AGENT_DIR"] = savedEnv;
   });
 
   it("honors an explicit path", () => {
     expect(findAgentPromptPath("/custom/orchestrator.md")).toBe("/custom/orchestrator.md");
   });
 
-  it("honors AGENTSKISS_AGENT_DIR", () => {
-    process.env["AGENTSKISS_AGENT_DIR"] = "/agent-dir";
+  it("honors PD_AGENT_DIR", () => {
+    process.env["PD_AGENT_DIR"] = "/agent-dir";
     expect(findAgentPromptPath()).toBe(path.join("/agent-dir", "prompts", "orchestrator.md"));
   });
 

@@ -7,7 +7,7 @@
  * --no-refresh --json` for every known provider and collecting the ones that
  * report `"status":"ready"`. The configured startup model is read from pi's
  * own settings (`~/.pi/agent/settings.json`, the same file onboard.sh
- * records `AGENTSKISS_MODEL` from).
+ * records `PIDECK_MODEL` from).
  *
  * Used by:
  * - `GET /api/pi-auth` (webapp onboarding wizard + settings banner);
@@ -138,10 +138,10 @@ export interface PiStartupDefaults {
   defaultModel: string | null;
 }
 
-/** Resolves the pi settings dir: `AGENTSKISS_PI_DIR`, else `~/.pi/agent` (matches install/lib/common.sh). */
+/** Resolves the pi settings dir: `PD_PI_DIR`, else `~/.pi/agent` (matches install/lib/common.sh). */
 export function piSettingsDir(explicit?: string): string {
   if (explicit !== undefined && explicit.length > 0) return explicit;
-  const fromEnv = process.env["AGENTSKISS_PI_DIR"];
+  const fromEnv = process.env["PD_PI_DIR"];
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
   return path.join(os.homedir(), ".pi", "agent");
 }
@@ -173,14 +173,14 @@ export function piAuthPayloadFrom(providers: string[], installed: boolean, defau
       ? "pi is not installed on the daemon host — install it (npm i -g @earendil-works/pi-coding-agent) and re-check"
       : providers.length > 0
         ? `pi credentials ready for: ${providers.join(" ")}`
-        : 'no ready pi provider — run "agentskiss onboard", or launch pi and use /login, on the daemon host',
+        : 'no ready pi provider — run "pideck onboard", or launch pi and use /login, on the daemon host',
   });
 }
 
 export interface PiAuthProbeOptions {
   /** pi CLI runner. Default: spawn the real binary. */
   run?: PiRunner;
-  /** pi settings dir override (tests). Default: `AGENTSKISS_PI_DIR` or `~/.pi/agent`. */
+  /** pi settings dir override (tests). Default: `PD_PI_DIR` or `~/.pi/agent`. */
   piDir?: string;
   /** Probe-result TTL in ms. Default 300_000; `0` always probes fresh (deduplicated; tests). */
   ttlMs?: number;

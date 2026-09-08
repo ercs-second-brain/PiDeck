@@ -98,7 +98,7 @@ describe("piAuthPayloadFrom", () => {
       defaultModel: "m",
       detail: expect.stringContaining("credentials ready"),
     });
-    expect(piAuthPayloadFrom([], true, { defaultProvider: null, defaultModel: null }).detail).toContain("agentskiss onboard");
+    expect(piAuthPayloadFrom([], true, { defaultProvider: null, defaultModel: null }).detail).toContain("pideck onboard");
     expect(piAuthPayloadFrom([], false, { defaultProvider: null, defaultModel: null }).detail).toContain("not installed");
   });
 });

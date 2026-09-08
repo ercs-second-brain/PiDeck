@@ -6,7 +6,7 @@
  * daemon entry point calls into. The moving parts live in their own
  * modules and are assembled here:
  *
- * - {@link ./env.js} — the `AGENTSKISS_WATCHER_*` environment knobs;
+ * - {@link ./env.js} — the `PD_WATCHER_*` environment knobs;
  * - {@link ./unit-builder.ts} — the per-project unit (watchers +
  *   pipelines + tracker + cursor, issue #46);
  * - {@link ./catchup.ts} — the bounded catch-up sweep of downtime-created
@@ -101,7 +101,7 @@ export class GithubAutomation {
     this.now = options.now ?? (() => new Date());
     this.onError =
       options.onError ??
-      ((err, where) => console.error(`[agentskiss/wiring] error in ${where}:`, err));
+      ((err, where) => console.error(`[pideck/wiring] error in ${where}:`, err));
     this.bridge = new KanbanBridge(options.hub, this.onError);
     this.catchUp = new CatchUpSweep({
       gh: options.gh,

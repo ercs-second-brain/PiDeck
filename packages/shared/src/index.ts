@@ -1,5 +1,5 @@
 /**
- * @agentskiss/shared — shared contracts for agentsKISS.
+ * @agentskiss/shared — shared contracts for PiDeck.
  *
  * Exports:
  * - Domain model (zod schemas + TS types): Project, Issue, PullRequest,

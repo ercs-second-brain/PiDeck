@@ -134,5 +134,5 @@ export async function startContractServer(options: Parameters<typeof testDaemon>
 
 /** Where testDaemon's fake update-shim bin lives (self-update tests). */
 export function shimBinPath(daemon: TestDaemon): string {
-  return path.join(daemon.stateDir, "bin", "agentskiss");
+  return path.join(daemon.stateDir, "bin", "pideck");
 }

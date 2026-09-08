@@ -401,5 +401,5 @@ function cardSignature(title: string, column: KanbanColumn): string {
 }
 
 function defaultOnError(err: unknown): void {
-  console.error("[agentskiss/pipeline/prs] poll failed:", err);
+  console.error("[pideck/pipeline/prs] poll failed:", err);
 }

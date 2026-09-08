@@ -1,7 +1,7 @@
 /**
  * CLI action routes (agent/README.md: "Finalized in #9" daemon actions).
  *
- * These back the `agentskiss spawn` / `agentskiss send` CLI commands and —
+ * These back the `pideck spawn` / `pideck send` CLI commands and —
  * unlike the webapp contract map — have no entries in
  * `packages/shared/src/rest.ts`, so their request schemas live here, built
  * from shared domain primitives.

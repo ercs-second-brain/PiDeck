@@ -8,7 +8,7 @@ let dir: string;
 let filePath: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "agentskiss-registry-"));
+  dir = mkdtempSync(path.join(tmpdir(), "pideck-registry-"));
   filePath = path.join(dir, "sessions.json");
 });
 
@@ -18,7 +18,7 @@ describe("SessionRegistry", () => {
     const session = registry.createSession({
       projectId: "proj",
       role: "orchestrator",
-      tmuxSession: "agentskiss-proj-orchestrator-1",
+      tmuxSession: "pideck-proj-orchestrator-1",
     });
     expect(session.id).toMatch(/^sess-/);
     expect(session.workerId).toBeNull();
@@ -27,7 +27,7 @@ describe("SessionRegistry", () => {
     const worker = registry.createSession({
       projectId: "proj",
       role: "worker",
-      tmuxSession: "agentskiss-proj-worker-1",
+      tmuxSession: "pideck-proj-worker-1",
       workerId: null,
     });
     expect(worker.role).toBe("worker");
@@ -38,17 +38,17 @@ describe("SessionRegistry", () => {
     const orch = registry.createSession({
       projectId: "a",
       role: "orchestrator",
-      tmuxSession: "agentskiss-a-orchestrator-1",
+      tmuxSession: "pideck-a-orchestrator-1",
     });
     const workerSession = registry.createSession({
       projectId: "a",
       role: "worker",
-      tmuxSession: "agentskiss-a-worker-1",
+      tmuxSession: "pideck-a-worker-1",
     });
     registry.createSession({
       projectId: "b",
       role: "worker",
-      tmuxSession: "agentskiss-b-worker-1",
+      tmuxSession: "pideck-b-worker-1",
     });
 
     expect(registry.listSessions({ projectId: "a" })).toHaveLength(2);
@@ -64,9 +64,9 @@ describe("SessionRegistry", () => {
     const session = registry.createSession({
       projectId: "a",
       role: "worker",
-      tmuxSession: "agentskiss-a-worker-2",
+      tmuxSession: "pideck-a-worker-2",
     });
-    expect(registry.getSessionByTmuxName("agentskiss-a-worker-2")?.id).toBe(session.id);
+    expect(registry.getSessionByTmuxName("pideck-a-worker-2")?.id).toBe(session.id);
     expect(registry.getSessionByTmuxName("missing")).toBeUndefined();
   });
 
@@ -75,7 +75,7 @@ describe("SessionRegistry", () => {
     const session = registry.createSession({
       projectId: "a",
       role: "worker",
-      tmuxSession: "agentskiss-a-worker-1",
+      tmuxSession: "pideck-a-worker-1",
     });
     const worker = registry.registerWorker({
       projectId: "a",
@@ -106,14 +106,14 @@ describe("SessionRegistry", () => {
     const withOverrides = registry.createSession({
       projectId: "a",
       role: "worker",
-      tmuxSession: "agentskiss-a-worker-1",
+      tmuxSession: "pideck-a-worker-1",
       cwd: "/tmp/worktrees/issue-7",
       command: "bash -c 'sleep 300'",
     });
     registry.createSession({
       projectId: "a",
       role: "orchestrator",
-      tmuxSession: "agentskiss-a-orchestrator-1",
+      tmuxSession: "pideck-a-orchestrator-1",
     });
 
     // The fields land in the JSON file...
@@ -140,7 +140,7 @@ describe("SessionRegistry", () => {
     const session = registry.createSession({
       projectId: "a",
       role: "orchestrator",
-      tmuxSession: "agentskiss-a-orchestrator-1",
+      tmuxSession: "pideck-a-orchestrator-1",
     });
     const worker = registry.registerWorker({
       projectId: "a",
@@ -162,7 +162,7 @@ describe("SessionRegistry", () => {
     const session = first.createSession({
       projectId: "a",
       role: "worker",
-      tmuxSession: "agentskiss-a-worker-1",
+      tmuxSession: "pideck-a-worker-1",
     });
 
     const second = new SessionRegistry(filePath);
@@ -181,7 +181,7 @@ describe("SessionRegistry", () => {
     registry.createSession({
       projectId: "a",
       role: "worker",
-      tmuxSession: "agentskiss-a-worker-1",
+      tmuxSession: "pideck-a-worker-1",
     });
 
     const state = JSON.parse(readFileSync(filePath, "utf8")) as {
@@ -208,7 +208,7 @@ describe("SessionRegistry", () => {
     const session = registry.createSession({
       projectId: "a",
       role: "worker",
-      tmuxSession: "agentskiss-a-worker-1",
+      tmuxSession: "pideck-a-worker-1",
     });
     expect(registry.deleteSession(session.id)).toBe(true);
     expect(registry.getSession(session.id)).toBeUndefined();
@@ -219,7 +219,7 @@ describe("SessionRegistry", () => {
 describe("SessionRegistry: reviewer linkage (issue #107)", () => {
   it("records reviewer-kind workers with pr and parent linkage", () => {
     const registry = new SessionRegistry(filePath);
-    const session = registry.createSession({ projectId: "a", role: "worker", tmuxSession: "agentskiss-a-worker-1" });
+    const session = registry.createSession({ projectId: "a", role: "worker", tmuxSession: "pideck-a-worker-1" });
     const reviewer = registry.registerWorker({
       projectId: "a",
       sessionId: session.id,

@@ -16,7 +16,7 @@
  *   reconcile-resurrected plain shell is detected and pi is relaunched.
  *
  * The orchestrator's actions (create issues via the `create-issue` skill,
- * spawn workers via the `spawn-worker` skill → `agentskiss spawn`) flow
+ * spawn workers via the `spawn-worker` skill → `pideck spawn`) flow
  * through the daemon CLI/API; this module only puts the agent in the pane.
  */
 
@@ -46,12 +46,12 @@ const AGENT_PANE_COMMANDS = new Set(["pi", "node"]);
  * Builds the shell line typed into a fresh orchestrator pane: run pi with
  * the rendered prompt appended to its system prompt and its own session id
  * in the environment (agent/README.md: every agent session gets
- * `AGENTSKISS_SESSION_ID`).
+ * `PD_SESSION_ID`).
  */
 export function orchestratorLaunchCommand(options: { sessionId: string; promptFile: string }): string {
   return [
     "env",
-    `AGENTSKISS_SESSION_ID=${shQuote(options.sessionId)}`,
+    `PD_SESSION_ID=${shQuote(options.sessionId)}`,
     "pi",
     "--append-system-prompt",
     shQuote(options.promptFile),
@@ -170,7 +170,7 @@ export class OrchestratorBootstrap {
  * startup session reconciliation so resurrected orchestrator panes get
  * their agent relaunched.
  *
- * `layout` defaults to the state-dir layout derived from `AGENTSKISS_HOME`
+ * `layout` defaults to the state-dir layout derived from `PD_HOME`
  * (the daemon entry point uses the same default); tests inject the exact
  * {@link ProjectLayout} of their context.
  */

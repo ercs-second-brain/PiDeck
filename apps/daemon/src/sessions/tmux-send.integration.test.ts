@@ -18,7 +18,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Tmux } from "./tmux.js";
 
-const SOCKET = `agentskiss-send-test-${process.pid}`;
+const SOCKET = `pideck-send-test-${process.pid}`;
 const tmuxAvailable = await Tmux.isAvailable();
 
 let stateDir = "";
@@ -78,7 +78,7 @@ async function sendAndExpect(
 
 beforeAll(async () => {
   if (!tmuxAvailable) return;
-  stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-send-it-"));
+  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-send-it-"));
   logFile = path.join(stateDir, "rec.log");
   const script = path.join(stateDir, "recorder.js");
   writeFileSync(script, recorderScript(logFile));

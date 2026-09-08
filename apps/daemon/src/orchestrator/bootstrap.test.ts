@@ -91,7 +91,7 @@ describe("OrchestratorBootstrap.ensureForProject", () => {
       orchestratorLaunchCommand({ sessionId: session.id, promptFile: h.promptFile }),
     ]);
     expect(pane?.paneLines[0]).toContain("--append-system-prompt");
-    expect(pane?.paneLines[0]).toContain(`AGENTSKISS_SESSION_ID=${shQuote(session.id)}`);
+    expect(pane?.paneLines[0]).toContain(`PD_SESSION_ID=${shQuote(session.id)}`);
     expect(pane?.paneLines[0]).toContain("pi");
   });
 
@@ -184,7 +184,7 @@ describe("end-to-end: chat-requested spawn reaches the daemon spawn path", () =>
     });
   }
 
-  it("orchestrator chat → agentskiss spawn → worker running in tmux", async () => {
+  it("orchestrator chat → pideck spawn → worker running in tmux", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {}); // silence CLI JSON output
     const h = await harness();
 

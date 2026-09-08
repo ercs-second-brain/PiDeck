@@ -23,7 +23,7 @@ describe("CLI action routes", () => {
   it("exposes /api/status with the pi auth fields (issue #57)", async () => {
     const res = await server.api("GET", "/api/status");
     expect(res.status).toBe(200);
-    expect(res.json).toMatchObject({ ok: true, name: "agentskiss-daemon", piReady: true });
+    expect(res.json).toMatchObject({ ok: true, name: "pideck-daemon", piReady: true });
     expect((res.json as { piProviders: unknown }).piProviders).toBeInstanceOf(Array);
   });
 

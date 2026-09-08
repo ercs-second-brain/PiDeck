@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { IssueCursor } from "./cursor.js";
 
 function tmpFile(): string {
-  return path.join(mkdtempSync(path.join(tmpdir(), "agentskiss-cursor-")), "proj.json");
+  return path.join(mkdtempSync(path.join(tmpdir(), "pideck-cursor-")), "proj.json");
 }
 
 describe("IssueCursor", () => {

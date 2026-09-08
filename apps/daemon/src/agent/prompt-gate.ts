@@ -76,8 +76,8 @@ export class PromptGate {
       worker.id,
       "spawning",
       prompt !== undefined
-        ? "waiting for pi auth: no ready provider (run \"agentskiss onboard\" or launch pi and use /login on the daemon host); initial prompt queued"
-        : 'waiting for pi auth: no ready provider (run "agentskiss onboard" or launch pi and use /login on the daemon host)',
+        ? "waiting for pi auth: no ready provider (run \"pideck onboard\" or launch pi and use /login on the daemon host); initial prompt queued"
+        : 'waiting for pi auth: no ready provider (run "pideck onboard" or launch pi and use /login on the daemon host)',
     );
     this.ensureTimer();
   }

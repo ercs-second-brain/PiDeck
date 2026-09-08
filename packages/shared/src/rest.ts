@@ -165,7 +165,7 @@ export const workerFilesChangedSchema = pullRequestDiffSchema
 export type WorkerFilesChanged = z.infer<typeof workerFilesChangedSchema>;
 
 /**
- * Live progress of a running `agentskiss update` (issue #89): the update shim
+ * Live progress of a running `pideck update` (issue #89): the update shim
  * (install/lib/update.sh) rewrites a small state file at each stage, and the
  * daemon serves it so the webapp banner can show real progress during the
  * multi-minute fetch/rebuild. Written by the shim, so `stage` is one of its
@@ -200,7 +200,7 @@ export const updateStatusSchema = z.object({
   localSha: z.string().min(1).nullable(),
   /** Full SHA of the upstream ref head; `null` when the check failed. */
   remoteSha: z.string().min(1).nullable(),
-  /** `true` only when both revisions resolved and differ (→ `agentskiss update`). */
+  /** `true` only when both revisions resolved and differ (→ `pideck update`). */
   updateAvailable: z.boolean(),
   /** When the check ran (ISO timestamp). */
   checkedAt: z.iso.datetime(),
@@ -215,7 +215,7 @@ export const updateStatusSchema = z.object({
    */
   runningSha: z.string().min(1).nullable(),
   /**
-   * Live progress of a running `agentskiss update` shim (issue #89), served
+   * Live progress of a running `pideck update` shim (issue #89), served
    * fresh even when the gh check itself is cached; `null` when no update has
    * run recently (staleness window in apps/daemon/src/api/update.ts).
    */
@@ -415,7 +415,7 @@ export const endpoints = {
   },
   /**
    * Apply a pending update (issue #76): gates server-side on zero active
-   * workers (409 otherwise), then spawns the installed `agentskiss update`
+   * workers (409 otherwise), then spawns the installed `pideck update`
    * shim detached and returns immediately — the daemon restarts mid-apply,
    * so the webapp polls `GET /api/update` until it reports the new build.
    */

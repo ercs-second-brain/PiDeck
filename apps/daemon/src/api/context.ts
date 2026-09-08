@@ -4,7 +4,6 @@
  * overrides so tests can run without network, tmux, or the real state dir.
  */
 
-import os from "node:os";
 import path from "node:path";
 
 import type { Project } from "@agentskiss/shared";
@@ -15,7 +14,7 @@ import { GhClient } from "../github/index.js";
 import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
 import { GithubAutomation, watcherOptionsFromEnv } from "../pipeline/wiring.js";
-import { ProjectLayout } from "../sessions/layout.js";
+import { ProjectLayout, defaultStateDir } from "../sessions/layout.js";
 import { SessionManager } from "../sessions/manager.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { Tmux } from "../sessions/tmux.js";
@@ -71,7 +70,7 @@ export interface DaemonServices {
 }
 
 export interface DaemonContextOptions {
-  /** Daemon state dir (default: `AGENTSKISS_HOME` or `~/.agentskiss`). */
+  /** Daemon state dir (default: `PD_HOME` or `~/.pideck`). */
   stateDir?: string;
   /** Override the GhClient factory (tests). */
   gh?: (repoUrl: string) => GhClient;
@@ -81,9 +80,9 @@ export interface DaemonContextOptions {
   tmux?: Tmux;
   /** Override the registry (tests). */
   registry?: SessionRegistry;
-  /** Disable the GitHub watcher/pipeline loop (tests; env: `AGENTSKISS_WATCHER_ENABLED=0`). */
+  /** Disable the GitHub watcher/pipeline loop (tests; env: `PD_WATCHER_ENABLED=0`). */
   watcherEnabled?: boolean;
-  /** Watcher/PR-loop poll interval in ms (tests; env: `AGENTSKISS_WATCHER_POLL_INTERVAL_MS`). */
+  /** Watcher/PR-loop poll interval in ms (tests; env: `PD_WATCHER_POLL_INTERVAL_MS`). */
   watcherPollIntervalMs?: number;
   /** Override the gh runner used by the update checker (tests; issue #55). */
   updateGh?: GhRunner;
@@ -105,12 +104,10 @@ export interface DaemonContextOptions {
   piAuthTtlMs?: number;
 }
 
-/** Resolves the daemon state dir honoring `AGENTSKISS_HOME`. */
+/** Resolves the daemon state dir honoring `PD_HOME` (with legacy `~/.agentskiss` fallback). */
 export function resolveStateDir(explicit?: string): string {
   if (explicit !== undefined && explicit.length > 0) return explicit;
-  const fromEnv = process.env["AGENTSKISS_HOME"];
-  if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
-  return path.join(os.homedir(), ".agentskiss");
+  return defaultStateDir();
 }
 
 export function createDaemonContext(options: DaemonContextOptions = {}): DaemonServices {
@@ -188,10 +185,10 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   automationRef.current = automation;
 
   // Self-update check (issue #55): the installed checkout is either the
-  // service-configured AGENTSKISS_SRC or the installer's <stateDir>/src;
+  // service-configured PD_SRC or the installer's <stateDir>/src;
   // upstream repo/ref come from the installer's config.json unless overridden.
   const update = new UpdateChecker({
-    srcDir: process.env["AGENTSKISS_SRC"] ?? path.join(stateDir, "src"),
+    srcDir: process.env["PD_SRC"] ?? path.join(stateDir, "src"),
     stateDir,
     ...(options.updateRepoUrl !== undefined ? { repoUrl: options.updateRepoUrl } : {}),
     ...(options.updateRepoRef !== undefined ? { repoRef: options.updateRepoRef } : {}),

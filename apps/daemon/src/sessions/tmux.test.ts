@@ -37,23 +37,23 @@ describe("Tmux against a fake server", () => {
     const { tmux, fake } = makeTmux();
     expect(await tmux.listSessions()).toEqual([]);
 
-    await tmux.newSession("agentskiss-proj-orchestrator-1");
-    await tmux.newSession("agentskiss-proj-worker-1", {
+    await tmux.newSession("pideck-proj-orchestrator-1");
+    await tmux.newSession("pideck-proj-worker-1", {
       cwd: "/tmp/ws",
       command: ["pi"],
     });
 
-    expect(await tmux.hasSession("agentskiss-proj-orchestrator-1")).toBe(true);
+    expect(await tmux.hasSession("pideck-proj-orchestrator-1")).toBe(true);
     expect(await tmux.listSessions()).toEqual([
-      "agentskiss-proj-orchestrator-1",
-      "agentskiss-proj-worker-1",
+      "pideck-proj-orchestrator-1",
+      "pideck-proj-worker-1",
     ]);
-    expect(fake.sessions.get("agentskiss-proj-worker-1")?.cwd).toBe("/tmp/ws");
-    expect(fake.sessions.get("agentskiss-proj-worker-1")?.command).toEqual(["pi"]);
+    expect(fake.sessions.get("pideck-proj-worker-1")?.cwd).toBe("/tmp/ws");
+    expect(fake.sessions.get("pideck-proj-worker-1")?.command).toEqual(["pi"]);
 
-    await tmux.killSession("agentskiss-proj-worker-1");
-    expect(await tmux.hasSession("agentskiss-proj-worker-1")).toBe(false);
-    expect(await tmux.listSessions()).toEqual(["agentskiss-proj-orchestrator-1"]);
+    await tmux.killSession("pideck-proj-worker-1");
+    expect(await tmux.hasSession("pideck-proj-worker-1")).toBe(false);
+    expect(await tmux.listSessions()).toEqual(["pideck-proj-orchestrator-1"]);
   });
 
   it("rejects duplicate session names", async () => {
@@ -99,7 +99,7 @@ describe("Tmux against a fake server", () => {
           new TmuxError("error connecting to socket: No such file or directory", {
             args,
             exitCode: 1,
-            stderr: "error connecting to /tmp/agentskiss-test: No such file or directory",
+            stderr: "error connecting to /tmp/pideck-test: No such file or directory",
           }),
         );
       },

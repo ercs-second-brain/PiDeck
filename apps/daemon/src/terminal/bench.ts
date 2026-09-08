@@ -59,7 +59,7 @@ interface SetupResult {
 function setup(options: TerminalBridgeOptions = {}): SetupResult {
   const fake = new FakeTmuxRunner();
   const tmux = new Tmux({ runner: fake.asRunner() });
-  const dir = mkdtempSync(path.join(tmpdir(), "agentskiss-bench-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "pideck-bench-"));
   const registry = new SessionRegistry(path.join(dir, "sessions.json"));
   const bridge = new TerminalBridge({ tmux, registry }, options);
   const tmuxName = "bench-orchestrator-1";

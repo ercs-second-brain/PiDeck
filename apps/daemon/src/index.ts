@@ -7,13 +7,13 @@
  * reconciliation against live tmux state at startup.
  *
  * Environment:
- * - `AGENTSKISS_HOME`     state dir (default `~/.agentskiss`)
- * - `AGENTSKISS_WEB_HOST` bind host (default `127.0.0.1`; units set `0.0.0.0`)
- * - `AGENTSKISS_WEB_PORT` bind port (default `8321`)
- * - `AGENTSKISS_WEB_DIST` webapp build dir (default: `<repo>/apps/web/dist`)
- * - `AGENTSKISS_WATCHER_ENABLED`           `0`/`false` disables the GitHub
+ * - `PD_HOME`     state dir (default `~/.pideck`)
+ * - `PD_WEB_HOST` bind host (default `127.0.0.1`; units set `0.0.0.0`)
+ * - `PD_WEB_PORT` bind port (default `8321`)
+ * - `PD_WEB_DIST` webapp build dir (default: `<repo>/apps/web/dist`)
+ * - `PD_WATCHER_ENABLED`           `0`/`false` disables the GitHub
  *                                          watcher/pipeline loop (issue #46)
- * - `AGENTSKISS_WATCHER_POLL_INTERVAL_MS`  watcher/PR-loop poll interval
+ * - `PD_WATCHER_POLL_INTERVAL_MS`  watcher/PR-loop poll interval
  *                                          (default 30s; see the API rate
  *                                          budget note in pipeline/wiring.ts)
  */
@@ -28,8 +28,8 @@ import { TerminalBridge } from "./terminal/bridge.js";
 import { attachTerminalWebSocket } from "./terminal/ws-server.js";
 
 export async function main(options: { stateDir?: string; host?: string; port?: number; webDist?: string | null } = {}): Promise<void> {
-  const host = options.host ?? process.env["AGENTSKISS_WEB_HOST"] ?? "127.0.0.1";
-  const port = options.port ?? Number(process.env["AGENTSKISS_WEB_PORT"] ?? "8321");
+  const host = options.host ?? process.env["PD_WEB_HOST"] ?? "127.0.0.1";
+  const port = options.port ?? Number(process.env["PD_WEB_PORT"] ?? "8321");
   const webDist = options.webDist ?? undefined;
 
   const services = createDaemonContext({ stateDir: options.stateDir });
@@ -44,7 +44,7 @@ export async function main(options: { stateDir?: string; host?: string; port?: n
   void startup(services);
 
   server.listen(port, host, () => {
-    console.log(`[daemon] agentskiss daemon listening on http://${host}:${port} (ws: /api/ws)`);
+    console.log(`[daemon] pideck daemon listening on http://${host}:${port} (ws: /api/ws)`);
   });
 
   const shutdown = (signal: string): void => {
@@ -120,7 +120,7 @@ async function startup(services: DaemonServices): Promise<void> {
     if (services.automation.isRunning) {
       console.log(`[daemon] github watcher + pipelines started (${services.automation.watchedProjectIds.length} project(s) watched)`);
     } else {
-      console.log("[daemon] github watcher + pipelines disabled (AGENTSKISS_WATCHER_ENABLED)");
+      console.log("[daemon] github watcher + pipelines disabled (PD_WATCHER_ENABLED)");
     }
   } catch (err) {
     console.error("[daemon] github watcher/pipeline startup failed:", err);

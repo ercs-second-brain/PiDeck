@@ -1,5 +1,5 @@
 /**
- * Typed HTTP client for the agentskiss CLI.
+ * Typed HTTP client for the pideck CLI.
  *
  * Contract-backed calls go through the shared endpoint map (`formatPath` +
  * response-schema validation), so a daemon that returns a payload violating
@@ -29,12 +29,12 @@ import {
 
 import { CliError } from "./args.js";
 
-/** Daemon base URL: `AGENTSKISS_DAEMON_URL`, else host/port env, else loopback:8321. */
+/** Daemon base URL: `PD_DAEMON_URL`, else host/port env, else loopback:8321. */
 export function daemonBaseUrl(): string {
-  const url = process.env["AGENTSKISS_DAEMON_URL"];
+  const url = process.env["PD_DAEMON_URL"];
   if (url !== undefined && url.length > 0) return url.replace(/\/$/, "");
-  const host = process.env["AGENTSKISS_WEB_HOST"];
-  const port = process.env["AGENTSKISS_WEB_PORT"] ?? "8321";
+  const host = process.env["PD_WEB_HOST"];
+  const port = process.env["PD_WEB_PORT"] ?? "8321";
   return `http://${host !== undefined && host.length > 0 ? host : "127.0.0.1"}:${port}`;
 }
 
@@ -51,7 +51,7 @@ export class DaemonClient {
       });
     } catch (err) {
       throw new CliError(
-        `cannot reach the agentskiss daemon at ${this.baseUrl} (${err instanceof Error ? err.message : String(err)}). Is it running? Try 'agentskiss status --json' or start it with the installer's service control.`,
+        `cannot reach the pideck daemon at ${this.baseUrl} (${err instanceof Error ? err.message : String(err)}). Is it running? Try 'pideck status --json' or start it with the installer's service control.`,
         3,
       );
     }
@@ -73,7 +73,7 @@ export class DaemonClient {
 
   // -- CLI-specific daemon actions (agent/README.md, finalized in #9) -------
 
-  /** `agentskiss status --json` — daemon liveness (+ pi auth fields, issue #57). */
+  /** `pideck status --json` — daemon liveness (+ pi auth fields, issue #57). */
   async status(): Promise<{
     ok: boolean;
     name: string;
@@ -86,7 +86,7 @@ export class DaemonClient {
     return this.request("GET", "/api/status");
   }
 
-  /** `agentskiss spawn` — daemon spawns the worker (tmux + registry + event). */
+  /** `pideck spawn` — daemon spawns the worker (tmux + registry + event). */
   async spawn(projectId: string, input: { issueNumber?: number; name: string; prompt?: string }): Promise<Worker> {
     const body: Record<string, unknown> = { name: input.name };
     if (input.issueNumber !== undefined) body["issueNumber"] = input.issueNumber;
@@ -94,13 +94,13 @@ export class DaemonClient {
     return this.request("POST", `/api/projects/${encodeURIComponent(projectId)}/spawn`, body, workerSchema);
   }
 
-  /** `agentskiss send` — deliver a message into a session's tmux pane. */
+  /** `pideck send` — deliver a message into a session's tmux pane. */
   async send(sessionId: string, message: string): Promise<void> {
     await this.request("POST", `/api/sessions/${encodeURIComponent(sessionId)}/send`, { message });
   }
 
   /**
-   * `agentskiss report-pr` — a worker session reports the PR it opened
+   * `pideck report-pr` — a worker session reports the PR it opened
    * (issue #49). The daemon resolves the worker from the tmux session name
    * the CLI self-identified from its own pane context.
    */

@@ -235,7 +235,7 @@ describe("GithubAutomation (issue #46 wiring)", () => {
     expect(daemon.automation.watchedProjectIds.sort()).toEqual([PROJECT, "octo-two"]);
   });
 
-  it("is inert when disabled (AGENTSKISS_WATCHER_ENABLED=0 semantics)", async () => {
+  it("is inert when disabled (PD_WATCHER_ENABLED=0 semantics)", async () => {
     const daemon = testDaemon(emptyRoutes(), { watcherEnabled: false, watcherPollIntervalMs: NO_TICK });
     active = daemon;
     await daemon.services.projects.register({
@@ -314,21 +314,21 @@ describe("GithubAutomation (issue #46 wiring)", () => {
 
   it("resolves the watcher knobs from env with sane defaults", () => {
     expect(watcherOptionsFromEnv({})).toEqual({ enabled: true, pollIntervalMs: 30_000 });
-    expect(watcherOptionsFromEnv({ AGENTSKISS_WATCHER_ENABLED: "0" })).toEqual({ enabled: false, pollIntervalMs: 30_000 });
-    expect(watcherOptionsFromEnv({ AGENTSKISS_WATCHER_ENABLED: "false" })).toEqual({ enabled: false, pollIntervalMs: 30_000 });
-    expect(watcherOptionsFromEnv({ AGENTSKISS_WATCHER_ENABLED: "1" })).toEqual({ enabled: true, pollIntervalMs: 30_000 });
-    expect(watcherOptionsFromEnv({ AGENTSKISS_WATCHER_POLL_INTERVAL_MS: "120000" })).toEqual({
+    expect(watcherOptionsFromEnv({ PD_WATCHER_ENABLED: "0" })).toEqual({ enabled: false, pollIntervalMs: 30_000 });
+    expect(watcherOptionsFromEnv({ PD_WATCHER_ENABLED: "false" })).toEqual({ enabled: false, pollIntervalMs: 30_000 });
+    expect(watcherOptionsFromEnv({ PD_WATCHER_ENABLED: "1" })).toEqual({ enabled: true, pollIntervalMs: 30_000 });
+    expect(watcherOptionsFromEnv({ PD_WATCHER_POLL_INTERVAL_MS: "120000" })).toEqual({
       enabled: true,
       pollIntervalMs: 120_000,
     });
     // Invalid values fall back to the default instead of hammering the API.
-    expect(watcherOptionsFromEnv({ AGENTSKISS_WATCHER_POLL_INTERVAL_MS: "-5" })).toEqual({
+    expect(watcherOptionsFromEnv({ PD_WATCHER_POLL_INTERVAL_MS: "-5" })).toEqual({
       enabled: true,
       pollIntervalMs: 30_000,
     });
     // Explicit options win over env.
     expect(
-      watcherOptionsFromEnv({ AGENTSKISS_WATCHER_POLL_INTERVAL_MS: "120000" }, { enabled: false, pollIntervalMs: 1000 }),
+      watcherOptionsFromEnv({ PD_WATCHER_POLL_INTERVAL_MS: "120000" }, { enabled: false, pollIntervalMs: 1000 }),
     ).toEqual({ enabled: false, pollIntervalMs: 1000 });
   });
 });

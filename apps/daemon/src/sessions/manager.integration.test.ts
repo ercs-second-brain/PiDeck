@@ -3,7 +3,7 @@
  *
  * Skipped gracefully when tmux is unavailable (e.g. CI runners without
  * tmux); the offline behavior is covered by the fake-based unit tests.
- * Runs on a private tmux socket (`-L agentskiss-test-<pid>`) so it never
+ * Runs on a private tmux socket (`-L pideck-test-<pid>`) so it never
  * touches the developer's own tmux server.
  */
 
@@ -18,7 +18,7 @@ import { SessionManager } from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { Tmux } from "./tmux.js";
 
-const SOCKET = `agentskiss-test-${process.pid}`;
+const SOCKET = `pideck-test-${process.pid}`;
 const tmuxAvailable = await Tmux.isAvailable();
 
 const execFileP = promisify(execFile);
@@ -29,7 +29,7 @@ let layout: ProjectLayout;
 let manager: SessionManager;
 
 beforeAll(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "agentskiss-integration-"));
+  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-integration-"));
   tmux = new Tmux({ socketName: SOCKET });
   layout = new ProjectLayout(stateDir);
   manager = new SessionManager({
@@ -50,24 +50,24 @@ afterAll(async () => {
 
 describe.skipIf(!tmuxAvailable)("SessionManager against a real tmux server", () => {
   it("creates, lists, and kills tmux sessions", async () => {
-    await tmux.newSession("agentskiss-it-orchestrator-1");
-    await tmux.newSession("agentskiss-it-worker-1", {
+    await tmux.newSession("pideck-it-orchestrator-1");
+    await tmux.newSession("pideck-it-worker-1", {
       cwd: stateDir,
       command: ["bash", "-c", "sleep 300"],
     });
 
     const names = await tmux.listSessions();
-    expect(names).toContain("agentskiss-it-orchestrator-1");
-    expect(names).toContain("agentskiss-it-worker-1");
-    expect(await tmux.hasSession("agentskiss-it-worker-1")).toBe(true);
+    expect(names).toContain("pideck-it-orchestrator-1");
+    expect(names).toContain("pideck-it-worker-1");
+    expect(await tmux.hasSession("pideck-it-worker-1")).toBe(true);
 
-    await tmux.killSession("agentskiss-it-orchestrator-1");
-    expect(await tmux.hasSession("agentskiss-it-orchestrator-1")).toBe(false);
+    await tmux.killSession("pideck-it-orchestrator-1");
+    expect(await tmux.hasSession("pideck-it-orchestrator-1")).toBe(false);
   }, 15_000);
 
   it("ensures one orchestrator session per project", async () => {
     const first = await manager.ensureOrchestrator("itproj");
-    expect(first.tmuxSession).toBe("agentskiss-itproj-orchestrator-1");
+    expect(first.tmuxSession).toBe("pideck-itproj-orchestrator-1");
     expect(await tmux.hasSession(first.tmuxSession)).toBe(true);
 
     const again = await manager.ensureOrchestrator("itproj");
@@ -80,7 +80,7 @@ describe.skipIf(!tmuxAvailable)("SessionManager against a real tmux server", () 
       command: ["bash", "-c", "echo WORKER_READY; exec sleep 300"],
     });
 
-    expect(session.tmuxSession).toBe("agentskiss-itproj-worker-1");
+    expect(session.tmuxSession).toBe("pideck-itproj-worker-1");
     expect(worker.status).toBe("running");
     expect(await tmux.hasSession(session.tmuxSession)).toBe(true);
     expect(manager.listSessions("itproj").map((s) => s.tmuxSession)).toContain(

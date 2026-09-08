@@ -12,7 +12,7 @@
  * Webapp click-to-update (issue #76): `check()` results are cached (default
  * ~5 minutes, issue #82) so webapp polling never burns gh API rate limit, and
  * `apply()`
- * spawns the installed `agentskiss update` shim **detached** — the shim
+ * spawns the installed `pideck update` shim **detached** — the shim
  * rebuilds and restarts the daemon service mid-apply, so the endpoint that
  * calls it returns immediately and the webapp polls until the daemon
  * reappears reporting the new SHA. The active-worker gate lives in the
@@ -62,7 +62,7 @@ interface InstallConfig {
 }
 
 export interface UpdateCheckerOptions {
-  /** Installed source checkout (default: `AGENTSKISS_SRC` or `<stateDir>/src`). */
+  /** Installed source checkout (default: `PD_SRC` or `<stateDir>/src`). */
   srcDir: string;
   /** Daemon state dir holding the installer's `config.json`. */
   stateDir: string;
@@ -181,17 +181,17 @@ export class UpdateChecker {
 
   /**
    * Applies a pending update (issue #76) by spawning the installed
-   * `agentskiss update` shim detached — the daemon restarts mid-apply, so
+   * `pideck update` shim detached — the daemon restarts mid-apply, so
    * callers return immediately after this resolves. The active-worker gate
    * is the caller's responsibility (handlers.ts), so a worker that became
    * active between check and apply is rejected before this runs.
    */
   async apply(): Promise<void> {
-    const shim = `${this.stateDir}/bin/agentskiss`;
+    const shim = `${this.stateDir}/bin/pideck`;
     if (!existsSync(shim)) {
       throw new HttpError(
         409,
-        `no agentskiss shim at ${shim} — click-to-update needs an installed agentskiss (dev checkouts apply via the CLI)`,
+        `no pideck shim at ${shim} — click-to-update needs an installed pideck (dev checkouts apply via the CLI)`,
       );
     }
     // Detached + unref'd: the shim outlives this process (the service

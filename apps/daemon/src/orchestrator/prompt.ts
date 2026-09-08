@@ -76,14 +76,14 @@ export function renderOrchestratorPrompt(
 
 /**
  * Resolves the source path of the orchestrator prompt template:
- * an explicit argument wins, then `AGENTSKISS_AGENT_DIR` (set by service
+ * an explicit argument wins, then `PD_AGENT_DIR` (set by service
  * units when the checkout lives outside the default location), then a
  * walk up from this module toward the repo root looking for
  * `agent/prompts/orchestrator.md` (works from both `src/` and `dist/`).
  */
 export function findAgentPromptPath(explicit?: string): string {
   if (explicit !== undefined && explicit.length > 0) return explicit;
-  const envDir = process.env["AGENTSKISS_AGENT_DIR"];
+  const envDir = process.env["PD_AGENT_DIR"];
   if (envDir !== undefined && envDir.length > 0) {
     return path.join(envDir, "prompts", "orchestrator.md");
   }

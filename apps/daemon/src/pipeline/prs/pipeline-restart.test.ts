@@ -51,7 +51,7 @@ describe("PullRequestPipeline: lifecycle", () => {
   });
 
   it("restart: persisted tracker + registry reconcile resumes the loop and prunes lost workers", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "agentskiss-prpipeline-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "pideck-prpipeline-"));
     const filePath = path.join(dir, "prs.json");
     const worker = makeWorker({ prNumber: 12 });
     const h = makeHarness({ workers: [worker], trackerPath: filePath });

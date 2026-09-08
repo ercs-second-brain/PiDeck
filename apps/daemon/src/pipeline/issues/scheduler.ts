@@ -187,5 +187,5 @@ export class QueueingScheduler implements SpawnScheduler {
 }
 
 function defaultOnError(err: unknown): void {
-  console.error("[agentskiss/pipeline] spawn task failed:", err);
+  console.error("[pideck/pipeline] spawn task failed:", err);
 }

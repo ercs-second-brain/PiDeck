@@ -1,5 +1,5 @@
 /**
- * Domain model for agentsKISS.
+ * Domain model for PiDeck.
  *
  * These schemas are the single source of truth for every entity shared
  * between the daemon, the webapp, and the pi agent integration. Each zod
@@ -288,7 +288,7 @@ export const workerSchema = z.object({
   sessionId: idSchema,
   /**
    * Issue the worker was spawned for. `0` marks a **freeform worker** —
-   * spawned from a plain task prompt (`agentskiss spawn --prompt ...`)
+   * spawned from a plain task prompt (`pideck spawn --prompt ...`)
    * with no backing GitHub issue; freeform workers have no issue/kanban
    * card of their own and only ever appear in the workers list.
    */
@@ -308,7 +308,7 @@ export const workerSchema = z.object({
   parentWorkerId: idSchema.nullable().optional(),
   /**
    * Initial prompt typed into the worker's pane at spawn (issue #120): the
-   * `agentskiss spawn --issue/--prompt` input, or a review agent's review
+   * `pideck spawn --issue/--prompt` input, or a review agent's review
    * prompt. Optional for backward compatibility: absent for pre-#120
    * records and auto-spawned workers (which are typed no prompt at spawn).
    */

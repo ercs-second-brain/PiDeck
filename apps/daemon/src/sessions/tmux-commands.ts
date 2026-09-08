@@ -108,8 +108,8 @@ export function resurrectionCommand(recorded: string[]): string[] {
  */
 export const RESURRECT_WORKER_COMMAND: string[] = resurrectionCommand(DEFAULT_WORKER_COMMAND);
 
-/** Matches tmux session names created by `SessionManager`: `agentskiss-<projectId>-<role>-<n>`. */
-const TMUX_NAME_PATTERN = /^agentskiss-(.+)-(orchestrator|worker)-(\d+)$/;
+/** Matches tmux session names created by `SessionManager`: `pideck-<projectId>-<role>-<n>`. */
+const TMUX_NAME_PATTERN = /^pideck-(.+)-(orchestrator|worker)-(\d+)$/;
 
 /**
  * Parses a daemon-managed tmux session name back into its parts. Note the
