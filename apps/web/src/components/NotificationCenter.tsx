@@ -39,11 +39,23 @@ function toPermissionState(permission: string): PermissionState {
 }
 
 /**
- * Current Notification permission state. "unsupported" covers iOS Safari
- * without the home-screen PWA install (no `Notification` API there) —
- * notifications stay in-app on those platforms (docs/pwa.md).
+ * Honest explanation for insecure origins (issue #204): the Notification API
+ * only exists in secure contexts (HTTPS or localhost), so on plain-HTTP LAN
+ * deployments the permission can never be granted — in-app only, by design.
+ */
+export const BROWSER_NOTIFICATIONS_UNSUPPORTED =
+  "Browser notifications require HTTPS (or localhost). In-app toasts and the notification center still work.";
+
+/**
+ * Current Notification permission state. "unsupported" covers every origin
+ * that can never grant it: iOS Safari without the home-screen PWA install
+ * (no `Notification` API there, docs/pwa.md), and plain-HTTP origins
+ * (issue #204) — some browsers expose the API on insecure contexts but
+ * permanently deny permission, so `window.isSecureContext` is checked too.
+ * Notifications stay in-app on those platforms.
  */
 export function permissionState(): PermissionState {
+  if (typeof window !== "undefined" && window.isSecureContext === false) return "unsupported";
   if (typeof Notification === "undefined") return "unsupported";
   return toPermissionState(Notification.permission);
 }

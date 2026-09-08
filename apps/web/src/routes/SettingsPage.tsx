@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import type { Project, Settings } from "@pideck/shared";
 import { apiGetSettings, apiUpdateProject, apiUpdateSettings, errorMessage } from "../lib/api";
 import { useProject } from "../lib/use-project";
+import { BROWSER_NOTIFICATIONS_UNSUPPORTED, permissionState, requestNotificationPermission } from "../components/NotificationCenter";
 import { boardStore } from "../store/store";
 
 /**
@@ -89,9 +90,10 @@ type ToggleKey = (typeof WORKER_TOGGLES)[number]["key"] | (typeof NOTIFICATION_T
  * change here takes effect without a daemon restart. Each toggle saves
  * immediately. Enabling browser notifications first asks the browser for
  * Notification permission (a denied grant keeps the toggle off). Also
- * rendered by the sidebar-footer GlobalSettingsPage (issue #176).
+ * rendered by the sidebar-footer GlobalSettingsPage (issue #176). Exported
+ * for tests (the toggle-display ratchet in SettingsPage.test.tsx).
  */
-function GlobalWorkerSettings() {
+export function GlobalWorkerSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,10 +114,17 @@ function GlobalWorkerSettings() {
   }, []);
 
   const toggle = async (key: ToggleKey, value: boolean): Promise<void> => {
-    // Issue #111: the permission prompt needs a user gesture — this click.
-    // A denied/blocked grant reverts (the daemon setting stays off).
-    if (key === "browserMergeNotifications" && value && typeof Notification !== "undefined" && Notification.permission !== "granted") {
-      if ((await Notification.requestPermission()) !== "granted") {
+    if (key === "browserMergeNotifications" && value) {
+      // Issue #204: on insecure origins (plain-HTTP LAN deployments) the
+      // permission can never be granted — say so honestly and keep the
+      // daemon setting off instead of pointing at impossible browser settings.
+      if (permissionState() === "unsupported") {
+        setError(BROWSER_NOTIFICATIONS_UNSUPPORTED);
+        return;
+      }
+      // Issue #111: the permission prompt needs a user gesture — this click.
+      // A denied/blocked grant reverts (the daemon setting stays off).
+      if ((await requestNotificationPermission()) !== "granted") {
         setError("Browser notifications are blocked for this site — allow them in the browser's site settings, then try again.");
         return;
       }
@@ -152,7 +161,20 @@ function GlobalWorkerSettings() {
       </section>
       <section className="global-worker-settings">
         <h2 className="section-title">Notifications (all projects)</h2>
-        <div className="settings-form">{renderToggle(NOTIFICATION_TOGGLE)}</div>
+        {/* Issue #204: the Notification API only exists in secure contexts (HTTPS or
+            localhost) — on plain-HTTP LAN deployments the toggle is disabled with an
+            honest message instead of the impossible "allow them in browser settings". */}
+        {permissionState() === "unsupported" ? (
+          <label className="toggle-row">
+            <input type="checkbox" checked={false} readOnly disabled />
+            <span>
+              {NOTIFICATION_TOGGLE.label}
+              <small className="field-hint"> {BROWSER_NOTIFICATIONS_UNSUPPORTED}</small>
+            </span>
+          </label>
+        ) : (
+          <div className="settings-form">{renderToggle(NOTIFICATION_TOGGLE)}</div>
+        )}
       </section>
       {error !== null && <p className="error-note">{error}</p>}
     </>
