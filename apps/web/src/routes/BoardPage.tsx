@@ -45,9 +45,8 @@ export function BoardPage() {
         </div>
         <div className="board-actions">
           <ConnectionIndicator connection={state.connection} />
-          <Link className="button" to={`/projects/${project.id}/settings`}>
-            Settings
-          </Link>
+          {/* Issue #175: no Settings button here — the project row's ⋯ menu
+              (#167) is the single path to the settings page. */}
         </div>
       </div>
 
