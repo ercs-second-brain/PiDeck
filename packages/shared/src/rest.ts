@@ -124,6 +124,61 @@ export const piAuthSchema = z.object({
 });
 export type PiAuth = z.infer<typeof piAuthSchema>;
 
+/**
+ * Response body of the daemon's gh-auth probe (`GET /api/gh-auth`, mirroring
+ * `GET /api/pi-auth`): gh auth status + repo-creation permission. A
+ * non-contract route — the shape is contracted here so the webapp cannot
+ * drift from the daemon.
+ */
+export const ghAuthSchema = z.object({
+  authenticated: z.boolean(),
+  login: z.string().nullable(),
+  tokenSource: z.string(),
+  scopes: z.array(z.string()),
+  canCreateRepos: z.enum(["yes", "no", "unknown"]),
+  canCreatePrivateRepos: z.enum(["yes", "no", "unknown"]),
+  canCreatePublicRepos: z.enum(["yes", "no", "unknown"]),
+  detail: z.string(),
+});
+export type GhAuth = z.infer<typeof ghAuthSchema>;
+
+/**
+ * The installer's recorded shell-onboarding results — the normalized shape
+ * of `~/.pideck/onboarding.json` as written by `install/onboard.sh`.
+ */
+export const onboardingRecordSchema = z.object({
+  /** ISO timestamp of the shell onboarding run. */
+  onboardedAt: z.string(),
+  pi: z.object({
+    /** "ready" or "none" (per install/onboard.sh). */
+    authStatus: z.string(),
+    provider: z.string().nullable(),
+    model: z.string().nullable(),
+  }),
+  gh: z.object({
+    /** "ready" or "none" (per install/onboard.sh). */
+    authStatus: z.string(),
+    user: z.string().nullable(),
+    /** Whether the granted scopes allow repo creation; null when unknown. */
+    canCreateRepo: z.boolean().nullable(),
+  }),
+});
+export type OnboardingRecord = z.infer<typeof onboardingRecordSchema>;
+
+/**
+ * Response body of `GET /api/onboarding` (issue #165): the one shared source
+ * of truth for onboarding state, so the webapp wizard never re-asks a step
+ * the shell onboarding already completed. Combines the installer's recorded
+ * results (null when the shell onboarding never ran) with the live daemon
+ * pi/gh auth probes. Non-contract route like `/api/pi-auth`.
+ */
+export const onboardingStateSchema = z.object({
+  recorded: onboardingRecordSchema.nullable(),
+  piAuth: piAuthSchema,
+  ghAuth: ghAuthSchema,
+});
+export type OnboardingState = z.infer<typeof onboardingStateSchema>;
+
 /** A single file within a PR diff. */
 export const diffFileSchema = z.object({
   filename: z.string().min(1),

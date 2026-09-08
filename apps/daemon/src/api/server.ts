@@ -13,6 +13,7 @@ import { Router } from "./router.js";
 import { contractHandlers, registerContractRoutes } from "./handlers.js";
 import { registerCliRoutes } from "./cli-handlers.js";
 import { registerGhAuthRoute } from "./gh-auth.js";
+import { registerOnboardingRoute } from "./onboarding.js";
 import type { DaemonServices } from "./context.js";
 import { WS_PATH } from "./ws.js";
 import { TERMINAL_WS_PATH } from "../terminal/ws-server.js";
@@ -44,6 +45,7 @@ export function createDaemonServer(options: DaemonServerOptions): { server: Serv
   registerContractRoutes(router, contractHandlers(services));
   registerCliRoutes(router, services);
   registerGhAuthRoute(router);
+  registerOnboardingRoute(router, services);
   const webDist = options.webDist === undefined ? defaultWebDist() : options.webDist;
 
   const server = createServer((req, res) => {

@@ -103,7 +103,7 @@ _pi_auth() {
     return 0
   fi
   if [ "$PD_NONINTERACTIVE" = "1" ]; then
-    warn "non-interactive mode; skipping pi login (re-run 'pideck onboard' later)"
+    warn "non-interactive mode; skipping pi login (the exact follow-up command is printed at the end)"
     PI_AUTH_STATUS="none"
     return 0
   fi
@@ -335,6 +335,22 @@ main() {
   printf '  pi model:    %s\n' "${PD_MODEL:-(not selected)}"
   printf '  gh auth:     %s%s\n' "${GH_AUTH_STATUS:-none}" "${GH_USER:+ ($GH_USER)}"
   printf '  gh repo-create: %s\n' "${GH_CAN_CREATE_REPO:-false}"
+  # Issue #165: an incomplete onboarding must never end silently — print the
+  # exact follow-up command prominently (noninteractive runs, skipped steps,
+  # an aborted /login, a missing gh login all land here).
+  if [ "${PI_AUTH_STATUS:-none}" != "ready" ] || [ "${GH_AUTH_STATUS:-none}" != "ready" ]; then
+    printf '\n'
+    warn "NEXT STEP — onboarding is incomplete; pideck agents cannot run until pi auth is ready"
+    if [ "${PI_AUTH_STATUS:-none}" != "ready" ]; then
+      info "  pi auth:  run:  pideck onboard"
+      info "            (or launch pi on the daemon host and use /login, then re-run onboard)"
+    fi
+    if [ "${GH_AUTH_STATUS:-none}" != "ready" ]; then
+      info "  gh auth:  run:  pideck onboard"
+      info "            (or run:  gh auth login  on the daemon host)"
+    fi
+    printf '\n'
+  fi
   info "re-run anytime with: pideck onboard"
 }
 

@@ -183,9 +183,11 @@ register_service
 
 # --- guided onboarding ----------------------------------------------------
 if [ "$PD_NO_ONBOARD" = "1" ]; then
-  info "skipping onboarding (--no-onboard); run 'pideck onboard' later"
+  info "skipping onboarding (--no-onboard)"
+  info "NEXT STEP: run  pideck onboard  to set up pi/gh auth"
 else
   info "starting guided onboarding (pi auth + model selection, gh auth)"
+  info "if no pi credentials are found, pi opens for /login automatically"
   run sh "$PD_HOME/lib/onboard.sh"
 fi
 
@@ -195,7 +197,10 @@ fi
 # initial prompt queued (the daemon warns at startup and reflects the state
 # in /api/status and the webapp).
 if [ -f "$PD_HOME/onboarding.json" ] && grep -q '"authStatus": "none"' "$PD_HOME/onboarding.json"; then
-  warn "onboarding incomplete (pi and/or gh auth missing) — run 'pideck onboard' to finish; until pi auth is ready, spawned workers hold at 'spawning' with their initial prompt queued"
+  printf '\n'
+  warn "onboarding incomplete (pi and/or gh auth missing) — until pi auth is ready, spawned workers hold at 'spawning' with their initial prompt queued"
+  info "NEXT STEP: run  pideck onboard  to finish onboarding"
+  printf '\n'
 fi
 
 # --- summary --------------------------------------------------------------

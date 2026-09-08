@@ -42,4 +42,16 @@ rc=$?
 check_eq 'source-tree layout: onboard.sh --dry-run exits 0' '0' "$rc"
 check_grep 'source-tree layout: onboarding ran' 'onboarding summary' "$out"
 
+# --- issue #165: an incomplete onboarding never ends silently ---------------
+# Noninteractive run from the installed layout (gh skipped; pi either
+# unauthenticated or absent on the test host — both leave pi auth
+# incomplete): the output must prominently carry the exact follow-up command.
+PD_HOME="$tmp/home"
+export PD_HOME
+out=$(sh "$PD_HOME/lib/onboard.sh" --noninteractive --skip-gh 2>&1)
+rc=$?
+check_eq 'incomplete onboarding exits 0' '0' "$rc"
+check_grep 'incomplete onboarding: prominent NEXT STEP marker' 'NEXT STEP' "$out"
+check_grep 'incomplete onboarding: exact follow-up command' 'pideck onboard' "$out"
+
 exit "$failures"
