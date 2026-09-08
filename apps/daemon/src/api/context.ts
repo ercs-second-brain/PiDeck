@@ -232,6 +232,11 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     isReady: async () => (await piAuth.payload()).ready,
     ...(options.promptGatePollIntervalMs !== undefined ? { pollIntervalMs: options.promptGatePollIntervalMs } : {}),
   });
+  // Warm the pi version memo (issue #223) at boot, fire-and-forget: the
+  // installed pi only changes through an apply (which restarts the daemon),
+  // so the memo never needs refreshing — and the first /api/status poll must
+  // not pay the `pi --version` spawn (issue #100 latency discipline).
+  void piAuth.version();
 
   const diffs = new DiffService({ gh, pullListing: (projectId, repoUrl) => pullListing.list(projectId, repoUrl) });
   const watcherOptions = watcherOptionsFromEnv(process.env, {

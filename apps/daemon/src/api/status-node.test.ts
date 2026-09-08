@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { capture } from "../testing/http-capture.js";
 import type { PiRunner } from "../agent/pi-auth.js";
-import { PiAuthProbe } from "../agent/pi-auth.js";
+import { PiAuthProbe, PiNotInstalledError } from "../agent/pi-auth.js";
 import type { DaemonServices } from "./context.js";
 import { nodeSupportsPi } from "./node-version.js";
 import { Router } from "./router.js";
@@ -35,7 +35,12 @@ function stubServices(piAuth: PiAuthProbe): DaemonServices {
   } as unknown as DaemonServices;
 }
 
-const fastPi: PiRunner = async () => ({ stdout: "", stderr: "" });
+const fastPi: PiRunner = async (args) => ({
+  // `pi --version` (issue #223): a parseable version line. Auth probes get
+  // the same output and simply parse as not-ready, which this suite ignores.
+  stdout: args[0] === "--version" ? "0.85.1\n" : "",
+  stderr: "",
+});
 
 async function statusBody(): Promise<Record<string, unknown>> {
   const router = new Router();
@@ -50,5 +55,33 @@ describe("GET /api/status node fields (issue #202)", () => {
     const body = await statusBody();
     expect(body["nodeVersion"]).toBe(process.version);
     expect(body["nodeTooOld"]).toBe(!nodeSupportsPi(process.version));
+  });
+});
+
+describe("GET /api/status piVersion (issue #223)", () => {
+  it("reports the installed pi version next to the node fields", async () => {
+    const body = await statusBody();
+    expect(body["piVersion"]).toBe("0.85.1");
+  });
+
+  it("memoizes the version probe — repeated status polls spawn pi once", async () => {
+    let runs = 0;
+    const counting: PiRunner = async (args) => {
+      if (args[0] === "--version") runs += 1;
+      return { stdout: "0.85.1\n", stderr: "" };
+    };
+    const probe = new PiAuthProbe({ run: counting });
+    expect(await probe.version()).toBe("0.85.1");
+    expect(await probe.version()).toBe("0.85.1");
+    expect(runs).toBe(1);
+  });
+
+  it("reads a missing/broken pi as null instead of failing the status route", async () => {
+    const probe = new PiAuthProbe({
+      run: async () => {
+        throw new PiNotInstalledError("pi CLI not found on PATH");
+      },
+    });
+    await expect(probe.version()).resolves.toBeNull();
   });
 });

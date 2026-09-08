@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { GhClient, type GhRunner, type GhRunResult } from "../github/gh.js";
+import type { PiRunner } from "../agent/pi-auth.js";
 import { FakeTmuxRunner } from "../sessions/testing/fake-tmux.js";
 import { Tmux } from "../sessions/tmux.js";
 import type { GitRunner } from "../github/repos.js";
@@ -108,6 +109,9 @@ export interface TestDaemon {
   cloned: Set<string>;
 }
 
+/** Hermetic pi CLI runner for the default test daemon (no real pi spawn). */
+const fakePiRunner: PiRunner = async () => ({ stdout: "", stderr: "" });
+
 /** Builds a full daemon context over a tmp state dir with fake gh/git/tmux. */
 export function testDaemon(
   ghRoutes: FakeGhRoutes = {},
@@ -123,8 +127,15 @@ export function testDaemon(
     git: fakeGit(cloned),
     // Hermetic default (issues #56/#57): pi auth ready without probing the
     // real CLI. Overridden by piRunner/piReady in the tests that exercise
-    // the unauthenticated path.
-    ...(contextOptions.piRunner === undefined && contextOptions.piReady === undefined ? { piReady: true } : {}),
+    // the unauthenticated path. The fake runner also covers the pi version
+    // memo (issue #223): a real `pi --version` spawn here would inject
+    // environment-dependent latency into /api/status (issue #100).
+    ...(contextOptions.piRunner === undefined && contextOptions.piReady === undefined
+      ? { piReady: true, piRunner: fakePiRunner }
+      : {}),
+    ...(contextOptions.piRunner === undefined && contextOptions.piReady !== undefined
+      ? { piRunner: fakePiRunner }
+      : {}),
     promptGatePollIntervalMs: 0,
     ...contextOptions,
   });

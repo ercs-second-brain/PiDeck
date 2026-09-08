@@ -50,6 +50,55 @@ install_pi_agent() {
   ok "installed pi $(pi --version 2>/dev/null | head -n 1)"
 }
 
+# pi_installed_version — the version of the pi binary on PATH. Fails (empty,
+# nonzero) when pi is missing or its output carries no x.y.z; `pi --version`
+# may decorate the number, so the first version-like token of the first line
+# wins.
+pi_installed_version() {
+  command -v pi >/dev/null 2>&1 || return 1
+  pi --version 2>/dev/null | head -n 1 | sed -n 's/.*\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p'
+}
+
+# pi_npm_latest — the newest published version of $PD_PI_NPM_PACKAGE on npm,
+# read with the ACTIVE node's npm (the same binary the reinstall would use).
+# Fails (empty, nonzero) when npm or the registry is unavailable — callers
+# skip the refresh then, never block the update on it.
+pi_npm_latest() {
+  _pnl_node="${PD_NODE:-}"
+  [ -x "$_pnl_node" ] || _pnl_node=$(command -v node 2>/dev/null) || return 1
+  _pnl_npm="$(dirname "$_pnl_node")/npm"
+  [ -x "$_pnl_npm" ] || return 1
+  "$_pnl_npm" view "$PD_PI_NPM_PACKAGE" version 2>/dev/null | tail -n 1 | tr -d '[:space:]'
+}
+
+# refresh_pi_agent — reinstall pi only when npm has a newer version (issue
+# #223): an install can sit on a stale pi for weeks otherwise, because pi has
+# no self-update channel the apply could lean on. Runs on EVERY apply, after
+# refresh_node_runtime (the active node is already the refreshed one then).
+# $PD_PI_NPM_PACKAGE is unpinned, so the install resolves npm's `latest` tag.
+# Returns 1 when it (re)installed pi — callers treat that as "the agent
+# moved, restart the daemon" — and 0 when pi is already current (or the
+# latest version could not be read: never a dead end, just a skipped step).
+refresh_pi_agent() {
+  _rpi_installed=$(pi_installed_version) || _rpi_installed=
+  _rpi_latest=$(pi_npm_latest) || _rpi_latest=
+  if [ -z "$_rpi_latest" ]; then
+    warn "cannot read the latest pi version from npm — leaving pi at ${_rpi_installed:-unknown}"
+    return 0
+  fi
+  if [ -z "$_rpi_installed" ]; then
+    install_pi_agent # pi missing entirely — install under the active node
+    return 1
+  fi
+  if _node_version_ge "$_rpi_installed" "$_rpi_latest"; then
+    ok "pi is current ($_rpi_installed; npm latest $_rpi_latest)"
+    return 0
+  fi
+  step "updating pi ($_rpi_installed -> $_rpi_latest)"
+  install_pi_agent
+  return 1
+}
+
 install_agent_assets() {
   step "installing pideck pi skills/extensions from agent/"
   if [ ! -d "$PD_SRC/agent" ]; then
