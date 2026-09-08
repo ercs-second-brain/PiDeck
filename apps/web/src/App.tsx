@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate } from "react-router";
 import type { Project } from "@pideck/shared";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { NotificationBell } from "./components/NotificationCenter";
 import { AllProjectsBoard } from "./routes/AllProjectsBoard";
 import { BoardPage } from "./routes/BoardPage";
 import { DiffPage } from "./routes/DiffPage";
@@ -103,6 +104,9 @@ function Shell() {
           agents<span className="brand-accent">KISS</span>
         </Link>
         <span className="brand-tag">agent orchestration, self-hosted</span>
+        <div className="header-actions">
+          <NotificationBell />
+        </div>
       </header>
       <UpdateBanner />
       <div className="app-body">
