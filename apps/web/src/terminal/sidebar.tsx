@@ -16,7 +16,7 @@ import {
   fetchWorkers,
   startOrchestrator as apiStartOrchestrator,
   terminateWorker as apiTerminateWorker,
-} from "./api";
+} from "../lib/api";
 import type { ProjectEntry } from "./SessionPicker";
 
 export interface SidebarContextValue {
