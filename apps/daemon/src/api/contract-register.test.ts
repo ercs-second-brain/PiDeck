@@ -41,6 +41,19 @@ describe("project registration (issue #216)", () => {
     expect(project.id).toBe("o-MixedCase");
   });
 
+  it("defaults the name to the repo name without the owner prefix", async () => {
+    const { api } = server;
+    const res = await api("POST", "/api/projects", {
+      mode: "clone",
+      repoUrl: "https://github.com/ercs-second-brain/pidecktest2",
+    });
+    expect(res.status).toBe(200);
+    const project = projectSchema.parse(res.json);
+    // The id keeps its owner-repo derivation; only the display name drops it.
+    expect(project.id).toBe("ercs-second-brain-pidecktest2");
+    expect(project.name).toBe("pidecktest2");
+  });
+
   it("returns a 4xx with an actionable message when the clone fails", async () => {
     const failing = await startContractServer({
       git: async (args) => {

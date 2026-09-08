@@ -158,7 +158,7 @@ export function RepoSourceStep(props: {
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
-              placeholder="defaults to owner-repo"
+              placeholder="defaults to repo name"
               value={form.repoName}
               onChange={(e) => onChange({ repoName: e.target.value })}
             />
