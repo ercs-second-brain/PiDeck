@@ -131,6 +131,15 @@ short_sha() {
   printf '%.7s' "$1"
 }
 
+# die override (issue #198): remember the message so the apply's EXIT trap
+# can write it into the progress file (stage=failed + error). Same output as
+# common.sh's die — update.sh is sourced after it, so this wins.
+die() {
+  UPDATE_APPLY_ERROR=$*
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
 # update_progress — record the apply stage for the webapp banner (issue #89).
 #
 # Writes $PD_HOME/var/update-state.json ({"stage":…,"updatedAt":…, ISO UTC});
@@ -138,12 +147,36 @@ short_sha() {
 # during the multi-minute fetch/rebuild. Best effort only: a failed write
 # must never fail the update. Stages (in apply order):
 #   checking fetching building installing restarting done failed
-update_progress() {
+# An optional second argument records WHY a stage failed (issue #198: a bare
+# `failed` is undebuggable); it is written as the JSON `error` field.
+update_progress() { # update_progress <stage> [error-detail]
   _up_dir="$PD_HOME/var"
   mkdir -p "$_up_dir" 2>/dev/null || return 0
-  printf '{"stage":"%s","updatedAt":"%s"}\n' \
-    "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$_up_dir/update-state.json.tmp" 2>/dev/null || return 0
+  _up_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if [ $# -ge 2 ] && [ -n "$2" ]; then
+    # Minimal JSON safety: strip quotes/backslashes, flatten newlines.
+    _up_err=$(printf '%s' "$2" | sed -e 's/\\//g' -e 's/"//g' | tr '\n' ' ')
+    printf '{"stage":"%s","updatedAt":"%s","error":"%s"}\n' \
+      "$1" "$_up_now" "$_up_err" > "$_up_dir/update-state.json.tmp" 2>/dev/null || return 0
+  else
+    printf '{"stage":"%s","updatedAt":"%s"}\n' \
+      "$1" "$_up_now" > "$_up_dir/update-state.json.tmp" 2>/dev/null || return 0
+  fi
   mv -f "$_up_dir/update-state.json.tmp" "$_up_dir/update-state.json" 2>/dev/null || return 0
+}
+
+# update_apply_failed — EXIT trap for update_apply (issue #198): records the
+# failed stage plus the captured reason, if any.
+update_apply_failed() {
+  update_progress failed "${UPDATE_APPLY_ERROR:-update failed — see ~/.pideck/log/update.log or the terminal output}"
+}
+
+# read_running_sha — the build SHA the local daemon last booted with (issue
+# #198). The daemon publishes it to $PD_HOME/var/running-sha at startup
+# (apps/daemon/src/api/update.ts); empty when unknown (daemon never ran, or
+# predates the publication) — callers then fall back to source comparison.
+read_running_sha() {
+  cat "$PD_HOME/var/running-sha" 2>/dev/null || return 0
 }
 
 # update_report — print the check result for humans. Exits 1 on check errors.
@@ -153,12 +186,73 @@ update_report() {
     return 1
   fi
   if [ "$UPDATE_LOCAL_SHA" = "$UPDATE_REMOTE_SHA" ]; then
+    UPDATE_RUNNING_SHA=$(read_running_sha)
+    if [ -n "$UPDATE_RUNNING_SHA" ] && [ "$UPDATE_RUNNING_SHA" != "$UPDATE_REMOTE_SHA" ]; then
+      info "source is current ($(short_sha "$UPDATE_LOCAL_SHA")) but the running daemon is older ($(short_sha "$UPDATE_RUNNING_SHA")) — run 'pideck update' to restart it"
+      return 0
+    fi
     ok "pideck is up to date ($(short_sha "$UPDATE_LOCAL_SHA") on $UPDATE_REPO@$UPDATE_REF)"
     return 0
   fi
   info "update available: $(short_sha "$UPDATE_LOCAL_SHA") -> $(short_sha "$UPDATE_REMOTE_SHA") (upstream $UPDATE_REPO@$UPDATE_REF)"
   info "run 'pideck update' to fetch, rebuild and restart the service"
   return 0
+}
+
+# _node_version_ge <a> <b> — 0 when version string a >= b (MAJ.MIN.PATCH).
+_node_version_ge() {
+  _ng_a1=$(printf '%s' "$1" | cut -d. -f1)
+  _ng_a2=$(printf '%s' "$1" | cut -d. -f2)
+  _ng_a3=$(printf '%s' "$1" | cut -d. -f3)
+  _ng_b1=$(printf '%s' "$2" | cut -d. -f1)
+  _ng_b2=$(printf '%s' "$2" | cut -d. -f2)
+  _ng_b3=$(printf '%s' "$2" | cut -d. -f3)
+  [ "${_ng_a1:-0}" -gt "${_ng_b1:-0}" ] && return 0
+  [ "${_ng_a1:-0}" -lt "${_ng_b1:-0}" ] && return 1
+  [ "${_ng_a2:-0}" -gt "${_ng_b2:-0}" ] && return 0
+  [ "${_ng_a2:-0}" -lt "${_ng_b2:-0}" ] && return 1
+  [ "${_ng_a3:-0}" -ge "${_ng_b3:-0}" ]
+}
+
+# refresh_node_runtime — install the pinned private Node when the private
+# runtime is older than $PD_NODE_VERSION (issue #164 follow-up: the pin
+# advances with updates, and pi 0.75+ refuses Node < 22.19 — without this an
+# updated install keeps booting on a stale runtime, as observed on the dev
+# server). Uses deps.sh's tarball installer (idempotent: it skips the
+# download when the pinned version already sits in $PD_HOME/opt) and
+# repoints the env file's PD_NODE at the refreshed binary. A system node is
+# never touched — only installs with a private runtime ($PD_HOME/opt) are
+# refreshed; system-node users re-run the installer for a node bump.
+refresh_node_runtime() {
+  _rn_cur="${PD_NODE:-}"
+  if [ ! -x "$_rn_cur" ]; then
+    _rn_cur=$(command -v node 2>/dev/null) || _rn_cur=
+  fi
+  case "$_rn_cur" in
+    "$PD_HOME"/opt/*) ;;
+    *) return 0 # system node (or none) — updates never touch it
+  esac
+  _rn_ver=$("$_rn_cur" -v 2>/dev/null) || return 0 # vMAJ.MIN.PATCH
+  if _node_version_ge "${_rn_ver#v}" "$PD_NODE_VERSION"; then
+    return 0 # private node already meets the pin
+  fi
+  if [ ! -f "$PD_LIB/deps.sh" ]; then
+    warn "$PD_LIB/deps.sh missing — cannot refresh the Node runtime (still on $_rn_ver)"
+    return 0
+  fi
+  step "refreshing the Node runtime ($_rn_ver -> v$PD_NODE_VERSION)"
+  # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
+  . "$PD_LIB/deps.sh"
+  _install_node_tarball
+  if [ -f "$PD_HOME/env" ]; then
+    if grep -q '^PD_NODE=' "$PD_HOME/env"; then
+      sed "s|^PD_NODE=.*|PD_NODE=\"$PD_NODE_BIN\"|" "$PD_HOME/env" > "$PD_HOME/env.tmp" 2>/dev/null \
+        && mv -f "$PD_HOME/env.tmp" "$PD_HOME/env"
+    else
+      printf 'PD_NODE="%s"\n' "$PD_NODE_BIN" >> "$PD_HOME/env"
+    fi
+  fi
+  ok "Node runtime refreshed: $("$PD_NODE_BIN" -v) at $PD_NODE_BIN"
 }
 
 # update_apply — fetch, rebuild and restart when the upstream ref advanced.
@@ -173,35 +267,51 @@ update_report() {
 # reach machines that update via the CLI) and restarts the persistent
 # service via svc_restart (service.sh).
 #
-# No-op (exit 0) when already up to date — no unnecessary rebuilds.
+# Issue #198: the "already up to date" comparison is against the RUNNING
+# build (read_running_sha), not just the source — a previous apply can die
+# between the source reset and the restart, leaving the source current while
+# the daemon still serves the old build; that state restarts (no fetch or
+# rebuild needed) instead of reporting done.
+#
+# No-op (exit 0) when the running build already matches the upstream ref —
+# no unnecessary rebuilds.
 update_apply() {
+  UPDATE_APPLY_ERROR=
   # Progress file (issue #89): the webapp banner reads the stage live. On any
-  # death (die/kill of the shim), the EXIT trap records `failed` — unless we
-  # reached `done`, which clears the trap first.
-  trap 'update_progress failed' EXIT
+  # death (die/kill of the shim), the EXIT trap records `failed` — with the
+  # reason when one was captured (issue #198) — unless we reached `done`,
+  # which clears the trap first.
+  trap update_apply_failed EXIT
   update_progress checking
   step "checking for updates"
   if ! update_check; then
+    UPDATE_APPLY_ERROR="update check failed: $UPDATE_ERROR"
     warn "cannot apply an update: $UPDATE_ERROR"
     return 1
   fi
-  update_report || return 1
+  UPDATE_RUNNING_SHA=$(read_running_sha)
   if [ "$UPDATE_LOCAL_SHA" = "$UPDATE_REMOTE_SHA" ]; then
-    update_progress "done"
-    trap - EXIT
-    return 0
+    if [ -z "$UPDATE_RUNNING_SHA" ] || [ "$UPDATE_RUNNING_SHA" = "$UPDATE_REMOTE_SHA" ]; then
+      update_report
+      update_progress "done"
+      trap - EXIT
+      return 0
+    fi
+    info "source is current, but the daemon still runs $(short_sha "$UPDATE_RUNNING_SHA") — restarting to pick it up"
+  else
+    info "update available: $(short_sha "$UPDATE_LOCAL_SHA") -> $(short_sha "$UPDATE_REMOTE_SHA") (upstream $UPDATE_REPO@$UPDATE_REF)"
+    [ -f "$PD_LIB/source.sh" ] || die "install broken: $PD_LIB/source.sh missing (re-run the installer)"
+    # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
+    . "$PD_LIB/source.sh"
+    PD_SRC=$UPDATE_SRC
+    update_progress fetching
+    step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"
+    resolve_source
+    update_progress building
+    build_from_source
   fi
-
-  [ -f "$PD_LIB/source.sh" ] || die "install broken: $PD_LIB/source.sh missing (re-run the installer)"
-  # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
-  . "$PD_LIB/source.sh"
-  PD_SRC=$UPDATE_SRC
-  update_progress fetching
-  step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"
-  resolve_source
-  update_progress building
-  build_from_source
   update_progress installing
+  refresh_node_runtime
   refresh_installed_layer
   update_progress restarting
   step "restarting the service"

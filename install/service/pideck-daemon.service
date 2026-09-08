@@ -17,6 +17,12 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+# Only the daemon's main process is killed on stop/restart: the unit's cgroup
+# also holds the tmux servers (and the agent sessions inside them) that the
+# daemon spawned — the default KillMode=control-group would kill every user
+# session on each daemon restart or crash, and would kill the detached
+# `pideck update` child mid-restart (issue #198).
+KillMode=process
 WorkingDirectory=@PD_SRC@
 ExecStart=@PD_HOME@/bin/pideck-daemon
 Environment=PATH=@PD_SERVE_PATH@

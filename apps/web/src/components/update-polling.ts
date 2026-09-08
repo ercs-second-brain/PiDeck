@@ -117,8 +117,11 @@ export function startApplyPolling(targetSha: string, startedAt: number, handlers
         if ((result.runningSha !== null && result.runningSha === targetSha) || stage === "done") {
           handlers.onResolved(result);
         } else if (stage === "failed") {
+          // Issue #198: the shim records WHY the apply failed — surface that
+          // detail instead of a generic message when it is available.
           handlers.onFailed(
-            "The update failed while applying — run `pideck update` in a terminal and check `pideck logs` for details.",
+            result.applyProgress?.error ??
+              "The update failed while applying — run `pideck update` in a terminal and check `pideck logs` for details.",
           );
         } else {
           handlers.onProgress(result);

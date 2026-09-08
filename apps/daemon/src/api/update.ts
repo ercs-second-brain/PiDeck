@@ -20,7 +20,16 @@
  */
 
 import { spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
 
 import { defaultGhRunner, parseRepoUrl, type GhRunner } from "../github/gh.js";
@@ -108,6 +117,9 @@ export class UpdateChecker {
    * new commit mid-update, so a check-time read would mistake the new HEAD
    * for the running build. Starts eagerly so even the first check() sees the
    * boot-time value; `null` when git fails (no repo at the checkout).
+   * Also published to `<stateDir>/var/running-sha` (issue #198) so the
+   * update shim can tell "source current but the daemon still runs an older
+   * build" — the stale-restart trap hit live on the dev server.
    */
   private readonly runningSha: Promise<string | null>;
 
@@ -126,8 +138,22 @@ export class UpdateChecker {
       swr: false,
     });
     this.runningSha = this.git(["rev-parse", "HEAD"], { cwd: this.srcDir })
-      .then((result) => result.stdout.trim() || null)
+      .then((result) => {
+        const sha = result.stdout.trim() || null;
+        if (sha !== null) this.writeRunningShaFile(sha);
+        return sha;
+      })
       .catch(() => null);
+  }
+
+  /** Publishes the boot SHA for the update shim (issue #198). Best effort. */
+  private writeRunningShaFile(sha: string): void {
+    try {
+      mkdirSync(`${this.stateDir}/var`, { recursive: true });
+      writeFileSync(`${this.stateDir}/var/running-sha`, `${sha}\n`);
+    } catch {
+      // unreadable state dir — the shim falls back to source-only comparison
+    }
   }
 
   /**
@@ -145,17 +171,14 @@ export class UpdateChecker {
    * webapp's banner tracks the rebuild in real time while it polls.
    */
   async check(options: { force?: boolean } = {}): Promise<UpdateStatus> {
-    const runningSha = await this.runningSha;
-    const applyProgress = this.readProgress();
     // `force` (the webapp's `?refresh=1` on page load / window focus) skips
     // the cache read; the fresh result still becomes the new cache entry.
     const base = await (options.force === true
       ? this.cache.refresh(CHECK_KEY, () => this.runCheck())
       : this.cache.get(CHECK_KEY, () => this.runCheck()));
-    // Every result overlays the boot-time build SHA (issue #89) and the
-    // shim's progress file, read fresh even on cache hits so the webapp's
-    // banner tracks the rebuild in real time while it polls.
-    return { ...base, runningSha, applyProgress };
+    // The shim's progress file is read fresh even on cache hits so the
+    // webapp's banner tracks the rebuild in real time while it polls.
+    return { ...base, applyProgress: this.readProgress() };
   }
 
   /**
@@ -168,12 +191,16 @@ export class UpdateChecker {
       const parsed = JSON.parse(readFileSync(`${this.stateDir}/${PROGRESS_FILE}`, "utf8")) as {
         stage?: unknown;
         updatedAt?: unknown;
+        error?: unknown;
       };
       if (typeof parsed.stage !== "string" || parsed.stage.length === 0) return null;
       if (typeof parsed.updatedAt !== "string" || !ISO_UTC_RE.test(parsed.updatedAt)) return null;
       const at = Date.parse(parsed.updatedAt);
       if (Number.isNaN(at) || this.now().getTime() - at > PROGRESS_TTL_MS) return null;
-      return { stage: parsed.stage, updatedAt: parsed.updatedAt };
+      const error = typeof parsed.error === "string" && parsed.error.length > 0 ? parsed.error : undefined;
+      return error === undefined
+        ? { stage: parsed.stage, updatedAt: parsed.updatedAt }
+        : { stage: parsed.stage, updatedAt: parsed.updatedAt, error };
     } catch {
       return null;
     }
@@ -204,13 +231,29 @@ export class UpdateChecker {
     } catch {
       // nothing to clear (no prior apply) — fine
     }
+    // The shim's step/warn/die output must land somewhere inspectable (issue
+    // #198: stdio:"ignore" made apply failures undebuggable — the dev server
+    // had no trace of why its applies died). Append to the state dir's log.
+    let stdio: SpawnOptions["stdio"] = "ignore";
+    try {
+      mkdirSync(`${this.stateDir}/log`, { recursive: true });
+      const fd = openSync(`${this.stateDir}/log/update.log`, "a");
+      appendFileSync(fd, `\n===== apply started ${this.now().toISOString()} =====\n`);
+      stdio = ["ignore", fd, fd];
+    } catch {
+      // unwritable log dir — run silent rather than fail the apply
+    }
     // Detached + unref'd: the shim outlives this process (the service
     // restart kills the daemon mid-apply, on purpose).
-    this.spawn(shim, ["update"], { detached: true, stdio: "ignore", cwd: this.stateDir }).unref();
+    this.spawn(shim, ["update"], { detached: true, stdio, cwd: this.stateDir }).unref();
+    // Drop the parent's copy of the log fd (the child holds its own dup), so
+    // repeated applies don't leak descriptors in the long-lived daemon.
+    if (typeof stdio !== "string") closeSync(stdio[1] as number);
   }
 
   private async runCheck(): Promise<UpdateStatus> {
     const checkedAt = this.now().toISOString();
+    const runningSha = await this.runningSha;
     let localSha: string | null = null;
     let remoteSha: string | null = null;
     const errors: string[] = [];
@@ -241,15 +284,27 @@ export class UpdateChecker {
       }
     }
 
+    // Issue #198: `updateAvailable` is about the RUNNING build vs the remote
+    // ref, not the source checkout — a crashed apply leaves the source
+    // already reset to the target while the daemon still runs the old build
+    // (the dev server read "up to date" with a stale build still serving).
+    // Fall back to the source SHA when the boot SHA could not be captured.
+    const effectiveSha = runningSha ?? localSha;
+    const updateAvailable = effectiveSha !== null && remoteSha !== null && effectiveSha !== remoteSha;
+    // Distinguishes "the source moved ahead of the running build" (restart
+    // pending) from a plain upstream update.
+    const runningBehindSource = runningSha !== null && localSha !== null && runningSha !== localSha;
+
     return {
       repo,
       ref,
       localSha,
       remoteSha,
-      updateAvailable: localSha !== null && remoteSha !== null && localSha !== remoteSha,
+      updateAvailable,
       checkedAt,
       error: errors.length > 0 ? errors.join("; ") : null,
-      runningSha: null,
+      runningSha,
+      runningBehindSource,
       applyProgress: null,
     };
   }

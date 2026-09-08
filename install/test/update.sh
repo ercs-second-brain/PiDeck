@@ -146,6 +146,22 @@ check_no_grep 'apply when up to date does not restart the service' 'SVC restart'
 check_grep 'apply when up to date says so' 'up to date' "$out"
 check_grep 'apply when up to date records done progress (issue #89)' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
 
+# --- apply path: source current but the running build is stale (issue #198) --
+# A previous apply can die between the source reset and the restart: the
+# source already matches upstream, but the daemon still boots the old build
+# (observed live: the daemon's uptime was continuous across two applies).
+# The daemon publishes its boot SHA to $PD_HOME/var/running-sha; the apply
+# must restart (no fetch/build needed) instead of reporting done.
+STALE_RUNNING="3333333333333333333333333333333333333333"
+printf '%s\n' "$STALE_RUNNING" > "$PD_HOME/var/running-sha"
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
+check_eq 'restart-only apply exits 0' '0' "$rc"
+check_no_grep 'restart-only apply does not claim up to date' 'up to date' "$out"
+check_grep 'restart-only apply notices the stale running build' 'still runs 3333333' "$out"
+check_grep 'restart-only apply restarts the service' 'SVC restart' "$out"
+check_grep 'restart-only apply records done progress' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
+rm -f "$PD_HOME/var/running-sha"
+
 # --- apply path (update available → fetch, build, restart) ------------------
 # Stub the installer machinery here: the real resolve_source/build_from_source
 # need network + pnpm; the flow under test is *that they are reused*, in
@@ -174,6 +190,7 @@ EOF
 out=$(run_shim "$LOCAL_SHA" "$REMOTE_NEW" update 2>&1); rc=$?
 check_eq 'apply with a failing build exits nonzero' '1' "$rc"
 check_grep 'failing build records failed progress (issue #89)' '"stage":"failed"' "$(cat "$PD_HOME/var/update-state.json")"
+check_grep 'failing build records the failure detail (issue #198)' '"error":"build failed"' "$(cat "$PD_HOME/var/update-state.json")"
 cp "$INSTALL_DIR/lib/source.sh" "$PD_HOME/lib/"
 
 # --- apply path: installed shell layer refresh (issue #66) -------------------
