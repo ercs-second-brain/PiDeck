@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import type { ArchivedWorkerLog } from "@agentskiss/shared";
-import { fetchArchivedWorkerLog } from "./api";
+import { fetchArchivedWorkerLog } from "../lib/api";
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString();

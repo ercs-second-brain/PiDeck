@@ -136,6 +136,45 @@ export const apiGetUpdateStatus = (refresh = false): Promise<EndpointResponse<"g
  * daemon restarts mid-apply, so the caller polls `apiGetUpdateStatus` after. */
 export const apiApplyUpdate = (): Promise<EndpointResponse<"applyUpdate">> => request("applyUpdate", {});
 
+// --- Terminals page (sidebar + panes) -----------------------------------------
+
+export const fetchProjects = (): Promise<EndpointResponse<"listProjects">> => request("listProjects", {});
+
+export const fetchSessions = (projectId: string): Promise<EndpointResponse<"listProjectSessions">> =>
+  request("listProjectSessions", { projectId });
+
+export const fetchWorkers = (projectId: string): Promise<EndpointResponse<"listProjectWorkers">> =>
+  request("listProjectWorkers", { projectId });
+
+/**
+ * Starts (or attaches to) a project's orchestrator session (issue #53):
+ * daemon-side idempotent via `SessionManager.ensureOrchestrator`.
+ */
+export const startOrchestrator = (projectId: string): Promise<EndpointResponse<"ensureProjectOrchestrator">> =>
+  request("ensureProjectOrchestrator", { projectId });
+
+/**
+ * Terminates a worker (issue #64): the daemon kills its tmux session (which
+ * ends the pi process) and archives the worker record; history is kept.
+ */
+export const terminateWorker = (workerId: string): Promise<EndpointResponse<"terminateWorker">> =>
+  request("terminateWorker", { workerId });
+
+/**
+ * Relaunches a dead session's tmux pane (issue #117): the daemon kills any
+ * lingering tmux session of the name and re-runs the session's launch path;
+ * the registry record (identity/history) is preserved, only the pane is new.
+ */
+export const relaunchSession = (sessionId: string): Promise<EndpointResponse<"relaunchSession">> =>
+  request("relaunchSession", { sessionId });
+
+/**
+ * Fetches an archived worker's log (issue #104): the scrollback captured at
+ * termination plus the worker's final metadata.
+ */
+export const fetchArchivedWorkerLog = (workerId: string): Promise<EndpointResponse<"getArchivedWorkerLog">> =>
+  request("getArchivedWorkerLog", { workerId });
+
 // --- gh auth probe (onboarding wizard step 1) --------------------------------
 //
 // `GET /api/gh-auth` is a non-contract daemon route (like `/api/status`):

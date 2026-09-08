@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { relaunchSession } from "./api";
+import { relaunchSession } from "../lib/api";
 import { InputBatcher } from "./input-batcher";
 import { TerminalConnection, type TerminalStatus } from "./connection";
 import { createFitController } from "./terminal-fit";
