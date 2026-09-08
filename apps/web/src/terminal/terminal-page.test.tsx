@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { Project, Session, Worker } from "@agentskiss/shared";
 import { SessionPicker } from "./SessionPicker";
-import { TerminateWorkerButton } from "./picker-rows";
+import { TerminateWorkerButton, TerminateWorkerModal } from "./picker-rows";
 
 const project: Project = {
   id: "agentskiss",
@@ -259,27 +259,34 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
     expect(html).not.toContain("picker-terminate");
   });
 
-  it("TerminateWorkerButton asks for confirmation before terminating", () => {
-    const idle = renderToString(
-      <TerminateWorkerButton confirming={false} pending={false} onAsk={() => {}} onConfirm={() => {}} onCancel={() => {}} />,
-    );
+  it("TerminateWorkerButton is just the ✕ trigger; confirmation moved to the modal (issue #116)", () => {
+    const idle = renderToString(<TerminateWorkerButton pending={false} onAsk={() => {}} />);
     expect(idle).toContain("picker-terminate");
     expect(idle).toContain("✕");
+    // No inline confirm anymore — no "Terminate?"/"keep" swap (#116).
     expect(idle).not.toContain("Terminate?");
+    expect(idle).not.toContain("keep");
+    expect(idle).not.toContain("terminate-modal");
+  });
 
-    const confirming = renderToString(
-      <TerminateWorkerButton confirming={true} pending={false} onAsk={() => {}} onConfirm={() => {}} onCancel={() => {}} />,
+  it("renders the terminate-confirmation modal (issue #116)", () => {
+    const html = renderToString(
+      <TerminateWorkerModal sessionName="proj-worker-1" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
-    expect(confirming).toContain("Terminate?");
-    expect(confirming).toContain("picker-terminate-confirm-yes");
-    // The explicit keep-alive way out.
-    expect(confirming).toContain("keep");
-    expect(confirming).toContain("picker-terminate-confirm-no");
+    // Small centered modal over a dimmed backdrop.
+    expect(html).toContain("terminate-modal-overlay");
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain("terminate-modal");
+    expect(html).toContain("Terminate worker?");
+    expect(html).toContain("proj-worker-1");
+    expect(html).toContain("Terminate");
+    // The explicit way out.
+    expect(html).toContain("Cancel");
   });
 
   it("shows the in-flight terminate as pending", () => {
     const pending = renderToString(
-      <TerminateWorkerButton confirming={true} pending={true} onAsk={() => {}} onConfirm={() => {}} onCancel={() => {}} />,
+      <TerminateWorkerModal sessionName="proj-worker-1" pending={true} onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(pending).toContain("Terminating…");
     expect(pending).toContain("disabled");

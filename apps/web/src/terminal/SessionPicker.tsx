@@ -9,7 +9,8 @@
  * workers (issue #64). Clicking a session
  * attaches its terminal; clicking an archived worker opens its read-only
  * captured log (issue #104); active worker rows carry a terminate
- * affordance (✕ → in-place confirm) that archives the worker.
+ * affordance (✕ → centered confirm modal, issue #116) that archives the
+ * worker.
  *
  * The "Projects" header opens the all-projects combined board; the "+"
  * button launches the project onboarding wizard. Interaction state lives in
@@ -18,10 +19,9 @@
  * view pieces live in {@link ./picker-rows.tsx}.
  */
 
-import { useState } from "react";
 import type { Project, Session, Worker } from "@agentskiss/shared";
-import { loadCollapsedProjects, saveCollapsedProjects } from "../lib/sidebar-collapse";
-import { ArchivedSection, ProjectRow, WorkerRow, workerFor } from "./picker-rows";
+import { ArchivedSection, ProjectRow, TerminateWorkerModal, WorkerRow, workerFor } from "./picker-rows";
+import { usePickerState } from "./use-picker-state";
 
 export interface ProjectEntry {
   project: Project;
@@ -44,7 +44,7 @@ function ProjectSection(props: {
   selectedProjectId: string | null;
   /** Project id currently starting its orchestrator (button pending state). */
   startingProjectId: string | null;
-  /** Session id whose worker row is confirming termination (issue #64). */
+  /** Session id whose worker is confirming termination (issue #64). */
   confirmingSessionId: string | null;
   /** Worker id whose termination request is in flight (issue #64). */
   pendingTerminateWorkerId: string | null;
@@ -58,10 +58,8 @@ function ProjectSection(props: {
   onSelectProject: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
-  /** Opens the in-place termination confirm on a worker row (issue #64). */
+  /** Opens the terminate-confirmation modal on a worker row (issue #64/#116). */
   onAskTerminate: (sessionId: string) => void;
-  /** Closes the in-place termination confirm. */
-  onCancelTerminate: () => void;
 }) {
   const { project, sessions, workers } = props.entry;
   const orchestrator = sessions.find((session) => session.role === "orchestrator");
@@ -81,12 +79,10 @@ function ProjectSection(props: {
         workers={workers}
         archived={archived}
         selectedSessionId={props.selectedSessionId}
-        confirming={props.confirmingSessionId === session.id}
         pending={worker !== undefined && props.pendingTerminateWorkerId === worker.id}
         onSelectSession={props.onSelectSession}
         onTerminateWorker={props.onTerminateWorker}
         onAskTerminate={props.onAskTerminate}
-        onCancelTerminate={props.onCancelTerminate}
       />
     );
   };
@@ -147,32 +143,7 @@ export function SessionPicker(props: {
   onStartOrchestrator: (projectId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
 }) {
-  // Issue #64 UI state: which worker row is confirming its termination, and
-  // which projects' "Archived" sections are expanded (collapsed by default).
-  const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
-  const [archivedOpen, setArchivedOpen] = useState<Set<string>>(() =>
-    new Set(props.defaultArchivedOpen === true ? props.entries.map((entry) => entry.project.id) : []),
-  );
-  // Issue #114: collapsed projects persist across reloads (localStorage;
-  // default expanded). Children = worker rows + the archived section.
-  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
-    () => props.defaultCollapsedProjects ?? loadCollapsedProjects(),
-  );
-  const toggleArchived = (projectId: string) =>
-    setArchivedOpen((open) => {
-      const next = new Set(open);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      return next;
-    });
-  const toggleCollapsed = (projectId: string) =>
-    setCollapsedProjects((collapsed) => {
-      const next = new Set(collapsed);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      saveCollapsedProjects(next);
-      return next;
-    });
+  const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
 
   return (
     <aside className="session-picker">
@@ -193,20 +164,29 @@ export function SessionPicker(props: {
           selectedSessionId={props.selectedSessionId}
           selectedProjectId={props.selectedProjectId ?? null}
           startingProjectId={props.startingProjectId ?? null}
-          confirmingSessionId={confirmingSessionId}
+          confirmingSessionId={state.confirmingSessionId}
           pendingTerminateWorkerId={props.terminatingWorkerId ?? null}
-          archivedOpen={archivedOpen.has(entry.project.id)}
-          onToggleArchived={toggleArchived}
-          collapsed={collapsedProjects.has(entry.project.id)}
-          onToggleCollapsed={toggleCollapsed}
+          archivedOpen={state.archivedOpen.has(entry.project.id)}
+          onToggleArchived={state.toggleArchived}
+          collapsed={state.collapsedProjects.has(entry.project.id)}
+          onToggleCollapsed={state.toggleCollapsed}
           onSelectSession={props.onSelectSession}
           onSelectProject={props.onSelectProject}
           onStartOrchestrator={props.onStartOrchestrator}
           onTerminateWorker={props.onTerminateWorker}
-          onAskTerminate={setConfirmingSessionId}
-          onCancelTerminate={() => setConfirmingSessionId(null)}
+          onAskTerminate={state.askTerminate}
         />
       ))}
+      {/* Issue #116: the terminate confirmation is a small centered modal
+          over a dimmed backdrop; Escape/Cancel dismisses, Terminate runs. */}
+      {state.confirmingSession && props.onTerminateWorker && (
+        <TerminateWorkerModal
+          sessionName={state.confirmingSession.tmuxSession}
+          pending={state.pendingTerminate}
+          onConfirm={() => state.confirmTerminate(props.onTerminateWorker!)}
+          onCancel={state.cancelTerminate}
+        />
+      )}
       {props.entries.length === 0 && !props.error && (
         <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — hit + to connect one."}</p>
       )}
