@@ -1,6 +1,13 @@
 /**
  * Sidebar for the terminals page — the app's only navigation (issue #62):
- * every registered project is a top-level entry whose NAME opens that
+ * the "Workspace" row (issue #259, the renamed global-agent entry —
+ * display only; the daemon's reserved `global` id and API are unchanged)
+ * sits above every project: its NAME opens the all-projects (workspace)
+ * board and its chat icon attaches/starts the workspace-level agent
+ * (idempotent ensure endpoint, #53); the row is disabled until at least
+ * one project exists (#259, B3) — with nothing to orchestrate there is no
+ * workspace work to open. Every registered project is a top-level entry
+ * whose NAME opens that
  * project's kanban board (issue #173, the original #62 behavior). A chat
  * icon in the same row attaches the project's orchestrator terminal,
  * starting it first when absent (#53's idempotent ensure endpoint — the
@@ -15,13 +22,12 @@
  * #182; archived rows freeze their final run duration). Each project row
  * also carries a ⋯ context menu (issue #167) whose
  * Settings entry opens that project's settings page in the main pane.
- *
- * The "Projects" header opens the all-projects combined board; the "+"
- * button launches the project onboarding wizard. A persistent footer pinned
- * to the sidebar's bottom (issue #176) opens the global settings page
- * (worker pipeline, notifications, pi auth) in the main pane — visible
- * regardless of scroll, collapse state, or project-list errors, including
- * in the mobile drawer. Interaction state lives in
+ * At the bottom of the sidebar, an "+ Add project" row (issue #259, the
+ * former header "+") launches the project onboarding wizard. A persistent
+ * footer pinned to the sidebar's bottom (issue #176) opens the global
+ * settings page (worker pipeline, notifications, pi auth) in the main
+ * pane — visible regardless of scroll, collapse state, or project-list
+ * errors, including in the mobile drawer. Interaction state lives in
  * this component (which worker is confirming termination, which projects'
  * archived sections are expanded, which projects are collapsed); the pure
  * view pieces live in {@link ./picker-rows.tsx}.
@@ -30,9 +36,9 @@
 import { useEffect, useState } from "react";
 import type { Project, Session, Worker } from "@pideck/shared";
 import {
+  AddProjectRow,
   ArchivedSection,
   DeleteProjectModal,
-  PickerHeader,
   ProjectRow,
   TerminateWorkerModal,
   WorkerRow,
@@ -226,11 +232,13 @@ export interface SessionPickerProps {
   onSelectProject: (projectId: string) => void;
   /** Opens the project's settings page in the main pane (issue #167). */
   onOpenSettings: (projectId: string) => void;
-  /** Opens the all-projects combined board (the "Projects" header). */
+  /** The all-projects (workspace) board is open in the main pane (selects the Workspace row's name, #259). */
+  allProjectsSelected?: boolean;
+  /** Opens the all-projects (workspace) board (the Workspace row's name, #259). */
   onSelectAllProjects: () => void;
   /** Opens the global settings page in the main pane (the sidebar footer, #176). */
   onOpenGlobalSettings: () => void;
-  /** Opens the project onboarding wizard (the "+" button). */
+  /** Opens the project onboarding wizard (the "+ Add project" row, #259). */
   onStartOnboarding: () => void;
   /** Starts (or attaches to) the project's orchestrator — the chat-icon click (#173, #53). */
   onStartOrchestrator: (projectId: string) => void;
@@ -249,11 +257,16 @@ export function SessionPicker(props: SessionPickerProps) {
 
   return (
     <aside className="session-picker">
-      <PickerHeader onSelectAllProjects={props.onSelectAllProjects} onStartOnboarding={props.onStartOnboarding} />
+      {/* Issue #259: the Workspace row (renamed global-agent entry) — name
+          opens the all-projects board, chat attaches/starts the workspace
+          agent; disabled until at least one project exists (B3). */}
       <GlobalAgentRow
         session={props.globalAgent ?? null}
         selected={props.globalAgent?.id === props.selectedSessionId}
+        boardSelected={props.allProjectsSelected === true}
+        disabled={props.entries.length === 0}
         starting={props.startingGlobalAgent === true}
+        onSelectBoard={props.onSelectAllProjects}
         onStart={() => props.onStartGlobalAgent?.()}
       />
       {props.entries.map((entry) => (
@@ -289,9 +302,12 @@ export function SessionPicker(props: SessionPickerProps) {
       ))}
       <ConfirmModals state={state} entries={props.entries} onTerminateWorker={props.onTerminateWorker} onDeleteProject={props.onDeleteProject} />
       {props.entries.length === 0 && !props.error && (
-        <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — hit + to connect one."}</p>
+        <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — add one below to get started."}</p>
       )}
       {props.error && <p className="picker-error">Daemon unreachable: {props.error}</p>}
+      {/* Issue #259 (B7): the add-project affordance as the sidebar's
+          bottom row, styled like a project row (the former header "+"). */}
+      <AddProjectRow onStartOnboarding={props.onStartOnboarding} />
       {/* Issue #176: persistent footer — sticky so it stays visible while
           the project list scrolls; flex `margin-top: auto` pins it to the
           bottom when the list is short. Renders even with no projects or a

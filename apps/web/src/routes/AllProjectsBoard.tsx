@@ -8,9 +8,10 @@ import { useSidebar } from "../terminal/sidebar";
 
 /**
  * All-projects combined kanban board (issue #62) — opened by clicking the
- * sidebar's "Projects" header. Every loaded project's board is merged into
- * one column set; workers are listed per project beneath it. With no
- * projects registered (first run) it shows the onboarding entry point.
+ * sidebar's "Workspace" row (issue #259). Every loaded project's board is
+ * merged into one column set; workers are listed per project beneath it.
+ * With no projects registered (first run) it shows the onboarding entry
+ * point.
  */
 export function AllProjectsBoard() {
   const state = useAppState();

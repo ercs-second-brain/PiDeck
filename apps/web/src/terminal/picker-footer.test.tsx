@@ -35,7 +35,7 @@ describe("picker footer (global settings, issue #176)", () => {
     expect(html).toContain("picker-footer-settings");
     expect(html).toContain("Global settings");
     // The footer is the last block in the aside — pinned at the bottom.
-    expect(html.indexOf("picker-footer")).toBeGreaterThan(html.indexOf("picker-header"));
+    expect(html.indexOf("picker-footer")).toBeGreaterThan(html.indexOf("picker-add-row"));
     expect(html.endsWith("</aside>")).toBe(true);
   });
 
