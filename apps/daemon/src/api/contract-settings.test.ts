@@ -26,7 +26,7 @@ describe("settings", () => {
     expect(got.status).toBe(200);
     expect(settingsSchema.parse(got.json)).toEqual({
       autoAgentUsername: null,
-      defaultWorkerConcurrency: 1,
+      defaultWorkerConcurrency: 3,
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,
@@ -38,7 +38,7 @@ describe("settings", () => {
     expect(updated.status).toBe(200);
     expect(settingsSchema.parse(updated.json)).toEqual({
       autoAgentUsername: "auto-agent",
-      defaultWorkerConcurrency: 1,
+      defaultWorkerConcurrency: 3,
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,

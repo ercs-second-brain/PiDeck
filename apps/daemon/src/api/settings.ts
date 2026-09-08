@@ -1,9 +1,9 @@
 /**
  * Daemon-wide settings (`<stateDir>/settings.json`, all projects): default
- * auto-agent username, default worker concurrency applied to new projects,
- * the worker-pipeline toggles that gate the PR loop's always-on behaviors
- * (issue #106, default ON), and the merged-PR browser-notification toggle
- * (issue #111, default OFF).
+ * auto-agent username, default worker concurrency applied to new projects
+ * (issue #184: new projects default to 3), the worker-pipeline toggles that
+ * gate the PR loop's always-on behaviors (issue #106, default ON), and the
+ * merged-PR browser-notification toggle (issue #111, default OFF).
  */
 
 import { z } from "zod";
@@ -15,7 +15,10 @@ const persistedSchema = settingsSchema.extend({ version: z.literal(1) });
 
 export const DEFAULT_SETTINGS: Settings = {
   autoAgentUsername: null,
-  defaultWorkerConcurrency: 1,
+  // Issue #184: new projects default to 3 concurrent workers. The
+  // registration API seeds this into every new project unless the request
+  // explicitly sends `workerConcurrency: null` (= unbounded, issue #168).
+  defaultWorkerConcurrency: 3,
   terminateOnMerge: true,
   autoFixCi: true,
   autoFixReviewComments: true,

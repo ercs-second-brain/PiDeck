@@ -108,7 +108,7 @@ describe("projects", () => {
     const project = projectSchema.parse(registered.json);
     expect(project.id).toBe("o-r");
     expect(project.repoUrl).toBe("https://github.com/o/r");
-    expect(project.settings).toEqual({ autoAgentUsername: null, workerConcurrency: 1 });
+    expect(project.settings).toEqual({ autoAgentUsername: null, workerConcurrency: 3 });
     expect(daemon.cloned.size).toBe(1);
 
     // duplicate registration → 409
@@ -148,10 +148,10 @@ describe("projects", () => {
   });
 
   it("clears the worker concurrency cap when the settings UI sends null (issue #168)", async () => {
-    // Register with a capped project (the daemon default caps new projects).
+    // Register with a capped project (the daemon default, 3 since #184, caps new projects).
     await api("POST", "/api/projects", { mode: "clone", repoUrl: "https://github.com/o/clear" });
     const capped = projectSchema.parse((await api("GET", formatPath("getProject", { projectId: "o-clear" }))).json);
-    expect(capped.settings.workerConcurrency).toBe(1);
+    expect(capped.settings.workerConcurrency).toBe(3);
 
     // Empty field → the UI sends `settings.workerConcurrency: null`.
     const cleared = await api("PATCH", formatPath("updateProject", { projectId: "o-clear" }), {

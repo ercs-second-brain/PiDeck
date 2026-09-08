@@ -1,10 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Project } from "@pideck/shared";
 import { errorMessage } from "../lib/api";
 import { AutoAgentStep } from "./onboarding/AutoAgentStep";
 import { RepoSourceStep } from "./onboarding/RepoSourceStep";
 import { StepNav } from "./onboarding/StepNav";
-import { INITIAL_FORM, autoAgentFormError, registerProject, sourceFormError, type ProjectStep, type WizardForm } from "./onboarding/wizard-form";
+import {
+  INITIAL_FORM,
+  autoAgentFormError,
+  concurrencyFormError,
+  defaultConcurrencyField,
+  registerProject,
+  sourceFormError,
+  type ProjectStep,
+  type WizardForm,
+} from "./onboarding/wizard-form";
 
 /** The project flow's steps (issue #183): project things only — repo source, then agents. */
 const PROJECT_STEPS = [
@@ -46,6 +55,12 @@ function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) =
     setForm((current) => ({ ...current, ...patch }));
   };
 
+  // Issue #184: pre-fill the concurrency field with the daemon's actual
+  // default for new projects (the shipped default is 3) once on mount.
+  useEffect(() => {
+    defaultConcurrencyField().then((concurrency) => patchForm({ concurrency }));
+  }, []);
+
   const continueFromSource = (): void => {
     const message = sourceFormError(form);
     setFormError(message);
@@ -53,7 +68,7 @@ function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) =
   };
 
   const finish = (): void => {
-    const message = autoAgentFormError(form);
+    const message = autoAgentFormError(form) ?? concurrencyFormError(form);
     setFormError(message);
     if (message !== null) return;
     setSubmitting(true);
