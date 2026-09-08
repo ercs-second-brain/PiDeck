@@ -1,0 +1,37 @@
+# PiDeck daemon — systemd user unit template.
+# Placeholders (@PD_…@) are substituted by install/lib/service.sh at install
+# time. Installed to ~/.config/systemd/user/pideck-daemon.service.
+#
+# WSL: this is the WSL service path too — the Windows bootstrap
+# (windows/pideck-setup.ps1) enables systemd in the distro and runs the
+# Linux installer inside it.
+
+[Unit]
+Description=PiDeck daemon + webapp
+Documentation=https://github.com/ercs-second-brain/PiDeck
+After=network-online.target
+Wants=network-online.target
+# Never enter a permanent failed state after repeated crashes — keep
+# restarting (the default start-rate limit would give up after 5 tries).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@PD_SRC@
+ExecStart=@PD_HOME@/bin/pideck-daemon
+Environment=PATH=@PD_SERVE_PATH@
+Environment=PD_HOME=@PD_HOME@
+Environment=PD_WEB_PORT=@PD_PORT@
+Environment=PD_SRC=@PD_SRC@
+# Source dir of the pi agent assets (prompts/skills) in the checkout —
+# consumed by the daemon's orchestrator prompt resolution.
+Environment=PD_AGENT_DIR=@PD_SRC@/agent
+# Bind the webapp on all interfaces: under WSL2 (NAT mode) the Windows host
+# reaches the distro via localhost forwarding, and LAN access needs a
+# non-localhost bind (see install/README.md, WSL section).
+Environment=PD_WEB_HOST=0.0.0.0
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

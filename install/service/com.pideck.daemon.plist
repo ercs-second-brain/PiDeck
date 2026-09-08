@@ -1,32 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  agentsKISS daemon — macOS launchd agent template.
-  Placeholders (@AK_…@) are substituted by install/lib/service.sh at install
+  PiDeck daemon — macOS launchd agent template.
+  Placeholders (@PD_…@) are substituted by install/lib/service.sh at install
   time. Runs $HOME-based paths only, no root required.
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.agentskiss.daemon</string>
+    <string>com.pideck.daemon</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/bin/sh</string>
-        <string>@AK_HOME@/bin/agentskiss-daemon</string>
+        <string>@PD_HOME@/bin/pideck-daemon</string>
     </array>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>@AK_SERVE_PATH@</string>
-        <key>AGENTSKISS_HOME</key>
-        <string>@AK_HOME@</string>
-        <key>AGENTSKISS_WEB_PORT</key>
-        <string>@AK_PORT@</string>
+        <string>@PD_SERVE_PATH@</string>
+        <key>PD_HOME</key>
+        <string>@PD_HOME@</string>
+        <key>PD_WEB_PORT</key>
+        <string>@PD_PORT@</string>
+        <key>PD_SRC</key>
+        <string>@PD_SRC@</string>
+        <key>PD_AGENT_DIR</key>
+        <string>@PD_SRC@/agent</string>
         <!-- Bind the webapp on all interfaces (WSL/remote-access friendly;
              see install/README.md). -->
-        <key>AGENTSKISS_WEB_HOST</key>
+        <key>PD_WEB_HOST</key>
         <string>0.0.0.0</string>
     </dict>
 
@@ -45,8 +49,8 @@
     <string>Background</string>
 
     <key>StandardOutPath</key>
-    <string>@AK_HOME@/log/daemon.out.log</string>
+    <string>@PD_HOME@/log/daemon.out.log</string>
     <key>StandardErrorPath</key>
-    <string>@AK_HOME@/log/daemon.err.log</string>
+    <string>@PD_HOME@/log/daemon.err.log</string>
 </dict>
 </plist>

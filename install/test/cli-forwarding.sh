@@ -1,42 +1,33 @@
 #!/bin/sh
-# Plain-shell tests for the install/bin/agentskiss shim (no bats dependency —
+# shellcheck shell=sh disable=SC2154 # failures comes from the sourced harness
+# Plain-shell tests for the install/bin/pideck shim (no bats dependency —
 # matches install/'s shell-only tooling; run via `pnpm build` in install/ or
 # directly). Covers: service verbs (bare + `service` group), daemon CLI
 # forwarding with args intact and exit codes propagated, `status` precedence,
 # daemon URL defaulting, and the missing-build error path.
 set -u
 
-SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-SHIM="$SCRIPT_DIR/../bin/agentskiss"
-
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+# shellcheck disable=SC1091 # shared test harness, sourced on purpose
+. "$(dirname -- "$0")/harness.sh"
 
 # --- fake install layout ---------------------------------------------------
-AK_HOME="$tmp/home"
-AK_SRC="$tmp/src"
-mkdir -p "$AK_HOME/lib" "$AK_HOME/log" "$AK_SRC/apps/daemon/dist/cli"
+PD_HOME="$tmp/home"
+PD_SRC="$tmp/src"
+mkdir -p "$PD_HOME/lib" "$PD_HOME/log" "$PD_SRC/apps/daemon/dist/cli"
 
-cat > "$AK_HOME/env" <<EOF
-AGENTSKISS_HOME="$AK_HOME"
-AGENTSKISS_SRC="$AK_SRC"
-AGENTSKISS_NODE="$tmp/fake-node"
-AGENTSKISS_WEB_PORT="8321"
-AGENTSKISS_WEB_HOST="0.0.0.0"
+cat > "$PD_HOME/env" <<EOF
+PD_HOME="$PD_HOME"
+PD_SRC="$PD_SRC"
+PD_NODE="$tmp/fake-node"
+PD_WEB_PORT="8321"
+PD_WEB_HOST="0.0.0.0"
 EOF
 
 # Stub libs: record service calls instead of touching a real system.
-cat > "$AK_HOME/lib/common.sh" <<'EOF'
+cat > "$PD_HOME/lib/common.sh" <<'EOF'
 detect_os() { :; }
 EOF
-cat > "$AK_HOME/lib/service.sh" <<'EOF'
-svc_start() { printf 'SVC start\n'; }
-svc_stop() { printf 'SVC stop\n'; }
-svc_restart() { printf 'SVC restart\n'; }
-svc_status() { printf 'SVC status\n'; }
-webapp_url() { printf 'http://127.0.0.1:8321'; }
-windows_host_url() { return 1; }
-EOF
+cp "$SCRIPT_DIR/service-stub.sh" "$PD_HOME/lib/service.sh"
 
 # fake-node: emulate `node <script> args...` by running the script with sh.
 cat > "$tmp/fake-node" <<'EOF'
@@ -50,35 +41,15 @@ chmod +x "$tmp/fake-node"
 
 # Stand-in daemon CLI: echo the argv, echo the daemon URL it would use, exit
 # with $FAKE_EXIT so exit-code propagation is observable.
-cat > "$AK_SRC/apps/daemon/dist/cli/main.js" <<'EOF'
+cat > "$PD_SRC/apps/daemon/dist/cli/main.js" <<'EOF'
 printf 'DAEMON-CLI: %s\n' "$*"
-printf 'DAEMON-URL: %s\n' "${AGENTSKISS_DAEMON_URL:-unset}"
+printf 'DAEMON-URL: %s\n' "${PD_DAEMON_URL:-unset}"
 exit "${FAKE_EXIT:-0}"
 EOF
 
-# --- tiny harness ----------------------------------------------------------
-failures=0
+# --- tiny harness: see test/harness.sh (check_eq / check_grep) --------------
 
-check_eq() { # check_eq <name> <expected> <actual>
-  if [ "$2" = "$3" ]; then
-    printf 'ok - %s\n' "$1"
-  else
-    printf 'not ok - %s\n     expected: %s\n     actual:   %s\n' "$1" "$2" "$3"
-    failures=$((failures + 1))
-  fi
-}
-
-check_grep() { # check_grep <name> <needle> <haystack>
-  case "$3" in
-    *"$2"*) printf 'ok - %s\n' "$1" ;;
-    *)
-      printf 'not ok - %s: output missing [%s]\n     actual: [%s]\n' "$1" "$2" "$3"
-      failures=$((failures + 1))
-      ;;
-  esac
-}
-
-run_shim() { env AGENTSKISS_HOME="$AK_HOME" sh "$SHIM" "$@"; }
+run_shim() { env PD_HOME="$PD_HOME" sh "$SHIM" "$@"; }
 
 # --- service-control verbs (shim-owned) ------------------------------------
 check_eq 'bare start stays on the shim' 'SVC start' "$(run_shim start)"
@@ -119,20 +90,20 @@ check_grep 'unknown-to-shim command forwards' 'DAEMON-CLI: whatever --flag value
 
 check_grep 'daemon URL defaults to loopback port from env' 'DAEMON-URL: http://127.0.0.1:8321' "$(run_shim status)"
 check_grep 'caller-provided daemon URL wins' 'DAEMON-URL: http://localhost:9999' \
-  "$(env AGENTSKISS_DAEMON_URL=http://localhost:9999 AGENTSKISS_HOME="$AK_HOME" sh "$SHIM" status)"
+  "$(env PD_DAEMON_URL=http://localhost:9999 PD_HOME="$PD_HOME" sh "$SHIM" status)"
 
 # --- shim verbs that must NOT be forwarded ----------------------------------
-: > "$AK_HOME/log/daemon.out.log"; : > "$AK_HOME/log/daemon.err.log"
+: > "$PD_HOME/log/daemon.out.log"; : > "$PD_HOME/log/daemon.err.log"
 out=$(run_shim logs 2>/dev/null); rc=$?
 check_eq 'logs stays on the shim' '0' "$rc"
 check_eq 'logs does not reach the daemon CLI' '' "$(printf '%s' "$out" | grep 'DAEMON-CLI' || :)"
 
 # --- missing daemon build ---------------------------------------------------
-mv "$AK_SRC/apps/daemon/dist/cli/main.js" "$AK_SRC/apps/daemon/dist/cli/main.js.bak"
+mv "$PD_SRC/apps/daemon/dist/cli/main.js" "$PD_SRC/apps/daemon/dist/cli/main.js.bak"
 out=$(run_shim status 2>&1); rc=$?
 check_grep 'missing build errors clearly' 'daemon CLI missing' "$out"
 check_eq 'missing build exits nonzero' '1' "$rc"
-mv "$AK_SRC/apps/daemon/dist/cli/main.js.bak" "$AK_SRC/apps/daemon/dist/cli/main.js"
+mv "$PD_SRC/apps/daemon/dist/cli/main.js.bak" "$PD_SRC/apps/daemon/dist/cli/main.js"
 
 # --- summary ----------------------------------------------------------------
 if [ "$failures" -eq 0 ]; then

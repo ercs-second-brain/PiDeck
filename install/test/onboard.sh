@@ -1,66 +1,42 @@
 #!/bin/sh
+# shellcheck shell=sh disable=SC2154 # failures comes from the sourced harness
 # Plain-shell regression test for issue #61: onboard.sh must run from the
 # flat installed layout. bootstrap.sh copies install/lib/*.sh AND
-# install/onboard.sh side by side into ~/.agentskiss/lib/ — onboard.sh must
+# install/onboard.sh side by side into ~/.pideck/lib/ — onboard.sh must
 # find its libs there (sibling sourcing), not only in the source tree layout
 # (lib/ subdir). Runs onboard.sh --dry-run from the copied location; no
 # network, no real pi/gh/auth side effects.
 set -u
 
-SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-INSTALL_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
-
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-
-failures=0
-
-check_eq() { # check_eq <name> <expected> <actual>
-  if [ "$2" = "$3" ]; then
-    printf 'ok - %s\n' "$1"
-  else
-    printf 'not ok - %s\n     expected: %s\n     actual:   %s\n' "$1" "$2" "$3"
-    failures=$((failures + 1))
-  fi
-}
-
-check_grep() { # check_grep <name> <needle> <haystack>
-  case "$3" in
-    *"$2"*) printf 'ok - %s\n' "$1" ;;
-    *)
-      printf 'not ok - %s: output missing [%s]\n     actual: [%s]\n' "$1" "$2" "$3"
-      failures=$((failures + 1))
-      ;;
-  esac
-}
+# shellcheck disable=SC1091 # shared test harness, sourced on purpose
+. "$(dirname -- "$0")/harness.sh"
 
 # --- flat installed layout, replicated exactly as bootstrap.sh does it ------
-# (bootstrap.sh: `cp install/lib/*.sh install/onboard.sh -> $AK_HOME/lib/`,
+# (bootstrap.sh: `cp install/lib/*.sh install/onboard.sh -> $PD_HOME/lib/`,
 # all flat, no subdirectory)
-AK_HOME="$tmp/home"
-mkdir -p "$AK_HOME/lib"
-cp "$INSTALL_DIR/lib/"*.sh "$AK_HOME/lib/"
-cp "$INSTALL_DIR/onboard.sh" "$AK_HOME/lib/"
-if [ -f "$AK_HOME/lib/onboard.sh" ] && [ -f "$AK_HOME/lib/common.sh" ] && [ ! -d "$AK_HOME/lib/lib" ]; then :; else
-  printf 'not ok - test setup: flat copy of install/ into %s/lib\n' "$AK_HOME"
+PD_HOME="$tmp/home"
+mkdir -p "$PD_HOME/lib"
+cp "$INSTALL_DIR/lib/"*.sh "$PD_HOME/lib/"
+cp "$INSTALL_DIR/onboard.sh" "$PD_HOME/lib/"
+if [ -f "$PD_HOME/lib/onboard.sh" ] && [ -f "$PD_HOME/lib/common.sh" ] && [ ! -d "$PD_HOME/lib/lib" ]; then :; else
+  printf 'not ok - test setup: flat copy of install/ into %s/lib\n' "$PD_HOME"
   exit 1
 fi
 
-# Isolate from the real ~/.agentskiss (common.sh honors AGENTSKISS_HOME).
-AGENTSKISS_HOME="$AK_HOME"
-export AGENTSKISS_HOME
+# Isolate from the real ~/.pideck (common.sh honors PD_HOME).
+export PD_HOME
 
-# --- installed layout: onboard.sh runs from $AK_HOME/lib --------------------
-out=$(sh "$AK_HOME/lib/onboard.sh" --dry-run --skip-pi --skip-gh 2>&1)
+# --- installed layout: onboard.sh runs from $PD_HOME/lib --------------------
+out=$(sh "$PD_HOME/lib/onboard.sh" --dry-run --skip-pi --skip-gh 2>&1)
 rc=$?
 check_eq 'installed layout: onboard.sh --dry-run exits 0' '0' "$rc"
 check_grep 'installed layout: onboarding ran' 'onboarding summary' "$out"
 check_grep 'installed layout: dry-run honored' '[dry-run] write' "$out"
 
 # --- source-tree layout: install/onboard.sh with install/lib/ sibling -------
-AK_ALT_HOME="$tmp/alt-home"
-AGENTSKISS_HOME="$AK_ALT_HOME"
-export AGENTSKISS_HOME
+PD_ALT_HOME="$tmp/alt-home"
+PD_HOME="$PD_ALT_HOME"
+export PD_HOME
 out=$(sh "$INSTALL_DIR/onboard.sh" --dry-run --skip-pi --skip-gh 2>&1)
 rc=$?
 check_eq 'source-tree layout: onboard.sh --dry-run exits 0' '0' "$rc"
