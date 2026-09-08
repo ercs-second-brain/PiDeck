@@ -214,6 +214,14 @@ export class SessionRegistry {
     return worker;
   }
 
+  /** Removes a worker record entirely (issue #172 project teardown — unlike
+   * archive, deletion keeps no history). No-op for unknown ids. */
+  deleteWorker(id: string): boolean {
+    const deleted = this.workers.delete(id);
+    if (deleted) this.save();
+    return deleted;
+  }
+
   // -- persistence -----------------------------------------------------------
 
   /** Writes current state to the JSON file (atomic via {@link JsonStore}). */

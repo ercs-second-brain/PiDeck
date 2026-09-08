@@ -10,7 +10,6 @@
     "export:apps/daemon/src/api/contract-fixtures.ts:makeApi",
     "export:apps/daemon/src/api/handlers.ts:countActiveWorkers",
     "export:apps/daemon/src/api/kanban.ts:issueColumn",
-    "export:apps/daemon/src/api/projects.ts:ConflictError",
     "export:apps/daemon/src/api/projects.ts:DEFAULT_PROJECT_SETTINGS",
     "export:apps/daemon/src/api/projects.ts:resolveSettings",
     "export:apps/daemon/src/api/router.ts:sendJson",

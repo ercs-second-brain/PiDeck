@@ -61,9 +61,8 @@ function Shell() {
   // /projects/:projectId) are merged in, so the sidebar can mark the
   // currently attached session / open project.
   const { sessionId, projectId } = useParams();
-  const { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker } = useSidebarData((sessionId) =>
-    navigateFromSidebar(`/terminal/${sessionId}`),
-  );
+  const { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker, deleteProject } =
+    useSidebarData((sessionId) => navigateFromSidebar(`/terminal/${sessionId}`));
   // The two onboarding modals (issues #62, #90, #183): see use-onboarding-gates.
   const onboarding = useOnboardingGates({ loaded, error, entryCount: entries.length });
   // Issue #93: on small viewports the sidebar collapses into a drawer; the
@@ -82,7 +81,15 @@ function Shell() {
     reload,
     startOrchestrator: (projectId: string) => startOrchestrator(projectId),
     terminateWorker,
+    deleteProject,
     openOnboarding: onboarding.openProject,
+  };
+
+  // Issue #172: after a successful delete, leave the deleted project's
+  // board/settings/diff route — its data is gone.
+  const deleteProjectAndLeave = async (deletedId: string) => {
+    await deleteProject(deletedId);
+    if (projectId === deletedId) navigate("/");
   };
 
   return (
@@ -123,6 +130,7 @@ function Shell() {
             onOpenGlobalSettings={() => navigateFromSidebar("/settings")}
             onStartOrchestrator={(projectId) => startOrchestrator(projectId)}
             onTerminateWorker={terminateWorker}
+            onDeleteProject={deleteProjectAndLeave}
           />
           <main className="app-main">
             <Outlet />

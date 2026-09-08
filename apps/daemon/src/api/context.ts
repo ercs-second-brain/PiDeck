@@ -6,7 +6,7 @@
 
 import path from "node:path";
 
-import type { Project } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES, type Project } from "@pideck/shared";
 
 import { PiAuthProbe, type PiRunner } from "../agent/pi-auth.js";
 import { PromptGate } from "../agent/prompt-gate.js";
@@ -23,7 +23,7 @@ import { Tmux } from "../sessions/tmux.js";
 import { DiffService } from "./diffs.js";
 import { KanbanService } from "./kanban.js";
 import { PullListingService } from "./pull-listing.js";
-import { ProjectService, ProjectStore } from "./projects.js";
+import { ProjectService, ProjectStore, type ProjectTeardown } from "./projects.js";
 import { RuntimeStats } from "./runtime-stats.js";
 import { SettingsStore } from "./settings.js";
 import { UpdateChecker, type UpdateSpawn } from "./update.js";
@@ -119,6 +119,56 @@ export function resolveStateDir(explicit?: string): string {
   return defaultStateDir();
 }
 
+/**
+ * Wires the collaborators a local project delete (issue #172) drives:
+ * `ProjectService.delete` calls them in its documented teardown order
+ * (stop watching → terminate sessions → remove files → drop board cache).
+ */
+function buildProjectTeardown(deps: {
+  sessions: SessionManager;
+  registry: SessionRegistry;
+  tmux: Tmux;
+  layout: ProjectLayout;
+  kanban: KanbanService;
+  automationRef: { current?: GithubAutomation };
+}): ProjectTeardown {
+  const { sessions, registry, tmux, layout, kanban, automationRef } = deps;
+  return {
+    activeWorkers: (projectId) =>
+      sessions.listWorkers({ projectId }).filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status)),
+    stopWatching: (projectId) => automationRef.current?.stopProject(projectId),
+    teardownSessions: async (projectId) => {
+      const projectSessions = registry.listSessions({ projectId });
+      for (const session of projectSessions) {
+        if (await tmux.hasSession(session.tmuxSession)) await tmux.killSession(session.tmuxSession);
+      }
+      // Deleting means deleting: captured archived logs go with the records.
+      sessions.deleteArchivedLogs(registry.listWorkers({ projectId }).map((worker) => worker.id));
+      for (const session of projectSessions) registry.deleteSession(session.id);
+      for (const worker of registry.listWorkers({ projectId })) registry.deleteWorker(worker.id);
+    },
+    removeFiles: (projectId) => layout.removeProjectState(projectId),
+    forgetBoard: (projectId) => kanban.invalidate(projectId),
+  };
+}
+
+/**
+ * Self-update check (issue #55): the installed checkout is either the
+ * service-configured PD_SRC or the installer's <stateDir>/src; upstream
+ * repo/ref come from the installer's config.json unless overridden.
+ */
+function buildUpdateChecker(options: DaemonContextOptions, stateDir: string): UpdateChecker {
+  return new UpdateChecker({
+    srcDir: process.env["PD_SRC"] ?? path.join(stateDir, "src"),
+    stateDir,
+    ...(options.updateRepoUrl !== undefined ? { repoUrl: options.updateRepoUrl } : {}),
+    ...(options.updateRepoRef !== undefined ? { repoRef: options.updateRepoRef } : {}),
+    ...(options.updateGh !== undefined ? { gh: options.updateGh } : {}),
+    ...(options.updateGit !== undefined ? { git: options.updateGit } : {}),
+    ...(options.updateSpawn !== undefined ? { spawn: options.updateSpawn } : {}),
+  });
+}
+
 export function createDaemonContext(options: DaemonContextOptions = {}): DaemonServices {
   const stateDir = resolveStateDir(options.stateDir);
   const layout = new ProjectLayout(stateDir);
@@ -131,6 +181,18 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const settings = new SettingsStore(stateDir);
   // Forward-declared so the change hook below reaches the automation constructed after it (issue #46).
   const automationRef: { current?: GithubAutomation } = {};
+
+  // Kanban derives boards from gh + workers; built before the project service
+  // so project deletion (issue #172) can drop the board cache with the project.
+  const pullListing = new PullListingService({ gh });
+  const kanban = new KanbanService({
+    gh,
+    listWorkers: () => sessions.listWorkers(),
+    // Batched + cached PR listing (issue #40) — the API layer shares the
+    // GitHub token with watchers/pipelines, so it must not burn O(PR) calls.
+    listPullRequests: (project) => pullListing.list(project.id, project.repoUrl),
+  });
+
   const projects = new ProjectService({
     store: projectStore,
     layout,
@@ -141,6 +203,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     }),
     // Mid-run register/update/delete → watcher/pipeline resync (issue #46).
     onChange: () => automationRef.current?.resync(),
+    teardown: buildProjectTeardown({ sessions, registry, tmux, layout, kanban, automationRef }),
     ...(options.git !== undefined ? { git: options.git } : {}),
     gh,
   });
@@ -164,16 +227,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     ...(options.promptGatePollIntervalMs !== undefined ? { pollIntervalMs: options.promptGatePollIntervalMs } : {}),
   });
 
-  const pullListing = new PullListingService({ gh });
-  const kanban = new KanbanService({
-    gh,
-    listWorkers: () => sessions.listWorkers(),
-    // Batched + cached PR listing (issue #40) — the API layer shares the
-    // GitHub token with watchers/pipelines, so it must not burn O(PR) calls.
-    listPullRequests: (project) => pullListing.list(project.id, project.repoUrl),
-  });
   const diffs = new DiffService({ gh, pullListing: (projectId, repoUrl) => pullListing.list(projectId, repoUrl) });
-
   const watcherOptions = watcherOptionsFromEnv(process.env, {
     ...(options.watcherEnabled !== undefined ? { enabled: options.watcherEnabled } : {}),
     ...(options.watcherPollIntervalMs !== undefined ? { pollIntervalMs: options.watcherPollIntervalMs } : {}),
@@ -191,19 +245,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     ...watcherOptions,
   });
   automationRef.current = automation;
-
-  // Self-update check (issue #55): the installed checkout is either the
-  // service-configured PD_SRC or the installer's <stateDir>/src;
-  // upstream repo/ref come from the installer's config.json unless overridden.
-  const update = new UpdateChecker({
-    srcDir: process.env["PD_SRC"] ?? path.join(stateDir, "src"),
-    stateDir,
-    ...(options.updateRepoUrl !== undefined ? { repoUrl: options.updateRepoUrl } : {}),
-    ...(options.updateRepoRef !== undefined ? { repoRef: options.updateRepoRef } : {}),
-    ...(options.updateGh !== undefined ? { gh: options.updateGh } : {}),
-    ...(options.updateGit !== undefined ? { git: options.updateGit } : {}),
-    ...(options.updateSpawn !== undefined ? { spawn: options.updateSpawn } : {}),
-  });
+  const update = buildUpdateChecker(options, stateDir);
 
   return {
     stateDir,

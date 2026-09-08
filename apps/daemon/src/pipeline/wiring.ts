@@ -246,16 +246,24 @@ export class GithubAutomation {
   resync(): void {
     if (!this.enabled) return;
     const removed = [...this.units.keys()].filter((id) => this.options.projects.get(id) === undefined);
-    for (const id of removed) {
-      const unit = this.units.get(id);
-      if (unit !== undefined) this.stopUnit(unit);
-      this.units.delete(id);
-    }
+    for (const id of removed) this.stopProject(id);
     const created = this.rebuildUnits();
     for (const unit of created) {
       if (!this.running) continue;
       void this.activateUnit(unit);
     }
+  }
+
+  /**
+   * Stops one project's watching + pipelines (issue #172 project delete's
+   * first teardown step, and the per-project half of {@link resync}).
+   * Idempotent on projects that are not currently watched.
+   */
+  stopProject(projectId: string): void {
+    const unit = this.units.get(projectId);
+    if (unit === undefined) return;
+    this.stopUnit(unit);
+    this.units.delete(projectId);
   }
 
   // -- event routing ---------------------------------------------------------

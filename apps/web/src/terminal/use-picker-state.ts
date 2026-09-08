@@ -10,7 +10,43 @@
 
 import { useEffect, useState } from "react";
 import type { Session } from "@pideck/shared";
+import { errorMessage } from "../lib/api";
 import { loadCollapsedProjects, saveCollapsedProjects } from "../lib/sidebar-collapse";
+
+/**
+ * Delete-confirmation interaction state (issue #172): which project is
+ * confirming its deletion (rendered as the centered modal by SessionPicker),
+ * in-flight/error flags, and the async confirm runner — request goes out,
+ * failures surface inside the modal, success closes it.
+ */
+function useDeleteConfirm() {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const confirm = async (onDeleteProject: (projectId: string) => Promise<void>) => {
+    if (confirmingId === null) return;
+    setPending(true);
+    setError(null);
+    try {
+      await onDeleteProject(confirmingId);
+      setConfirmingId(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return {
+    confirmingId,
+    pending,
+    error,
+    ask: setConfirmingId,
+    cancel: () => setConfirmingId(null),
+    confirm,
+  };
+}
 
 export function usePickerState(
   entries: { project: { id: string }; sessions: Session[] }[],
@@ -31,6 +67,8 @@ export function usePickerState(
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => seedCollapsed ?? loadCollapsedProjects());
   // Issue #167: which project's ⋯ context menu is open (one at a time).
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  // Issue #172: the delete-confirmation interaction state (its own hook).
+  const deleteConfirm = useDeleteConfirm();
 
   const toggleArchived = (projectId: string) =>
     setArchivedOpen((open) => {
@@ -61,6 +99,17 @@ export function usePickerState(
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [confirmingSession, pendingTerminate]);
+
+  // Issue #172: the delete modal dismisses on Escape (except while the
+  // delete request is in flight).
+  useEffect(() => {
+    if (deleteConfirm.confirmingId === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !deleteConfirm.pending) deleteConfirm.cancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deleteConfirm]);
 
   // Issue #167: an open ⋯ context menu closes on Escape or on any click
   // outside the menu and its toggle (the toggle's own click re-toggles).
@@ -93,6 +142,7 @@ export function usePickerState(
     askTerminate: setConfirmingSessionId,
     cancelTerminate: () => setConfirmingSessionId(null),
     confirmTerminate,
+    deleteConfirm,
     archivedOpen,
     toggleArchived,
     collapsedProjects,
