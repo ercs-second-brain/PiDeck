@@ -12,7 +12,10 @@ import { SessionPicker } from "./terminal/SessionPicker";
 import { shouldAutoOpenOnboarding, SidebarContext, useSidebarData } from "./terminal/sidebar";
 
 /**
- * The whole app is one page (issue #62): the terminals page. The sidebar
+ * The whole app is one page (issue #62): the terminals page. The app header
+ * carries only the brand and tag — the Terminals link is gone since the
+ * single page *is* the terminals view (issue #103) and deep links to
+ * `/terminal/:sessionId` keep working. The sidebar
  * (SessionPicker) is the app's navigation — "Projects" header with a "+"
  * onboarding button, per-project rows that open the project's kanban in the
  * main pane, and per-agent rows that attach terminals — while the main pane
@@ -95,9 +98,6 @@ function Shell() {
         </button>
         <Link to="/" className="brand">
           agents<span className="brand-accent">KISS</span>
-        </Link>
-        <Link to="/terminal" className="nav-link">
-          Terminals
         </Link>
         <span className="brand-tag">agent orchestration, self-hosted</span>
       </header>

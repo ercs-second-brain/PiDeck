@@ -563,15 +563,10 @@
     display: none;
   }
 
-  .app-header .brand,
-  .app-header .nav-link {
+  .app-header .brand {
     display: inline-flex;
     align-items: center;
     min-height: 40px;
-  }
-
-  .app-header .nav-link {
-    padding: 0 6px;
   }
 
   .menu-toggle {
