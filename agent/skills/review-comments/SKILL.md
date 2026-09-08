@@ -1,6 +1,6 @@
 ---
 name: review-comments
-description: "Retrieve review state and review comments for a project's pull requests: daemon state via agentskiss pulls, comment bodies via gh. Use when addressing or summarizing PR review feedback."
+description: "Retrieve review state and review comments for a project's pull requests: daemon state via pideck pulls, comment bodies via gh. Use when addressing or summarizing PR review feedback."
 trigger: "Fetching or addressing PR review comments."
 ---
 
@@ -11,7 +11,7 @@ Two layers, split exactly as the shared contract draws it (`packages/shared/src/
 ## Step 1 — review state (daemon)
 
 ```bash
-agentskiss pulls --project {{PROJECT_ID}} --json
+pideck pulls --project {{PROJECT_ID}} --json
 ```
 
 Each `PullRequest` carries `reviewState`: `none`, `pending`, `approved`, or `changes_requested`. `changes_requested` means there are comments to address; `approved` with `ciStatus: "success"` means ready to report as done (do not merge unless explicitly asked).
@@ -29,7 +29,7 @@ gh api repos/OWNER/REPO/pulls/<pr-number>/comments --paginate
 gh api repos/OWNER/REPO/pulls/<pr-number>/reviews
 ```
 
-Determine `OWNER/REPO` from `agentskiss project get {{PROJECT_ID}} --json` → `repoUrl`.
+Determine `OWNER/REPO` from `pideck project get {{PROJECT_ID}} --json` → `repoUrl`.
 
 ## Step 3 — addressing (workers)
 
@@ -39,4 +39,4 @@ Determine `OWNER/REPO` from `agentskiss project get {{PROJECT_ID}} --json` → `
 
 ## Orchestrators
 
-Never address reviews yourself. Fetch the findings with this skill, then route them to the responsible worker via `agentskiss send --session <session-id> --message "<findings>"`.
+Never address reviews yourself. Fetch the findings with this skill, then route them to the responsible worker via `pideck send --session <session-id> --message "<findings>"`.

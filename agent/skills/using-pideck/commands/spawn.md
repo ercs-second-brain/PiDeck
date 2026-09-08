@@ -1,11 +1,11 @@
-# agentskiss spawn
+# pideck spawn
 
 Spawn a worker agent session in a registered project. The daemon creates the tmux session and git worktree; the worker runs the pi coding agent. This is the same invocation documented in the `spawn-worker` skill — that skill is the canonical home for the spawn call; this page documents the command itself.
 
 ## Syntax
 
 ```
-agentskiss spawn [flags]
+pideck spawn [flags]
 ```
 
 ## Flags
@@ -27,10 +27,10 @@ agentskiss spawn [flags]
 
 ```bash
 # Spawn a worker for issue 5
-agentskiss spawn --project agentskiss --issue 5 --name "phase1-prompts"
+pideck spawn --project pideck --issue 5 --name "phase1-prompts"
 ```
 
 ```bash
 # Spawn a freeform worker
-agentskiss spawn --project agentskiss --name "triage-flaky-ci" --prompt "Investigate the flaky kanban test and fix it."
+pideck spawn --project pideck --name "triage-flaky-ci" --prompt "Investigate the flaky kanban test and fix it."
 ```

@@ -28,7 +28,7 @@ const sessions: Session[] = [
     id: "sess-orch-1",
     projectId: "agentskiss",
     role: "orchestrator",
-    tmuxSession: "agentskiss-agentskiss-orchestrator-1",
+    tmuxSession: "pideck-agentskiss-orchestrator-1",
     workerId: null,
     createdAt: "2025-01-01T00:00:00.000Z",
   },
@@ -36,7 +36,7 @@ const sessions: Session[] = [
     id: "sess-worker-1",
     projectId: "agentskiss",
     role: "worker",
-    tmuxSession: "agentskiss-agentskiss-worker-1",
+    tmuxSession: "pideck-agentskiss-worker-1",
     workerId: "worker-1",
     createdAt: "2025-01-01T00:00:00.000Z",
   },
@@ -100,16 +100,16 @@ describe("SessionPicker", () => {
   it("lists worker sessions with role badges; the orchestrator row is gone (issue #108)", () => {
     const html = renderPicker();
     expect(html).toContain("role-worker");
-    expect(html).toContain("agentskiss-agentskiss-worker-1");
+    expect(html).toContain("pideck-agentskiss-worker-1");
     // Issue #108: no separate orchestrator row — the project name is the entry.
-    expect(html).not.toContain("agentskiss-agentskiss-orchestrator-1");
+    expect(html).not.toContain("pideck-agentskiss-orchestrator-1");
     expect(html).not.toContain("role-orchestrator");
   });
 
   it("nests workers beneath the project row (issue #63)", () => {
     const html = renderPicker();
     const project = html.indexOf("agentsKISS");
-    const worker = html.indexOf("agentskiss-agentskiss-worker-1");
+    const worker = html.indexOf("pideck-agentskiss-worker-1");
     expect(project).toBeLessThan(worker);
     // The worker list is a tree-indented list under the project row.
     expect(html).toContain("picker-workers");
@@ -188,20 +188,20 @@ describe("SessionPicker (collapsible projects, issue #114)", () => {
     expect(html).toContain("▾");
     expect(html).toContain('aria-expanded="true"');
     // Default expanded: children visible.
-    expect(html).toContain("agentskiss-agentskiss-worker-1");
+    expect(html).toContain("pideck-agentskiss-worker-1");
   });
 
   it("hides all children (workers + archived section) when collapsed", () => {
     const archivedWorker: Worker = { ...workers[0]!, id: "worker-2", status: "archived" };
-    const secondWorkerSession: Session = { ...sessions[1]!, id: "sess-worker-2", tmuxSession: "agentskiss-agentskiss-worker-2", workerId: "worker-2" };
+    const secondWorkerSession: Session = { ...sessions[1]!, id: "sess-worker-2", tmuxSession: "pideck-agentskiss-worker-2", workerId: "worker-2" };
     const html = renderPicker({
       entries: [{ project, sessions: [...sessions, secondWorkerSession], workers: [...workers, archivedWorker] }],
       defaultCollapsedProjects: new Set([project.id]),
     });
     expect(html).toContain("▸");
     expect(html).toContain('aria-expanded="false"');
-    expect(html).not.toContain("agentskiss-agentskiss-worker-1");
-    expect(html).not.toContain("agentskiss-agentskiss-worker-2");
+    expect(html).not.toContain("pideck-agentskiss-worker-1");
+    expect(html).not.toContain("pideck-agentskiss-worker-2");
     expect(html).not.toContain("picker-archived");
   });
 
@@ -302,7 +302,7 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
     expect(html).toContain("picker-archived");
     expect(html).toMatch(/Archived \(<!-- -->1<!-- -->\)/);
     expect(html).toContain("picker-archived-toggle");
-    expect(html).not.toContain("agentskiss-agentskiss-worker-1");
+    expect(html).not.toContain("pideck-agentskiss-worker-1");
     // No active workers section anymore.
     expect(html).not.toContain("picker-workers");
   });
@@ -314,7 +314,7 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
       defaultArchivedOpen: true,
     });
     expect(html).toContain("picker-archived-list");
-    expect(html).toContain("agentskiss-agentskiss-worker-1");
+    expect(html).toContain("pideck-agentskiss-worker-1");
     expect(html).toContain("worker-badge-archived");
     expect(html).toContain("picker-archived-session");
     expect(html).toContain("View the archived worker");
@@ -326,13 +326,13 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
 
   it("keeps live and archived workers apart in the same project", () => {
     const archivedWorker: Worker = { ...workers[0]!, id: "worker-2", status: "archived" };
-    const secondWorkerSession: Session = { ...sessions[1]!, id: "sess-worker-2", tmuxSession: "agentskiss-agentskiss-worker-2", workerId: "worker-2" };
+    const secondWorkerSession: Session = { ...sessions[1]!, id: "sess-worker-2", tmuxSession: "pideck-agentskiss-worker-2", workerId: "worker-2" };
     const html = renderPicker({
       entries: [{ project, sessions: [...sessions, secondWorkerSession], workers: [...workers, archivedWorker] }],
       defaultArchivedOpen: true,
     });
     expect(html).toContain("picker-workers"); // live worker under the orchestrator
     expect(html).toMatch(/Archived \(<!-- -->1<!-- -->\)/);
-    expect(html).toContain("agentskiss-agentskiss-worker-2");
+    expect(html).toContain("pideck-agentskiss-worker-2");
   });
 });

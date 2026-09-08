@@ -98,7 +98,7 @@ describe("UpdateBannerView — updating (apply accepted, modal over the dimmed a
     const html = view({ phase: "updating", updating: updating() });
     expect(html).toContain("update-modal-overlay");
     expect(html).toContain("update-modal");
-    expect(html).toContain("Updating agentsKISS");
+    expect(html).toContain("Updating PiDeck");
     expect(html).toContain("b".repeat(7));
     expect(html).toContain("5s</strong> elapsed");
     expect(html).toContain("applying the update");
@@ -125,8 +125,8 @@ describe("UpdateBannerView — updating (apply accepted, modal over the dimmed a
   it("surfaces the recovery hint when the daemon has been down for a while", () => {
     const html = view({ phase: "updating", updating: updating({ apiUp: false, downMs: 120_000 }) });
     expect(html).toContain("update-banner-hint");
-    expect(html).toContain("agentskiss update");
-    expect(html).toContain("agentskiss service status");
+    expect(html).toContain("pideck update");
+    expect(html).toContain("pideck service status");
   });
 
   it("renders no modal while browsing normally (only an actual apply)", () => {

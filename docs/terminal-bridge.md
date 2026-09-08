@@ -55,7 +55,7 @@ changed.
 ## Benchmark
 
 ```
-pnpm --filter @agentskiss/daemon bench:terminal
+pnpm --filter @pideck/daemon bench:terminal
 ```
 
 Runs `apps/daemon/src/terminal/bench.ts` against the fake tmux runner:

@@ -1,9 +1,9 @@
-# PRD: agentsKISS
+# PRD: PiDeck
 
 **One-liner:** A self-hosted, single-command AI coding agent orchestration platform — pi coding agent workers, driven by GitHub issues and PRs, managed from a kanban and browser terminals on your own machine.
 
 ## Problem
-Running coding agents on real repos means constantly shepherding: reading issues, spawning agents, watching CI, replying to review comments, updating a board. That loop is repetitive and manual. agentsKISS automates the loop the way agent-orchestrator does, but as one install command and a webapp — no desktop or mobile apps.
+Running coding agents on real repos means constantly shepherding: reading issues, spawning agents, watching CI, replying to review comments, updating a board. That loop is repetitive and manual. PiDeck automates the loop the way agent-orchestrator does, but as one install command and a webapp — no desktop or mobile apps.
 
 ## Users
 - **Owner (you):** runs it on a machine in your private network, connects repos, creates issues, reviews PRs, chats with the orchestrator and workers through terminals.
@@ -47,7 +47,7 @@ One full loop — issue created → worker spawns → PR opened → CI breaks �
 
 ## Risks & open questions
 - **Web terminal is the biggest engineering item** (websocket↔tmux bridge, browser terminal emulator, reconnect/resume) — treat as its own workstream
-- **Prompt porting**: agent-orchestrator's prompts are the base but reference their tooling; they must be adapted to agentsKISS's commands, not dropped in
+- **Prompt porting**: agent-orchestrator's prompts are the base but reference their tooling; they must be adapted to PiDeck's commands, not dropped in
 - **WSL friction**: install, service management, and webapp access from the Windows host need a tested path
 - **Worker concurrency**: unbounded (every unblocked issue spawns a worker) vs. capped — needs a decision before implementation
 - **Blocking semantics**: exact handling of GitHub relationship links ("blocked by: #123") to be pinned down against the real API

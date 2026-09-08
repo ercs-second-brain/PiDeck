@@ -25,7 +25,7 @@ import { UpdateApplyModal } from "./UpdateApplyModal";
  *
  * Updating state machine (issue #89 — survives the daemon restart; the
  * polling/backoff machines live in update-polling.ts):
- * - Applying POSTs `/api/update/apply`, which spawns `agentskiss update`
+ * - Applying POSTs `/api/update/apply`, which spawns `pideck update`
  *   detached and returns immediately; the daemon restarts mid-apply, so the
  *   banner flips to an 'updating…' state and polls until the daemon is
  *   *actually running the new build* — resolution keys on `runningSha`
@@ -242,7 +242,7 @@ export function UpdateBannerView({
   if (reloadSha !== null) {
     return (
       <div className="update-banner" role="status">
-        agentsKISS was updated to <code>{reloadSha.slice(0, 7)}</code> while this page was open — reload to switch to the
+        PiDeck was updated to <code>{reloadSha.slice(0, 7)}</code> while this page was open — reload to switch to the
         new build.
         <button className="update-apply" type="button" onClick={onReload}>
           Reload new build

@@ -105,7 +105,7 @@ export function startApplyPolling(targetSha: string, startedAt: number, handlers
   const tick = (): void => {
     if (Date.now() - startedAt > MAX_APPLY_WAIT_MS) {
       handlers.onFailed(
-        "The update is taking unusually long — polling stopped. Run `agentskiss update` in a terminal or check `agentskiss service status`.",
+        "The update is taking unusually long — polling stopped. Run `pideck update` in a terminal or check `pideck service status`.",
       );
       return;
     }
@@ -118,7 +118,7 @@ export function startApplyPolling(targetSha: string, startedAt: number, handlers
           handlers.onResolved(result);
         } else if (stage === "failed") {
           handlers.onFailed(
-            "The update failed while applying — run `agentskiss update` in a terminal and check `agentskiss logs` for details.",
+            "The update failed while applying — run `pideck update` in a terminal and check `pideck logs` for details.",
           );
         } else {
           handlers.onProgress(result);

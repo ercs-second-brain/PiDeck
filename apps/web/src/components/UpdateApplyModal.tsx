@@ -39,7 +39,7 @@ export function UpdateApplyModal({ updating, reloading }: UpdateApplyModalProps)
   return (
     <div className="update-modal-overlay" role="status" aria-live="assertive">
       <div className="update-modal">
-        <h2 className="update-modal-title">Updating agentsKISS&hellip;</h2>
+        <h2 className="update-modal-title">Updating PiDeck&hellip;</h2>
         <p className="update-modal-detail">
           Moving to <code>{updating.targetSha.slice(0, 7)}</code>
         </p>
@@ -48,8 +48,8 @@ export function UpdateApplyModal({ updating, reloading }: UpdateApplyModalProps)
         </p>
         {updating.downMs > RECOVERY_HINT_MS && (
           <p className="update-banner-hint">
-            Still waiting — if the site doesn't recover within a few minutes, run <code>agentskiss update</code> in a
-            terminal or check <code>agentskiss service status</code>.
+            Still waiting — if the site doesn't recover within a few minutes, run <code>pideck update</code> in a
+            terminal or check <code>pideck service status</code>.
           </p>
         )}
       </div>
