@@ -56,23 +56,29 @@ export function RepoSourceStep(props: {
       {form.mode === "clone" ? (
         <div className="field">
           <label htmlFor="repo-url">Repository URL</label>
+          {/* autoCapitalize/autoCorrect off (issue #216): browser
+              autocapitalize mangled typed repo names (pidecktest →
+              Pidecktest), 404ing the clone. */}
           <input
             id="repo-url"
             type="text"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             placeholder="https://github.com/owner/repo (or owner/repo)"
             value={form.repoUrl}
             onChange={(e) => onChange({ repoUrl: e.target.value })}
           />
           <div className="field">
             <label htmlFor="repo-name">Project name (optional)</label>
-            <input id="repo-name" type="text" placeholder="defaults to owner-repo" value={form.repoName} onChange={(e) => onChange({ repoName: e.target.value })} />
+            <input id="repo-name" type="text" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="defaults to owner-repo" value={form.repoName} onChange={(e) => onChange({ repoName: e.target.value })} />
           </div>
         </div>
       ) : (
         <>
           <div className="field">
             <label htmlFor="new-repo-name">New repository name</label>
-            <input id="new-repo-name" type="text" placeholder="my-project" value={form.repoName} onChange={(e) => onChange({ repoName: e.target.value })} />
+            <input id="new-repo-name" type="text" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="my-project" value={form.repoName} onChange={(e) => onChange({ repoName: e.target.value })} />
           </div>
           <label className="toggle-row">
             <input type="checkbox" checked={form.isPublic} onChange={(e) => onChange({ isPublic: e.target.checked })} />

@@ -27,6 +27,7 @@ import {
   GhClient,
   parseRepoUrl,
   type GitRunner,
+  GitError,
 } from "../github/index.js";
 
 // ---------------------------------------------------------------------------
@@ -213,7 +214,15 @@ export class ProjectService {
     if (this.store.get(id) !== undefined) {
       throw new ConflictError(`project id "${id}" is already registered`);
     }
-    await cloneRepo(this.git, repoUrl, this.layout.cloneDir(id));
+    try {
+      await cloneRepo(this.git, repoUrl, this.layout.cloneDir(id));
+    } catch (err) {
+      // Issue #216: a failed initial clone is a client-side problem (bad URL,
+      // missing repo, no gh access) → 4xx with an actionable message, not a
+      // raw 500 carrying the git command line.
+      if (err instanceof GitError) throw new CloneFailedError(repoUrl, err);
+      throw err;
+    }
     const defaultBranch = input.defaultBranch ?? (await this.detectDefaultBranch(id));
     const now = this.now().toISOString();
     const project: Project = {
@@ -350,11 +359,26 @@ export class ConflictError extends Error {
   }
 }
 
-/** Slugifies a project name/id for filesystem- and tmux-safe identifiers. */
+/**
+ * Thrown when the registration's initial clone fails — mapped to 4xx by the
+ * router's error path (issue #216).
+ */
+class CloneFailedError extends Error {
+  override readonly name = "CloneFailedError";
+  readonly statusCode = 400;
+  constructor(repoUrl: string, cause: GitError) {
+    super(`repo not found at ${repoUrl} — check the name and your gh access\n${cause.stderr.trim()}`);
+  }
+}
+
+/**
+ * Slugifies a project name/id for filesystem- and tmux-safe identifiers.
+ * Case is preserved (issue #216): the directory slug must match the repo
+ * URL's casing instead of silently diverging from it.
+ */
 export function slugify(name: string): string {
   const cleaned = name
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   if (cleaned.length === 0) throw new Error(`cannot slugify project name: ${name}`);
   return cleaned;

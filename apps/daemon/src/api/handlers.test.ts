@@ -349,7 +349,8 @@ describe("spawnWorker pi-auth readiness gate (issue #56)", () => {
 describe("slugify", () => {
   it("produces filesystem/tmux-safe ids", () => {
     expect(slugify("owner/repo")).toBe("owner-repo");
-    expect(slugify("My Project!!")).toBe("my-project");
+    // Case is preserved (issue #216): the dir slug matches the URL casing.
+    expect(slugify("My Project!!")).toBe("My-Project");
     expect(() => slugify("///")).toThrow();
   });
 });
