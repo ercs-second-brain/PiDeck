@@ -21,7 +21,7 @@ One daemon process serves everything on a single port (default `8321`) at the ma
 On macOS or Linux (or inside a WSL2 distro):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/agentskiss/main/install/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/PiDeck/main/install/bootstrap.sh | sh
 ```
 
 On Windows, use the WSL bootstrap from PowerShell (bootstraps WSL if missing, then runs the Linux path inside it):
