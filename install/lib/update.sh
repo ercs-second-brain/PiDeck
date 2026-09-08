@@ -199,20 +199,8 @@ update_report() {
   return 0
 }
 
-# _node_version_ge <a> <b> — 0 when version string a >= b (MAJ.MIN.PATCH).
-_node_version_ge() {
-  _ng_a1=$(printf '%s' "$1" | cut -d. -f1)
-  _ng_a2=$(printf '%s' "$1" | cut -d. -f2)
-  _ng_a3=$(printf '%s' "$1" | cut -d. -f3)
-  _ng_b1=$(printf '%s' "$2" | cut -d. -f1)
-  _ng_b2=$(printf '%s' "$2" | cut -d. -f2)
-  _ng_b3=$(printf '%s' "$2" | cut -d. -f3)
-  [ "${_ng_a1:-0}" -gt "${_ng_b1:-0}" ] && return 0
-  [ "${_ng_a1:-0}" -lt "${_ng_b1:-0}" ] && return 1
-  [ "${_ng_a2:-0}" -gt "${_ng_b2:-0}" ] && return 0
-  [ "${_ng_a2:-0}" -lt "${_ng_b2:-0}" ] && return 1
-  [ "${_ng_a3:-0}" -ge "${_ng_b3:-0}" ]
-}
+# _node_version_ge moved to common.sh (issue #202: the pi engines check in
+# assets.sh needs it too).
 
 # refresh_node_runtime — install the pinned private Node when the private
 # runtime is older than $PD_NODE_VERSION (issue #164 follow-up: the pin
@@ -253,6 +241,51 @@ refresh_node_runtime() {
     fi
   fi
   ok "Node runtime refreshed: $("$PD_NODE_BIN" -v) at $PD_NODE_BIN"
+  # Issue #202: the env file only reaches FUTURE shim invocations — the
+  # apply's own next step (refresh_pi_assets → install_pi_agent) must also
+  # resolve the refreshed runtime, so update the live process state too.
+  PD_NODE="$PD_NODE_BIN"
+  export PD_NODE
+  case ":$PATH:" in
+    *":$PD_NODE_BIN_DIR:"*) ;;
+    *) PATH="$PD_NODE_BIN_DIR:$PATH" ;;
+  esac
+  export PATH
+}
+
+# ensure_pnpm_for_build — the apply's build needs pnpm on PATH (issue #202
+# addendum, live on the dev server: bootstrap installs pnpm into the private
+# npm prefix, but a fresh shell running `pideck update` can lack it, dying
+# with `pnpm: not found` mid-build). Reuses the installer's ensure_pnpm:
+# keeps a usable pnpm, else (re)installs the pinned one under the private
+# prefix and puts it first on PATH — updates self-heal instead of failing.
+ensure_pnpm_for_build() {
+  if [ ! -f "$PD_LIB/deps.sh" ]; then
+    die "install broken: $PD_LIB/deps.sh missing (re-run the installer)"
+  fi
+  # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
+  . "$PD_LIB/deps.sh"
+  ensure_pnpm
+}
+
+# refresh_pi_assets — reinstall the pi npm package under the ACTIVE node
+# (issue #202). Runs AFTER refresh_node_runtime/refresh_installed_layer and
+# BEFORE svc_restart: an apply that advances the Node pin must move node and
+# pi together (pi lives in $PD_HOME/opt/npm-global under whatever node
+# installed it), or the restarted daemon spawns pi sessions against a node
+# that cannot run them (pi 0.75+ crashes on Node < 22.19 with
+# `zlib.createZstdDecompress is not a function` — observed live on the dev
+# server). Sources the freshly installed assets.sh (refresh_installed_layer
+# has already copied the fetched tree over $PD_LIB) so the reinstall uses
+# the same code the current installer would.
+refresh_pi_assets() {
+  if [ ! -f "$PD_LIB/assets.sh" ]; then
+    warn "$PD_LIB/assets.sh missing — cannot reinstall pi under the active node (re-run the installer)"
+    return 0
+  fi
+  # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
+  . "$PD_LIB/assets.sh"
+  install_pi_agent
 }
 
 # update_apply — fetch, rebuild and restart when the upstream ref advanced.
@@ -308,11 +341,17 @@ update_apply() {
     step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"
     resolve_source
     update_progress building
+    ensure_pnpm_for_build
     build_from_source
   fi
   update_progress installing
+  # Issue #202 ordering: refresh the private node FIRST, reinstall the pi
+  # assets under it SECOND (after the shell layer refresh has put the fresh
+  # assets.sh in place), restart the daemon LAST — node and pi move together
+  # or not at all.
   refresh_node_runtime
   refresh_installed_layer
+  refresh_pi_assets
   update_progress restarting
   step "restarting the service"
   svc_restart

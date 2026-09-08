@@ -124,18 +124,10 @@ resolve_source
 build_from_source
 
 # --- pi coding agent ------------------------------------------------------
-step "installing pi coding agent"
 if command -v pi >/dev/null 2>&1; then
   ok "pi already installed ($(pi --version 2>/dev/null | head -n 1) at $(command -v pi))"
 else
-  run env NPM_CONFIG_PREFIX="$PD_HOME/opt/npm-global" "$PD_NODE_BIN_DIR/npm" install -g --ignore-scripts "$PD_PI_NPM_PACKAGE"
-  for _pi_bin in "$PD_HOME/opt/npm-global/bin/"*; do
-    [ -e "$_pi_bin" ] || continue
-    run ln -sfn "$_pi_bin" "$PD_LOCAL_BIN/$(basename "$_pi_bin")"
-  done
-  ensure_local_bin_path
-  command -v pi >/dev/null 2>&1 || die "pi installation failed"
-  ok "installed pi $(pi --version 2>/dev/null | head -n 1)"
+  install_pi_agent
 fi
 
 # --- pideck pi skills/extensions (whatever exists in agent/) ----------

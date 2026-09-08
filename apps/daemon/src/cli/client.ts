@@ -73,7 +73,7 @@ export class DaemonClient {
 
   // -- CLI-specific daemon actions (agent/README.md, finalized in #9) -------
 
-  /** `pideck status --json` — daemon liveness (+ pi auth fields, issue #57). */
+  /** `pideck status --json` — daemon liveness (+ pi auth fields, issue #57; node runtime fields, issue #202). */
   async status(): Promise<{
     ok: boolean;
     name: string;
@@ -81,6 +81,8 @@ export class DaemonClient {
     sessions: number;
     piReady?: boolean;
     piProviders?: string[];
+    nodeVersion?: string;
+    nodeTooOld?: boolean;
     at: string;
   }> {
     return this.request("GET", "/api/status");

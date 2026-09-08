@@ -231,6 +231,25 @@ ensure_local_bin_path() {
 }
 
 # ---------------------------------------------------------------------------
+# Version comparison, shared by the update path's Node refresh (update.sh)
+# and the pi engines check (assets.sh, issue #202).
+# ---------------------------------------------------------------------------
+# _node_version_ge <a> <b> — 0 when version string a >= b (MAJ.MIN.PATCH).
+_node_version_ge() {
+  _ng_a1=$(printf '%s' "$1" | cut -d. -f1)
+  _ng_a2=$(printf '%s' "$1" | cut -d. -f2)
+  _ng_a3=$(printf '%s' "$1" | cut -d. -f3)
+  _ng_b1=$(printf '%s' "$2" | cut -d. -f1)
+  _ng_b2=$(printf '%s' "$2" | cut -d. -f2)
+  _ng_b3=$(printf '%s' "$2" | cut -d. -f3)
+  [ "${_ng_a1:-0}" -gt "${_ng_b1:-0}" ] && return 0
+  [ "${_ng_a1:-0}" -lt "${_ng_b1:-0}" ] && return 1
+  [ "${_ng_a2:-0}" -gt "${_ng_b2:-0}" ] && return 0
+  [ "${_ng_a2:-0}" -lt "${_ng_b2:-0}" ] && return 1
+  [ "${_ng_a3:-0}" -ge "${_ng_b3:-0}" ]
+}
+
+# ---------------------------------------------------------------------------
 # pideck env file (~/.pideck/env) — sourced by the service wrapper,
 # the CLI, and later by the daemon. env_set keeps a single "KEY=\"value\"" line.
 # ---------------------------------------------------------------------------
