@@ -50,7 +50,7 @@ function ConfirmModal(props: {
   ariaLabel: string;
   title: string;
   body: ReactNode;
-  /** Labels the confirm button ("Terminate" / "Delete agentsKISS"). */
+  /** Labels the confirm button ("Terminate" / "Delete <project>"). */
   confirmLabel: string;
   /** Label while the request is in flight ("Terminating…"). */
   pendingLabel: string;
