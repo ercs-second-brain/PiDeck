@@ -24,6 +24,7 @@ import { pathToFileURL } from "node:url";
 
 import { CliError, optionalFlag, parseArgs, positional, requireFlag, type ParsedArgs } from "./args.js";
 import { DaemonClient } from "./client.js";
+import { PI_NODE_MIN_VERSION } from "../api/node-version.js";
 import { currentTmuxSession } from "./tmux-context.js";
 
 /** Injectables for tests (defaults: the live tmux context). */
@@ -92,7 +93,7 @@ async function cmdStatus(ctx: CommandContext): Promise<number> {
     // spawns pi sessions that crash on first request.
     if (status.nodeTooOld === true) {
       console.warn(
-        `warning: daemon runs node ${status.nodeVersion}, too old for pi (needs >= 22.19.0) — run 'pideck update' to refresh the runtime and reinstall pi together`,
+        `warning: daemon runs node ${status.nodeVersion}, too old for pi (needs >= ${PI_NODE_MIN_VERSION}) — run 'pideck update' to refresh the runtime and reinstall pi together`,
       );
     }
   });

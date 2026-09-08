@@ -60,29 +60,18 @@ ensure_git() {
 }
 
 # ---------------------------------------------------------------------------
-# Node.js >= PD_NODE_MIN_VERSION (22.19.0: pi 0.75.0+ refuses older Node)
+# Node.js >= PD_NODE_MIN_VERSION (22.19.0: pi 0.75.0+ refuses older Node).
+# The comparison itself is _node_version_ge (lib/common.sh, full
+# MAJ.MIN.PATCH): deps.sh is always sourced after common.sh, so there is
+# exactly one version comparator in the installer (issue #238 — the old
+# major/minor-only _node_meets_min was safe only while the floor's patch
+# stayed 0).
 # ---------------------------------------------------------------------------
-_node_majmin() { # -> _node_maj/_node_min from `node -v` (vMAJ.MIN.PATCH)
-  _nm_v=$(node -v 2>/dev/null | sed 's/^v//')
-  _node_maj=${_nm_v%%.*}
-  _nm_rest=${_nm_v#*.}
-  _node_min=${_nm_rest%%.*}
-}
-
-_node_meets_min() { # _node_meets_min <major> <minor> -> 0 when >= PD_NODE_MIN_VERSION
-  _nmm_min_maj=${PD_NODE_MIN_VERSION%%.*}
-  _nmm_rest=${PD_NODE_MIN_VERSION#*.}
-  _nmm_min_min=${_nmm_rest%%.*}
-  [ "$1" -gt "$_nmm_min_maj" ] 2>/dev/null && return 0
-  [ "$1" -eq "$_nmm_min_maj" ] 2>/dev/null || return 1
-  [ "$2" -ge "$_nmm_min_min" ] 2>/dev/null
-}
-
 ensure_node() {
   step "Checking Node.js >= $PD_NODE_MIN_VERSION"
   if command -v node >/dev/null 2>&1; then
-    _node_majmin
-    if _node_meets_min "$_node_maj" "$_node_min"; then
+    _en_ver=$(node -v 2>/dev/null | sed 's/^v//') # vMAJ.MIN.PATCH -> MAJ.MIN.PATCH
+    if [ -n "$_en_ver" ] && _node_version_ge "$_en_ver" "$PD_NODE_MIN_VERSION"; then
       PD_NODE_BIN=$(command -v node)
       PD_NODE_BIN_DIR=$(dirname "$PD_NODE_BIN")
       ok "using $(node -v) at $PD_NODE_BIN"
