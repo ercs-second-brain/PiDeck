@@ -43,6 +43,11 @@ install_pi_agent() {
   run env NPM_CONFIG_PREFIX="$PD_HOME/opt/npm-global" "$_pa_node_dir/npm" install -g --ignore-scripts "$PD_PI_PACKAGE"
   for _pi_bin in "$PD_HOME/opt/npm-global/bin/"*; do
     [ -e "$_pi_bin" ] || continue
+    # A shim in $PD_HOME/bin owns the ~/.local/bin name (issue #252: the pi
+    # shim pins the canonical node — a direct npm-global symlink would let
+    # the `#!/usr/bin/env node` shebang resolve a system node instead).
+    # install_shell_layer maintains that entry; never clobber it here.
+    [ -e "$PD_HOME/bin/$(basename "$_pi_bin")" ] && continue
     run ln -sfn "$_pi_bin" "$PD_LOCAL_BIN/$(basename "$_pi_bin")"
   done
   ensure_local_bin_path

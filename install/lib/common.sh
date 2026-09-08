@@ -59,12 +59,94 @@ maintain_local_bin_shims() { # maintain_local_bin_shims <name>...
   done
 }
 
+# maintain_local_bin_runtime_shims — repoint stale ~/.local/bin runtime
+# compat symlinks after the private Node runtime moved (issue #254).
+#
+# _install_node_tarball (deps.sh) symlinks node/npm/npx/corepack from the
+# runtime tarball it installs into ~/.local/bin. A refresh that moves the
+# runtime can leave those pointing at the OLD tarball dir (observed live:
+# ~/.local/bin/node -> node-v22.14.0 while env PD_NODE already named the new
+# runtime — the stale-but-valid symlink shadows nvm and any newer node, and
+# pi kept crashing below the floor). Requires the canonical runtime in
+# $PD_NODE_BIN_DIR (set by _install_node_tarball / resolve_canonical_node).
+# For each tool name, a ~/.local/bin entry that is:
+#   symlink into $PD_HOME/opt, correct target  -> no-op
+#   symlink into $PD_HOME/opt, stale target    -> repointed to the canonical
+#                                                 runtime (dropped when the
+#                                                 canonical runtime lacks the
+#                                                 tool)
+#   anything else (real file, nvm/system/user
+#   symlink, absent)                           -> never touched
+maintain_local_bin_runtime_shims() {
+  [ -x "${PD_NODE_BIN_DIR:-}" ] || return 0 # no canonical runtime — nothing to repoint to
+  for _mlbr_tool in node npm npx corepack; do
+    _mlbr_link="$PD_LOCAL_BIN/$_mlbr_tool"
+    [ -L "$_mlbr_link" ] || continue # absent / real file — not ours to fix
+    _mlbr_target=$(readlink "$_mlbr_link")
+    case "$_mlbr_target" in
+      "$PD_HOME"/opt/*) ;; # our private runtime — may be stale
+      *) continue ;;       # nvm, system, user's own — never touched
+    esac
+    _mlbr_canonical="$PD_NODE_BIN_DIR/$_mlbr_tool"
+    [ "$_mlbr_target" = "$_mlbr_canonical" ] && continue # already canonical
+    if [ -e "$_mlbr_canonical" ]; then
+      info "repointing stale ~/.local/bin/$_mlbr_tool ($_mlbr_target) to the refreshed runtime"
+      run ln -sfn "$_mlbr_canonical" "$_mlbr_link"
+    else
+      info "dropping stale ~/.local/bin/$_mlbr_tool ($_mlbr_target) — the refreshed runtime has no $_mlbr_tool"
+      run rm -f "$_mlbr_link"
+    fi
+  done
+}
+
 # ---------------------------------------------------------------------------
 # Shell-layer install (shared by bootstrap.sh and the update path): copy the
 # fetched tree's CLI shims into $PD_HOME/bin and the libs + onboard.sh flat
 # into <lib-dir> (see issue #65), keep the ~/.local/bin/pideck symlink, and
 # convert stale real-file ~/.local/bin shims into symlinks (issue #215).
 # ---------------------------------------------------------------------------
+# resolve_canonical_node — derive the ONE canonical node runtime on every
+# call, in priority order (issues #208/#213, shared by the pideck and pi
+# shims):
+#   1. PD_NODE from the env file (canonical: refresh_node_runtime keeps it
+#      on the pinned private runtime),
+#   2. legacy PD_NODE_BIN (older service-env generation),
+#   3. the newest node-v* dir under $PD_HOME/opt (survives node renames),
+#   4. whatever node is on PATH,
+# then normalize PD_NODE/PD_NODE_BIN/PD_NODE_BIN_DIR to that runtime and
+# export them — every later reader (service unit rendering, daemon CLI exec,
+# the pi entrypoint) sees a consistent, executable node. Gating the
+# derivation on the legacy vars would still trust stale values, so it runs
+# unconditionally. Returns nonzero when no runtime exists; the caller owns
+# the user-facing error.
+resolve_canonical_node() {
+  _pd_node=${PD_NODE:-}
+  [ -x "$_pd_node" ] || _pd_node=${PD_NODE_BIN:-}
+  if [ ! -x "$_pd_node" ]; then
+    _pd_newest=
+    _pd_newest_ver=
+    for _pd_cand in "$PD_HOME"/opt/node-v*/bin/node; do
+      [ -x "$_pd_cand" ] || continue
+      _pd_ver=${_pd_cand#*node-v}
+      _pd_ver=${_pd_ver%%/*}
+      if [ -z "$_pd_newest" ] || ! _node_version_ge "$_pd_newest_ver" "$_pd_ver"; then
+        _pd_newest=$_pd_cand
+        _pd_newest_ver=$_pd_ver
+      fi
+    done
+    _pd_node=$_pd_newest
+  fi
+  [ -x "$_pd_node" ] || _pd_node=$(command -v node 2>/dev/null) || :
+  if [ -n "$_pd_node" ] && [ -x "$_pd_node" ]; then
+    PD_NODE=$_pd_node
+    PD_NODE_BIN=$_pd_node
+    PD_NODE_BIN_DIR=$(dirname "$_pd_node")
+    export PD_NODE PD_NODE_BIN PD_NODE_BIN_DIR
+    return 0
+  fi
+  return 1
+}
+
 install_shell_layer() { # install_shell_layer <lib-dir>
   _isl_lib=$1
   for _cli_file in "$PD_SRC/install/bin/"*; do
@@ -84,9 +166,13 @@ install_shell_layer() { # install_shell_layer <lib-dir>
   run mkdir -p "$PD_LOCAL_BIN"
   # Issue #215: convert stale real-file/foreign ~/.local/bin shims FIRST, so
   # the conversion is explicit (and rm -f robust); the ln below then only
-  # (re)creates the canonical pideck symlink.
-  maintain_local_bin_shims pideck pideck-daemon
+  # (re)creates the canonical pideck/pi symlinks. `pi` is a shim too (issue
+  # #252): the npm-global install_pi_agent would otherwise leave a direct
+  # symlink whose `#!/usr/bin/env node` shebang resolves the SYSTEM node in
+  # a plain shell (SSH) — below pi's floor it crashes there.
+  maintain_local_bin_shims pideck pideck-daemon pi
   run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
+  run ln -sfn "$PD_HOME/bin/pi" "$PD_LOCAL_BIN/pi"
 }
 
 # ---------------------------------------------------------------------------

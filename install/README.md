@@ -42,7 +42,12 @@ Pre-rebrand agentskiss installs: reinstall (bootstrap one-liner — see Quick st
    function (`build_from_source` in `lib/source.sh`) so it can switch to
    release artifacts when they exist without touching anything else.
 6. Installs the pi coding agent (`@earendil-works/pi-coding-agent`, npm
-   `--ignore-scripts`, user prefix) if not already present.
+   `--ignore-scripts`, user prefix) if not already present. The npm-global
+   `pi` entrypoint is NOT put on PATH directly — its
+   `#!/usr/bin/env node` shebang would resolve the system node; `pi` on
+   PATH is a shim (see `bin/` above) that runs the entrypoint on the
+   canonical private runtime, so plain shells (SSH) get the same
+   below-floor protection as daemon sessions.
 7. Links the pideck pi skills/extensions from `agent/` — whatever exists
    there at install time (`skills/`, `extensions/`, `commands/`,
    `prompt-templates/`, `themes/`) is symlinked into `~/.pi/agent/`. The five
@@ -127,7 +132,7 @@ distro), and the portproxy/firewall notes above.
 | `state/onboard-complete` | Marker so the daemon can skip/flag onboarding      |
 | `src/`                   | Monorepo clone (built artifacts the service runs)  |
 | `opt/`                   | Private node/gh/pnpm installs (when not on system) |
-| `bin/`                   | `pideck` CLI (service control + daemon-CLI forwarder), `pideck-daemon` service launcher |
+| `bin/`                   | `pideck` CLI (service control + daemon-CLI forwarder), `pideck-daemon` service launcher, `pi` shim (pi on the canonical node) |
 | `lib/`                   | Installed installer libs + `onboard.sh`            |
 | `log/`                   | daemon stdout/stderr                               |
 
@@ -185,7 +190,10 @@ Notes:
   available it fetches the new source with gh-authed git (the installer's
   `resolve_source`, including `_retry_with_gh_auth` semantics), rebuilds
   (`build_from_source`), refreshes the installed shell layer — `bin/*` into
-  `$PD_HOME/bin` (the `~/.local/bin/pideck` symlink is preserved),
+  `$PD_HOME/bin` (the `~/.local/bin/pideck` and `pi` symlinks are
+  preserved; stale `~/.local/bin` node/npm/npx/corepack links into a
+  replaced private runtime tarball are repointed to the new one — issue
+  #254),
   `lib/*.sh` + `onboard.sh` flat into `$PD_HOME/lib`, and the rendered
   service unit files via a `register_service` pass, all copied exactly like
   bootstrap.sh installs them (issue #66: fixes to the install scripts

@@ -68,8 +68,16 @@ esac
 step "removing CLI and launcher"
 confirm "Remove pideck CLI and daemon launcher?" &&
   {
-    run rm -f "$PD_HOME/bin/pideck" "$PD_HOME/bin/pideck-daemon"
+    run rm -f "$PD_HOME/bin/pideck" "$PD_HOME/bin/pideck-daemon" "$PD_HOME/bin/pi"
     run rm -f "$PD_LOCAL_BIN/pideck"
+    # The pi shim owned ~/.local/bin/pi (issue #252); restore the direct
+    # npm-global symlink when the agent survives (kept home), else drop the
+    # dangling name.
+    if [ -e "$PD_HOME/opt/npm-global/bin/pi" ]; then
+      run ln -sfn "$PD_HOME/opt/npm-global/bin/pi" "$PD_LOCAL_BIN/pi"
+    else
+      run rm -f "$PD_LOCAL_BIN/pi"
+    fi
     ok "CLI removed (node/pnpm/gh/pi are left in place)"
   }
 

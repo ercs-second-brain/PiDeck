@@ -251,6 +251,11 @@ refresh_node_runtime() {
   # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
   . "$PD_LIB/deps.sh"
   _install_node_tarball
+  # Issue #254: the runtime moved — repoint stale ~/.local/bin node/npm/npx/
+  # corepack compat symlinks that still target the OLD $PD_HOME/opt tarball
+  # (a stale-but-valid link shadows nvm and newer nodes, and pi kept
+  # crashing below the floor even with env PD_NODE already correct).
+  maintain_local_bin_runtime_shims
   if [ -f "$PD_HOME/env" ]; then
     if grep -q '^PD_NODE=' "$PD_HOME/env"; then
       sed "s|^PD_NODE=.*|PD_NODE=\"$PD_NODE_BIN\"|" "$PD_HOME/env" > "$PD_HOME/env.tmp" 2>/dev/null \

@@ -1,0 +1,57 @@
+#!/bin/sh
+# shellcheck shell=sh disable=SC1090,SC1091
+#
+# pi shim — the installed pi coding agent run on the canonical Node runtime.
+# Installed to ~/.pideck/bin/pi and symlinked into ~/.local/bin by the
+# installer (same deploy/maintain path as the pideck/pideck-daemon shims).
+#
+# Why a shim: the npm-global `pi` entrypoint ($PD_HOME/opt/npm-global/bin/pi,
+# symlinked into ~/.local/bin by install_pi_agent) is a node script with a
+# `#!/usr/bin/env node` shebang — invoked directly it resolves WHATEVER node
+# is first on PATH. Daemon sessions get the pinned private runtime via the
+# service env and the pideck shims (issues #208/#213), but a plain shell
+# (SSH, cron, a fresh terminal) can still resolve a SYSTEM node below pi's
+# engines floor and crash on first request (zlib.createZstdDecompress,
+# issue #202). This shim gives `pi` the same canonical node derivation as
+# the pideck shim (issue #252).
+
+set -u
+
+PD_HOME="${PD_HOME:-$HOME/.pideck}"
+
+PD_ENV="$PD_HOME/env"
+
+if [ -f "$PD_ENV" ]; then
+  # set -a: export everything to pi and its children (it reads the runtime
+  # and service settings from its process environment).
+  set -a
+  . "$PD_ENV"
+  set +a
+else
+  printf 'pi: %s not found — run the pideck installer\n' "$PD_ENV" >&2
+  exit 1
+fi
+
+PD_LIB="$PD_HOME/lib"
+[ -f "$PD_LIB/common.sh" ] || { printf 'pi: install broken, %s missing\n' "$PD_LIB" >&2; exit 1; }
+. "$PD_LIB/common.sh"
+
+# Same canonical node derivation as install/bin/pideck (issues #208/#213):
+# PD_NODE -> legacy PD_NODE_BIN -> newest $PD_HOME/opt/node-v* -> PATH.
+resolve_canonical_node || {
+  printf 'pi: no node runtime found (PD_NODE unset, no %s/opt/node-v*, no node on PATH) — run the pideck installer\n' "$PD_HOME" >&2
+  exit 1
+}
+
+# pi's own child processes resolve `node` from PATH too — put the canonical
+# runtime first so they cannot drift back onto a below-floor system node.
+PATH="$PD_NODE_BIN_DIR:$PATH"
+export PATH
+
+PI_ENTRY="$PD_HOME/opt/npm-global/bin/pi"
+[ -f "$PI_ENTRY" ] || {
+  printf 'pi: pi entrypoint missing (%s) — run '"'"'pideck update'"'"' (it reinstalls pi) or the pideck installer\n' "$PI_ENTRY" >&2
+  exit 1
+}
+
+exec "$PD_NODE" "$PI_ENTRY" "$@"

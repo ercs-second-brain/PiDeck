@@ -26,6 +26,15 @@ EOF
 # Stub libs: record service calls instead of touching a real system.
 cat > "$PD_HOME/lib/common.sh" <<'EOF'
 detect_os() { :; }
+# Stub of the real canonical-node derivation (lib/common.sh): the fake env
+# file pins PD_NODE, so the shim under test just normalizes the triple from
+# it — enough for forward_to_daemon_cli's ${PD_NODE:-node} resolution.
+resolve_canonical_node() {
+  [ -x "${PD_NODE:-}" ] || return 1
+  PD_NODE_BIN=$PD_NODE
+  PD_NODE_BIN_DIR=$(dirname "$PD_NODE")
+  export PD_NODE_BIN PD_NODE_BIN_DIR
+}
 EOF
 cp "$SCRIPT_DIR/service-stub.sh" "$PD_HOME/lib/service.sh"
 
