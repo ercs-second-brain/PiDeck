@@ -30,76 +30,24 @@ export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # Set once OS detection ran (detect_os).
 DETECTED_OS="unknown" # darwin | linux | wsl | windows-host | unknown
 
-# Pre-rebrand install home (issue #125). Kept as a compat symlink pointing at
-# $PD_HOME after migrate_home() runs, so old absolute paths keep resolving.
-OLD_HOME="$HOME/.agentskiss"
-
 # ---------------------------------------------------------------------------
-# Home-dir migration (issue #125): existing installs live under ~/.agentskiss;
-# the rebrand moves the install home to ~/.pideck. On the first run of the new
-# tooling (installer, CLI, onboarding, uninstall), when ~/.pideck is absent
-# and ~/.agentskiss is a real directory, move it — preserving config.json,
-# env, onboarding.json, log/, state/ and everything else — and leave a compat
-# symlink ~/.agentskiss -> ~/.pideck so old absolute paths (service units,
-# running daemons, user scripts) keep resolving mid-flight. The moved env
-# and config.json are rewritten in place: AGENTSKISS_MODEL -> PIDECK_MODEL,
-# every other AGENTSKISS_* -> PD_*, and recorded <old-home>/… paths ->
-# <new-home>/…. Idempotent: fresh installs and already-migrated installs
-# (old home is the compat symlink) are left untouched.
+# Shell-layer install (shared by bootstrap.sh and the update path): copy the
+# fetched tree's CLI shims into $PD_HOME/bin and the libs + onboard.sh flat
+# into <lib-dir> (see issue #65), and keep the ~/.local/bin/pideck symlink.
 # ---------------------------------------------------------------------------
-migrate_home() {
-  _mh_old=$OLD_HOME
-  _mh_new=$PD_HOME
-  # Fresh install (no old home) or already migrated (old home is the compat
-  # symlink): nothing to do.
-  if [ ! -e "$_mh_old" ] || [ -L "$_mh_old" ]; then
-    return 0
-  fi
-  if [ ! -d "$_mh_old" ]; then
-    warn "ignoring unexpected non-directory $_mh_old"
-    return 0
-  fi
-  if [ -e "$_mh_new" ]; then
-    warn "both $_mh_new and $_mh_old exist; keeping $_mh_new — not merging automatically (resolve manually, then re-run)"
-    return 0
-  fi
-  if [ "$PD_DRY_RUN" = "1" ]; then
-    printf '[dry-run] mv %s %s && ln -sfn %s %s\n' "$_mh_old" "$_mh_new" "$_mh_new" "$_mh_old"
-    return 0
-  fi
-  mv "$_mh_old" "$_mh_new" || die "home migration failed: could not move $_mh_old to $_mh_new"
-  ln -sfn "$_mh_new" "$_mh_old" || die "home migration failed: could not create compat symlink $_mh_old"
-  # The daemon and CLI read the service env (PD_HOME/PD_SRC/…). Rewrite the
-  # pre-rebrand names in place so the moved config stays loadable, and point
-  # recorded paths at the new home: AGENTSKISS_MODEL -> PIDECK_MODEL, every
-  # other AGENTSKISS_* -> PD_* (the split the rebrand pinned), and any
-  # <old-home>/… value prefix -> <new-home>/…. Best effort: a failed rewrite
-  # must not fail the install (the compat symlink keeps old values resolving).
-  for _mh_file in env config.json; do
-    [ -f "$_mh_new/$_mh_file" ] || continue
-    if sed -e 's/AGENTSKISS_MODEL/PIDECK_MODEL/g' \
-      -e 's/AGENTSKISS_/PD_/g' \
-      -e "s|$_mh_old|$_mh_new|g" "$_mh_new/$_mh_file" > "$_mh_new/$_mh_file.tmp" 2>/dev/null; then
-      mv "$_mh_new/$_mh_file.tmp" "$_mh_new/$_mh_file" || rm -f "$_mh_new/$_mh_file.tmp"
-    else
-      rm -f "$_mh_new/$_mh_file.tmp"
-      warn "could not rewrite PD_* names in $_mh_new/$_mh_file — re-run the installer"
-    fi
+install_shell_layer() { # install_shell_layer <lib-dir>
+  _isl_lib=$1
+  for _cli_file in "$PD_SRC/install/bin/"*; do
+    [ -f "$_cli_file" ] || continue
+    run cp "$_cli_file" "$PD_HOME/bin/$(basename "$_cli_file")"
+    run chmod +x "$PD_HOME/bin/$(basename "$_cli_file")"
   done
-  ok "migrated install home $_mh_old -> $_mh_new (compat symlink kept at $_mh_old)"
-}
-
-# ---------------------------------------------------------------------------
-# Old binary-name compat (issue #125): keep the pre-rebrand `agentskiss` /
-# `agentskiss-daemon` names resolving to the renamed binaries — inside the
-# home bin dir (service units, user scripts) and in ~/.local/bin (user PATH).
-# Idempotent; safe to call from the installer and the update path alike.
-# ---------------------------------------------------------------------------
-install_bin_compat() {
+  for _lib_file in "$PD_SRC/install/lib/"*.sh "$PD_SRC/install/onboard.sh"; do
+    [ -f "$_lib_file" ] || continue
+    run cp "$_lib_file" "$_isl_lib/$(basename "$_lib_file")"
+  done
   run mkdir -p "$PD_LOCAL_BIN"
-  run ln -sfn pideck "$PD_HOME/bin/agentskiss"
-  run ln -sfn pideck-daemon "$PD_HOME/bin/agentskiss-daemon"
-  run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/agentskiss"
+  run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
 }
 
 # ---------------------------------------------------------------------------

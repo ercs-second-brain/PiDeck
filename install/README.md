@@ -20,63 +20,9 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 When piped, the bootstrap fetches the repo tarball, re-execs itself with tty
 stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
 
-## Rebrand: migrating an existing agentskiss install (issue #125)
+## Pre-rebrand agentskiss installs
 
-PiDeck was previously installed as **agentskiss**. The rebrand renamed
-
-| Before                          | After                             |
-| ------------------------------- | --------------------------------- |
-| binary `agentskiss`             | `pideck`                          |
-| binary `agentskiss-daemon`      | `pideck-daemon`                   |
-| home `~/.agentskiss`            | `~/.pideck`                       |
-| env `AK_*` / `AGENTSKISS_*`     | `PD_*` (env-file/service vars; `AGENTSKISS_MODEL` → `PIDECK_MODEL`) |
-| launchd `com.agentskiss.daemon` | `com.pideck.daemon`               |
-| systemd `agentskiss.service`    | `pideck-daemon.service`           |
-| repo `agentsKISS`               | `PiDeck` (GitHub redirects the old URL) |
-
-**Existing installs: re-run the installer once** (the supported crossing
-path):
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/PiDeck/main/install/bootstrap.sh | sh
-```
-
-The one-time reinstall is a superset of a normal run — nothing is lost:
-
-1. **Home migration.** On the first run of the new tooling (installer, `pideck`
-   CLI, onboarding, uninstaller), when `~/.pideck` is absent but `~/.agentskiss`
-   exists, the whole install home is **moved** to `~/.pideck` — config.json,
-   env, onboarding.json, log/, state/, src/, everything — and a compat symlink
-   `~/.agentskiss → ~/.pideck` is kept, so old absolute paths (service unit
-   files, running daemons, user scripts) keep resolving mid-flight. The moved
-   `env` and `config.json` are rewritten in place so the renamed daemon finds
-   its config: `AGENTSKISS_MODEL` → `PIDECK_MODEL`, every other `AGENTSKISS_*`
-   → `PD_*`, and recorded `<old-home>/…` paths → `<new-home>/…`. Idempotent:
-   once migrated (old home is the symlink)
-   it never runs again, and fresh installs are untouched.
-2. **Old binary names keep working.** After an install or update, compat
-   symlinks are created: `~/.pideck/bin/agentskiss → pideck`,
-   `~/.pideck/bin/agentskiss-daemon → pideck-daemon`, and
-   `~/.local/bin/agentskiss → ~/.pideck/bin/pideck`. Pre-rebrand scripts that
-   call `agentskiss …` keep working.
-3. **Old service units are cleaned up.** The next service registration removes
-   the pre-rebrand `com.agentskiss.daemon` launchd agent / `agentskiss.service`
-   systemd unit (and stops it) so no stale second daemon runs.
-4. **Repo rename needs no migration.** GitHub redirects renamed repos, so a
-   clone whose origin still points at `…/agentsKISS.git` keeps fetching, and
-   `config.json` records of the old URL keep working (`git clone/fetch`, `gh
-   api` all follow the redirect) — `pideck update` works unchanged. New
-   installs record the new `PiDeck.git` URL.
-
-⚠️ Do **not** cross the rebrand with the *old* `agentskiss update` command:
-its service re-registration predates the rename (it looks for the old unit
-template in the new source) and can leave the service down until the installer
-re-runs. The old CLI itself keeps working through the compat symlinks.
-
-The Windows `agentskiss-setup.ps1` logon task (`agentskiss-service`) is not
-renamed from inside the distro; remove it once manually
-(`schtasks /Delete /TN agentskiss-service /F`) — the new bootstrap registers
-`pideck-service`.
+Pre-rebrand agentskiss installs: reinstall (bootstrap one-liner — see Quick start above).
 
 ## What it does
 
@@ -270,14 +216,12 @@ plain-shell tests in `test/cli-forwarding.sh` (service verbs,
 daemon-CLI forwarding with args + exit codes, `status` precedence, missing-
 build error path), `test/update.sh` (update check against fake git/gh,
 `update --check` shim wiring, the apply path's reuse of the installer
-machinery + shell-layer refresh (installed lib/bin/onboard match the fetched
-source afterwards, pre-rebrand bin-name compat symlinks) + service restart),
-`test/onboard.sh` (onboarding from the flat installed layout — the bootstrap.sh
-flat copy into `lib/` — and from the source-tree layout, via
-`--dry-run --skip-pi --skip-gh`), and `test/migration.sh` (issue #125 rebrand
-migration: home move + compat symlink + env/config rewrite, both-homes and
-dry-run guards, `install_bin_compat`, and the shim's inline migration against
-a fake pre-rebrand install) — no daemons, no network, no systemd.
+machinery + shell-layer refresh — installed lib/bin/onboard match the fetched
+source afterwards — and service restart), and `test/onboard.sh` (onboarding
+from the flat installed layout — the bootstrap.sh flat copy into `lib/` — and
+from the source-tree layout, via `--dry-run --skip-pi --skip-gh`) — no
+daemons, no network, no systemd. CI runs the same shellcheck pass + shell
+suites as a dedicated job step.
 
 ## Tested matrix
 

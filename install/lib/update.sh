@@ -121,20 +121,7 @@ update_check() {
 # resolve_source/build_from_source, like bootstrap does.
 refresh_installed_layer() {
   step "refreshing the installed shell layer"
-  for _cli_file in "$PD_SRC/install/bin/"*; do
-    [ -f "$_cli_file" ] || continue
-    run cp "$_cli_file" "$PD_HOME/bin/$(basename "$_cli_file")"
-    run chmod +x "$PD_HOME/bin/$(basename "$_cli_file")"
-  done
-  # Pre-rebrand name compat (issue #125): the old agentskiss/agentskiss-daemon
-  # names keep resolving to the renamed binaries after an update, too.
-  install_bin_compat
-  for _lib_file in "$PD_SRC/install/lib/"*.sh "$PD_SRC/install/onboard.sh"; do
-    [ -f "$_lib_file" ] || continue
-    run cp "$_lib_file" "$PD_LIB/$(basename "$_lib_file")"
-  done
-  run mkdir -p "$PD_LOCAL_BIN"
-  run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
+  install_shell_layer "$PD_LIB"
   ok "installed shell layer refreshed (bin, lib, onboard.sh)"
   register_service
 }

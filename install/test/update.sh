@@ -207,10 +207,6 @@ done
 printf '# stale installed copy\n' >> "$PD_HOME/lib/onboard.sh"
 printf '#!/bin/sh\n# stale shim\n' > "$PD_HOME/bin/pideck"
 printf '#!/bin/sh\n# stale launcher\n' > "$PD_HOME/bin/pideck-daemon"
-# pre-rebrand leftovers (issue #125): the refresh + compat pass must replace
-# these real old-name files with symlinks to the renamed binaries
-printf '#!/bin/sh\n# pre-rebrand shim\n' > "$PD_HOME/bin/agentskiss"
-printf '#!/bin/sh\n# pre-rebrand launcher\n' > "$PD_HOME/bin/agentskiss-daemon"
 rm -rf "$PD_HOME/.local" # no leftover symlink from an earlier pass
 
 # The shim sources the installed copies of service.sh/update.sh — put the
@@ -260,21 +256,6 @@ if [ "$(readlink "$PD_HOME/.local/bin/pideck")" = "$PD_HOME/bin/pideck" ]; then
   printf 'ok - ~/.local/bin/pideck symlink preserved\n'
 else
   printf 'not ok - ~/.local/bin/pideck symlink missing/wrong after refresh\n'
-  failures=$((failures + 1))
-fi
-# pre-rebrand name compat (issue #125): old names must resolve to the new
-# binaries after a refresh, in the home bin dir and in ~/.local/bin
-if [ "$(readlink "$PD_HOME/bin/agentskiss")" = "pideck" ] &&
-  [ "$(readlink "$PD_HOME/bin/agentskiss-daemon")" = "pideck-daemon" ]; then
-  printf 'ok - in-home pre-rebrand bin compat symlinks created\n'
-else
-  printf 'not ok - in-home pre-rebrand bin compat symlinks missing/wrong after refresh\n'
-  failures=$((failures + 1))
-fi
-if [ "$(readlink "$PD_HOME/.local/bin/agentskiss")" = "$PD_HOME/bin/pideck" ]; then
-  printf 'ok - ~/.local/bin/agentskiss compat symlink created\n'
-else
-  printf 'not ok - ~/.local/bin/agentskiss compat symlink missing/wrong after refresh\n'
   failures=$((failures + 1))
 fi
 cp "$INSTALL_DIR/lib/source.sh" "$PD_HOME/lib/"

@@ -302,11 +302,6 @@ main() {
     shift
   done
 
-  # Home migration (issue #125): move a pre-rebrand ~/.agentskiss install to
-  # ~/.pideck (compat symlink kept) so results land in the new home. Runs
-  # after flag parsing so --dry-run only prints the move.
-  migrate_home
-
   detect_os
   run mkdir -p "$PD_HOME" "$PD_HOME/state"
 

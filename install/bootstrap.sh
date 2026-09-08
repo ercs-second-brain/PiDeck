@@ -39,11 +39,8 @@ usage() { sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'; }
 if [ ! -t 0 ] && [ "${PD_BOOTSTRAP_REEXEC:-0}" != "1" ]; then
   _pb_repo="${PD_REPO_URL:-https://github.com/ercs-second-brain/PiDeck.git}"
   _pb_ref="${PD_REPO_REF:-main}"
-  # Neutral temp dir, NOT the install home: creating ~/.pideck before the
-  # home migration (issue #125) runs would make migrate_home() see "both
-  # homes exist" and refuse to move a pre-rebrand ~/.agentskiss. Left behind
-  # after the re-exec (the child runs from it; exec never returns) — /tmp
-  # cleans up what the old code left under the install home.
+  # Neutral temp dir, NOT the install home (the child runs from it; exec
+  # never returns, so it is left behind — /tmp cleans it up).
   _pb_tmp="${TMPDIR:-/tmp}/pideck-bootstrap.$$.tmp"
   mkdir -p "$_pb_tmp"
   printf '==> piped install detected: fetching source (%s) to re-run interactively\n' "$_pb_ref"
@@ -93,13 +90,6 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-
-# ---------------------------------------------------------------------------
-# Home migration (issue #125): move a pre-rebrand ~/.agentskiss install to
-# ~/.pideck (compat symlink kept) before anything is written. Runs after flag
-# parsing so --dry-run only prints the move.
-# ---------------------------------------------------------------------------
-migrate_home
 
 # ---------------------------------------------------------------------------
 # OS gate.
@@ -153,19 +143,7 @@ install_agent_assets
 
 # --- CLI + service launcher ----------------------------------------------
 step "installing pideck CLI and daemon launcher"
-for _cli_file in "$PD_SRC/install/bin/"*; do
-  [ -f "$_cli_file" ] || continue
-  run cp "$_cli_file" "$PD_HOME/bin/$(basename "$_cli_file")"
-  run chmod +x "$PD_HOME/bin/$(basename "$_cli_file")"
-done
-for _lib_file in "$PD_SRC/install/lib/"*.sh "$PD_SRC/install/onboard.sh"; do
-  [ -f "$_lib_file" ] || continue
-  run cp "$_lib_file" "$PD_HOME/lib/$(basename "$_lib_file")"
-done
-run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
-# Pre-rebrand name compat (issue #125): ~/.local/bin/agentskiss and the old
-# in-home bin names keep resolving to the renamed binaries.
-install_bin_compat
+install_shell_layer "$PD_HOME/lib"
 ensure_local_bin_path
 ok "CLI installed: pideck (service control + daemon CLI forwarder)"
 

@@ -10,9 +10,6 @@
  */
 
 const COLLAPSED_KEY = "pideck.sidebar.collapsedProjects";
-// Pre-rebrand key; migrated once (read → copy to the new key → remove) so
-// existing installs keep their stored sidebar state.
-const LEGACY_COLLAPSED_KEY = "agentskiss.sidebar.collapsedProjects";
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -29,18 +26,8 @@ export function loadCollapsedProjects(store?: StorageLike): Set<string> {
   const readFrom = store ?? storage();
   if (!readFrom) return new Set();
   try {
-    let raw = readFrom.getItem(COLLAPSED_KEY);
-    if (!raw) {
-      // One-time migration from the pre-rebrand key.
-      raw = readFrom.getItem(LEGACY_COLLAPSED_KEY);
-      if (!raw) return new Set();
-      persist(readFrom, raw);
-      try {
-        readFrom.removeItem(LEGACY_COLLAPSED_KEY);
-      } catch {
-        // Best-effort cleanup only.
-      }
-    }
+    const raw = readFrom.getItem(COLLAPSED_KEY);
+    if (!raw) return new Set();
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return new Set();
     return new Set(parsed.filter((id): id is string => typeof id === "string"));
