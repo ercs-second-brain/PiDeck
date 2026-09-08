@@ -100,6 +100,13 @@ afterAll(async () => {
 });
 
 describe.skipIf(!tmuxAvailable)("Tmux.sendKeys against a real tmux server (issue #115)", () => {
+  it("delivers a trailing-newline message and submits with one clean Enter (issue #123)", async () => {
+    // Orchestrator messages end with \n; the wire must carry the paste
+    // WITHOUT it (the editor would insert it as literal text) and rely on
+    // the explicit Enter for submission.
+    await sendAndExpect("multi-line with trailing newline\nsecond line\n");
+  });
+
   it("delivers a dash-prefixed multi-line message fully and submits it", async () => {
     await sendAndExpect(
       "- CI is red on PR #12:\n  - typecheck fails in packages/shared\n  - fix and push",
@@ -149,5 +156,6 @@ describe.skipIf(!tmuxAvailable)("Tmux.sendKeys against a real tmux server (issue
 
 /** The bytes `sendKeys` should put on the pane's input for `message`. */
 function wireForm(message: string): string {
-  return /[\x00-\x1f\x7f]/.test(message) ? `\x1b[200~${message}\x1b[201~` : message;
+  const body = message.replace(/[\r\n]+$/, "");
+  return /[\x00-\x1f\x7f]/.test(body) ? `\x1b[200~${body}\x1b[201~` : body;
 }
