@@ -2,12 +2,13 @@
  * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114/#167/#173):
  * worker rows (live + archived), the terminate affordance, the project row
  * (chevron + name-as-kanban-entry + chat/orchestrator icon), and the
- * per-project archived section. Stateless — interaction state flows in
+ * per-project archived section, and the sidebar header. Stateless — interaction state flows in
  * through props, so these render (and unit-test) without xterm or effects.
  */
 
 import type { ReactNode } from "react";
 import type { Session, Worker } from "@pideck/shared";
+import { formatRunningDuration } from "../lib/format-timestamp";
 import { workerStatusClasses } from "../lib/worker-status";
 
 /** Issue #112: color-coded status indicator (blue/green/red, pulse while working). */
@@ -84,9 +85,39 @@ export function TerminateWorkerModal(props: {
 }
 
 /**
+ * The sidebar header: the "Projects" title opens the all-projects combined
+ * board; "+" launches the project onboarding wizard. Pure rendering.
+ */
+export function PickerHeader(props: {
+  onSelectAllProjects: () => void;
+  /** Opens the project onboarding wizard (the "+" button). */
+  onStartOnboarding: () => void;
+}) {
+  return (
+    <div className="picker-header">
+      <h2 className="picker-title">
+        <button
+          type="button"
+          className="picker-title-button"
+          title="Open the all-projects board"
+          onClick={props.onSelectAllProjects}
+        >
+          Projects
+        </button>
+      </h2>
+      <button type="button" className="picker-add" title="Connect a project" onClick={props.onStartOnboarding}>
+        +
+      </button>
+    </div>
+  );
+}
+
+/**
  * One worker session row (issue #64): live workers are attachable buttons
- * with a status badge and the terminate affordance; archived workers render
- * as plain history (no badge interaction, not attachable, not terminable).
+ * with a status badge, a live running-time label (issue #182), and the
+ * terminate affordance; archived workers render
+ * as plain history (no badge interaction, not attachable, not terminable)
+ * with their final run duration frozen at the archive time (issue #182).
  */
 export function WorkerRow(props: {
   session: Session;
@@ -94,6 +125,8 @@ export function WorkerRow(props: {
   archived: boolean;
   selectedSessionId: string | null;
   pending: boolean;
+  /** The ticking client clock for the running-time label (issue #182). */
+  now?: number;
   onSelectSession: (sessionId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
   onAskTerminate: (sessionId: string) => void;
@@ -113,6 +146,11 @@ export function WorkerRow(props: {
         >
           <span className="role-badge role-worker">worker</span>
           <span className="picker-session-name">{props.session.tmuxSession}</span>
+          {worker && (
+            <span className="picker-runtime picker-runtime-final">
+              {formatRunningDuration(worker.startedAt, Date.parse(worker.updatedAt))}
+            </span>
+          )}
           {badge && <span className={badge.className}>{badge.label}</span>}
         </button>
       </li>
@@ -127,6 +165,7 @@ export function WorkerRow(props: {
       >
         <span className="role-badge role-worker">worker</span>
         <span className="picker-session-name">{props.session.tmuxSession}</span>
+        {worker && <span className="picker-runtime">{formatRunningDuration(worker.startedAt, props.now ?? Date.now())}</span>}
         {badge && <span className={badge.className}>{badge.label}</span>}
       </button>
       {props.onTerminateWorker && worker && (

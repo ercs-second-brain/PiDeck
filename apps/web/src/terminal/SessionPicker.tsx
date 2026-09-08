@@ -11,7 +11,9 @@
  * attaches its terminal; clicking an archived worker opens its read-only
  * captured log (issue #104); active worker rows carry a terminate
  * affordance (✕ → centered confirm modal, issue #116) that archives the
- * worker. Each project row also carries a ⋯ context menu (issue #167) whose
+ * worker and a live running-time label ticking every few seconds (issue
+ * #182; archived rows freeze their final run duration). Each project row
+ * also carries a ⋯ context menu (issue #167) whose
  * Settings entry opens that project's settings page in the main pane.
  *
  * The "Projects" header opens the all-projects combined board; the "+"
@@ -25,9 +27,32 @@
  * view pieces live in {@link ./picker-rows.tsx}.
  */
 
+import { useEffect, useState } from "react";
 import type { Project, Session, Worker } from "@pideck/shared";
-import { ArchivedSection, ProjectRow, TerminateWorkerModal, WorkerRow, workerFor } from "./picker-rows";
+import {
+  ArchivedSection,
+  PickerHeader,
+  ProjectRow,
+  TerminateWorkerModal,
+  WorkerRow,
+  workerFor,
+} from "./picker-rows";
 import { usePickerState } from "./use-picker-state";
+
+/**
+ * Coarse client-side clock for the workers' running-time labels (issue
+ * #182): ticks every few seconds — cheap, and precise enough for
+ * seconds→minutes→hours labels. Starts at mount time so SSR renders a
+ * stable value.
+ */
+function useTickingNow(intervalMs = 5_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
 
 export interface ProjectEntry {
   project: Project;
@@ -54,6 +79,8 @@ function ProjectSection(props: {
   confirmingSessionId: string | null;
   /** Project id whose ⋯ context menu is open (issue #167). */
   openMenuProjectId: string | null;
+  /** The ticking client clock for workers' running-time labels (issue #182). */
+  now: number;
   /** Worker id whose termination request is in flight (issue #64). */
   pendingTerminateWorkerId: string | null;
   /** Whether this project's archived section is expanded (issue #64). */
@@ -91,6 +118,7 @@ function ProjectSection(props: {
         archived={archived}
         selectedSessionId={props.selectedSessionId}
         pending={worker !== undefined && props.pendingTerminateWorkerId === worker.id}
+        now={props.now}
         onSelectSession={props.onSelectSession}
         onTerminateWorker={props.onTerminateWorker}
         onAskTerminate={props.onAskTerminate}
@@ -162,19 +190,11 @@ export function SessionPicker(props: {
   onTerminateWorker?: (workerId: string) => void;
 }) {
   const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
+  const now = useTickingNow();
 
   return (
     <aside className="session-picker">
-      <div className="picker-header">
-        <h2 className="picker-title">
-          <button type="button" className="picker-title-button" title="Open the all-projects board" onClick={props.onSelectAllProjects}>
-            Projects
-          </button>
-        </h2>
-        <button type="button" className="picker-add" title="Connect a project" onClick={props.onStartOnboarding}>
-          +
-        </button>
-      </div>
+      <PickerHeader onSelectAllProjects={props.onSelectAllProjects} onStartOnboarding={props.onStartOnboarding} />
       {props.entries.map((entry) => (
         <ProjectSection
           key={entry.project.id}
@@ -184,6 +204,7 @@ export function SessionPicker(props: {
           startingProjectId={props.startingProjectId ?? null}
           confirmingSessionId={state.confirmingSessionId}
           openMenuProjectId={state.openMenuId}
+          now={now}
           pendingTerminateWorkerId={props.terminatingWorkerId ?? null}
           archivedOpen={state.archivedOpen.has(entry.project.id)}
           onToggleArchived={state.toggleArchived}

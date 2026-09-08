@@ -287,6 +287,20 @@
   background: var(--bg-hover);
 }
 
+/* Issue #182: live running-time label on worker rows (monospace so the
+   ticking value doesn't jitter); archived rows freeze it in italics. */
+.picker-runtime {
+  flex: none;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.picker-runtime-final {
+  font-style: italic;
+}
+
 /* Tone + pulse come from the shared .status-indicator rules (index.css). */
 
 .worker-badge-archived {
