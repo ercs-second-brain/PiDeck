@@ -32,15 +32,48 @@ export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # Set once OS detection ran (detect_os).
 DETECTED_OS="unknown" # darwin | linux | wsl | windows-host | unknown
 
+# maintain_local_bin_shims — keep ~/.local/bin CLI entries pointing at the
+# installed shims (issue #215).
+#
+# Pre-#163 installs copied REAL-file shims into ~/.local/bin
+# (install_bin_compat); PATH resolves ~/.local/bin first, so such a file
+# shadows the refreshed $PD_HOME/bin shim forever (observed live: a
+# fe43fa0-era shim with syntax errors kept breaking the CLI after a
+# successful update that only refreshed ~/.pideck/bin). For each name:
+#   correct symlink to $PD_HOME/bin/<name>  -> no-op
+#   real file / foreign or dangling symlink -> replaced by the canonical symlink
+#   absent                                  -> left alone (bootstrap owns creation)
+maintain_local_bin_shims() { # maintain_local_bin_shims <name>...
+  for _mlb_name in "$@"; do
+    _mlb_link="$PD_LOCAL_BIN/$_mlb_name"
+    _mlb_target="$PD_HOME/bin/$_mlb_name"
+    if [ ! -e "$_mlb_link" ] && [ ! -L "$_mlb_link" ]; then
+      continue # absent — bootstrap decides whether the entry should exist
+    fi
+    if [ -L "$_mlb_link" ] && [ "$(readlink "$_mlb_link")" = "$_mlb_target" ]; then
+      continue # already the canonical symlink
+    fi
+    info "replacing stale ~/.local/bin/$_mlb_name with a symlink to $_mlb_target"
+    run rm -f "$_mlb_link"
+    run ln -s "$_mlb_target" "$_mlb_link"
+  done
+}
+
 # ---------------------------------------------------------------------------
 # Shell-layer install (shared by bootstrap.sh and the update path): copy the
 # fetched tree's CLI shims into $PD_HOME/bin and the libs + onboard.sh flat
-# into <lib-dir> (see issue #65), and keep the ~/.local/bin/pideck symlink.
+# into <lib-dir> (see issue #65), keep the ~/.local/bin/pideck symlink, and
+# convert stale real-file ~/.local/bin shims into symlinks (issue #215).
 # ---------------------------------------------------------------------------
 install_shell_layer() { # install_shell_layer <lib-dir>
   _isl_lib=$1
   for _cli_file in "$PD_SRC/install/bin/"*; do
     [ -f "$_cli_file" ] || continue
+    # Issue #215: never deploy a shim that does not parse — a broken shim on
+    # PATH bricks the CLI. sh -n is a read-only syntax check.
+    if ! sh -n "$_cli_file" 2>/dev/null; then
+      die "refusing to deploy a shim that fails sh -n: $_cli_file"
+    fi
     run cp "$_cli_file" "$PD_HOME/bin/$(basename "$_cli_file")"
     run chmod +x "$PD_HOME/bin/$(basename "$_cli_file")"
   done
@@ -49,6 +82,10 @@ install_shell_layer() { # install_shell_layer <lib-dir>
     run cp "$_lib_file" "$_isl_lib/$(basename "$_lib_file")"
   done
   run mkdir -p "$PD_LOCAL_BIN"
+  # Issue #215: convert stale real-file/foreign ~/.local/bin shims FIRST, so
+  # the conversion is explicit (and rm -f robust); the ln below then only
+  # (re)creates the canonical pideck symlink.
+  maintain_local_bin_shims pideck pideck-daemon
   run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
 }
 
