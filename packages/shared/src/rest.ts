@@ -8,8 +8,9 @@
  *
  * Endpoints: projects CRUD/register, per-project kanban state, sessions and
  * workers lists, per-project orchestrator start (issue #53), worker
- * terminate (issue #64), PR diffs, and daemon settings (auto-agent
- * username, concurrency, worker-pipeline toggles #106).
+ * terminate (issue #64), PR diffs, per-worker files-changed (issue #126),
+ * and daemon settings (auto-agent username, concurrency, worker-pipeline
+ * toggles #106).
  */
 
 import { z } from "zod";
@@ -19,6 +20,7 @@ import {
   projectSchema,
   projectSettingsSchema,
   pullRequestSchema,
+  refNumberSchema,
   sessionSchema,
   workerSchema,
   type PullRequest,
@@ -132,6 +134,25 @@ export const pullRequestDiffSchema = z.object({
   patch: z.string(),
 });
 export type PullRequestDiff = z.infer<typeof pullRequestDiffSchema>;
+
+/**
+ * Files changed by one worker (issue #126): the worker's PR files once a PR
+ * exists, or a branch-vs-base comparison against the project's default
+ * branch while work is still mid-flight (no PR open yet). Derives from
+ * `pullRequestDiffSchema` (files + unified patch) so the webapp renders
+ * both through one view.
+ */
+export const workerFilesChangedSchema = pullRequestDiffSchema
+  .omit({ projectId: true, prNumber: true })
+  .extend({
+    workerId: z.string().min(1),
+    projectId: z.string().min(1),
+    /** Where the list came from: the worker's PR or a branch-vs-base compare. */
+    source: z.enum(["pr", "branch"]),
+    /** PR backing the list; `null` while the diff comes from the branch compare. */
+    prNumber: refNumberSchema.nullable(),
+  });
+export type WorkerFilesChanged = z.infer<typeof workerFilesChangedSchema>;
 
 /**
  * Live progress of a running `agentskiss update` (issue #89): the update shim
@@ -323,6 +344,21 @@ export const endpoints = {
     params: z.object({ workerId: z.string().min(1) }),
     request: null,
     response: archivedWorkerLogSchema,
+  },
+
+  /**
+   * Files changed by a worker (issue #126): the worker's PR files when one
+   * exists, otherwise its branch's diff against the project's default branch
+   * (`gh` compare, with a local `git diff` fallback while the branch is not
+   * pushed yet). Works for archived workers via their recorded PR/branch —
+   * 404 for unknown workers, 409 when neither is resolvable.
+   */
+  getWorkerFilesChanged: {
+    method: "GET",
+    path: "/api/workers/:workerId/files-changed",
+    params: z.object({ workerId: z.string().min(1) }),
+    request: null,
+    response: workerFilesChangedSchema,
   },
 
   /**

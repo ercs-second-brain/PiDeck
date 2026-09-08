@@ -26,7 +26,10 @@ const REVIEW_LABELS = {
  * A single kanban card. Issues and PRs are visually distinguishable via a
  * type badge and accent color. `pr` — the underlying PR entity from the
  * daemon, when available — contributes state badges: PR state, CI status,
- * review decision, branch info, and a link to the diff-review view.
+ * review decision, branch info, and a link to the diff-review view. The
+ * worker badge (when a worker drives the card) links to the per-worker
+ * files-changed view (issue #126) — its PR files, or its branch diff vs the
+ * default branch while work is still mid-flight.
  */
 export function KanbanCardView({ card, pr }: { card: KanbanCard; pr?: PullRequest }) {
   return (
@@ -40,10 +43,23 @@ export function KanbanCardView({ card, pr }: { card: KanbanCard; pr?: PullReques
       <div className="card-title">{card.title}</div>
       <div className="card-meta">
         {card.kind === "issue" ? <IssueBadges card={card} /> : <PrBadges card={card} pr={pr} />}
-        {card.workerId && <span className="badge badge-worker">⚒ {card.workerId}</span>}
+        {card.workerId !== null && <WorkerFilesLink projectId={card.projectId} workerId={card.workerId} />}
         <span className="card-time">{formatTimestamp(card.updatedAt)}</span>
       </div>
     </article>
+  );
+}
+
+/** Worker badge linking to the worker's files-changed view (issue #126). */
+function WorkerFilesLink({ projectId, workerId }: { projectId: string; workerId: string }) {
+  return (
+    <Link
+      className="badge badge-worker card-worker-link"
+      title="Files changed by this worker"
+      to={`/projects/${projectId}/pulls/${workerId}`}
+    >
+      ⚒ {workerId}
+    </Link>
   );
 }
 

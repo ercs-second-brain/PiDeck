@@ -110,6 +110,10 @@ export const apiGetPullRequestDiff = (
   prNumber: number,
 ): Promise<EndpointResponse<"getPullRequestDiff">> => request("getPullRequestDiff", { projectId, prNumber });
 
+/** Per-worker files-changed (issue #126): PR files, or branch vs default branch. */
+export const apiGetWorkerFilesChanged = (workerId: string): Promise<EndpointResponse<"getWorkerFilesChanged">> =>
+  request("getWorkerFilesChanged", { workerId });
+
 // --- Daemon-wide settings (issue #106) ----------------------------------------
 
 export const apiGetSettings = (): Promise<EndpointResponse<"getSettings">> => request("getSettings", {});

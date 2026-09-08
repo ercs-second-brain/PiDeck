@@ -23,6 +23,7 @@ import {
   pullRequestDiffSchema,
   pullRequestSchema,
   sessionSchema,
+  workerFilesChangedSchema,
   workerSchema,
   type EndpointName,
 } from "@agentskiss/shared";
@@ -299,5 +300,31 @@ describe("pull requests", () => {
     expect(parsedDiff.files[1]).toMatchObject({ filename: "src/new.ts", status: "added", additions: 1, deletions: 0 });
     expect(parsedDiff.patch).toContain("diff --git a/src/a.ts");
     expect(parsedDiff.headBranch).toBe("ao/fix-flaky");
+  });
+});
+
+describe("worker files changed (issue #126)", () => {
+  it("serves a PR-backed worker's files and 404s unknown workers", async () => {
+    const { services } = daemon;
+    if (services.projects.get("o-r") === undefined) {
+      services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
+    }
+    const { worker } = await services.sessions.spawnWorker("o-r", { issueNumber: 5 });
+    services.sessions.setWorkerPr(worker.id, 9);
+
+    const res = await api("GET", formatPath("getWorkerFilesChanged", { workerId: worker.id }));
+    expect(res.status).toBe(200);
+    const parsed = workerFilesChangedSchema.parse(res.json);
+    expect(parsed.workerId).toBe(worker.id);
+    expect(parsed.projectId).toBe("o-r");
+    expect(parsed.source).toBe("pr");
+    expect(parsed.prNumber).toBe(9);
+    expect(parsed.headBranch).toBe("ao/fix-flaky");
+    expect(parsed.baseBranch).toBe("main");
+    expect(parsed.files[0]).toMatchObject({ filename: "src/a.ts", status: "modified" });
+    expect(parsed.patch).toContain("diff --git a/src/a.ts");
+
+    // Unknown worker → 404.
+    expect((await api("GET", formatPath("getWorkerFilesChanged", { workerId: "worker-ghost" }))).status).toBe(404);
   });
 });

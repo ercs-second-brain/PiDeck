@@ -143,6 +143,22 @@ function archivedWorkerLogPayload(services: DaemonServices, workerId: string) {
 }
 
 /**
+ * Worker files-changed payload (issue #126): resolves the worker (404) and
+ * its project (404), then lets the diffs service pick the worker's PR files
+ * or its branch-vs-default-branch listing (mid-flight / archived workers).
+ */
+function workerFilesChangedPayload(services: DaemonServices, workerId: string) {
+  const worker = requireOr404(services.sessions.getWorker(workerId), `unknown worker: ${workerId}`);
+  const project = requireOr404(services.projects.get(worker.projectId), `unknown project: ${worker.projectId}`);
+  const session = services.sessions.getSession(worker.sessionId);
+  return services.diffs.getWorkerFilesChanged(project.id, project.repoUrl, {
+    worker,
+    ...(session?.cwd !== undefined ? { sessionCwd: session.cwd } : {}),
+    baseBranch: project.defaultBranch,
+  });
+}
+
+/**
  * Terminate handler (issue #64): kills the tmux session, marks the worker
  * `archived`, and announces the new status on the hub so open sidebars
  * update live.
@@ -257,6 +273,9 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
      * builder below for the 404 semantics).
      */
     getArchivedWorkerLog: ({ params }) => archivedWorkerLogPayload(services, params.workerId),
+
+    // Worker files-changed (issue #126): PR files, or branch vs default branch pre-PR.
+    getWorkerFilesChanged: ({ params }) => workerFilesChangedPayload(services, params.workerId),
 
     /**
      * Relaunch a dead session's tmux pane (issue #117): kills any lingering
