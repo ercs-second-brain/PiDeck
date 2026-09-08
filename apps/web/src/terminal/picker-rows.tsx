@@ -2,7 +2,7 @@
  * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114/#167/#173):
  * worker rows (live + archived), the terminate affordance, the project row
  * (chevron + name-as-kanban-entry + chat/orchestrator icon), and the
- * per-project archived section. Stateless — interaction state flows in
+ * per-project archived section, and the sidebar header. Stateless — interaction state flows in
  * through props, so these render (and unit-test) without xterm or effects.
  */
 
@@ -80,6 +80,34 @@ export function TerminateWorkerModal(props: {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The sidebar header: the "Projects" title opens the all-projects combined
+ * board; "+" launches the project onboarding wizard. Pure rendering.
+ */
+export function PickerHeader(props: {
+  onSelectAllProjects: () => void;
+  /** Opens the project onboarding wizard (the "+" button). */
+  onStartOnboarding: () => void;
+}) {
+  return (
+    <div className="picker-header">
+      <h2 className="picker-title">
+        <button
+          type="button"
+          className="picker-title-button"
+          title="Open the all-projects board"
+          onClick={props.onSelectAllProjects}
+        >
+          Projects
+        </button>
+      </h2>
+      <button type="button" className="picker-add" title="Connect a project" onClick={props.onStartOnboarding}>
+        +
+      </button>
     </div>
   );
 }

@@ -25,7 +25,14 @@
 
 import { useEffect, useState } from "react";
 import type { Project, Session, Worker } from "@pideck/shared";
-import { ArchivedSection, ProjectRow, TerminateWorkerModal, WorkerRow, workerFor } from "./picker-rows";
+import {
+  ArchivedSection,
+  PickerHeader,
+  ProjectRow,
+  TerminateWorkerModal,
+  WorkerRow,
+  workerFor,
+} from "./picker-rows";
 import { usePickerState } from "./use-picker-state";
 
 /**
@@ -181,16 +188,7 @@ export function SessionPicker(props: {
 
   return (
     <aside className="session-picker">
-      <div className="picker-header">
-        <h2 className="picker-title">
-          <button type="button" className="picker-title-button" title="Open the all-projects board" onClick={props.onSelectAllProjects}>
-            Projects
-          </button>
-        </h2>
-        <button type="button" className="picker-add" title="Connect a project" onClick={props.onStartOnboarding}>
-          +
-        </button>
-      </div>
+      <PickerHeader onSelectAllProjects={props.onSelectAllProjects} onStartOnboarding={props.onStartOnboarding} />
       {props.entries.map((entry) => (
         <ProjectSection
           key={entry.project.id}
