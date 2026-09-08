@@ -94,6 +94,8 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const updateSettingsRequestSchema = settingsSchema.partial();
 export type UpdateSettingsRequest = z.infer<typeof updateSettingsRequestSchema>;
 
+/** GitHub repo accessible via the daemon's gh auth (issue #217): the clone URL derives verbatim from owner/name — no case transformation (#216). */
+export const accessibleRepoSchema = z.object({ owner: z.string().min(1), name: z.string().min(1), isPrivate: z.boolean() }); export type AccessibleRepo = z.infer<typeof accessibleRepoSchema>;
 /**
  * Response body of the daemon's pi-auth probe (`GET /api/pi-auth`, mirroring
  * `GET /api/gh-auth`): which pi providers have ready credentials and which
@@ -516,6 +518,7 @@ export const endpoints = {
     request: updateSettingsRequestSchema,
     response: settingsSchema,
   },
+  listAccessibleRepos: { method: "GET", path: "/api/gh/repos", params: z.object({}), request: null, response: z.array(accessibleRepoSchema) }, // issue #217
 } as const satisfies Record<string, EndpointShape>;
 
 /** Structural constraint every entry of `endpoints` must satisfy. */

@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
 
 import { GhClient } from "./gh.js";
-import { cloneRepo, createRepo, defaultGitRunner, GitError } from "./repos.js";
+import { cloneRepo, createRepo, defaultGitRunner, GitError, listAccessibleRepos } from "./repos.js";
+
+describe("listAccessibleRepos", () => {
+  it("maps `gh repo list` output to owner/name/isPrivate verbatim (issue #217)", async () => {
+    const seen: string[][] = [];
+    const gh = new GhClient(async (args) => {
+      seen.push(args);
+      return {
+        stdout: JSON.stringify([
+          { name: "pidecktest", owner: { login: "eric" }, isPrivate: true },
+          { name: "MixedCase", owner: { login: "eric" }, isPrivate: false },
+        ]),
+        stderr: "",
+      };
+    });
+    const repos = await listAccessibleRepos(gh);
+    expect(seen).toEqual([["repo", "list", "--limit", "200", "--json", "name,owner,isPrivate"]]);
+    expect(repos).toEqual([
+      { owner: "eric", name: "pidecktest", isPrivate: true },
+      { owner: "eric", name: "MixedCase", isPrivate: false },
+    ]);
+  });
+});
 
 describe("cloneRepo", () => {
   it("builds a plain git clone command", async () => {

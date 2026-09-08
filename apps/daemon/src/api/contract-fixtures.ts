@@ -82,6 +82,10 @@ export const ghRoutes = {
     },
   },
   repoCreate: "https://github.com/o/pidecktest",
+  repoList: [
+    { name: "pidecktest", owner: { login: "o" }, isPrivate: true },
+    { name: "MixedCase", owner: { login: "o" }, isPrivate: false },
+  ],
   prDiff: [
     "diff --git a/src/a.ts b/src/a.ts",
     "index 111..222 100644",

@@ -49,6 +49,12 @@ export interface DaemonServices {
   hub: WsHub;
   /** Shared tmux runner (the terminal bridge streams through the same one). */
   tmux: Tmux;
+  /**
+   * GhClient factory (tests inject fakes). Backs the onboarding repo listing
+   * (`GET /api/gh/repos`, issue #217) — registration and pipelines get their
+   * clients from the same factory.
+   */
+  gh: (repoUrl: string) => GhClient;
   /** Shared session registry (the terminal bridge resolves sessions through it). */
   registry: SessionRegistry;
   /**
@@ -259,6 +265,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     orchestratorBootstrap,
     hub,
     tmux,
+    gh,
     registry,
     automation,
     update,
