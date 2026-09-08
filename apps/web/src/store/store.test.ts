@@ -221,6 +221,51 @@ describe("reconnect backoff", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Registration seeding (issue #203)
+// ---------------------------------------------------------------------------
+
+describe("boardStore.upsertProject (issue #203)", () => {
+  it("seeds a just-registered project and loads its board without a refresh", async () => {
+    const id = "fresh-203";
+    const fresh = { ...project, id, name: "Fresh" };
+    const board = stateWithBoard().boards[PROJECT_ID]!;
+    mockGetKanban.mockResolvedValue(board);
+
+    boardStore.upsertProject(fresh);
+
+    // The sidebar/board's project lookup finds it immediately…
+    expect(boardStore.getState().projects.find((p) => p.id === id)).toEqual(fresh);
+    // …and the board data loads via the normal single-flight path.
+    await vi.waitFor(() => {
+      expect(boardStore.getState().boards[id]).toEqual(board);
+    });
+  });
+
+  it("replaces an existing project without duplicating it", () => {
+    const renamed = { ...project, name: "Renamed via register" };
+    mockGetKanban.mockResolvedValue(stateWithBoard().boards[PROJECT_ID]!);
+    boardStore.upsertProject(renamed);
+    const matches = boardStore.getState().projects.filter((p) => p.id === PROJECT_ID);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]!.name).toBe("Renamed via register");
+  });
+
+  it("shares the board load with a concurrent loadProject (single-flight, #97 intact)", async () => {
+    const id = "race-203";
+    const board = stateWithBoard().boards[PROJECT_ID]!;
+    mockGetKanban.mockResolvedValue(board);
+    await Promise.all([
+      boardStore.loadProject(id),
+      new Promise<void>((resolve) => {
+        boardStore.upsertProject({ ...project, id });
+        resolve();
+      }),
+    ]);
+    expect(mockGetKanban.mock.calls.filter(([projectId]) => projectId === id)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Single-flight coalescing (issue #88 regression tests)
 //
 // The store's REST side effects are inert in node (`window` guard), so these

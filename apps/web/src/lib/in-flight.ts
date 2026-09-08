@@ -19,13 +19,15 @@ export type InFlight<T> = Map<string, Promise<T>>;
 /**
  * Returns the shared in-flight promise for `key`, or starts `run()` and
  * shares it. Rejections propagate to every sharer and clear the entry, so
- * later callers retry.
+ * later callers retry. A settled entry only evicts itself: if the key was
+ * replaced while this promise was pending (write invalidation, #203), the
+ * replacement stays.
  */
 export function shareInFlight<T>(map: InFlight<T>, key: string, run: () => Promise<T>): Promise<T> {
   const existing = map.get(key);
   if (existing !== undefined) return existing;
   const promise = run().finally(() => {
-    map.delete(key);
+    if (map.get(key) === promise) map.delete(key);
   });
   map.set(key, promise);
   return promise;
