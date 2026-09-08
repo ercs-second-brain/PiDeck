@@ -215,3 +215,29 @@ describe("SessionRegistry", () => {
     expect(registry.deleteSession(session.id)).toBe(false);
   });
 });
+
+describe("SessionRegistry: reviewer linkage (issue #107)", () => {
+  it("records reviewer-kind workers with pr and parent linkage", () => {
+    const registry = new SessionRegistry(filePath);
+    const session = registry.createSession({ projectId: "a", role: "worker", tmuxSession: "agentskiss-a-worker-1" });
+    const reviewer = registry.registerWorker({
+      projectId: "a",
+      sessionId: session.id,
+      issueNumber: 0,
+      prNumber: 12,
+      kind: "reviewer",
+      parentWorkerId: "worker-1",
+      status: "running",
+    });
+    expect(reviewer).toMatchObject({ prNumber: 12, kind: "reviewer", parentWorkerId: "worker-1" });
+
+    // The linkage survives a reload (persistence round-trip).
+    const reloaded = new SessionRegistry(filePath);
+    expect(reloaded.getWorker(reviewer.id)).toMatchObject({ kind: "reviewer", parentWorkerId: "worker-1" });
+
+    // Sibling spawns (no parent) leave the field absent; implementers stay unmarked.
+    const sibling = registry.registerWorker({ projectId: "a", sessionId: session.id, issueNumber: 1 });
+    expect(sibling.kind).toBeUndefined();
+    expect(sibling.parentWorkerId).toBeUndefined();
+  });
+});

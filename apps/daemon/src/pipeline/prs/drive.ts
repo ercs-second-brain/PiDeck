@@ -13,6 +13,7 @@ import type { PullRequest, WorkerStatus } from "@agentskiss/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
 import { buildCiFixPrompt, buildReviewCommentsPrompt } from "./prompts.js";
+import { driveReview } from "./review.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import type { PRSessionControl } from "./pipeline.js";
 import type { TrackedPR } from "./tracker.js";
@@ -23,6 +24,10 @@ export interface DriveContext {
   sessions: PRSessionControl;
   /** Toggles, read fresh on every decision (issue #106). Default: all ON. */
   settings: () => WorkerPipelineSettings | undefined;
+  /** Max concurrent workers for the project; `undefined` = unbounded (issue #107). */
+  workerCap: () => number | undefined;
+  /** `owner/name` of the PRs' repository (review-agent prompts, issue #107). */
+  repo: string;
   /** Max consecutive CI-fix prompts per red streak. */
   maxFixAttempts: number;
   /** Age at which an unanswered prompt is treated as stale. */
@@ -57,7 +62,11 @@ export async function driveLoop(
     return driveCiFailure(tracked, pr, headSha, headChangedSincePrompt, newComments, ctx, events);
   }
   if (pr.ciStatus === "success") tracked.fixAttempts = 0; // the previous red streak ended green
-  return driveGreen(tracked, pr, headSha, newComments, ctx, events);
+  const greenEvents = await driveGreen(tracked, pr, headSha, newComments, ctx, events);
+  // Issue #107: the auto review agent cycle runs on green PRs (after the
+  // comment-delivery branch above, which owns the author's prompt state).
+  await driveReview(tracked, pr, headSha, ctx);
+  return greenEvents;
 }
 
 /** CI red branch: drive the worker into a bounded fix cycle unless gated off. */

@@ -243,6 +243,29 @@ describe("domain: session and worker", () => {
   });
 });
 
+describe("domain: worker kind and parent linkage (issue #107)", () => {
+  it("accepts reviewer-kind workers with parent linkage and defaults implementers", () => {
+    const base = {
+      id: "w1",
+      projectId: "p",
+      sessionId: "s2",
+      issueNumber: 0,
+      prNumber: 12,
+      status: "running",
+      statusMessage: null,
+      startedAt: NOW,
+      updatedAt: NOW,
+    };
+    const reviewer = workerSchema.parse({ ...base, kind: "reviewer", parentWorkerId: "w2" });
+    expect(reviewer.kind).toBe("reviewer");
+    expect(reviewer.parentWorkerId).toBe("w2");
+    expect(workerSchema.safeParse({ ...base, kind: "manager" }).success).toBe(false);
+    // Absent kind/parent (all pre-#107 records) still parse: absent = implementer.
+    expect(workerSchema.parse(base).kind).toBeUndefined();
+    expect(workerSchema.parse(base).parentWorkerId).toBeUndefined();
+  });
+});
+
 describe("domain: issue blockers", () => {
   const baseIssue = {
     projectId: "p",

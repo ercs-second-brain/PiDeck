@@ -78,6 +78,8 @@ export const settingsSchema = z.object({
   autoFixCi: z.boolean().default(true),
   /** Let the PR loop deliver new review comments to workers for addressing. */
   autoFixReviewComments: z.boolean().default(true),
+  /** Spawn an auto review agent on green, unapproved PRs (issue #107). */
+  autoReview: z.boolean().default(true),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

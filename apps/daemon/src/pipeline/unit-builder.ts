@@ -169,6 +169,9 @@ export function buildUnit(deps: UnitBuilderDeps, projectId: string, repoUrl: str
     emit: (event) => deps.onPrEvent(projectId, event),
     pollIntervalMs: deps.pollIntervalMs,
     workerSettings: deps.workerSettings,
+    // Issue #107: review-agent spawns respect the project's worker cap,
+    // read fresh so a settings change lands without a restart.
+    workerCap: () => deps.projects.get(projectId)?.settings.workerConcurrency,
     onError: (err) => deps.onError(err, `pr-pipeline:${projectId}`),
   });
   return {

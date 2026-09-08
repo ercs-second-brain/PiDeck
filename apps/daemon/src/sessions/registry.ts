@@ -15,6 +15,7 @@ import {
   workerSchema,
   type Session,
   type Worker,
+  type WorkerKind,
   type WorkerStatus,
 } from "@agentskiss/shared";
 
@@ -37,6 +38,12 @@ export interface RegisterWorkerInput {
   projectId: string;
   sessionId: string;
   issueNumber: number;
+  /** PR the worker owns, or reviews (review agents, issue #107). */
+  prNumber?: number;
+  /** Worker kind (issue #107); omit for implementers — absent means implementer. */
+  kind?: WorkerKind;
+  /** Parent worker for nested spawns (review agents, issue #107). */
+  parentWorkerId?: string | null;
   status?: WorkerStatus;
   statusMessage?: string | null;
 }
@@ -158,12 +165,16 @@ export class SessionRegistry {
       projectId: input.projectId,
       sessionId: input.sessionId,
       issueNumber: input.issueNumber,
-      prNumber: null,
+      prNumber: input.prNumber ?? null,
       status: input.status ?? "spawning",
       statusMessage: input.statusMessage ?? null,
       startedAt: now,
       updatedAt: now,
     };
+    if (input.kind !== undefined) worker.kind = input.kind;
+    if (input.parentWorkerId !== undefined && input.parentWorkerId !== null) {
+      worker.parentWorkerId = input.parentWorkerId;
+    }
     this.workers.set(worker.id, worker);
     this.save();
     return worker;

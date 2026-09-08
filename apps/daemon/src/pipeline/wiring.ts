@@ -38,11 +38,13 @@ import { DEFAULT_POLL_INTERVAL_MS, type GithubWatcherEvent } from "../github/wat
 import type { ProjectService } from "../api/projects.js";
 import type { SessionManager } from "../sessions/manager.js";
 import type { WsHub } from "../api/ws.js";
+import type { PromptGate } from "../agent/prompt-gate.js";
 import { KanbanBridge } from "./broadcast.js";
 import { CatchUpSweep } from "./catchup.js";
 import { watcherOptionsFromEnv } from "./env.js";
 import { associateWorkerPr } from "./issue-refs.js";
 import { buildUnit, registeredProject, RoutingBlockerResolver, type ProjectUnit } from "./unit-builder.js";
+import { spawnReviewAgent as spawnReviewAgentImpl } from "./prs/review-spawn.js";
 
 export { watcherOptionsFromEnv };
 export { CATCH_UP_BATCH_SIZE } from "./catchup.js";
@@ -60,6 +62,10 @@ export interface GithubAutomationOptions {
    * decision so a toggle lands without a daemon restart. Default: all ON.
    */
   workerSettings?: () => WorkerPipelineSettings;
+  /** Pi auth readiness for review-agent prompt gating (issue #107). */
+  piReady?: () => Promise<boolean>;
+  /** Prompt gate (issue #56) holding review prompts until pi is ready. */
+  promptGate?: Pick<PromptGate, "queue">;
   /** Master switch. Default: resolved from the environment (on). */
   enabled?: boolean;
   /** Poll interval for watchers and the PR loop. Default: 30s or env. */
@@ -159,6 +165,22 @@ export class GithubAutomation {
         }
         return worker;
       },
+      // Issue #107: the auto review agent spawn path — reviewer kind nested
+      // under the PR-authoring worker, spawn announced, prompt gated on pi
+      // readiness like manual spawns (issue #56 parity).
+      spawnReviewAgent: (projectId, request) =>
+        spawnReviewAgentImpl(projectId, request, {
+          sessions: options.sessions,
+          broadcastSpawned: (worker) => {
+            this.bridge.broadcast(
+              { type: "worker.spawned", at: this.now().toISOString(), worker: workerSchema.parse(worker) },
+              `spawn:${projectId}`,
+            );
+          },
+          ...(options.piReady !== undefined ? { piReady: options.piReady } : {}),
+          ...(options.promptGate !== undefined ? { promptGate: options.promptGate } : {}),
+          onError: (err) => this.onError(err, `review-spawn:${projectId}`),
+        }),
     };
 
     const projectSource: ProjectSource = {

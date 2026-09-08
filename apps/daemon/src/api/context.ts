@@ -179,9 +179,10 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     hub,
     gh,
     stateDir,
-    // Issue #106: the PR loop reads the toggles fresh on every decision, so
-    // a settings change takes effect without a daemon restart.
+    // Issues #106/#107: toggles and the pi-readiness gate are read fresh per decision.
     workerSettings: () => settings.get(),
+    piReady: () => piAuth.payload().then((payload) => payload.ready),
+    promptGate,
     ...watcherOptions,
   });
   automationRef.current = automation;

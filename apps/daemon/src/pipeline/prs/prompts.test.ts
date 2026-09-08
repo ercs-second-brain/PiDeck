@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PullRequest } from "@agentskiss/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
-import { buildCiFixPrompt, buildReviewCommentsPrompt } from "./prompts.js";
+import { buildCiFixPrompt, buildReReviewPrompt, buildReviewAgentPrompt, buildReviewCommentsPrompt } from "./prompts.js";
 
 const PR: PullRequest = {
   projectId: "proj",
@@ -57,5 +57,22 @@ describe("PR prompts", () => {
     expect(prompt).toContain("(1) alice on src/a.ts:42");
     expect(prompt).toContain("(2) reviewer on src/b.ts — \"Add tests\"");
     expect(prompt).toContain("follow-up commit");
+  });
+
+  it("review agent prompt is a single line naming the PR, repo, and the gh review path", () => {
+    const prompt = buildReviewAgentPrompt(PR, { projectId: "proj", repo: "o/r" });
+    expect(prompt).not.toContain("\n");
+    expect(prompt).toContain("review agent for PR #12");
+    expect(prompt).toContain("gh pr diff 12 --repo o/r");
+    expect(prompt).toContain("--approve");
+    expect(prompt).toContain("--request-changes");
+    expect(prompt).toContain("Do not push commits");
+  });
+
+  it("re-review prompt asks for a fresh review after new commits", () => {
+    const prompt = buildReReviewPrompt(PR, { projectId: "proj", repo: "o/r" });
+    expect(prompt).not.toContain("\n");
+    expect(prompt).toContain("New commits were pushed to PR #12");
+    expect(prompt).toContain("Re-review the updated diff");
   });
 });

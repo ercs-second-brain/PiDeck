@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS: Settings = {
   terminateOnMerge: true,
   autoFixCi: true,
   autoFixReviewComments: true,
+  autoReview: true,
 };
 
 export class SettingsStore {
@@ -41,6 +42,7 @@ export class SettingsStore {
       terminateOnMerge: loaded.terminateOnMerge,
       autoFixCi: loaded.autoFixCi,
       autoFixReviewComments: loaded.autoFixReviewComments,
+      autoReview: loaded.autoReview,
     };
   }
 

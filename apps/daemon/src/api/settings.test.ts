@@ -21,6 +21,7 @@ describe("SettingsStore", () => {
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,
+      autoReview: true,
     });
     store.update({ autoAgentUsername: "auto-agent" });
     expect(store.get()).toEqual({
@@ -29,6 +30,7 @@ describe("SettingsStore", () => {
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,
+      autoReview: true,
     });
 
     const reloaded = new SettingsStore(dir);
@@ -56,6 +58,7 @@ describe("SettingsStore", () => {
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,
+      autoReview: true,
     });
   });
 
