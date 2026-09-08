@@ -104,7 +104,7 @@ export interface DaemonContextOptions {
   piAuthTtlMs?: number;
 }
 
-/** Resolves the daemon state dir honoring `PD_HOME` (with legacy `~/.agentskiss` fallback). */
+/** Resolves the daemon state dir honoring `PD_HOME`. */
 export function resolveStateDir(explicit?: string): string {
   if (explicit !== undefined && explicit.length > 0) return explicit;
   return defaultStateDir();

@@ -7,7 +7,7 @@
  *   <stateDir>/sessions.json                   — session registry persistence
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -18,25 +18,7 @@ import path from "node:path";
 export function defaultStateDir(): string {
   const fromEnv = process.env["PD_HOME"];
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
-  return pickHomeStateDir(os.homedir(), existsSync);
-}
-
-/**
- * Resolves the home-relative state dir with a read-only legacy fallback
- * (issue #125 rebrand): if `~/.pideck` does not exist but the pre-rebrand
- * `~/.agentskiss` does, keep using the legacy dir and warn — no migration
- * happens here (the installer shim owns moving the data).
- */
-export function pickHomeStateDir(home: string, exists: (p: string) => boolean): string {
-  const dir = path.join(home, ".pideck");
-  const legacyDir = path.join(home, ".agentskiss");
-  if (!exists(dir) && exists(legacyDir)) {
-    console.error(
-      `[pideck] warning: ${dir} not found; using legacy state dir ${legacyDir} (run the pideck installer to migrate)`,
-    );
-    return legacyDir;
-  }
-  return dir;
+  return path.join(os.homedir(), ".pideck");
 }
 
 export interface ProjectDirs {

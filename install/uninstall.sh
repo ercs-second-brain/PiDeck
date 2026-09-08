@@ -20,30 +20,23 @@ ASSUME_YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --purge) PURGE=1 ;;
-    -y | --yes) ASSUME_YES=1; PD_NONINTERACTIVE=1 ;;
+    -y | --yes) ASSUME_YES=1; export PD_NONINTERACTIVE=1 ;;
     -h | --help) printf 'Usage: uninstall.sh [--purge] [-y]\n'; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
   shift
 done
 
-# Home migration (issue #125): move a pre-rebrand ~/.agentskiss install to
-# ~/.pideck first — the uninstaller must find the install where the new
-# tooling looks for it (a compat symlink keeps old paths resolving).
-migrate_home
-
 detect_os
 detect_arch
 
 info "uninstalling PiDeck"
 
-# Load install config (node paths, src, port) if present.
+# Load install config (src, for the pi skill symlinks below) if present.
 PD_SRC=""
-PD_NODE_BIN_DIR=""
 if [ -f "$PD_HOME/env" ]; then
   # shellcheck disable=SC1090
   . "$PD_HOME/env"
-  [ -n "${PD_NODE:-}" ] && PD_NODE_BIN_DIR=$(dirname "$PD_NODE")
 fi
 
 confirm() {
@@ -55,23 +48,17 @@ confirm() {
 step "removing persistent service"
 case "$DETECTED_OS" in
   darwin)
-    # New + pre-rebrand (issue #125) launchd labels, so migrated machines
-    # and never-migrated leftovers are both cleaned up.
-    for _plist_name in "$PD_SERVICE_LABEL" com.agentskiss.daemon; do
-      _plist="$HOME/Library/LaunchAgents/$_plist_name.plist"
-      run_ignore launchctl bootout "gui/$(id -u)" "$_plist"
-      run_ignore launchctl unload "$_plist"
-      run rm -f "$_plist"
-    done
+    _plist="$HOME/Library/LaunchAgents/$PD_SERVICE_LABEL.plist"
+    run_ignore launchctl bootout "gui/$(id -u)" "$_plist"
+    run_ignore launchctl unload "$_plist"
+    run rm -f "$_plist"
     ok "launchd agent removed"
     ;;
   linux | wsl)
     if systemctl --user is-system-running >/dev/null 2>&1; then
       run_ignore systemctl --user disable --now pideck-daemon.service
-      run_ignore systemctl --user disable --now agentskiss.service
     fi
-    run rm -f "$HOME/.config/systemd/user/pideck-daemon.service" \
-      "$HOME/.config/systemd/user/agentskiss.service"
+    run rm -f "$HOME/.config/systemd/user/pideck-daemon.service"
     run_ignore systemctl --user daemon-reload
     ok "systemd unit removed"
     ;;
@@ -81,11 +68,8 @@ esac
 step "removing CLI and launcher"
 confirm "Remove pideck CLI and daemon launcher?" &&
   {
-    # New + pre-rebrand (issue #125) binary names; the old names are the
-    # compat symlinks install_bin_compat() creates.
-    run rm -f "$PD_HOME/bin/pideck" "$PD_HOME/bin/pideck-daemon" \
-      "$PD_HOME/bin/agentskiss" "$PD_HOME/bin/agentskiss-daemon"
-    run rm -f "$PD_LOCAL_BIN/pideck" "$PD_LOCAL_BIN/agentskiss"
+    run rm -f "$PD_HOME/bin/pideck" "$PD_HOME/bin/pideck-daemon"
+    run rm -f "$PD_LOCAL_BIN/pideck"
     ok "CLI removed (node/pnpm/gh/pi are left in place)"
   }
 

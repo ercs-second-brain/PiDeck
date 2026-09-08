@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultStateDir, pickHomeStateDir, ProjectLayout, sanitizeSegment } from "./layout.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { defaultStateDir, ProjectLayout, sanitizeSegment } from "./layout.js";
 
 describe("sanitizeSegment", () => {
   it("keeps safe characters", () => {
@@ -30,16 +30,13 @@ describe("ProjectLayout", () => {
     expect(layout.sessionsFilePath()).toBe("/state/sessions.json");
   });
 
-  it("defaults the state dir to the home-relative pideck dir (with legacy fallback)", () => {
+  it("defaults the state dir to the home-relative pideck dir", () => {
     const prev = process.env["PD_HOME"];
     delete process.env["PD_HOME"];
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const layout = new ProjectLayout();
-      expect(layout.root).toBe(pickHomeStateDir(homedir(), existsSync));
-      expect(layout.root).toMatch(/\.pideck$|\.agentskiss$/);
+      expect(layout.root).toBe(path.join(homedir(), ".pideck"));
     } finally {
-      errSpy.mockRestore();
       if (prev !== undefined) process.env["PD_HOME"] = prev;
     }
   });
@@ -76,44 +73,6 @@ describe("defaultStateDir", () => {
 
   it("falls through to the home dir when PD_HOME is empty", () => {
     process.env["PD_HOME"] = "";
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      expect(defaultStateDir()).toBe(pickHomeStateDir(homedir(), existsSync));
-    } finally {
-      errSpy.mockRestore();
-    }
-  });
-});
-
-describe("pickHomeStateDir (legacy ~/.agentskiss fallback)", () => {
-  it("uses ~/.pideck when it exists", () => {
-    const home = mkdtempSync(path.join(tmpdir(), "pideck-home-"));
-    mkdirSync(path.join(home, ".pideck"));
-    expect(pickHomeStateDir(home, existsSync)).toBe(path.join(home, ".pideck"));
-  });
-
-  it("falls back to legacy ~/.agentskiss when ~/.pideck is missing, with a warning", () => {
-    const home = mkdtempSync(path.join(tmpdir(), "pideck-home-"));
-    mkdirSync(path.join(home, ".agentskiss"));
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      expect(pickHomeStateDir(home, existsSync)).toBe(path.join(home, ".agentskiss"));
-      expect(errSpy).toHaveBeenCalledOnce();
-      expect(String(errSpy.mock.calls[0]?.[0])).toContain(".agentskiss");
-    } finally {
-      errSpy.mockRestore();
-    }
-  });
-
-  it("uses ~/.pideck when neither dir exists (fresh install)", () => {
-    const home = mkdtempSync(path.join(tmpdir(), "pideck-home-"));
-    expect(pickHomeStateDir(home, existsSync)).toBe(path.join(home, ".pideck"));
-  });
-
-  it("prefers ~/.pideck when both dirs exist", () => {
-    const home = mkdtempSync(path.join(tmpdir(), "pideck-home-"));
-    mkdirSync(path.join(home, ".pideck"));
-    mkdirSync(path.join(home, ".agentskiss"));
-    expect(pickHomeStateDir(home, existsSync)).toBe(path.join(home, ".pideck"));
+    expect(defaultStateDir()).toBe(path.join(homedir(), ".pideck"));
   });
 });

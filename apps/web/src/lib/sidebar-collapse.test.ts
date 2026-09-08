@@ -46,18 +46,4 @@ describe("sidebar collapse persistence (issue #114)", () => {
     ).toEqual(new Set(["a"]));
     expect(loadCollapsedProjects(fakeStorage({ "pideck.sidebar.collapsedProjects": JSON.stringify({ a: 1 }) })).size).toBe(0);
   });
-
-  it("migrates a stored set from the pre-rebrand key once", () => {
-    const store = fakeStorage({ "agentskiss.sidebar.collapsedProjects": JSON.stringify(["alpha"]) });
-    expect(loadCollapsedProjects(store)).toEqual(new Set(["alpha"]));
-    expect(store.data).toEqual({ "pideck.sidebar.collapsedProjects": JSON.stringify(["alpha"]) });
-  });
-
-  it("prefers the current key over the pre-rebrand key", () => {
-    const store = fakeStorage({
-      "pideck.sidebar.collapsedProjects": JSON.stringify(["new"]),
-      "agentskiss.sidebar.collapsedProjects": JSON.stringify(["old"]),
-    });
-    expect(loadCollapsedProjects(store)).toEqual(new Set(["new"]));
-  });
 });

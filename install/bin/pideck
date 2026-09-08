@@ -26,34 +26,6 @@ set -u
 
 PD_HOME="${PD_HOME:-$HOME/.pideck}"
 
-# Home migration (issue #125): pre-rebrand installs live under ~/.agentskiss.
-# On the first run of the new CLI, move the install home to ~/.pideck and keep
-# a compat symlink so old absolute paths keep working. This mirrors
-# migrate_home() in lib/common.sh, but the shim runs before it can source the
-# (possibly still pre-rebrand) libs, so it carries its own minimal copy.
-if [ ! -f "$PD_HOME/env" ] && [ -d "$HOME/.agentskiss" ] && [ ! -L "$HOME/.agentskiss" ] &&
-  [ ! -e "$PD_HOME" ]; then
-  if mv "$HOME/.agentskiss" "$PD_HOME" 2>/dev/null &&
-    ln -sfn "$PD_HOME" "$HOME/.agentskiss" 2>/dev/null; then
-    # Rewrite the pre-rebrand env names and old-home path values so the
-    # renamed daemon finds its config (same rewrite migrate_home() does;
-    # best effort): AGENTSKISS_MODEL -> PIDECK_MODEL, every other
-    # AGENTSKISS_* -> PD_*, and <old-home>/… -> <new-home>/….
-    for _sm_file in env config.json; do
-      [ -f "$PD_HOME/$_sm_file" ] || continue
-      if sed -e 's/AGENTSKISS_MODEL/PIDECK_MODEL/g' \
-        -e 's/AGENTSKISS_/PD_/g' \
-        -e "s|$HOME/.agentskiss|$PD_HOME|g" "$PD_HOME/$_sm_file" > "$PD_HOME/$_sm_file.tmp" 2>/dev/null; then
-        mv "$PD_HOME/$_sm_file.tmp" "$PD_HOME/$_sm_file" || rm -f "$PD_HOME/$_sm_file.tmp"
-      else
-        rm -f "$PD_HOME/$_sm_file.tmp"
-      fi
-    done
-    printf 'pideck: migrated install home %s -> %s (compat symlink kept)\n' \
-      "$HOME/.agentskiss" "$PD_HOME"
-  fi
-fi
-
 PD_ENV="$PD_HOME/env"
 
 if [ -f "$PD_ENV" ]; then
@@ -63,7 +35,7 @@ if [ -f "$PD_ENV" ]; then
   . "$PD_ENV"
   set +a
 else
-  printf 'pideck: %s not found — run the pideck installer first\n' "$PD_ENV" >&2
+  printf 'pideck: %s not found — run the pideck installer\n' "$PD_ENV" >&2
   exit 1
 fi
 

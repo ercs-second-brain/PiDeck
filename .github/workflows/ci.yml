@@ -22,6 +22,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Install shell suites (issue #161): shellcheck + the plain-shell
+      # install tests run as their own explicit step, so a broken shim or
+      # install lib can never merge silently.
+      - name: Install shell suites
+        run: |
+          shellcheck install/bootstrap.sh install/onboard.sh install/uninstall.sh \
+            install/bin/pideck install/bin/pideck-daemon install/lib/*.sh install/test/*.sh
+          sh install/test/cli-forwarding.sh
+          sh install/test/update.sh
+          sh install/test/onboard.sh
+
       # Shared with the pre-push git hook (.husky/pre-push) so local CI parity
       # is maintained by construction — one script, no duplicated step lists.
       - name: Check

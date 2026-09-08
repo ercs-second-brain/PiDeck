@@ -58,29 +58,7 @@ register_service() {
   esac
 }
 
-# Pre-rebrand unit cleanup (issue #125): installs from before the rename
-# registered com.agentskiss.daemon / agentskiss.service. Removing them on the
-# next register_service pass (bootstrap or `pideck update`) prevents a stale
-# second daemon from running alongside the renamed unit. Idempotent.
-_cleanup_old_units() {
-  _ou_plist="$HOME/Library/LaunchAgents/com.agentskiss.daemon.plist"
-  _ou_unit="$HOME/.config/systemd/user/agentskiss.service"
-  if [ "$DETECTED_OS" = "darwin" ] && [ -f "$_ou_plist" ]; then
-    run_ignore launchctl bootout "gui/$(id -u)" "$_ou_plist"
-    run_ignore launchctl unload "$_ou_plist"
-    run rm -f "$_ou_plist"
-    ok "removed pre-rebrand launchd agent (com.agentskiss.daemon)"
-  elif [ -f "$_ou_unit" ]; then
-    if systemctl --user is-system-running >/dev/null 2>&1; then
-      run_ignore systemctl --user disable --now agentskiss.service
-    fi
-    run rm -f "$_ou_unit"
-    ok "removed pre-rebrand systemd unit (agentskiss.service)"
-  fi
-}
-
 _register_launchd() {
-  _cleanup_old_units
   _la_target="$HOME/Library/LaunchAgents/$PD_SERVICE_LABEL.plist"
   run mkdir -p "$HOME/Library/LaunchAgents" "$PD_HOME/log"
   _render_file "$PD_SRC/install/service/$PD_SERVICE_LABEL.plist" "$_la_target"
@@ -102,7 +80,6 @@ _register_launchd() {
 }
 
 _register_systemd() {
-  _cleanup_old_units
   _sd_dir="$HOME/.config/systemd/user"
   _sd_target="$_sd_dir/$PD_SERVICE_NAME"
   run mkdir -p "$_sd_dir" "$PD_HOME/log"
