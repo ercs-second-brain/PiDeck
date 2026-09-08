@@ -17,7 +17,7 @@ describe("SettingsStore", () => {
     const store = new SettingsStore(dir);
     expect(store.get()).toEqual({
       autoAgentUsername: null,
-      defaultWorkerConcurrency: 1,
+      defaultWorkerConcurrency: 3,
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,
@@ -27,7 +27,7 @@ describe("SettingsStore", () => {
     store.update({ autoAgentUsername: "auto-agent" });
     expect(store.get()).toEqual({
       autoAgentUsername: "auto-agent",
-      defaultWorkerConcurrency: 1,
+      defaultWorkerConcurrency: 3,
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,

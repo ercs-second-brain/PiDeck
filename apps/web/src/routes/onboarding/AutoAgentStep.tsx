@@ -1,8 +1,11 @@
 /**
- * Step 4 — auto-create-agents question: should issues auto-create agents?
- * Answering yes captures the GitHub username stored as the project's
- * `autoAgentUsername`. Form state lives in the wizard parent
- * ({@link WizardForm}); validation happens in the parent's finish handler.
+ * Step 2 — agents: the auto-create-agents question (should issues
+ * auto-create agents? — answering yes captures the GitHub username stored
+ * as the project's `autoAgentUsername`) and the worker concurrency cap
+ * (issue #184: pre-filled with the daemon's default, 3; #168 semantics —
+ * clearing it registers the project unbounded). Form state lives in the
+ * wizard parent ({@link WizardForm}); validation happens in the parent's
+ * finish handler.
  */
 import type { WizardForm } from "./wizard-form";
 import { StepPanel } from "./StepPanel";
@@ -60,6 +63,22 @@ export function AutoAgentStep(props: {
           </small>
         </div>
       )}
+      <div className="field">
+        <label htmlFor="worker-concurrency">Worker concurrency cap</label>
+        <input
+          id="worker-concurrency"
+          type="number"
+          min={1}
+          max={16}
+          placeholder="empty = unlimited"
+          value={form.concurrency}
+          onChange={(e) => onChange({ concurrency: e.target.value })}
+        />
+        <small className="field-hint">
+          Max workers running concurrently for this project (1–16). Pre-filled with the default (3); clearing the
+          field means unlimited.
+        </small>
+      </div>
       {error !== null && <p className="error-note">{error}</p>}
       <div className="wizard-actions">
         <button type="button" className="button button-primary" disabled={submitting} onClick={onFinish}>
