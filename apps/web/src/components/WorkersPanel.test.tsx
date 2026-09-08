@@ -42,7 +42,18 @@ describe("WorkersPanel (issue #102)", () => {
   it("lists live workers with their status badge", () => {
     const html = render([worker({ id: "worker-live", status: "running" })]);
     expect(html).toContain("worker-live");
-    expect(html).toContain("badge-status-running");
+    // Issue #112: shared status-indicator classes (blue working tone + pulse).
+    expect(html).toContain("badge-status");
+    expect(html).toContain("status-indicator-working");
+    expect(html).toContain("status-indicator-pulse");
+  });
+
+  it("maps the indicator tones across the worker lifecycle (issue #112)", () => {
+    expect(render([worker({ id: "w", status: "awaiting_ci" })])).toContain("status-indicator-pr-ready");
+    expect(render([worker({ id: "w", status: "addressing_review" })])).toContain("status-indicator-fixing");
+    const done = render([worker({ id: "w", status: "done" })]);
+    expect(done).toContain("status-indicator-idle");
+    expect(done).not.toContain("status-indicator-pulse");
   });
 
   it("hides archived workers from the panel", () => {

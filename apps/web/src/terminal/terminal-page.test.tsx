@@ -104,12 +104,6 @@ describe("SessionPicker", () => {
     expect(html).not.toContain("role-orchestrator");
   });
 
-  it("shows the active worker status on worker sessions", () => {
-    const html = renderPicker();
-    expect(html).toContain("worker-badge active");
-    expect(html).toContain("running");
-  });
-
   it("nests workers beneath the project row (issue #63)", () => {
     const html = renderPicker();
     const project = html.indexOf("agentsKISS");
@@ -123,7 +117,7 @@ describe("SessionPicker", () => {
   it("keeps worker status badges and selection on indented worker rows (issue #63)", () => {
     const html = renderPicker({ selectedSessionId: "sess-worker-1" });
     // Worker rows keep the live status badge and the selected class.
-    expect(html).toContain("worker-badge active");
+    expect(html).toContain("status-indicator-working");
     expect(html).toContain("picker-session selected");
     expect(html).toContain("role-worker");
   });
@@ -182,6 +176,38 @@ describe("SessionPicker", () => {
     const html = renderPicker({ entries: [], error: "connection refused" });
     expect(html).toContain("Daemon unreachable");
     expect(html).toContain("connection refused");
+  });
+});
+
+describe("SessionPicker (worker status indicators, issue #112)", () => {
+  it("shows the working tone with a slow pulse on running workers", () => {
+    const html = renderPicker();
+    expect(html).toContain("status-indicator-working");
+    expect(html).toContain("status-indicator-pulse");
+    expect(html).toContain("running");
+  });
+
+  it("maps the other worker states to the indicator scheme", () => {
+    const prUp = renderPicker({
+      entries: [{ project, sessions, workers: [{ ...workers[0]!, status: "awaiting_ci" }] }],
+    });
+    expect(prUp).toContain("status-indicator-pr-ready");
+    expect(prUp).not.toContain("status-indicator-pulse");
+    const fixing = renderPicker({
+      entries: [{ project, sessions, workers: [{ ...workers[0]!, status: "fixing_ci" }] }],
+    });
+    expect(fixing).toContain("status-indicator-fixing");
+    expect(fixing).toContain("status-indicator-pulse");
+  });
+
+  it("keeps the idle tone on archived rows", () => {
+    const archivedWorker: Worker = { ...workers[0]!, status: "archived" };
+    const html = renderPicker({
+      entries: [{ project, sessions, workers: [archivedWorker] }],
+      defaultArchivedOpen: true,
+    });
+    expect(html).toContain("worker-badge-archived");
+    expect(html).not.toContain("status-indicator-working");
   });
 });
 
@@ -249,7 +275,7 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
     });
     expect(html).toContain("picker-archived-list");
     expect(html).toContain("agentskiss-agentskiss-worker-1");
-    expect(html).toContain("worker-badge archived");
+    expect(html).toContain("worker-badge-archived");
     expect(html).toContain("picker-archived-session");
     expect(html).toContain("View the archived worker");
     // History only: archived rows carry no terminate affordance.
