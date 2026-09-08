@@ -122,6 +122,9 @@ update_check() {
 # the build so a failed build leaves a recoverable CLI — issue #207).
 refresh_installed_layer() {
   step "refreshing the installed shell layer"
+  # install_shell_layer also maintains the ~/.local/bin pideck/pideck-daemon
+  # entries (issue #215): a stale real-file shim there shadows the refreshed
+  # one via PATH, so it is converted to a symlink of the installed shim.
   install_shell_layer "$PD_LIB"
   ok "installed shell layer refreshed (bin, lib, onboard.sh)"
   register_service

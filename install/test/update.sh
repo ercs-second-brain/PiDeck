@@ -399,6 +399,94 @@ else
 fi
 cp "$INSTALL_DIR/lib/source.sh" "$PD_HOME/lib/"
 
+# --- apply path: stale real-file ~/.local/bin shims (issue #215) -------------
+# Pre-#163 installs copied REAL-file shims into ~/.local/bin
+# (install_bin_compat); PATH resolves ~/.local/bin first, so such a file
+# shadows the refreshed $PD_HOME/bin shim forever (observed live: a
+# fe43fa0-era shim with syntax errors kept breaking the CLI after a
+# successful update — the refresh touched ~/.pideck/bin only). After a
+# refresh the entries must be canonical symlinks of the installed shims,
+# matching the current shim and running cleanly; correct symlinks are a
+# no-op and absent entries stay absent (bootstrap owns creation).
+stale_lbin="$PD_HOME/.local/bin"
+mkdir -p "$PD_SRC/install/bin" "$stale_lbin"
+cp "$INSTALL_DIR/bin/pideck" "$INSTALL_DIR/bin/pideck-daemon" "$PD_SRC/install/bin/"
+# start from no ~/.local/bin entries: the previous section's apply left a
+# canonical pideck symlink there, and `> file` would follow it
+cp "$INSTALL_DIR/lib/service.sh" "$PD_HOME/lib/service.sh.real"
+cat > "$PD_HOME/lib/service.sh" <<'EOF'
+svc_restart() { printf 'SVC restart\n'; }
+register_service() { printf 'REGISTER service\n'; }
+EOF
+rm -f "$stale_lbin/pideck" "$stale_lbin/pideck-daemon"
+# fe43fa0-era compat copies: real files whose content is an old shim
+# generation (the live breakage — syntax errors while main's shim is clean).
+printf '#!/bin/sh\nPD_NODE_BIN_DIR: parameter not set\n;; garbage\n' > "$stale_lbin/pideck"
+printf '#!/bin/sh\n# stale fe43fa0-era daemon launcher\n' > "$stale_lbin/pideck-daemon"
+printf '#!/bin/sh\n# stale installed shim (pre-refresh)\n' > "$PD_HOME/bin/pideck"
+printf '%s\n' "$STALE_RUNNING" > "$PD_HOME/var/running-sha" # restart-only apply: the refresh still runs
+rm -f "$PD_HOME/var/update-state.json"
+
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update 2>&1); rc=$?
+check_eq 'stale local-bin apply exits 0 (issue #215)' '0' "$rc"
+check_grep 'stale real-file ~/.local/bin/pideck is converted (issue #215)' \
+  'replacing stale ~/.local/bin/pideck with a symlink' "$out"
+
+if [ -L "$stale_lbin/pideck" ] && [ "$(readlink "$stale_lbin/pideck")" = "$PD_HOME/bin/pideck" ]; then
+  printf 'ok - stale real-file ~/.local/bin/pideck is the canonical symlink\n'
+else
+  printf 'not ok - stale real-file ~/.local/bin/pideck was not converted (issue #215)\n'
+  failures=$((failures + 1))
+fi
+if cmp -s "$INSTALL_DIR/bin/pideck" "$stale_lbin/pideck"; then
+  printf 'ok - converted ~/.local/bin/pideck matches the current shim\n'
+else
+  printf 'not ok - converted ~/.local/bin/pideck does not match the current shim\n'
+  failures=$((failures + 1))
+fi
+if [ -L "$stale_lbin/pideck-daemon" ] && [ "$(readlink "$stale_lbin/pideck-daemon")" = "$PD_HOME/bin/pideck-daemon" ]; then
+  printf 'ok - stale real-file ~/.local/bin/pideck-daemon is the canonical symlink\n'
+else
+  printf 'not ok - stale real-file ~/.local/bin/pideck-daemon was not converted (issue #215)\n'
+  failures=$((failures + 1))
+fi
+if cmp -s "$INSTALL_DIR/bin/pideck-daemon" "$stale_lbin/pideck-daemon"; then
+  printf 'ok - converted ~/.local/bin/pideck-daemon matches the current shim\n'
+else
+  printf 'not ok - converted ~/.local/bin/pideck-daemon does not match the current shim\n'
+  failures=$((failures + 1))
+fi
+
+out=$(env -u PD_NODE -u PD_NODE_BIN -u PD_NODE_BIN_DIR \
+  PATH="$FAKE_BIN:$PATH" PD_HOME="$PD_HOME" HOME="$PD_HOME" \
+  "$stale_lbin/pideck" help 2>&1); rc=$?
+check_eq 'converted ~/.local/bin/pideck runs cleanly (issue #215)' '0' "$rc"
+check_grep 'converted shim serves help' 'control the PiDeck daemon/webapp' "$out"
+check_no_grep 'the stale shim content is gone (issue #215)' 'parameter not set' "$out"
+
+# Idempotency + absence semantics: a maintained symlink is a no-op on the
+# next refresh, and a missing entry is left for bootstrap to create.
+rm -f "$stale_lbin/pideck-daemon"
+printf '%s\n' "$STALE_RUNNING" > "$PD_HOME/var/running-sha"
+rm -f "$PD_HOME/var/update-state.json"
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update 2>&1); rc=$?
+check_eq 'second refresh with maintained local-bin exits 0 (issue #215)' '0' "$rc"
+check_no_grep 'a correct symlink is a refresh no-op (issue #215)' 'replacing stale' "$out"
+if [ ! -e "$stale_lbin/pideck-daemon" ] && [ ! -L "$stale_lbin/pideck-daemon" ]; then
+  printf 'ok - absent ~/.local/bin/pideck-daemon left for bootstrap (issue #215)\n'
+else
+  printf 'not ok - refresh created the absent ~/.local/bin/pideck-daemon entry (issue #215)\n'
+  failures=$((failures + 1))
+fi
+if [ -L "$stale_lbin/pideck" ] && [ "$(readlink "$stale_lbin/pideck")" = "$PD_HOME/bin/pideck" ]; then
+  printf 'ok - maintained ~/.local/bin/pideck symlink survives the next refresh\n'
+else
+  printf 'not ok - maintained ~/.local/bin/pideck symlink lost after the next refresh\n'
+  failures=$((failures + 1))
+fi
+rm -rf "$PD_SRC/install" "$PD_HOME/var/running-sha"
+mv "$PD_HOME/lib/service.sh.real" "$PD_HOME/lib/service.sh"
+
 # --- apply path: node refresh + pi reinstall ordering (issue #202) ----------
 # An apply that advances the Node pin must refresh the private node, THEN
 # reinstall the pi npm package under it, THEN restart the daemon — the
