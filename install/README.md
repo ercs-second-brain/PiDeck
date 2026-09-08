@@ -1,24 +1,82 @@
 # install/
 
-One-line installer, service registration and guided onboarding for agentsKISS.
+One-line installer, service registration and guided onboarding for PiDeck.
 
 ## Quick start
 
 macOS or Linux (or WSL, inside the distro):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/agentsKISS/main/install/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/PiDeck/main/install/bootstrap.sh | sh
 ```
 
 Windows (PowerShell, bootstraps WSL if missing, then runs the Linux path inside it):
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
-.\install\windows\agentskiss-setup.ps1
+.\install\windows\pideck-setup.ps1
 ```
 
 When piped, the bootstrap fetches the repo tarball, re-execs itself with tty
 stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
+
+## Rebrand: migrating an existing agentskiss install (issue #125)
+
+PiDeck was previously installed as **agentskiss**. The rebrand renamed
+
+| Before                          | After                             |
+| ------------------------------- | --------------------------------- |
+| binary `agentskiss`             | `pideck`                          |
+| binary `agentskiss-daemon`      | `pideck-daemon`                   |
+| home `~/.agentskiss`            | `~/.pideck`                       |
+| env `AK_*` / `AGENTSKISS_*`     | `PD_*` (env-file/service vars; `AGENTSKISS_MODEL` → `PIDECK_MODEL`) |
+| launchd `com.agentskiss.daemon` | `com.pideck.daemon`               |
+| systemd `agentskiss.service`    | `pideck-daemon.service`           |
+| repo `agentsKISS`               | `PiDeck` (GitHub redirects the old URL) |
+
+**Existing installs: re-run the installer once** (the supported crossing
+path):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/PiDeck/main/install/bootstrap.sh | sh
+```
+
+The one-time reinstall is a superset of a normal run — nothing is lost:
+
+1. **Home migration.** On the first run of the new tooling (installer, `pideck`
+   CLI, onboarding, uninstaller), when `~/.pideck` is absent but `~/.agentskiss`
+   exists, the whole install home is **moved** to `~/.pideck` — config.json,
+   env, onboarding.json, log/, state/, src/, everything — and a compat symlink
+   `~/.agentskiss → ~/.pideck` is kept, so old absolute paths (service unit
+   files, running daemons, user scripts) keep resolving mid-flight. The moved
+   `env` and `config.json` are rewritten in place so the renamed daemon finds
+   its config: `AGENTSKISS_MODEL` → `PIDECK_MODEL`, every other `AGENTSKISS_*`
+   → `PD_*`, and recorded `<old-home>/…` paths → `<new-home>/…`. Idempotent:
+   once migrated (old home is the symlink)
+   it never runs again, and fresh installs are untouched.
+2. **Old binary names keep working.** After an install or update, compat
+   symlinks are created: `~/.pideck/bin/agentskiss → pideck`,
+   `~/.pideck/bin/agentskiss-daemon → pideck-daemon`, and
+   `~/.local/bin/agentskiss → ~/.pideck/bin/pideck`. Pre-rebrand scripts that
+   call `agentskiss …` keep working.
+3. **Old service units are cleaned up.** The next service registration removes
+   the pre-rebrand `com.agentskiss.daemon` launchd agent / `agentskiss.service`
+   systemd unit (and stops it) so no stale second daemon runs.
+4. **Repo rename needs no migration.** GitHub redirects renamed repos, so a
+   clone whose origin still points at `…/agentsKISS.git` keeps fetching, and
+   `config.json` records of the old URL keep working (`git clone/fetch`, `gh
+   api` all follow the redirect) — `pideck update` works unchanged. New
+   installs record the new `PiDeck.git` URL.
+
+⚠️ Do **not** cross the rebrand with the *old* `agentskiss update` command:
+its service re-registration predates the rename (it looks for the old unit
+template in the new source) and can leave the service down until the installer
+re-runs. The old CLI itself keeps working through the compat symlinks.
+
+The Windows `agentskiss-setup.ps1` logon task (`agentskiss-service`) is not
+renamed from inside the distro; remove it once manually
+(`schtasks /Delete /TN agentskiss-service /F`) — the new bootstrap registers
+`pideck-service`.
 
 ## What it does
 
@@ -26,7 +84,7 @@ stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
    the WSL bootstrap instead.
 2. Installs dependencies if missing — git, Node 22, pnpm (via corepack,
    honoring the monorepo's `packageManager` pin), gh CLI. Node/gh install as
-   **user-level tarballs** under `~/.agentskiss/opt` with symlinks in
+   **user-level tarballs** under `~/.pideck/opt` with symlinks in
    `~/.local/bin`, so the main path never needs sudo.
 3. Fetches the monorepo (`--repo`/`--ref`, or `--dir` for a local checkout)
    and builds daemon + webapp. Build artifact production is isolated in one
@@ -34,25 +92,25 @@ stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
    release artifacts when they exist without touching anything else.
 4. Installs the pi coding agent (`@earendil-works/pi-coding-agent`, npm
    `--ignore-scripts`, user prefix) if not already present.
-5. Links the agentskiss pi skills/extensions from `agent/` — whatever exists
+5. Links the pideck pi skills/extensions from `agent/` — whatever exists
    there at install time (`skills/`, `extensions/`, `commands/`,
    `prompt-templates/`, `themes/`) is symlinked into `~/.pi/agent/`. The five
    orchestration skills in `agent/skills/` are what land there today;
    `agent/prompts/` are daemon assets and stay in the checkout.
-6. Writes config/state to `~/.agentskiss/` (see layout below) — the daemon
+6. Writes config/state to `~/.pideck/` (see layout below) — the daemon
    reads this later; results survive restarts.
 7. Registers the persistent service:
-   - macOS: launchd agent `~/Library/LaunchAgents/com.agentskiss.daemon.plist`
+   - macOS: launchd agent `~/Library/LaunchAgents/com.pideck.daemon.plist`
      (RunAtLoad, KeepAlive on crash)
    - Linux/WSL2: systemd **user** unit
-     `~/.config/systemd/user/agentskiss.service` (+ loginctl linger,
+     `~/.config/systemd/user/pideck-daemon.service` (+ loginctl linger,
      best-effort). This IS the WSL path — the Windows bootstrap enables
      systemd in the distro (`/etc/wsl.conf`), then runs this installer.
 8. Runs guided onboarding (unless `--no-onboard`).
 
 ## Guided onboarding
 
-`install/onboard.sh` (also: `agentskiss onboard`), runs after install:
+`install/onboard.sh` (also: `pideck onboard`), runs after install:
 
 1. **pi auth + model selection** — shells out to pi's own auth (`pi auth
    check` for detection); if no credentials are found it launches pi's TUI
@@ -63,9 +121,9 @@ stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
    when present, else runs `gh auth login`. Verifies auth and the `repo`
    scope, and records the result (`canCreateRepo`) for the repo-connect flow.
 
-Results are recorded in `~/.agentskiss/onboarding.json` +
-`AGENTSKISS_MODEL` in `~/.agentskiss/env` and remembered across restarts.
-Re-run any time with `agentskiss onboard`.
+Results are recorded in `~/.pideck/onboarding.json` +
+`PIDECK_MODEL` in `~/.pideck/env` and remembered across restarts.
+Re-run any time with `pideck onboard`.
 
 ### pi auth gating after install
 
@@ -74,7 +132,7 @@ runs, an aborted `/login`); `bootstrap.sh` prints a warning when
 `onboarding.json` records it. The running daemon never treats that as
 healthy either (issue #57): it logs a warning at startup, reports the ready
 providers via `GET /api/pi-auth` (same `pi auth check` detection onboard.sh
-uses), exposes `piReady` in `GET /api/status` / `agentskiss status`, shows a
+uses), exposes `piReady` in `GET /api/status` / `pideck status`, shows a
 persistent banner in the webapp settings, and gates worker spawns (issue
 #56): a spawn made before any provider is ready holds at `spawning` with its
 initial prompt queued and delivers it automatically once auth completes.
@@ -84,21 +142,21 @@ initial prompt queued and delivers it automatically once auth completes.
 Under WSL2, the daemon runs inside the Linux distro and is reached from the
 Windows host browser like this:
 
-1. **Bind address.** The service units set `AGENTSKISS_WEB_HOST=0.0.0.0`
-   (also written to `~/.agentskiss/env`), so the daemon listens on all
+1. **Bind address.** The service units set `PD_WEB_HOST=0.0.0.0`
+   (also written to `~/.pideck/env`), so the daemon listens on all
    interfaces. A `localhost`-only bind also works for host-browser access
    via localhost forwarding, but 0.0.0.0 keeps the LAN/portproxy path open.
 2. **From the Windows host browser** open `http://localhost:<port>` — WSL2
    forwards localhost connections from Windows into the distro by default
    (requires a reasonably recent Windows 10/11 build; `wsl --update` if
-   not). `agentskiss addr` and the installer summary print this URL.
+   not). `pideck addr` and the installer summary print this URL.
 3. **From other devices on the LAN** (optional) you need a Windows-side
    port proxy plus a firewall rule, run in an elevated PowerShell:
 
    ```powershell
    $wslIp = (wsl hostname -I).Trim().Split(' ')[0]
    netsh interface portproxy add v4tov4 listenport=8321 connectaddress=$wslIp connectport=8321
-   New-NetFirewallRule -DisplayName agentskiss -Direction Inbound -LocalPort 8321 -Protocol TCP -Action Allow
+   New-NetFirewallRule -DisplayName pideck -Direction Inbound -LocalPort 8321 -Protocol TCP -Action Allow
    ```
 
    Note: the distro IP changes across WSL restarts; re-run the portproxy
@@ -110,45 +168,45 @@ hardware** — see "Tested matrix" below. If localhost access fails, check
 `wsl --version`, that the daemon is listening (`ss -tlnp` inside the
 distro), and the portproxy/firewall notes above.
 
-## Config/state layout (`~/.agentskiss/`)
+## Config/state layout (`~/.pideck/`)
 
 | Path                     | Purpose                                            |
 | ------------------------ | -------------------------------------------------- |
-| `env`                    | Sourceable env (`AGENTSKISS_HOME/SRC/NODE/WEB_PORT/WEB_HOST/MODEL`) for the service + CLI |
+| `env`                    | Sourceable env (`PD_HOME/SRC/NODE/WEB_PORT/WEB_HOST/MODEL`) for the service + CLI |
 | `config.json`            | Install metadata (paths, port, os, ref)            |
 | `onboarding.json`        | pi + gh onboarding results (consumed by repo-connect) |
 | `state/onboard-complete` | Marker so the daemon can skip/flag onboarding      |
 | `src/`                   | Monorepo clone (built artifacts the service runs)  |
 | `opt/`                   | Private node/gh/pnpm installs (when not on system) |
-| `bin/`                   | `agentskiss` CLI (service control + daemon-CLI forwarder), `agentskiss-daemon` service launcher |
+| `bin/`                   | `pideck` CLI (service control + daemon-CLI forwarder), `pideck-daemon` service launcher |
 | `lib/`                   | Installed installer libs + `onboard.sh`            |
 | `log/`                   | daemon stdout/stderr                               |
 
 ## CLI
 
-`agentskiss` is one entry point with two surfaces: service control is handled
+`pideck` is one entry point with two surfaces: service control is handled
 by the installed shim itself; **every other subcommand is forwarded verbatim
 (args intact, exit code propagated) to the daemon CLI**
 (`apps/daemon/src/cli`), resolved from the install layout
-(`$AGENTSKISS_SRC/apps/daemon/dist/cli/main.js`):
+(`$PD_SRC/apps/daemon/dist/cli/main.js`):
 
 ```
 # service control — always handled by the shim
-agentskiss service start|stop|restart|status
-agentskiss start|stop|restart        bare shortcuts, same as `service ...`
-agentskiss addr                      webapp URL for this machine
-agentskiss onboard [--dry-run|--noninteractive|--skip-pi|--skip-gh]
-agentskiss update [--check]          apply upstream updates (--check reports only)
-agentskiss logs [-f]
-agentskiss help
+pideck service start|stop|restart|status
+pideck start|stop|restart        bare shortcuts, same as `service ...`
+pideck addr                      webapp URL for this machine
+pideck onboard [--dry-run|--noninteractive|--skip-pi|--skip-gh]
+pideck update [--check]          apply upstream updates (--check reports only)
+pideck logs [-f]
+pideck help
 
 # agent CLI — forwarded to the daemon (used by the pi skills)
-agentskiss status [--json]
-agentskiss project get <id> | ls [--json]
-agentskiss kanban|sessions|workers|pulls --project <id> [--json]
-agentskiss diff --project <id> <pr-number>
-agentskiss spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]
-agentskiss send --session <id> --message <text>
+pideck status [--json]
+pideck project get <id> | ls [--json]
+pideck kanban|sessions|workers|pulls --project <id> [--json]
+pideck diff --project <id> <pr-number>
+pideck spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]
+pideck send --session <id> --message <text>
 ```
 
 ### Command precedence
@@ -167,19 +225,19 @@ Notes:
 
 - `status` is the one verb that exists on both surfaces. It deliberately
   resolves to the **daemon CLI** (that is what the skills call); for service
-  status use `agentskiss service status`. This is a change from earlier
+  status use `pideck service status`. This is a change from earlier
   installer-only releases, where bare `status` printed service status.
 - `start`/`stop`/`restart` have no daemon-CLI counterpart, so the bare
   shortcuts are unambiguous; `service start` etc. are the canonical form.
-- `update` (issue #55) checks the installed source at `$AGENTSKISS_SRC` against
-  the upstream repo/ref the installer used (`$AK_HOME/config.json`, falling back
+- `update` (issue #55) checks the installed source at `$PD_SRC` against
+  the upstream repo/ref the installer used (`$PD_HOME/config.json`, falling back
   to the git remote), via `gh api repos/:owner/:repo/commits/<ref>` — so private
   repos and non-main dev refs check and update like public ones. With an update
   available it fetches the new source with gh-authed git (the installer's
   `resolve_source`, including `_retry_with_gh_auth` semantics), rebuilds
   (`build_from_source`), refreshes the installed shell layer — `bin/*` into
-  `$AK_HOME/bin` (the `~/.local/bin/agentskiss` symlink is preserved),
-  `lib/*.sh` + `onboard.sh` flat into `$AK_HOME/lib`, and the rendered
+  `$PD_HOME/bin` (the `~/.local/bin/pideck` symlink is preserved),
+  `lib/*.sh` + `onboard.sh` flat into `$PD_HOME/lib`, and the rendered
   service unit files via a `register_service` pass, all copied exactly like
   bootstrap.sh installs them (issue #66: fixes to the install scripts
   themselves reach machines that update via the CLI; the running shim keeps
@@ -188,8 +246,8 @@ Notes:
   no-op. `--check` reports without touching anything. The daemon exposes the
   same check as `GET /api/update` (shared contract `getUpdateStatus`), which the
   webapp renders as an update banner on the projects/settings pages.
-- The forwarded CLI reaches the daemon at `http://127.0.0.1:$AGENTSKISS_WEB_PORT`
-  by default (set as `AGENTSKISS_DAEMON_URL` by the shim; a `AGENTSKISS_DAEMON_URL`
+- The forwarded CLI reaches the daemon at `http://127.0.0.1:$PD_WEB_PORT`
+  by default (set as `PD_DAEMON_URL` by the shim; a `PD_DAEMON_URL`
   already present in your environment wins). If the daemon build output is
   missing, the shim says so and points at re-running the installer.
 
@@ -210,19 +268,22 @@ Notes:
 with a note when shellcheck isn't installed; CI runners have it) and the
 plain-shell tests in `test/cli-forwarding.sh` (service verbs,
 daemon-CLI forwarding with args + exit codes, `status` precedence, missing-
-build error path) and `test/update.sh` (update check against fake git/gh,
+build error path), `test/update.sh` (update check against fake git/gh,
 `update --check` shim wiring, the apply path's reuse of the installer
 machinery + shell-layer refresh (installed lib/bin/onboard match the fetched
-source afterwards) + service restart), and `test/onboard.sh` (onboarding from the
-flat installed layout — the bootstrap.sh flat copy into `lib/` — and from
-the source-tree layout, via `--dry-run --skip-pi --skip-gh`) against a fake
-install layout — no daemons, no network, no systemd.
+source afterwards, pre-rebrand bin-name compat symlinks) + service restart),
+`test/onboard.sh` (onboarding from the flat installed layout — the bootstrap.sh
+flat copy into `lib/` — and from the source-tree layout, via
+`--dry-run --skip-pi --skip-gh`), and `test/migration.sh` (issue #125 rebrand
+migration: home move + compat symlink + env/config rewrite, both-homes and
+dry-run guards, `install_bin_compat`, and the shim's inline migration against
+a fake pre-rebrand install) — no daemons, no network, no systemd.
 
 ## Tested matrix
 
 - **Tested here (Linux x64):** `shellcheck` clean on all scripts; `--dry-run`
   full-bootstrap run; `onboard.sh --dry-run`; service unit rendering;
-  `agentskiss-daemon` smoke against the built daemon; shim
+  `pideck-daemon` smoke against the built daemon; shim
   forwarding tests (`test/cli-forwarding.sh`), self-update tests
   (`test/update.sh`, mock git/gh), and onboarding layout tests
   (`test/onboard.sh`, flat installed + source-tree `lib/` sourcing); live
@@ -232,7 +293,7 @@ install layout — no daemons, no network, no systemd.
 - **Untested (needs hardware/VMs):** the real fresh-machine runs — macOS
   (launchd bootstrap, `ipconfig getifaddr`, Xcode CLT install dialog),
   non-apt Linux distros, sudo-requiring git installs, and the whole
-  Windows/WSL path (`windows/agentskiss-setup.ps1` — WSL install, distro
+  Windows/WSL path (`windows/pideck-setup.ps1` — WSL install, distro
   bootstrap, systemd enablement, logon task, and Windows-host browser
   access to the webapp; the localhost-forwarding and portproxy/firewall
   steps in "WSL: reaching the webapp from Windows" are unverified). The
@@ -245,7 +306,7 @@ install layout — no daemons, no network, no systemd.
 `apps/daemon` is the real daemon: its `main()` runs persistently (REST API,
 websocket hub, terminal bridge, static webapp serving) until it receives
 `SIGINT`/`SIGTERM`. Both service units start it via the documented entrypoint
-(`~/.agentskiss/bin/agentskiss-daemon` → `apps/daemon/dist/index.js`), and
+(`~/.pideck/bin/pideck-daemon` → `apps/daemon/dist/index.js`), and
 `KeepAlive`/`Restart=on-failure` bring it back if it crashes. As a smoke
 check, the built entrypoint can also be run directly
 (`node apps/daemon/dist/index.js`): it detects that it is the main module and

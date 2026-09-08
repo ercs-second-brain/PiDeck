@@ -1,10 +1,10 @@
 {
-  "name": "@agentskiss/install",
+  "name": "@pideck/install",
   "version": "0.1.0",
   "private": true,
-  "description": "One-line install, service setup and guided onboarding for agentsKISS (launchd/systemd/WSL)",
+  "description": "One-line install, service setup and guided onboarding for PiDeck (launchd/systemd/WSL)",
   "type": "module",
   "scripts": {
-    "build": "sh -c 'if command -v shellcheck >/dev/null 2>&1; then shellcheck bootstrap.sh onboard.sh uninstall.sh bin/agentskiss bin/agentskiss-daemon lib/*.sh test/*.sh; else echo \"shellcheck not installed; skipping shell lint\"; fi && sh test/cli-forwarding.sh && sh test/update.sh && sh test/onboard.sh'"
+    "build": "sh -c 'if command -v shellcheck >/dev/null 2>&1; then shellcheck bootstrap.sh onboard.sh uninstall.sh bin/pideck bin/pideck-daemon lib/*.sh test/*.sh; else echo \"shellcheck not installed; skipping shell lint\"; fi && sh test/cli-forwarding.sh && sh test/update.sh && sh test/onboard.sh && sh test/migration.sh'"
   }
 }

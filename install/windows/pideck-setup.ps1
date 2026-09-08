@@ -1,5 +1,5 @@
 #
-# agentsKISS — Windows bootstrap (WSL path).
+# PiDeck — Windows bootstrap (WSL path).
 #
 # Windows is not supported natively. This script installs WSL if missing,
 # enables systemd inside the distro, then runs the standard Linux installer
@@ -8,18 +8,18 @@
 #
 # Usage (PowerShell):
 #   Set-ExecutionPolicy -Scope Process Bypass -Force
-#   .\agentskiss-setup.ps1                          # default distro: Ubuntu
-#   .\agentskiss-setup.ps1 -Distro Ubuntu-24.04
-#   .\agentskiss-setup.ps1 -SkipOnboarding          # pass --no-onboard
-#   .\agentskiss-setup.ps1 -NoAutoStart             # skip logon autostart task
-#   .\agentskiss-setup.ps1 -Ref v0.1.0              # install a specific ref
+#   .\pideck-setup.ps1                          # default distro: Ubuntu
+#   .\pideck-setup.ps1 -Distro Ubuntu-24.04
+#   .\pideck-setup.ps1 -SkipOnboarding          # pass --no-onboard
+#   .\pideck-setup.ps1 -NoAutoStart             # skip logon autostart task
+#   .\pideck-setup.ps1 -Ref v0.1.0              # install a specific ref
 #
 # NOTE: untested path — see install/README.md ("Tested matrix") before
 # relying on it; fixes welcome.
 
 param(
     [string]$Distro = "Ubuntu",
-    [string]$Repo = "https://github.com/ercs-second-brain/agentsKISS",
+    [string]$Repo = "https://github.com/ercs-second-brain/PiDeck",
     [string]$Ref = "main",
     [string]$Port = "8321",
     [switch]$SkipOnboarding,
@@ -75,7 +75,7 @@ if ($distroNames -notcontains $Distro) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. systemd inside the distro (required for the agentskiss user service)
+# 3. systemd inside the distro (required for the pideck user service)
 # ---------------------------------------------------------------------------
 Step "enabling systemd in $Distro (/etc/wsl.conf)"
 wsl.exe -d $Distro -u root -- sh -c 'mkdir -p /etc && if ! grep -q "^\[boot\]" /etc/wsl.conf 2>/dev/null; then printf "[boot]\nsystemd=true\n" >> /etc/wsl.conf; fi; if ! grep -q "^systemd=true" /etc/wsl.conf 2>/dev/null; then printf "systemd=true\n" >> /etc/wsl.conf; fi; cat /etc/wsl.conf'
@@ -89,7 +89,7 @@ Start-Sleep -Seconds 5
 $hasSystemd = wsl.exe -d $Distro -- sh -c 'pidof systemd >/dev/null 2>&1 && echo yes || echo no'
 if (($hasSystemd | ForEach-Object { $_.Trim() }) -notcontains "yes") {
     Write-Warning "systemd does not appear to be running inside $Distro."
-    Write-Warning "agentskiss will still install, but the service needs systemd:"
+    Write-Warning "pideck will still install, but the service needs systemd:"
     Write-Warning "  wsl --update   (WSL2 + recent Windows required)"
     Write-Warning "then re-run this script."
 }
@@ -97,10 +97,10 @@ if (($hasSystemd | ForEach-Object { $_.Trim() }) -notcontains "yes") {
 # ---------------------------------------------------------------------------
 # 4. Run the Linux installer inside the distro
 # ---------------------------------------------------------------------------
-Step "running the agentskiss Linux installer inside $Distro"
+Step "running the pideck Linux installer inside $Distro"
 $onboardFlag = ""
 if ($SkipOnboarding) { $onboardFlag = "--no-onboard" }
-$bootstrapUrl = "https://raw.githubusercontent.com/ercs-second-brain/agentsKISS/$Ref/install/bootstrap.sh"
+$bootstrapUrl = "https://raw.githubusercontent.com/ercs-second-brain/PiDeck/$Ref/install/bootstrap.sh"
 wsl.exe -d $Distro -- sh -lc "curl -fsSL '$bootstrapUrl' | sh -s -- --repo '$Repo' --ref '$Ref' --port $Port $onboardFlag"
 if ($LASTEXITCODE -ne 0) { Die "installer inside WSL failed (exit $LASTEXITCODE)" }
 
@@ -108,9 +108,9 @@ if ($LASTEXITCODE -ne 0) { Die "installer inside WSL failed (exit $LASTEXITCODE)
 # 5. Optional: start the service on Windows logon (WSL auto-starts on demand)
 # ---------------------------------------------------------------------------
 if (-not $NoAutoStart) {
-    Step "registering logon task to start the agentskiss service in $Distro"
-    $task = "agentskiss-service"
-    $tr = "wsl.exe -d $Distro -e sh -lc 'systemctl --user start agentskiss.service'"
+    Step "registering logon task to start the pideck service in $Distro"
+    $task = "pideck-service"
+    $tr = "wsl.exe -d $Distro -e sh -lc 'systemctl --user start pideck-daemon.service'"
     schtasks.exe /Create /F /TN $task /SC ONLOGON /TR $tr | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Info "logon task '$task' created (remove with: schtasks /Delete /TN $task /F)"
@@ -130,7 +130,7 @@ Step "finishing up"
 # devices additionally needs a portproxy + firewall rule — see
 # install/README.md ("WSL: reaching the webapp from Windows").
 Info "webapp URL for the Windows host: http://localhost:$Port"
-$wslAddr = wsl.exe -d $Distro -- sh -lc '"$HOME/.local/bin/agentskiss" addr' 2>$null
+$wslAddr = wsl.exe -d $Distro -- sh -lc '"$HOME/.local/bin/pideck" addr' 2>$null
 if ($LASTEXITCODE -eq 0 -and $wslAddr) {
     Info "address inside the distro (for LAN access from Windows, requires a firewall/portproxy rule): $($wslAddr | Select-Object -First 1)"
 }

@@ -1,8 +1,8 @@
 # shellcheck shell=sh
 #
-# Shared helpers for the agentskiss installer (POSIX sh, no bashisms).
+# Shared helpers for the pideck installer (POSIX sh, no bashisms).
 #
-# Sourced by bootstrap.sh, onboard.sh, uninstall.sh and the agentskiss CLI.
+# Sourced by bootstrap.sh, onboard.sh, uninstall.sh and the pideck CLI.
 # Never executed directly.
 
 set -u
@@ -12,17 +12,17 @@ set -u
 # Exported: they are consumed by the sibling scripts that source this file
 # and by installer-launched children.
 # ---------------------------------------------------------------------------
-export AK_HOME="${AGENTSKISS_HOME:-${AK_HOME:-$HOME/.agentskiss}}"
-AK_DRY_RUN="${AK_DRY_RUN:-0}"
-AK_NONINTERACTIVE="${AK_NONINTERACTIVE:-0}"
-export AK_REPO_URL="${AGENTSKISS_REPO_URL:-https://github.com/ercs-second-brain/agentsKISS.git}"
-export AK_REPO_REF="${AGENTSKISS_REPO_REF:-main}"
-export AK_WEB_PORT="${AGENTSKISS_WEB_PORT:-8321}"
-export AK_NODE_VERSION="${AGENTSKISS_NODE_VERSION:-22.14.0}"
-export AK_GH_VERSION="${AGENTSKISS_GH_VERSION:-2.63.2}"
-export AK_PI_NPM_PACKAGE="${AGENTSKISS_PI_PACKAGE:-@earendil-works/pi-coding-agent}"
-export AK_PI_DIR="${AGENTSKISS_PI_DIR:-${AK_PI_DIR:-$HOME/.pi/agent}}"
-export AK_LOCAL_BIN="$HOME/.local/bin"
+export PD_HOME="${PD_HOME:-${PD_HOME:-$HOME/.pideck}}"
+PD_DRY_RUN="${PD_DRY_RUN:-0}"
+PD_NONINTERACTIVE="${PD_NONINTERACTIVE:-0}"
+export PD_REPO_URL="${PD_REPO_URL:-https://github.com/ercs-second-brain/PiDeck.git}"
+export PD_REPO_REF="${PD_REPO_REF:-main}"
+export PD_WEB_PORT="${PD_WEB_PORT:-8321}"
+export PD_NODE_VERSION="${PD_NODE_VERSION:-22.14.0}"
+export PD_GH_VERSION="${PD_GH_VERSION:-2.63.2}"
+export PD_PI_NPM_PACKAGE="${PD_PI_PACKAGE:-@earendil-works/pi-coding-agent}"
+export PD_PI_DIR="${PD_PI_DIR:-${PD_PI_DIR:-$HOME/.pi/agent}}"
+export PD_LOCAL_BIN="$HOME/.local/bin"
 # Corepack shims download their package manager on first use; never prompt
 # mid-install (covers ensure_pnpm's verification and the build's pnpm calls).
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -30,19 +30,91 @@ export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # Set once OS detection ran (detect_os).
 DETECTED_OS="unknown" # darwin | linux | wsl | windows-host | unknown
 
+# Pre-rebrand install home (issue #125). Kept as a compat symlink pointing at
+# $PD_HOME after migrate_home() runs, so old absolute paths keep resolving.
+OLD_HOME="$HOME/.agentskiss"
+
+# ---------------------------------------------------------------------------
+# Home-dir migration (issue #125): existing installs live under ~/.agentskiss;
+# the rebrand moves the install home to ~/.pideck. On the first run of the new
+# tooling (installer, CLI, onboarding, uninstall), when ~/.pideck is absent
+# and ~/.agentskiss is a real directory, move it — preserving config.json,
+# env, onboarding.json, log/, state/ and everything else — and leave a compat
+# symlink ~/.agentskiss -> ~/.pideck so old absolute paths (service units,
+# running daemons, user scripts) keep resolving mid-flight. The moved env
+# and config.json are rewritten in place: AGENTSKISS_MODEL -> PIDECK_MODEL,
+# every other AGENTSKISS_* -> PD_*, and recorded <old-home>/… paths ->
+# <new-home>/…. Idempotent: fresh installs and already-migrated installs
+# (old home is the compat symlink) are left untouched.
+# ---------------------------------------------------------------------------
+migrate_home() {
+  _mh_old=$OLD_HOME
+  _mh_new=$PD_HOME
+  # Fresh install (no old home) or already migrated (old home is the compat
+  # symlink): nothing to do.
+  if [ ! -e "$_mh_old" ] || [ -L "$_mh_old" ]; then
+    return 0
+  fi
+  if [ ! -d "$_mh_old" ]; then
+    warn "ignoring unexpected non-directory $_mh_old"
+    return 0
+  fi
+  if [ -e "$_mh_new" ]; then
+    warn "both $_mh_new and $_mh_old exist; keeping $_mh_new — not merging automatically (resolve manually, then re-run)"
+    return 0
+  fi
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    printf '[dry-run] mv %s %s && ln -sfn %s %s\n' "$_mh_old" "$_mh_new" "$_mh_new" "$_mh_old"
+    return 0
+  fi
+  mv "$_mh_old" "$_mh_new" || die "home migration failed: could not move $_mh_old to $_mh_new"
+  ln -sfn "$_mh_new" "$_mh_old" || die "home migration failed: could not create compat symlink $_mh_old"
+  # The daemon and CLI read the service env (PD_HOME/PD_SRC/…). Rewrite the
+  # pre-rebrand names in place so the moved config stays loadable, and point
+  # recorded paths at the new home: AGENTSKISS_MODEL -> PIDECK_MODEL, every
+  # other AGENTSKISS_* -> PD_* (the split the rebrand pinned), and any
+  # <old-home>/… value prefix -> <new-home>/…. Best effort: a failed rewrite
+  # must not fail the install (the compat symlink keeps old values resolving).
+  for _mh_file in env config.json; do
+    [ -f "$_mh_new/$_mh_file" ] || continue
+    if sed -e 's/AGENTSKISS_MODEL/PIDECK_MODEL/g' \
+      -e 's/AGENTSKISS_/PD_/g' \
+      -e "s|$_mh_old|$_mh_new|g" "$_mh_new/$_mh_file" > "$_mh_new/$_mh_file.tmp" 2>/dev/null; then
+      mv "$_mh_new/$_mh_file.tmp" "$_mh_new/$_mh_file" || rm -f "$_mh_new/$_mh_file.tmp"
+    else
+      rm -f "$_mh_new/$_mh_file.tmp"
+      warn "could not rewrite PD_* names in $_mh_new/$_mh_file — re-run the installer"
+    fi
+  done
+  ok "migrated install home $_mh_old -> $_mh_new (compat symlink kept at $_mh_old)"
+}
+
+# ---------------------------------------------------------------------------
+# Old binary-name compat (issue #125): keep the pre-rebrand `agentskiss` /
+# `agentskiss-daemon` names resolving to the renamed binaries — inside the
+# home bin dir (service units, user scripts) and in ~/.local/bin (user PATH).
+# Idempotent; safe to call from the installer and the update path alike.
+# ---------------------------------------------------------------------------
+install_bin_compat() {
+  run mkdir -p "$PD_LOCAL_BIN"
+  run ln -sfn pideck "$PD_HOME/bin/agentskiss"
+  run ln -sfn pideck-daemon "$PD_HOME/bin/agentskiss-daemon"
+  run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/agentskiss"
+}
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-_ak_tty() { [ -t 2 ]; }
+_pd_tty() { [ -t 2 ]; }
 
 info() {
-  if _ak_tty; then printf '\033[1;34m==>\033[0m %s\n' "$*"; else printf '==> %s\n' "$*"; fi
+  if _pd_tty; then printf '\033[1;34m==>\033[0m %s\n' "$*"; else printf '==> %s\n' "$*"; fi
 }
 step() {
-  if _ak_tty; then printf '\033[1;36m-->\033[0m %s\n' "$*"; else printf '%s\n' "--> $*"; fi
+  if _pd_tty; then printf '\033[1;36m-->\033[0m %s\n' "$*"; else printf '%s\n' "--> $*"; fi
 }
 warn() {
-  if _ak_tty; then printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; else printf 'warning: %s\n' "$*" >&2; fi
+  if _pd_tty; then printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; else printf 'warning: %s\n' "$*" >&2; fi
 }
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -57,7 +129,7 @@ ok() { printf '  [ok] %s\n' "$*"; }
 # Read-only inspection commands are called directly.
 # ---------------------------------------------------------------------------
 run() {
-  if [ "$AK_DRY_RUN" = "1" ]; then
+  if [ "$PD_DRY_RUN" = "1" ]; then
     printf '[dry-run]'
     for _arg in "$@"; do printf " '%s'" "$_arg"; done
     printf '\n'
@@ -68,7 +140,7 @@ run() {
 
 # Like run(), but failures are non-fatal (best-effort steps).
 run_ignore() {
-  if [ "$AK_DRY_RUN" = "1" ]; then
+  if [ "$PD_DRY_RUN" = "1" ]; then
     run "$@"
     return 0
   fi
@@ -94,7 +166,7 @@ ask() { # ask <prompt> <varname>
   _ask_prompt=$1
   _ask_var=$2
   printf '%s' "$_ask_prompt"
-  if [ "$AK_NONINTERACTIVE" = "1" ]; then
+  if [ "$PD_NONINTERACTIVE" = "1" ]; then
     printf '\n'
     eval "$_ask_var="
     return 0
@@ -141,14 +213,14 @@ detect_os() {
   esac
 }
 
-detect_arch() { # -> AK_ARCH: x64 | arm64
+detect_arch() { # -> PD_ARCH: x64 | arm64
   _detect_m=$(uname -m)
   case "$_detect_m" in
-    x86_64 | amd64) AK_ARCH=x64 ;;
-    aarch64 | arm64) AK_ARCH=arm64 ;;
-    *) AK_ARCH="$_detect_m" ;;
+    x86_64 | amd64) PD_ARCH=x64 ;;
+    aarch64 | arm64) PD_ARCH=arm64 ;;
+    *) PD_ARCH="$_detect_m" ;;
   esac
-  export AK_ARCH
+  export PD_ARCH
 }
 
 # ---------------------------------------------------------------------------
@@ -176,13 +248,13 @@ http_get() { # http_get <url> -> stdout (read-only)
 
 # ---------------------------------------------------------------------------
 # PATH management: put ~/.local/bin first on PATH (now) and in shell rc files
-# (future shells), so installed CLIs (node, pnpm, gh, pi, agentskiss) resolve.
+# (future shells), so installed CLIs (node, pnpm, gh, pi, pideck) resolve.
 # ---------------------------------------------------------------------------
 ensure_local_bin_path() {
-  mkdir -p "$AK_LOCAL_BIN" 2>/dev/null || :
+  mkdir -p "$PD_LOCAL_BIN" 2>/dev/null || :
   case ":$PATH:" in
-    *":$AK_LOCAL_BIN:"*) ;;
-    *) PATH="$AK_LOCAL_BIN:$PATH" ;;
+    *":$PD_LOCAL_BIN:"*) ;;
+    *) PATH="$PD_LOCAL_BIN:$PATH" ;;
   esac
   export PATH
 
@@ -209,14 +281,14 @@ ensure_local_bin_path() {
 }
 
 # ---------------------------------------------------------------------------
-# agentskiss env file (~/.agentskiss/env) — sourced by the service wrapper,
+# pideck env file (~/.pideck/env) — sourced by the service wrapper,
 # the CLI, and later by the daemon. env_set keeps a single "KEY=\"value\"" line.
 # ---------------------------------------------------------------------------
 env_set() { # env_set <file> <KEY> <value>
   _es_file=$1
   _es_key=$2
   _es_val=$3
-  if [ "$AK_DRY_RUN" = "1" ]; then
+  if [ "$PD_DRY_RUN" = "1" ]; then
     printf "[dry-run] env_set %s=%s in %s\n" "$_es_key" "$_es_val" "$_es_file"
     return 0
   fi

@@ -1,0 +1,27 @@
+#!/bin/sh
+# shellcheck shell=sh disable=SC1090
+#
+# pideck daemon launcher — the ExecStart target of both service units
+# (launchd plist and systemd user unit). Sources ~/.pideck/env and execs
+# the built daemon entrypoint from the monorepo; the entrypoint detects that
+# it is the main module and runs main() persistently until stopped.
+
+set -u
+
+PD_ENV="${PD_HOME:-$HOME/.pideck}/env"
+if [ ! -f "$PD_ENV" ]; then
+  printf 'pideck-daemon: %s not found — run the pideck installer first\n' "$PD_ENV" >&2
+  exit 1
+fi
+. "$PD_ENV"
+
+: "${PD_NODE:?PD_NODE missing in $PD_ENV}"
+: "${PD_SRC:?PD_SRC missing in $PD_ENV}"
+
+DAEMON_ENTRY="$PD_SRC/apps/daemon/dist/index.js"
+[ -f "$DAEMON_ENTRY" ] || {
+  printf 'pideck-daemon: missing build output %s — re-run the installer\n' "$DAEMON_ENTRY" >&2
+  exit 1
+}
+
+exec "$PD_NODE" "$DAEMON_ENTRY"

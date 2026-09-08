@@ -1,33 +1,41 @@
 # shellcheck shell=sh
 #
-# Self-update check/apply for the agentskiss CLI (issue #55).
+# Self-update check/apply for the pideck CLI (issue #55).
 #
-# Sourced by install/bin/agentskiss after common.sh (needs AK_HOME, AK_LIB
+# Sourced by install/bin/pideck after common.sh (needs PD_HOME, PD_LIB
 # and the logging/run helpers). Pairs with install/lib/source.sh, whose
 # resolve_source/build_from_source the apply path reuses so private repos
 # and dev refs update exactly like installer runs do.
 #
 # Check semantics (shared with the daemon's /api/update, apps/daemon/src/api/update.ts):
-#   - local revision:  git -C $AK_SRC rev-parse HEAD
+#   - local revision:  git -C $PD_SRC rev-parse HEAD
 #   - upstream head:   gh api repos/:owner/:repo/commits/<ref>  (--jq .sha)
-#   - repo/ref:        $AK_HOME/config.json (the installer's record) with a
+#   - repo/ref:        $PD_HOME/config.json (the installer's record) with a
 #                      git-remote fallback, so private repos and non-main
 #                      dev refs check like public ones.
+#
+# Repo rename (issue #125): the repo moved agentsKISS -> PiDeck. GitHub
+# redirects renamed repos, so a config.json (or git remote) still recording
+# the pre-rename https://github.com/ercs-second-brain/agentsKISS.git URL
+# keeps working — clone/fetch/gh-api all follow the redirect. Installs made
+# after the rename record the new https://github.com/ercs-second-brain/
+# PiDeck.git URL (lib/common.sh default). No URL rewrite is needed here; the
+# recorded URL is used as-is either way.
 
-# The installed source checkout (AGENTSKISS_SRC is exported by $AK_HOME/env).
-UPDATE_SRC="${AGENTSKISS_SRC:-$AK_HOME/src}"
+# The installed source checkout (PD_SRC is exported by $PD_HOME/env).
+UPDATE_SRC="${PD_SRC:-$PD_HOME/src}"
 
-# Read repoUrl/repoRef from $AK_HOME/config.json into AK_REPO_URL/AK_REPO_REF.
+# Read repoUrl/repoRef from $PD_HOME/config.json into PD_REPO_URL/PD_REPO_REF.
 # No-op (returns 1) when the file or a field is missing — callers then fall
 # back to the git remote / common.sh defaults.
 load_repo_config() {
-  _lrc_file="$AK_HOME/config.json"
+  _lrc_file="$PD_HOME/config.json"
   [ -f "$_lrc_file" ] || return 1
   _lrc_url=$(sed -n 's/.*"repoUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_lrc_file")
   _lrc_ref=$(sed -n 's/.*"repoRef"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_lrc_file")
   [ -n "$_lrc_url" ] || return 1
-  AK_REPO_URL=$_lrc_url
-  [ -n "$_lrc_ref" ] && AK_REPO_REF=$_lrc_ref
+  PD_REPO_URL=$_lrc_url
+  [ -n "$_lrc_ref" ] && PD_REPO_REF=$_lrc_ref
   return 0
 }
 
@@ -55,30 +63,30 @@ update_check() {
   UPDATE_ERROR=
 
   if load_repo_config; then
-    UPDATE_REF=${AK_REPO_REF:-main}
+    UPDATE_REF=${PD_REPO_REF:-main}
   elif [ -d "$UPDATE_SRC/.git" ]; then
     # No installer config (dev checkout): track what the clone tracks.
-    AK_REPO_URL=$(git -C "$UPDATE_SRC" remote get-url origin 2>/dev/null) || AK_REPO_URL=
-    UPDATE_REF=${AK_REPO_REF:-main}
+    PD_REPO_URL=$(git -C "$UPDATE_SRC" remote get-url origin 2>/dev/null) || PD_REPO_URL=
+    UPDATE_REF=${PD_REPO_REF:-main}
   else
-    UPDATE_REF=${AK_REPO_REF:-main}
+    UPDATE_REF=${PD_REPO_REF:-main}
   fi
 
-  _uc_slug=$(repo_slug "${AK_REPO_URL:-}")
+  _uc_slug=$(repo_slug "${PD_REPO_URL:-}")
   if [ -n "$_uc_slug" ]; then
     UPDATE_REPO=$_uc_slug
   else
-    UPDATE_REPO=${AK_REPO_URL:-unknown}
+    UPDATE_REPO=${PD_REPO_URL:-unknown}
   fi
 
-  if [ -z "${AK_REPO_URL:-}" ]; then
-    UPDATE_ERROR="no upstream configured (no $AK_HOME/config.json and no git remote at $UPDATE_SRC)"
+  if [ -z "${PD_REPO_URL:-}" ]; then
+    UPDATE_ERROR="no upstream configured (no $PD_HOME/config.json and no git remote at $UPDATE_SRC)"
     return 1
   fi
 
   UPDATE_LOCAL_SHA=$(git -C "$UPDATE_SRC" rev-parse HEAD 2>/dev/null) || UPDATE_LOCAL_SHA=
   if [ -z "$UPDATE_LOCAL_SHA" ]; then
-    UPDATE_ERROR="no local source revision at $UPDATE_SRC — run the agentskiss installer first"
+    UPDATE_ERROR="no local source revision at $UPDATE_SRC — run the pideck installer first"
     return 1
   fi
 
@@ -89,7 +97,7 @@ update_check() {
 
   UPDATE_REMOTE_SHA=$(gh api "repos/$UPDATE_REPO/commits/$UPDATE_REF" --jq .sha 2>/dev/null) || UPDATE_REMOTE_SHA=
   if [ -z "$UPDATE_REMOTE_SHA" ]; then
-    UPDATE_ERROR="could not read $UPDATE_REPO@$UPDATE_REF via gh api — check 'gh auth status' and the AGENTSKISS_REPO_URL/AGENTSKISS_REPO_REF the installer used"
+    UPDATE_ERROR="could not read $UPDATE_REPO@$UPDATE_REF via gh api — check 'gh auth status' and the PD_REPO_URL/PD_REPO_REF the installer used"
     return 1
   fi
 
@@ -98,32 +106,35 @@ update_check() {
 
 # refresh_installed_layer — copy the freshly fetched shell layer over the
 # installed one, exactly like bootstrap.sh installs it:
-#   install/bin/*            -> $AK_HOME/bin/        (chmod +x, symlink kept)
+#   install/bin/*            -> $PD_HOME/bin/        (chmod +x, symlink kept)
 #   install/lib/*.sh +
-#   install/onboard.sh       -> $AK_LIB/            (flat, see issue #65)
+#   install/onboard.sh       -> $PD_LIB/            (flat, see issue #65)
 # plus a register_service pass so the rendered service unit files
-# (launchd plist / systemd unit) are rebuilt from the new $AK_SRC too.
+# (launchd plist / systemd unit) are rebuilt from the new $PD_SRC too.
 #
-# Safe to run from inside a running `agentskiss update`: the CLI has already
+# Safe to run from inside a running `pideck update`: the CLI has already
 # parsed its copies of common.sh/service.sh/update.sh into memory, so
 # overwriting those files on disk mid-run is fine — the refreshed scripts
 # take effect on the next shim invocation. Nothing is re-sourced here.
 #
-# Consumes $AK_SRC (must point at the freshly fetched tree) — call after
+# Consumes $PD_SRC (must point at the freshly fetched tree) — call after
 # resolve_source/build_from_source, like bootstrap does.
 refresh_installed_layer() {
   step "refreshing the installed shell layer"
-  for _cli_file in "$AK_SRC/install/bin/"*; do
+  for _cli_file in "$PD_SRC/install/bin/"*; do
     [ -f "$_cli_file" ] || continue
-    run cp "$_cli_file" "$AK_HOME/bin/$(basename "$_cli_file")"
-    run chmod +x "$AK_HOME/bin/$(basename "$_cli_file")"
+    run cp "$_cli_file" "$PD_HOME/bin/$(basename "$_cli_file")"
+    run chmod +x "$PD_HOME/bin/$(basename "$_cli_file")"
   done
-  for _lib_file in "$AK_SRC/install/lib/"*.sh "$AK_SRC/install/onboard.sh"; do
+  # Pre-rebrand name compat (issue #125): the old agentskiss/agentskiss-daemon
+  # names keep resolving to the renamed binaries after an update, too.
+  install_bin_compat
+  for _lib_file in "$PD_SRC/install/lib/"*.sh "$PD_SRC/install/onboard.sh"; do
     [ -f "$_lib_file" ] || continue
-    run cp "$_lib_file" "$AK_LIB/$(basename "$_lib_file")"
+    run cp "$_lib_file" "$PD_LIB/$(basename "$_lib_file")"
   done
-  run mkdir -p "$AK_LOCAL_BIN"
-  run ln -sfn "$AK_HOME/bin/agentskiss" "$AK_LOCAL_BIN/agentskiss"
+  run mkdir -p "$PD_LOCAL_BIN"
+  run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
   ok "installed shell layer refreshed (bin, lib, onboard.sh)"
   register_service
 }
@@ -135,13 +146,13 @@ short_sha() {
 
 # update_progress — record the apply stage for the webapp banner (issue #89).
 #
-# Writes $AK_HOME/var/update-state.json ({"stage":…,"updatedAt":…, ISO UTC});
+# Writes $PD_HOME/var/update-state.json ({"stage":…,"updatedAt":…, ISO UTC});
 # the daemon serves it on /api/update so an open webapp shows real progress
 # during the multi-minute fetch/rebuild. Best effort only: a failed write
 # must never fail the update. Stages (in apply order):
 #   checking fetching building installing restarting done failed
 update_progress() {
-  _up_dir="$AK_HOME/var"
+  _up_dir="$PD_HOME/var"
   mkdir -p "$_up_dir" 2>/dev/null || return 0
   printf '{"stage":"%s","updatedAt":"%s"}\n' \
     "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$_up_dir/update-state.json.tmp" 2>/dev/null || return 0
@@ -155,11 +166,11 @@ update_report() {
     return 1
   fi
   if [ "$UPDATE_LOCAL_SHA" = "$UPDATE_REMOTE_SHA" ]; then
-    ok "agentskiss is up to date ($(short_sha "$UPDATE_LOCAL_SHA") on $UPDATE_REPO@$UPDATE_REF)"
+    ok "pideck is up to date ($(short_sha "$UPDATE_LOCAL_SHA") on $UPDATE_REPO@$UPDATE_REF)"
     return 0
   fi
   info "update available: $(short_sha "$UPDATE_LOCAL_SHA") -> $(short_sha "$UPDATE_REMOTE_SHA") (upstream $UPDATE_REPO@$UPDATE_REF)"
-  info "run 'agentskiss update' to fetch, rebuild and restart the service"
+  info "run 'pideck update' to fetch, rebuild and restart the service"
   return 0
 }
 
@@ -194,10 +205,10 @@ update_apply() {
     return 0
   fi
 
-  [ -f "$AK_LIB/source.sh" ] || die "install broken: $AK_LIB/source.sh missing (re-run the installer)"
+  [ -f "$PD_LIB/source.sh" ] || die "install broken: $PD_LIB/source.sh missing (re-run the installer)"
   # shellcheck disable=SC1090,SC1091 # installed lib dir, sourced on purpose
-  . "$AK_LIB/source.sh"
-  AK_SRC=$UPDATE_SRC
+  . "$PD_LIB/source.sh"
+  PD_SRC=$UPDATE_SRC
   update_progress fetching
   step "fetching new source ($UPDATE_REPO@$UPDATE_REF)"
   resolve_source
@@ -210,5 +221,5 @@ update_apply() {
   svc_restart
   update_progress "done"
   trap - EXIT
-  ok "update applied — agentskiss now runs $(short_sha "$(git -C "$AK_SRC" rev-parse HEAD)")"
+  ok "update applied — pideck now runs $(short_sha "$(git -C "$PD_SRC" rev-parse HEAD)")"
 }

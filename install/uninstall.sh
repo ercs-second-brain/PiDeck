@@ -1,13 +1,13 @@
 #!/bin/sh
 # shellcheck shell=sh disable=SC1091
 #
-# agentsKISS uninstaller.
+# PiDeck uninstaller.
 #
 #   install/uninstall.sh [--purge] [-y]
 #
-# Default: stop + remove the service, remove ~/.agentskiss/bin|lib and the
-# CLI symlink, and remove the agentskiss skill symlinks from ~/.pi/agent.
-#   --purge  also remove ~/.agentskiss entirely (source, node, logs, config)
+# Default: stop + remove the service, remove ~/.pideck/bin|lib and the
+# CLI symlink, and remove the pideck skill symlinks from ~/.pi/agent.
+#   --purge  also remove ~/.pideck entirely (source, node, logs, config)
 #   -y       assume yes
 
 set -u
@@ -20,26 +20,30 @@ ASSUME_YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --purge) PURGE=1 ;;
-    -y | --yes) ASSUME_YES=1; AK_NONINTERACTIVE=1 ;;
+    -y | --yes) ASSUME_YES=1; PD_NONINTERACTIVE=1 ;;
     -h | --help) printf 'Usage: uninstall.sh [--purge] [-y]\n'; exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
   shift
 done
 
+# Home migration (issue #125): move a pre-rebrand ~/.agentskiss install to
+# ~/.pideck first — the uninstaller must find the install where the new
+# tooling looks for it (a compat symlink keeps old paths resolving).
+migrate_home
+
 detect_os
 detect_arch
 
-info "uninstalling agentsKISS"
+info "uninstalling PiDeck"
 
 # Load install config (node paths, src, port) if present.
-AK_SRC=""
-AK_NODE_BIN_DIR=""
-if [ -f "$AK_HOME/env" ]; then
+PD_SRC=""
+PD_NODE_BIN_DIR=""
+if [ -f "$PD_HOME/env" ]; then
   # shellcheck disable=SC1090
-  . "$AK_HOME/env"
-  [ -n "${AGENTSKISS_SRC:-}" ] && AK_SRC=$AGENTSKISS_SRC
-  [ -n "${AGENTSKISS_NODE:-}" ] && AK_NODE_BIN_DIR=$(dirname "$AGENTSKISS_NODE")
+  . "$PD_HOME/env"
+  [ -n "${PD_NODE:-}" ] && PD_NODE_BIN_DIR=$(dirname "$PD_NODE")
 fi
 
 confirm() {
@@ -51,17 +55,23 @@ confirm() {
 step "removing persistent service"
 case "$DETECTED_OS" in
   darwin)
-    _plist="$HOME/Library/LaunchAgents/$AK_SERVICE_LABEL.plist"
-    run_ignore launchctl bootout "gui/$(id -u)" "$_plist"
-    run_ignore launchctl unload "$_plist"
-    run rm -f "$_plist"
+    # New + pre-rebrand (issue #125) launchd labels, so migrated machines
+    # and never-migrated leftovers are both cleaned up.
+    for _plist_name in "$PD_SERVICE_LABEL" com.agentskiss.daemon; do
+      _plist="$HOME/Library/LaunchAgents/$_plist_name.plist"
+      run_ignore launchctl bootout "gui/$(id -u)" "$_plist"
+      run_ignore launchctl unload "$_plist"
+      run rm -f "$_plist"
+    done
     ok "launchd agent removed"
     ;;
   linux | wsl)
     if systemctl --user is-system-running >/dev/null 2>&1; then
+      run_ignore systemctl --user disable --now pideck-daemon.service
       run_ignore systemctl --user disable --now agentskiss.service
     fi
-    run rm -f "$HOME/.config/systemd/user/agentskiss.service"
+    run rm -f "$HOME/.config/systemd/user/pideck-daemon.service" \
+      "$HOME/.config/systemd/user/agentskiss.service"
     run_ignore systemctl --user daemon-reload
     ok "systemd unit removed"
     ;;
@@ -69,41 +79,52 @@ esac
 
 # --- CLI + launcher --------------------------------------------------------
 step "removing CLI and launcher"
-confirm "Remove agentskiss CLI and daemon launcher?" &&
+confirm "Remove pideck CLI and daemon launcher?" &&
   {
-    run rm -f "$AK_HOME/bin/agentskiss" "$AK_HOME/bin/agentskiss-daemon"
-    run rm -f "$AK_LOCAL_BIN/agentskiss"
+    # New + pre-rebrand (issue #125) binary names; the old names are the
+    # compat symlinks install_bin_compat() creates.
+    run rm -f "$PD_HOME/bin/pideck" "$PD_HOME/bin/pideck-daemon" \
+      "$PD_HOME/bin/agentskiss" "$PD_HOME/bin/agentskiss-daemon"
+    run rm -f "$PD_LOCAL_BIN/pideck" "$PD_LOCAL_BIN/agentskiss"
     ok "CLI removed (node/pnpm/gh/pi are left in place)"
   }
 
 # --- pi asset symlinks -----------------------------------------------------
-step "removing agentskiss skill symlinks from ~/.pi/agent"
-if [ -n "$AK_SRC" ]; then
+step "removing pideck skill symlinks from ~/.pi/agent"
+if [ -n "$PD_SRC" ]; then
   for _kind in skills extensions commands prompt-templates themes; do
-    _dir="$AK_PI_DIR/$_kind"
+    _dir="$PD_PI_DIR/$_kind"
     [ -d "$_dir" ] || continue
     for _entry in "$_dir"/*; do
       [ -L "$_entry" ] || continue
       _link_target=$(readlink "$_entry")
       case "$_link_target" in
-        "$AK_SRC"/agent/*) run rm -f "$_entry" ;;
+        "$PD_SRC"/agent/*) run rm -f "$_entry" ;;
       esac
     done
   done
-  ok "pi symlinks pointing into the agentskiss source removed"
+  ok "pi symlinks pointing into the pideck source removed"
 else
   info "no source dir recorded; skipping pi symlink cleanup"
 fi
 
 # --- home ------------------------------------------------------------------
 if [ "$PURGE" = "1" ]; then
-  confirm "Purge ALL of $AK_HOME (source, node, logs, config)?" &&
+  confirm "Purge ALL of $PD_HOME (source, node, logs, config)?" &&
     {
-      run rm -rf "$AK_HOME"
-      ok "removed $AK_HOME"
+      run rm -rf "$PD_HOME"
+      # The compat symlink from the home migration (issue #125) would be
+      # left dangling — remove it when it points at the purged home.
+      if [ -L "$OLD_HOME" ]; then
+        _pg_target=$(readlink "$OLD_HOME")
+        case "$_pg_target" in
+          "$PD_HOME") run rm -f "$OLD_HOME" ;;
+        esac
+      fi
+      ok "removed $PD_HOME"
     }
 else
-  info "kept $AK_HOME (config, logs, source). Use --purge to remove it entirely."
+  info "kept $PD_HOME (config, logs, source). Use --purge to remove it entirely."
 fi
 
-info "agentsKISS uninstalled"
+info "PiDeck uninstalled"
