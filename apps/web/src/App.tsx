@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate } from "react-router";
 import type { Project } from "@pideck/shared";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -6,11 +6,13 @@ import { NotificationBell } from "./components/NotificationCenter";
 import { AllProjectsBoard } from "./routes/AllProjectsBoard";
 import { BoardPage } from "./routes/BoardPage";
 import { DiffPage } from "./routes/DiffPage";
+import { GlobalOnboardingModal } from "./routes/onboarding/GlobalOnboarding";
 import { OnboardingModal } from "./routes/OnboardingWizard";
 import { SettingsPage } from "./routes/SettingsPage";
+import { useOnboardingGates } from "./routes/use-onboarding-gates";
 import { TerminalPage } from "./terminal/TerminalPage";
 import { SessionPicker } from "./terminal/SessionPicker";
-import { shouldAutoOpenOnboarding, SidebarContext, useSidebarData } from "./terminal/sidebar";
+import { SidebarContext, useSidebarData } from "./terminal/sidebar";
 
 /**
  * The whole app is one page (issue #62): the terminals page. The app header
@@ -26,6 +28,11 @@ import { shouldAutoOpenOnboarding, SidebarContext, useSidebarData } from "./term
  * renders the terminal, the all-projects combined board, a project board,
  * settings, or a PR diff. Deep links keep working (`/terminal/:sessionId`,
  * `/projects/:projectId`, …).
+ *
+ * pi/gh auth is PiDeck-global (issue #183): whenever pi has no ready
+ * provider — first run or a later breakage — the global onboarding modal
+ * opens ahead of any project work; finishing it chains into project
+ * onboarding when no project exists yet.
  *
  * The app header contains `<Link>`s, so it must render *inside* the router
  * context — it lives in the root layout route (`Shell`), not around
@@ -56,26 +63,15 @@ function Shell() {
   const { entries, error, loaded, startingProjectId, reload, startOrchestrator, terminateWorker } = useSidebarData((sessionId) =>
     navigateFromSidebar(`/terminal/${sessionId}`),
   );
-  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  // The two onboarding modals (issues #62, #90, #183): see use-onboarding-gates.
+  const onboarding = useOnboardingGates({ loaded, error, entryCount: entries.length });
   // Issue #93: on small viewports the sidebar collapses into a drawer; the
   // hamburger (header) opens it, navigating or tapping the backdrop closes it.
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const autoOpened = useRef(false);
   const navigateFromSidebar = (to: string) => {
     setSidebarOpen(false);
     navigate(to);
   };
-
-  // First run with zero projects: lead into onboarding once (the sidebar
-  // "+" and the empty-state CTA stay available for every later need).
-  // Issue #90: "zero projects" only counts after the project list actually
-  // loaded — the pre-load empty state must not open the wizard.
-  useEffect(() => {
-    if (!autoOpened.current && shouldAutoOpenOnboarding({ loaded, error, entryCount: entries.length })) {
-      autoOpened.current = true;
-      setOnboardingOpen(true);
-    }
-  }, [loaded, error, entries.length]);
 
   const sidebar = {
     entries,
@@ -85,7 +81,7 @@ function Shell() {
     reload,
     startOrchestrator: (projectId: string) => startOrchestrator(projectId),
     terminateWorker,
-    openOnboarding: () => setOnboardingOpen(true),
+    openOnboarding: onboarding.openProject,
   };
 
   return (
@@ -122,7 +118,7 @@ function Shell() {
             onSelectProject={(projectId) => navigateFromSidebar(`/projects/${projectId}`)}
             onOpenSettings={(projectId) => navigateFromSidebar(`/projects/${projectId}/settings`)}
             onSelectAllProjects={() => navigateFromSidebar("/")}
-            onStartOnboarding={() => setOnboardingOpen(true)}
+            onStartOnboarding={onboarding.openProject}
             onStartOrchestrator={(projectId) => startOrchestrator(projectId)}
             onTerminateWorker={terminateWorker}
           />
@@ -132,11 +128,14 @@ function Shell() {
         </SidebarContext.Provider>
       </div>
       <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
-      {onboardingOpen && (
+      {onboarding.globalOpen && (
+        <GlobalOnboardingModal onClose={onboarding.closeGlobal} onFinished={onboarding.finishGlobal} />
+      )}
+      {onboarding.projectOpen && (
         <OnboardingModal
-          onClose={() => setOnboardingOpen(false)}
+          onClose={onboarding.closeProject}
           onRegistered={(project: Project) => {
-            setOnboardingOpen(false);
+            onboarding.closeProject();
             reload();
             navigate(`/projects/${project.id}`);
           }}
