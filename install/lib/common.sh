@@ -12,7 +12,7 @@ set -u
 # Exported: they are consumed by the sibling scripts that source this file
 # and by installer-launched children.
 # ---------------------------------------------------------------------------
-export PD_HOME="${PD_HOME:-${PD_HOME:-$HOME/.pideck}}"
+export PD_HOME="${PD_HOME:-$HOME/.pideck}"
 PD_DRY_RUN="${PD_DRY_RUN:-0}"
 PD_NONINTERACTIVE="${PD_NONINTERACTIVE:-0}"
 export PD_REPO_URL="${PD_REPO_URL:-https://github.com/ercs-second-brain/PiDeck.git}"
@@ -22,8 +22,8 @@ export PD_NODE_VERSION="${PD_NODE_VERSION:-22.23.2}" # newest 22.x on nodejs.org
 export PD_NODE_MIN_VERSION="${PD_NODE_MIN_VERSION:-22.19.0}" # floor enforced by ensure_node
 export PD_PNPM_VERSION="${PD_PNPM_VERSION:-12}" # major; the monorepo pins the exact version
 export PD_GH_VERSION="${PD_GH_VERSION:-2.63.2}"
-export PD_PI_NPM_PACKAGE="${PD_PI_PACKAGE:-@earendil-works/pi-coding-agent}"
-export PD_PI_DIR="${PD_PI_DIR:-${PD_PI_DIR:-$HOME/.pi/agent}}"
+export PD_PI_PACKAGE="${PD_PI_PACKAGE:-@earendil-works/pi-coding-agent}"
+export PD_PI_DIR="${PD_PI_DIR:-$HOME/.pi/agent}"
 export PD_LOCAL_BIN="$HOME/.local/bin"
 # Corepack shims download their package manager on first use; never prompt
 # mid-install (covers ensure_pnpm's verification and the build's pnpm calls).

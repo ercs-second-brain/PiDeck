@@ -173,7 +173,7 @@ build_from_source
 # --- pi coding agent ------------------------------------------------------
 # Issue #223: always install the latest pi — a pre-existing pi on PATH (a
 # system npm global, another tool's install) used to short-circuit this step
-# and leave the install on a stale agent. $PD_PI_NPM_PACKAGE is unpinned, so
+# and leave the install on a stale agent. $PD_PI_PACKAGE is unpinned, so
 # npm resolves its `latest` tag; install_pi_agent is idempotent and re-points
 # the ~/.local/bin symlinks under the active (just-ensured) node.
 install_pi_agent
