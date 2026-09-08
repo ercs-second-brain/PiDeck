@@ -16,7 +16,7 @@
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import { kanbanUpdateEventSchema, wsClientMessageSchema, type KanbanUpdateEvent } from "@agentskiss/shared";
+import { kanbanUpdateEventSchema, terminalClientMessageSchema, type KanbanUpdateEvent } from "@agentskiss/shared";
 
 import { monitorWebSocket } from "../ws-heartbeat.js";
 
@@ -114,7 +114,7 @@ export class WsHub {
       this.send(socket, { error: "message is not valid JSON" });
       return;
     }
-    const message = wsClientMessageSchema.safeParse(parsed);
+    const message = terminalClientMessageSchema.safeParse(parsed);
     if (!message.success) {
       this.send(socket, { error: `unsupported message: ${message.error.message}` });
       return;

@@ -9,7 +9,6 @@ import {
   githubWatcherEventSchema,
   kanbanCardSchema,
   terminalClientMessageSchema,
-  wsClientMessageSchema,
   wsServerEventSchema,
   type GithubWatcherEvent,
   type WsServerEvent,
@@ -22,7 +21,7 @@ describe("websocket: terminal + kanban", () => {
     const attach = terminalClientMessageSchema.parse({ type: "terminal.attach", sessionId: "s1", cols: 80, rows: 24 });
     expect(attach.type).toBe("terminal.attach");
 
-    const reconnect = wsClientMessageSchema.parse({ type: "terminal.reconnect", sessionId: "s1", cols: 80, rows: 24 });
+    const reconnect = terminalClientMessageSchema.parse({ type: "terminal.reconnect", sessionId: "s1", cols: 80, rows: 24 });
     expect(reconnect.type).toBe("terminal.reconnect");
 
     const input = terminalClientMessageSchema.parse({ type: "terminal.data", sessionId: "s1", data: "ls\r" });
@@ -43,7 +42,7 @@ describe("websocket: terminal + kanban", () => {
   });
 
   it("rejects unknown message types", () => {
-    expect(wsClientMessageSchema.safeParse({ type: "terminal.hack", sessionId: "s1" }).success).toBe(false);
+    expect(terminalClientMessageSchema.safeParse({ type: "terminal.hack", sessionId: "s1" }).success).toBe(false);
     expect(wsServerEventSchema.safeParse({ type: "kanban.exploded", at: NOW }).success).toBe(false);
   });
 

@@ -158,6 +158,16 @@ export type PullRequest = z.infer<typeof pullRequestSchema>;
 
 const cardKindSchema = z.enum(["issue", "pull_request"]);
 
+/** Stable kanban card id for an issue card (derived once, shared by the daemon's API + pipelines). */
+export function issueCardId(projectId: string, number: RefNumber): string {
+  return `issue-${projectId}-${number}`;
+}
+
+/** Stable kanban card id for a tracked PR (stable across restarts). */
+export function prCardId(projectId: string, prNumber: number): string {
+  return `pr:${projectId}:${prNumber}`;
+}
+
 export const kanbanCardSchema = z.object({
   id: idSchema,
   projectId: idSchema,
