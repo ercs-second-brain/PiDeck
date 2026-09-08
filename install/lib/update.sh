@@ -118,7 +118,8 @@ update_check() {
 # take effect on the next shim invocation. Nothing is re-sourced here.
 #
 # Consumes $PD_SRC (must point at the freshly fetched tree) — call after
-# resolve_source/build_from_source, like bootstrap does.
+# resolve_source, like bootstrap does (bootstrap installs the layer before
+# the build so a failed build leaves a recoverable CLI — issue #207).
 refresh_installed_layer() {
   step "refreshing the installed shell layer"
   install_shell_layer "$PD_LIB"

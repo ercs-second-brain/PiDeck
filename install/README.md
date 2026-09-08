@@ -32,27 +32,30 @@ Pre-rebrand agentskiss installs: reinstall (bootstrap one-liner — see Quick st
    honoring the monorepo's `packageManager` pin), gh CLI. Node/gh install as
    **user-level tarballs** under `~/.pideck/opt` with symlinks in
    `~/.local/bin`, so the main path never needs sudo.
-3. Fetches the monorepo (`--repo`/`--ref`, or `--dir` for a local checkout)
-   and builds daemon + webapp. Build artifact production is isolated in one
+3. Fetches the monorepo (`--repo`/`--ref`, or `--dir` for a local checkout).
+4. Installs the pideck CLI (bins into `~/.pideck/bin`, symlink in
+   `~/.local/bin`) and writes config/state to `~/.pideck/` (see layout
+   below) — both BEFORE the build (issue #207): a failed build still leaves
+   a recoverable CLI (`pideck status`, `pideck update`) instead of
+   `pideck: command not found`.
+5. Builds daemon + webapp. Build artifact production is isolated in one
    function (`build_from_source` in `lib/source.sh`) so it can switch to
    release artifacts when they exist without touching anything else.
-4. Installs the pi coding agent (`@earendil-works/pi-coding-agent`, npm
+6. Installs the pi coding agent (`@earendil-works/pi-coding-agent`, npm
    `--ignore-scripts`, user prefix) if not already present.
-5. Links the pideck pi skills/extensions from `agent/` — whatever exists
+7. Links the pideck pi skills/extensions from `agent/` — whatever exists
    there at install time (`skills/`, `extensions/`, `commands/`,
    `prompt-templates/`, `themes/`) is symlinked into `~/.pi/agent/`. The five
    orchestration skills in `agent/skills/` are what land there today;
    `agent/prompts/` are daemon assets and stay in the checkout.
-6. Writes config/state to `~/.pideck/` (see layout below) — the daemon
-   reads this later; results survive restarts.
-7. Registers the persistent service:
+8. Registers the persistent service:
    - macOS: launchd agent `~/Library/LaunchAgents/com.pideck.daemon.plist`
      (RunAtLoad, KeepAlive on crash)
    - Linux/WSL2: systemd **user** unit
      `~/.config/systemd/user/pideck-daemon.service` (+ loginctl linger,
      best-effort). This IS the WSL path — the Windows bootstrap enables
      systemd in the distro (`/etc/wsl.conf`), then runs this installer.
-8. Runs guided onboarding (unless `--no-onboard`).
+9. Runs guided onboarding (unless `--no-onboard`).
 
 ## Guided onboarding
 

@@ -9,13 +9,16 @@
 #   1. detect OS (macOS / Linux / WSL; Windows hosts are routed to the WSL
 #      bootstrap in windows/pideck-setup.ps1)
 #   2. install git, Node 22, pnpm, gh (user-level, no sudo on the main path)
-#   3. fetch the monorepo source and build daemon + webapp
-#   4. install the pi coding agent
-#   5. link the pideck pi skills/extensions from agent/ (whatever exists
+#   3. fetch the monorepo source
+#   4. install the pideck CLI bins + ~/.local/bin symlinks and write
+#      config/state to ~/.pideck/ — BEFORE the build (issue #207), so a
+#      failed build still leaves a recoverable CLI (pideck status/update)
+#   5. build daemon + webapp
+#   6. install the pi coding agent
+#   7. link the pideck pi skills/extensions from agent/ (whatever exists
 #      there at install time)
-#   6. write config/state to ~/.pideck/ (read by the daemon later)
-#   7. register the persistent service (launchd / systemd; WSL uses systemd)
-#   8. run guided onboarding (pi auth + model, gh auth) unless --no-onboard
+#   8. register the persistent service (launchd / systemd; WSL uses systemd)
+#   9. run guided onboarding (pi auth + model, gh auth) unless --no-onboard
 #
 # Flags:
 #   --dry-run       print mutating commands instead of running them
@@ -28,7 +31,7 @@
 
 set -u
 
-usage() { sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,26p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # ---------------------------------------------------------------------------
 # `curl | sh` handling (must run before flag parsing so "$@" survives the
@@ -119,21 +122,15 @@ ensure_node
 ensure_pnpm
 ensure_gh
 
-# --- source + build -------------------------------------------------------
+# --- source ---------------------------------------------------------------
 resolve_source
-build_from_source
 
-# --- pi coding agent ------------------------------------------------------
-if command -v pi >/dev/null 2>&1; then
-  ok "pi already installed ($(pi --version 2>/dev/null | head -n 1) at $(command -v pi))"
-else
-  install_pi_agent
-fi
-
-# --- pideck pi skills/extensions (whatever exists in agent/) ----------
-install_agent_assets
-
-# --- CLI + service launcher ----------------------------------------------
+# --- CLI + config/state (issue #207: BEFORE the build) ---------------------
+# The CLI shims, the ~/.local/bin symlink and the ~/.pideck env/config the
+# shim sources all land before the (long, failure-prone) build step: when
+# the build dies, the machine is left with a working `pideck` on PATH
+# (`pideck status` reports the missing build; `pideck update` or a bootstrap
+# re-run recovers) instead of `pideck: command not found`.
 step "installing pideck CLI and daemon launcher"
 install_shell_layer "$PD_HOME/lib"
 ensure_local_bin_path
@@ -169,6 +166,19 @@ if [ "$PD_DRY_RUN" != "1" ]; then
 else
   printf '[dry-run] write %s/env and %s/config.json\n' "$PD_HOME" "$PD_HOME"
 fi
+
+# --- build -----------------------------------------------------------------
+build_from_source
+
+# --- pi coding agent ------------------------------------------------------
+if command -v pi >/dev/null 2>&1; then
+  ok "pi already installed ($(pi --version 2>/dev/null | head -n 1) at $(command -v pi))"
+else
+  install_pi_agent
+fi
+
+# --- pideck pi skills/extensions (whatever exists in agent/) ----------
+install_agent_assets
 
 # --- persistent service ---------------------------------------------------
 register_service
