@@ -128,7 +128,7 @@ const HASHED_ASSET_MAX_AGE = "public, max-age=31536000, immutable";
  * breaks the update flow. Vite-hashed assets are immutable and long-cached;
  * everything else (icons, manifest, offline fallback) revalidates too.
  */
-export function cacheControlFor(filePath: string): string {
+function cacheControlFor(filePath: string): string {
   if (/-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/i.test(path.basename(filePath))) return HASHED_ASSET_MAX_AGE;
   return "no-cache";
 }
