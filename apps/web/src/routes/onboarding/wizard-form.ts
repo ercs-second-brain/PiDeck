@@ -60,6 +60,19 @@ export function autoAgentFormError(form: WizardForm): string | null {
 }
 
 /**
+ * Prefills the auto-agent username with the authenticated GitHub login (the
+ * account PiDeck is connected as, via `GET /api/gh-auth`): the add-project
+ * flow offers the connected user instead of an empty field. Best-effort and
+ * non-destructive — it only fills an empty username and never overwrites
+ * user input; the field stays fully editable in the UI.
+ */
+export function prefillUsername(form: WizardForm, login: string | null): WizardForm {
+  if (login === null || login.length === 0) return form;
+  if (form.username.trim().length > 0) return form;
+  return { ...form, username: login };
+}
+
+/**
  * Registers the project via the real `POST /api/projects` endpoint. On
  * success the returned project is seeded into the shared store (issue #203):
  * without that, the store's project list stayed stale until the next poll
