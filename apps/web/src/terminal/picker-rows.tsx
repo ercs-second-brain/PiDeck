@@ -1,5 +1,5 @@
 /**
- * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114):
+ * Pure view pieces of the terminals sidebar (issues #63/#64/#108/#112/#114/#167):
  * worker rows (live + archived), the terminate affordance, the project row
  * (chevron + name-as-orchestrator-entry + kanban icon), and the per-project
  * archived section. Stateless — interaction state flows in through props, so
@@ -137,8 +137,9 @@ export function WorkerRow(props: {
 }
 
 /**
- * The project row (issue #108 + #114): collapse chevron, the project NAME
- * as the orchestrator entry, and the kanban board icon. Pure rendering.
+ * The project row (issue #108 + #114 + #167): collapse chevron, the project
+ * NAME as the orchestrator entry, the kanban board icon, and the ⋯ context
+ * menu. Pure rendering.
  */
 export function ProjectRow(props: {
   projectName: string;
@@ -151,7 +152,12 @@ export function ProjectRow(props: {
   boardSelected: boolean;
   starting: boolean;
   collapsed: boolean;
+  /** The project's ⋯ context menu is open (issue #167). */
+  menuOpen: boolean;
   onToggleCollapsed: (projectId: string) => void;
+  onToggleMenu: (projectId: string) => void;
+  /** Opens the project's settings page in the main pane (issue #167). */
+  onOpenSettings: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
   onSelectProject: (projectId: string) => void;
 }) {
@@ -188,6 +194,32 @@ export function ProjectRow(props: {
       >
         ▦
       </button>
+      {/* Issue #167: the ⋯ context menu. Settings opens the project's
+          settings page in the main pane; kanban stays the row's board icon
+          (#108), so it is not duplicated here. */}
+      <button
+        type="button"
+        className="picker-project-menu"
+        title={`${props.projectName} options`}
+        aria-haspopup="menu"
+        aria-expanded={props.menuOpen}
+        disabled={props.starting}
+        onClick={() => props.onToggleMenu(props.projectId)}
+      >
+        ⋯
+      </button>
+      {props.menuOpen && (
+        <div className="picker-context-menu" role="menu" aria-label={`${props.projectName} options`}>
+          <button
+            type="button"
+            role="menuitem"
+            title={`Open ${props.projectName}'s settings`}
+            onClick={() => props.onOpenSettings(props.projectId)}
+          >
+            Settings
+          </button>
+        </div>
+      )}
     </div>
   );
 }

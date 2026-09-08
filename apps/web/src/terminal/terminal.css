@@ -98,8 +98,10 @@
 }
 
 /* Issue #108: the project row holds the name (= orchestrator entry) and
-   the kanban icon side by side. */
+   the kanban icon side by side. position: relative anchors the row's ⋯
+   context menu (issue #167). */
 .picker-project-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -151,7 +153,11 @@
   color: var(--text);
 }
 
-.picker-project-board {
+/* Issue #167: the ⋯ context-menu toggle shares the kanban icon's quiet
+   chrome; the ::after ghost expands its hit target to ≥40px (issue #93
+   touch conventions) without inflating the visual button. */
+.picker-project-board,
+.picker-project-menu {
   flex: none;
   width: 26px;
   height: 26px;
@@ -165,11 +171,55 @@
   cursor: pointer;
 }
 
+.picker-project-menu {
+  /* Anchors the ::after hit-target ghost and the row's dropdown. */
+  position: relative;
+}
+
+.picker-project-menu::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+
 .picker-project-board:hover,
-.picker-project-board.selected {
+.picker-project-board.selected,
+.picker-project-menu:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--bg-hover);
+}
+
+/* Issue #167: the project row's dropdown, anchored under the row. */
+.picker-context-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 140px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.picker-context-menu button {
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-context-menu button:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
 }
 
 .picker-list {
@@ -694,10 +744,16 @@
     font-size: 15px;
   }
 
-  .picker-project-board {
+  .picker-project-board,
+  .picker-project-menu {
     width: 40px;
     height: 40px;
     font-size: 16px;
+  }
+
+  /* At the full 40px size the ghost hit-target expansion is unnecessary. */
+  .picker-project-menu::after {
+    content: none;
   }
 
   .picker-archived-toggle {

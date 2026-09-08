@@ -1,5 +1,5 @@
 /**
- * Interaction state for the terminals sidebar (issues #64/#114/#116):
+ * Interaction state for the terminals sidebar (issues #64/#114/#116/#167):
  * termination confirmation (rendered as the centered modal by
  * SessionPicker), per-project archived expansion, and per-project collapse
  * (persisted via {@link ./sidebar-collapse.ts}).
@@ -29,6 +29,8 @@ export function usePickerState(
   );
   // Issue #114: collapsed projects persist across reloads (default expanded).
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => seedCollapsed ?? loadCollapsedProjects());
+  // Issue #167: which project's ⋯ context menu is open (one at a time).
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const toggleArchived = (projectId: string) =>
     setArchivedOpen((open) => {
@@ -60,6 +62,25 @@ export function usePickerState(
     return () => window.removeEventListener("keydown", onKey);
   }, [confirmingSession, pendingTerminate]);
 
+  // Issue #167: an open ⋯ context menu closes on Escape or on any click
+  // outside the menu and its toggle (the toggle's own click re-toggles).
+  useEffect(() => {
+    if (openMenuId === null) return;
+    const onClick = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest(".picker-project-menu, .picker-context-menu") !== null) return;
+      setOpenMenuId(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenuId(null);
+    };
+    window.addEventListener("click", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [openMenuId]);
+
   const confirmTerminate = (onTerminateWorker: (workerId: string) => void) => {
     if (confirmingSession?.workerId != null) onTerminateWorker(confirmingSession.workerId);
     else setConfirmingSessionId(null);
@@ -76,5 +97,8 @@ export function usePickerState(
     toggleArchived,
     collapsedProjects,
     toggleCollapsed,
+    openMenuId,
+    toggleMenu: (projectId: string) => setOpenMenuId((current) => (current === projectId ? null : projectId)),
+    closeMenu: () => setOpenMenuId(null),
   };
 }
