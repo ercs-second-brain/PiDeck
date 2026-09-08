@@ -109,7 +109,6 @@ function Shell() {
         <Link to="/" className="brand">
           Pi<span className="brand-accent">Deck</span>
         </Link>
-        <span className="brand-tag">agent orchestration, self-hosted</span>
         <div className="header-actions">
           <NotificationBell />
         </div>
