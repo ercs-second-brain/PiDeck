@@ -11,10 +11,7 @@
 import { useEffect, useState } from "react";
 import type { ArchivedWorkerLog } from "@agentskiss/shared";
 import { fetchArchivedWorkerLog } from "../lib/api";
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString();
-}
+import { formatTimestamp } from "../lib/format-timestamp";
 
 /** The worker's task: its issue, or "freeform" for prompt-spawned workers. */
 function taskLabel(issueNumber: number): string {

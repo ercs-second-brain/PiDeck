@@ -3,7 +3,8 @@ import { Link, useParams } from "react-router";
 import type { Project, Settings } from "@agentskiss/shared";
 import { apiGetSettings, apiUpdateProject, apiUpdateSettings, errorMessage } from "../lib/api";
 import { PiAuthBanner } from "../components/PiAuthBanner";
-import { boardStore, useAppState } from "../store/store";
+import { useProject } from "../lib/use-project";
+import { boardStore } from "../store/store";
 
 /**
  * Project settings surface: auto-agent username, the worker concurrency
@@ -14,24 +15,8 @@ import { boardStore, useAppState } from "../store/store";
  */
 export function SettingsPage() {
   const { projectId } = useParams();
-  const state = useAppState();
-
-  useEffect(() => {
-    if (projectId === undefined) return;
-    void boardStore.loadProject(projectId).catch(() => boardStore.refresh());
-  }, [projectId]);
-
-  const project = state.projects.find((p) => p.id === projectId);
-  if (projectId === undefined || project === undefined) {
-    return (
-      <main className="page">
-        <p className="empty">{state.loaded ? `Project “${projectId ?? "?"}” not found.` : "Loading…"}</p>
-        <Link to="/" className="back-link">
-          ← All projects
-        </Link>
-      </main>
-    );
-  }
+  const { project, fallback } = useProject(projectId);
+  if (project === undefined) return fallback;
 
   return (
     <main className="page">

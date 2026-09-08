@@ -1,8 +1,8 @@
-import { useEffect } from "react";
 import { Link, useParams } from "react-router";
 import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { WorkersPanel } from "../components/WorkersPanel";
-import { boardStore, useAppState, type ConnectionState } from "../store/store";
+import { useProject } from "../lib/use-project";
+import { useAppState, type ConnectionState } from "../store/store";
 
 const CONNECTION_LABELS = {
   connecting: "connecting…",
@@ -24,27 +24,9 @@ export function ConnectionIndicator({ connection }: { connection: ConnectionStat
  */
 export function BoardPage() {
   const { projectId } = useParams();
+  const { project, fallback } = useProject(projectId);
   const state = useAppState();
-
-  useEffect(() => {
-    if (projectId === undefined) return;
-    // A 404 here usually means the project was just registered and the local
-    // project list is stale — refresh it so the board appears without waiting
-    // for the next poll.
-    void boardStore.loadProject(projectId).catch(() => boardStore.refresh());
-  }, [projectId]);
-
-  const project = state.projects.find((p) => p.id === projectId);
-  if (projectId === undefined || project === undefined) {
-    return (
-      <main className="page">
-        <p className="empty">{state.loaded ? `Project “${projectId ?? "?"}” not found.` : "Loading…"}</p>
-        <Link to="/" className="back-link">
-          ← All projects
-        </Link>
-      </main>
-    );
-  }
+  if (project === undefined) return fallback;
 
   const board = state.boards[project.id];
   const workers = state.workers[project.id] ?? [];
