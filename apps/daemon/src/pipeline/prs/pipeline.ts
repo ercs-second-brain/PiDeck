@@ -34,7 +34,8 @@ import type { PRPipelineEvent, PRPipelineEventEmitter } from "./events.js";
 import { driveLoop } from "./drive.js";
 import { archiveReviewAgent } from "./review.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
-import { prCardId, PRTracker, type TrackedPR } from "./tracker.js";
+import { PRTracker, type TrackedPR } from "./tracker.js";
+import { prCardId } from "@agentskiss/shared";
 
 /** Default bound on consecutive CI-fix attempts per PR. */
 export const DEFAULT_MAX_FIX_ATTEMPTS = 5;

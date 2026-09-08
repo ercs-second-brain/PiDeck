@@ -76,11 +76,6 @@ export interface RegisterTrackedPRInput {
   title: string;
 }
 
-/** Kanban card id for a tracked PR (stable across restarts). */
-export function prCardId(projectId: string, prNumber: number): string {
-  return `pr:${projectId}:${prNumber}`;
-}
-
 function trackingKey(projectId: string, prNumber: number): string {
   return `${projectId}#${prNumber}`;
 }

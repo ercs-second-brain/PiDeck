@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { prCardId, PRTracker } from "./tracker.js";
+import { PRTracker } from "./tracker.js";
+import { prCardId } from "@agentskiss/shared";
 
 let filePath: string;
 

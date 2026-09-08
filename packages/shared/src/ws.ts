@@ -60,10 +60,6 @@ export const terminalClientMessageSchema = z.discriminatedUnion("type", [
 ]);
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
-/** All client→server WS messages (currently all terminal-related). */
-export const wsClientMessageSchema = terminalClientMessageSchema;
-export type WsClientMessage = TerminalClientMessage;
-
 // ---------------------------------------------------------------------------
 // Server → client: terminal events
 // ---------------------------------------------------------------------------

@@ -19,6 +19,8 @@
 
 import {
   KANBAN_COLUMNS,
+  issueCardId,
+  prCardId,
   type Issue,
   type KanbanBoard,
   type KanbanCard,
@@ -29,8 +31,6 @@ import {
 } from "@agentskiss/shared";
 
 import { fetchIssuesWithBlockedBy, listPullRequestsWithMeta, parseRepoUrl, type GhClient } from "../github/index.js";
-import { issueCardId } from "../pipeline/issues/pipeline.js";
-import { prCardId } from "../pipeline/prs/tracker.js";
 import { TtlSwrCache } from "./swr-cache.js";
 
 // ---------------------------------------------------------------------------

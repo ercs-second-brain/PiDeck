@@ -31,7 +31,7 @@
  * pipeline and piping watcher events into {@link IssueSpawnPipeline.handleEvent}.
  */
 
-import type { GithubWatcherEvent, Issue, IssueBlocker, KanbanCard, KanbanUpdateEvent, RefNumber } from "@agentskiss/shared";
+import { issueCardId, type GithubWatcherEvent, type Issue, type IssueBlocker, type KanbanCard, type KanbanUpdateEvent, type RefNumber } from "@agentskiss/shared";
 
 import type { GhClient } from "../../github/gh.js";
 import { GhBlockerResolver } from "./blockers.js";
@@ -59,11 +59,6 @@ export interface IssueSpawnPipelineOptions {
   now?: () => Date;
   /** Error sink for spawn/scheduling failures. Default: console.error. */
   onError?: (err: unknown) => void;
-}
-
-/** Stable kanban card id for an issue card. */
-export function issueCardId(projectId: string, number: RefNumber): string {
-  return `issue-${projectId}-${number}`;
 }
 
 /** Pipeline-internal dedupe key: one worker per project+issue. */

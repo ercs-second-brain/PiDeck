@@ -9,7 +9,7 @@ import {
 
 import { Emitter } from "./emitter.js";
 import { QueueingScheduler } from "./scheduler.js";
-import { IssueSpawnPipeline, issueCardId } from "./pipeline.js";
+import { IssueSpawnPipeline } from "./pipeline.js";
 import type { BlockerResolver, RegisteredProject, WorkerSpawner } from "./ports.js";
 import { makeIssue } from "../../testing/fixtures.js";
 import type { SpawnedWorker } from "../../sessions/manager.js";
@@ -163,7 +163,7 @@ describe("IssueSpawnPipeline", () => {
     expect(event.from).toBe("backlog");
     expect(event.to).toBe("in_progress");
     expect(event.card).toEqual({
-      id: issueCardId(PROJECT_ID, 1),
+      id: `issue-${PROJECT_ID}-1`,
       projectId: PROJECT_ID,
       kind: "issue",
       number: 1,
