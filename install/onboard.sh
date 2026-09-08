@@ -64,7 +64,7 @@ _pi_auth() {
   step "pi auth"
 
   if ! command -v pi >/dev/null 2>&1; then
-    warn "pi CLI not found; install it first (npm i -g $PD_PI_NPM_PACKAGE) and re-run onboarding"
+    warn "pi CLI not found; install it first (npm i -g $PD_PI_PACKAGE) and re-run onboarding"
     PI_AUTH_STATUS="none"
     return 0
   fi
