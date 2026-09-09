@@ -367,6 +367,37 @@ export const SHIPPED_DEFAULT_SKILLS = [
   { name: "spec-to-issues", defaultPersonas: ["orchestrator"] },
 ] as const satisfies readonly ShippedDefaultSkill[];
 
+/** Ids of the shipped skills that are per-persona assignable (the store-seeded table above). */
+export type ShippedDefaultSkillId = (typeof SHIPPED_DEFAULT_SKILLS)[number]["name"];
+
+/**
+ * The shipped integration skills that are NOT per-persona assignable (issue
+ * #356): they describe how agents talk to PiDeck itself (the `pideck` CLI
+ * catalog, spawn/report/review plumbing), so they ride EVERY PiDeck-launched
+ * pane as an explicit `--skill <dir>` argv pair — not just the personas a
+ * store row happens to list.
+ *
+ * Enforcement model (issue #356): every PiDeck-launched pi pane runs with
+ * `--no-skills` — pi's global skill discovery (e.g. the installer's
+ * `~/.pi/agent/skills/` symlinks) is OFF for PiDeck panes, so the
+ * per-persona assignment in the agent-assets store is the single source of
+ * truth for what a pane loads. Explicit `--skill` args still load: the
+ * persona's assigned store skills plus these shipped integration skills.
+ * The two shipped tables must exactly partition `agent/skills/` (drift
+ * guard: apps/daemon/src/agent/shipped-skills.test.ts). The settings
+ * redesign (#358) may later move these into the per-persona assignment
+ * model; until then they stay unconditionally available on every pane.
+ */
+export const SHIPPED_GLOBAL_SKILLS = [
+  "using-pideck",
+  "create-issue",
+  "spawn-worker",
+  "report-pr",
+  "ci-status",
+  "review-comments",
+  "review-pr",
+] as const satisfies readonly string[];
+
 // ---------------------------------------------------------------------------
 // Session (tmux-backed terminal sessions)
 // ---------------------------------------------------------------------------

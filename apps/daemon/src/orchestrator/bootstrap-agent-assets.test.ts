@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 
 import { AgentAssetsStore } from "../api/agent-assets.js";
 import { testDaemon } from "../api/testutil.js";
+import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 import { ProjectLayout } from "../sessions/layout.js";
 
 import { OrchestratorBootstrap } from "./bootstrap.js";
@@ -54,7 +55,12 @@ describe("persona asset launch shaping (issue #315)", () => {
     expect(orchestrator).toBeDefined();
     const line = typedLine(h.daemon, orchestrator!.tmuxSession);
     const skillFile = path.join(h.daemon.stateDir, "agent-assets", "skills", "prd.md");
+    expect(line).toContain("--no-skills"); // discovery off (issue #356)
     expect(line).toContain(`--skill ${skillFile}`);
+    // Shipped integration skills ride every pane explicitly (issue #356).
+    for (const shipped of shippedGlobalSkillArgs().filter((arg) => arg !== "--skill")) {
+      expect(line).toContain(shipped);
+    }
     expect(line).not.toContain("worker-only");
     // The override replaced the shipped template — rendered, placeholders included.
     const rendered = readFileSync(

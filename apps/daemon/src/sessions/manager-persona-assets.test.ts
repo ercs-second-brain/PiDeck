@@ -3,7 +3,14 @@
  * gains the worker persona's deployed prompt override (`--append-system-
  * prompt`) and applied skills (`--skill`) — recorded on the session so
  * relaunch/reconcile re-run the identical command. An explicit `command`
- * option still wins, and with no assets the command stays plain `pi`.
+ * option still wins, and with no assets the command is discovery-off pi
+ * plus PiDeck's shipped integration skills (issue #356).
+ *
+ * Enforcement (issue #356): pi's global skill discovery is OFF
+ * (`--no-skills`) on every PiDeck-launched pane, so a skill restricted to
+ * the orchestrator persona cannot leak into a worker pane via
+ * `~/.pi/agent/skills` — the per-persona assignment in the store is the
+ * single source of truth.
  *
  * The test daemon's context already wires one shared `AgentAssetsStore` into
  * both the session manager and the bootstrap (api/context.ts), so the store
@@ -14,6 +21,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { testDaemon, type TestDaemon } from "../api/testutil.js";
+import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
+import { DEFAULT_WORKER_COMMAND, serializeCommand } from "./manager.js";
 
 describe("worker pane persona assets (issue #315)", () => {
   it("records the worker override and applied skills in the spawned command", async () => {
@@ -27,7 +36,7 @@ describe("worker pane persona assets (issue #315)", () => {
 
     expect(worker.status).toBe("running");
     const command = session.command ?? "";
-    expect(command).toContain("pi");
+    expect(command).toContain("pi --no-skills");
     expect(command).toContain(
       `--append-system-prompt ${path.join(daemon.stateDir, "agent-assets", "prompts", "worker.md")}`,
     );
@@ -35,10 +44,33 @@ describe("worker pane persona assets (issue #315)", () => {
     expect(command).not.toContain("orchestrator-only");
   });
 
-  it("keeps a plain pi command when no worker assets are applied", async () => {
+  it("keeps the shipped-defaults-only command when no worker assets are applied", async () => {
     const daemon: TestDaemon = testDaemon();
     const { session } = await daemon.services.sessions.spawnWorker("p1", { issueNumber: 8 });
-    expect(session.command).toBe("pi");
+    // Discovery off + the shipped integration skills; no persona shaping.
+    expect(session.command).toBe(serializeCommand([...DEFAULT_WORKER_COMMAND, ...shippedGlobalSkillArgs()]));
+  });
+
+  it("enforces the persona restriction: an orchestrator-only skill never rides a worker pane (issue #356)", async () => {
+    const daemon: TestDaemon = testDaemon();
+    const assets = daemon.services.agentAssets;
+    // Restricted to the orchestrator (the shipped defaults'
+    // out-of-the-box state — issue #338), plus one worker-assigned skill.
+    assets.saveSkill("orchestrator-only", { content: "not for workers", personas: ["orchestrator"] });
+    assets.saveSkill("worker-helper", { content: "helper skill", personas: ["worker"] });
+
+    const { session } = await daemon.services.sessions.spawnWorker("p1", { issueNumber: 10 });
+    const command = session.command ?? "";
+
+    // Discovery off: no `~/.pi/agent/skills` leak path at all…
+    expect(command).toContain("--no-skills");
+    // …the worker's own assignment loads…
+    expect(command).toContain(`--skill ${path.join(daemon.stateDir, "agent-assets", "skills", "worker-helper.md")}`);
+    // …and the orchestrator-restricted skill does not appear.
+    expect(command).not.toContain(
+      `--skill ${path.join(daemon.stateDir, "agent-assets", "skills", "orchestrator-only.md")}`,
+    );
+    expect(command).not.toContain("orchestrator-only");
   });
 
   it("lets an explicit command option skip the persona shaping", async () => {

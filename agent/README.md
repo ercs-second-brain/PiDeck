@@ -21,8 +21,11 @@ webapp's "Prompts & skills" editor (sidebar, above Settings) backed by
 - **Per-persona skills** — user-created single-file pi skills applied to any
   set of personas, deployed under `<stateDir>/agent-assets/skills/<id>.md`
   and surfaced via pi's `--skill <file>` on every newly spawned pane of an
-  applied persona. Shipped skills below stay global (installed by
-  `install/lib/assets.sh`) and are untouched by this mechanism.
+  applied persona. Shipped skills are enforced at launch time (issue
+  #356): PiDeck-launched panes run pi with `--no-skills`, so the
+  installer's global `~/.pi/agent/skills/` symlinks cannot leak a skill
+  into a pane whose persona did not select it — the per-persona assignment
+  is the single source of truth for what a pane loads.
 
 Both are stored in the daemon state dir (`<stateDir>/agent-assets.json`) —
 user-owned and update-safe. PiDeck stays unopinionated about the content
@@ -55,7 +58,11 @@ Skills follow pi's skill conventions (frontmatter with `name`/`description`, loa
 
 ### Shipped orchestrator defaults (issue #338)
 
-`bash-triage`, `concept-brief`, `prd`, and `spec-to-issues` are the shipped **orchestrator-default** workflow skills: they ship applied to the orchestrator persona out of the box and are registered in `SHIPPED_DEFAULT_SKILLS` (`packages/shared/src/domain.ts`), typed against the canonical `PERSONAS` vocabulary and the `agentSkillIdSchema` id contract from #315. They are not hardcoded always-on: the daemon's agent-assets store seeds the table into its skills list exactly once per state dir (issue #351 F2 — the shipped `agent/skills/<name>/SKILL.md` content, deployed and applied to the orchestrator like any stored skill), and afterwards every entry is an ordinary, user-owned row in the agent-assets surface (#315): per-persona configurable (turn-off-able, re-appliable to other personas), editable, and deletable — a delete sticks, nothing re-seeds. User-authored skills deploy per persona via the same surface. The installer also symlinks all of `agent/skills/` globally, and pi loads skills on demand — these four describe curator work, so only orchestrators invoke them.
+`bash-triage`, `concept-brief`, `prd`, and `spec-to-issues` are the shipped **orchestrator-default** workflow skills: they ship applied to the orchestrator persona out of the box and are registered in `SHIPPED_DEFAULT_SKILLS` (`packages/shared/src/domain.ts`), typed against the canonical `PERSONAS` vocabulary and the `agentSkillIdSchema` id contract from #315. They are not hardcoded always-on: the daemon's agent-assets store seeds the table into its skills list exactly once per state dir (issue #351 F2 — the shipped `agent/skills/<name>/SKILL.md` content, deployed and applied to the orchestrator like any stored skill), and afterwards every entry is an ordinary, user-owned row in the agent-assets surface (#315): per-persona configurable (turn-off-able, re-appliable to other personas), editable, and deletable — a delete sticks, nothing re-seeds. User-authored skills deploy per persona via the same surface.
+
+### Launch-time skill enforcement (issue #356)
+
+Every PiDeck-launched pi pane (orchestrator, global agent, agent kind, worker) runs with `--no-skills`: pi's global skill discovery — including the installer's `~/.pi/agent/skills/` symlinks of this very directory, which pi would auto-load in every session on the machine — is off, so a skill restricted to one persona in the settings can never appear loaded in another persona's pane. Panes receive exactly two kinds of explicit `--skill` args instead: the store skills assigned to their persona, and the shipped **integration skills** (`SHIPPED_GLOBAL_SKILLS` in `packages/shared/src/domain.ts`: `using-pideck`, `create-issue`, `spawn-worker`, `report-pr`, `ci-status`, `review-comments`, `review-pr` — PiDeck's own CLI/plumbing documentation, unconditionally available because it describes how any PiDeck agent talks to the daemon). The two shipped tables must exactly partition `agent/skills/` (drift-guarded in `apps/daemon/src/agent/shipped-skills.test.ts`); the settings redesign (#358) may later move the global table into the per-persona assignment model. The installer's global symlinks stay: they serve pi sessions the user starts outside PiDeck, which PiDeck does not manage.
 
 ## Prompts
 

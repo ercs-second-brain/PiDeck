@@ -17,8 +17,21 @@ export function shQuote(word: string): string {
   return SH_BARE_WORD.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`;
 }
 
-/** Command launched in worker panes. The pi coding agent CLI runs interactively in the pane. */
-export const DEFAULT_WORKER_COMMAND: string[] = ["pi"];
+/**
+ * Command launched in worker panes. The pi coding agent CLI runs interactively in the pane.
+ *
+ * `--no-skills` (issue #356): pi's global skill discovery must not leak
+ * skills assigned to other personas (e.g. the installer's
+ * `~/.pi/agent/skills/` symlinks are visible to every session on the
+ * machine) into a worker pane — the agent-assets store's per-persona
+ * assignment is the single source of truth for what a pane loads. The
+ * persona's assigned skills and PiDeck's shipped integration skills ride
+ * the launch line as explicit `--skill` args, which `--no-skills` does not
+ * suppress. The default worker command adds them (sessions/manager.ts
+ * {@link SessionManager.spawnWorker}); the resurrect fallback keeps the
+ * discovery-off guarantee too.
+ */
+export const DEFAULT_WORKER_COMMAND: string[] = ["pi", "--no-skills"];
 
 /**
  * Serializes a pane command argv into the `Session.command` contract field: a
