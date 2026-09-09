@@ -18,7 +18,7 @@
  * attaches its terminal; clicking an archived worker opens its read-only
  * captured log (issue #104); active worker rows carry a terminate
  * affordance (✕ → centered confirm modal, issue #116) that archives the
- * worker and a live running-time label ticking every few seconds (issue
+ * worker and a live running-time label ticking every second (issue
  * #182; archived rows freeze their final run duration). Each project row
  * also carries a ⋯ context menu (issue #167) whose
  * Settings entry opens that project's settings page in the main pane.
@@ -33,7 +33,7 @@
  * view pieces live in {@link ./picker-rows.tsx}.
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { Project, Session, Worker } from "@pideck/shared";
 import {
   AddProjectRow,
@@ -46,21 +46,7 @@ import {
 } from "./picker-rows";
 import { GlobalAgentRow } from "./GlobalAgentRow";
 import { usePickerState } from "./use-picker-state";
-
-/**
- * Coarse client-side clock for the workers' running-time labels (issue
- * #182): ticks every few seconds — cheap, and precise enough for
- * seconds→minutes→hours labels. Starts at mount time so SSR renders a
- * stable value.
- */
-function useTickingNow(intervalMs = 5_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
+import { useTickingNow } from "./use-ticking-now";
 
 export interface ProjectEntry {
   project: Project;
