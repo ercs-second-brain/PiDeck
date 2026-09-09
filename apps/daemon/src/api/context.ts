@@ -90,7 +90,7 @@ export interface DaemonContextOptions {
   stateDir?: string;
   /** Override the GhClient factory (tests). */
   gh?: (repoUrl: string) => GhClient;
-  /** Override the git runner used by project registration (tests). */
+  /** Override the git runner used by project registration and worker workspace preparation (tests). */
   git?: GitRunner;
   /** Override the tmux runner (tests use `FakeTmuxRunner`). */
   tmux?: Tmux;
@@ -183,7 +183,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // Sessions get the daemon's resolved runtime env (agent-env.ts), never the
   // tmux server's stale global environment.
   const tmux = options.tmux ?? new Tmux({ defaultSessionEnv: agentSessionEnv() });
-  const sessions = new SessionManager({ tmux, registry, layout });
+  const sessions = new SessionManager({ tmux, registry, layout, ...(options.git !== undefined ? { git: options.git } : {}) });
 
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
   const projectStore = new ProjectStore(stateDir);

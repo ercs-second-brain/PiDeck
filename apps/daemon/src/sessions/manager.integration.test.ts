@@ -28,7 +28,25 @@ let tmux: Tmux;
 let layout: ProjectLayout;
 let manager: SessionManager;
 
-beforeAll(() => {
+/**
+ * Real git fixture for the workspace-preparation path (issue #287): a bare
+ * "origin" repo plus the daemon-layout clone of it, with one commit on
+ * `main` and origin/HEAD set — mirroring what `cloneRepo` produces for a
+ * GitHub-hosted project.
+ */
+async function seedProjectRepo(projectId: string): Promise<void> {
+  const originDir = path.join(stateDir, `fixtures/${projectId}-origin.git`);
+  const cloneDir = layout.cloneDir(projectId);
+  const g = (args: string[], cwd?: string) => execFileP("git", args, cwd === undefined ? {} : { cwd });
+  await g(["init", "--bare", "-b", "main", originDir]);
+  await g(["clone", originDir, cloneDir]);
+  await g(["-c", "user.email=t@pideck.test", "-c", "user.name=pideck-test", "commit", "--allow-empty", "-m", "seed"], cloneDir);
+  await g(["push", "origin", "HEAD"], cloneDir);
+
+  await g(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], cloneDir);
+}
+
+beforeAll(async () => {
   stateDir = mkdtempSync(path.join(tmpdir(), "pideck-integration-"));
   tmux = new Tmux({ socketName: SOCKET });
   layout = new ProjectLayout(stateDir);
@@ -37,7 +55,8 @@ beforeAll(() => {
     registry: new SessionRegistry(layout.sessionsFilePath()),
     layout,
   });
-});
+  await seedProjectRepo("itproj");
+}, 30_000);
 
 afterAll(async () => {
   if (!tmuxAvailable) return;
@@ -74,7 +93,7 @@ describe.skipIf(!tmuxAvailable)("SessionManager against a real tmux server", () 
     expect(again.id).toBe(first.id);
   }, 15_000);
 
-  it("spawns a worker in the project clone dir and registers it", async () => {
+  it("spawns a worker in a fresh per-worker worktree and registers it (issue #287)", async () => {
     const { session, worker } = await manager.spawnWorker("itproj", {
       issueNumber: 4,
       command: ["bash", "-c", "echo WORKER_READY; exec sleep 300"],
@@ -82,6 +101,14 @@ describe.skipIf(!tmuxAvailable)("SessionManager against a real tmux server", () 
 
     expect(session.tmuxSession).toBe("pideck-itproj-worker-1");
     expect(worker.status).toBe("running");
+    // The pane runs in the fresh per-worker worktree branched off origin's HEAD.
+    expect(session.cwd).toContain(path.join("worktrees", "worker-"));
+    const cwd0 = session.cwd as string;
+    const gitAt = (args: string[], cwd: string) => execFileP("git", args, { cwd }).then((r) => r.stdout.trim());
+    expect(await gitAt(["rev-parse", "--abbrev-ref", "HEAD"], cwd0)).toBe(`pideck/${path.basename(cwd0)}`);
+    // The worktree starts exactly at origin/main's current HEAD (issue #287).
+    expect(await gitAt(["rev-parse", "HEAD"], cwd0))
+      .toBe(await gitAt(["rev-parse", "origin/main"], layout.cloneDir("itproj")));
     expect(await tmux.hasSession(session.tmuxSession)).toBe(true);
     expect(manager.listSessions("itproj").map((s) => s.tmuxSession)).toContain(
       session.tmuxSession,
@@ -134,7 +161,9 @@ describe.skipIf(!tmuxAvailable)("SessionManager against a real tmux server", () 
     expect(await tmux.hasSession(session.tmuxSession)).toBe(true);
     expect(await manager2.capturePane(session.id)).toBeDefined();
   }, 15_000);
+});
 
+describe.skipIf(!tmuxAvailable)("SessionManager launches pi when installed", () => {
   it("launches the pi coding agent in a worker pane (when pi is installed)", async () => {
     const piOnPath = await execFileP("which", ["pi"])
       .then(() => true)

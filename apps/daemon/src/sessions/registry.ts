@@ -152,6 +152,20 @@ export class SessionRegistry {
     return session;
   }
 
+  /**
+   * Records the pane's working directory after workspace preparation
+   * (issue #287): worker sessions are created before their worktree exists,
+   * and the resolved worktree path must be persisted so reconcile/relaunch
+   * resurrect the pane in the same workspace.
+   */
+  setSessionCwd(sessionId: string, cwd: string): Session {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`unknown session: ${sessionId}`);
+    session.cwd = cwd;
+    this.save();
+    return session;
+  }
+
   deleteSession(id: string): boolean {
     const deleted = this.sessions.delete(id);
     if (deleted) this.save();

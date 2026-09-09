@@ -8,9 +8,9 @@
  * - worker spawn = launch a pi session in the project's workspace tmux
  *   pane and register it (Session + Worker records from shared contracts)
  * - capture-pane / resize passthroughs keyed by registry session id
- * - startup reconciliation against live tmux state: re-discovery,
- *   resurrection of sessions lost to daemon restarts or reboots, and
- *   adoption of orphaned tmux sessions (issue #15)
+ * - startup reconciliation against live tmux state (issue #15) — the
+ *   machinery lives in `reconcile.ts`, worker workspace preparation in
+ *   `workspace.ts` (issue #287); this facade delegates to both
  *
  * The orchestrator persona/prompt content itself is issue #12; we only
  * create and track its tmux session here.
@@ -22,19 +22,16 @@
 
 import type { Session, Worker, WorkerKind, WorkerStatus } from "@pideck/shared";
 import { GLOBAL_AGENT_PROJECT_ID } from "@pideck/shared";
+import { defaultGitRunner, type GitRunner } from "../github/repos.js";
 import { ProjectLayout } from "./layout.js";
+import { prepareWorkerWorkspace } from "./workspace.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
+import { isArchivedWorkerSession, isTerminalWorkerStatus, launchPath, reconcileSessions, type ReconcileDeps, type ReconcileResult } from "./reconcile.js";
 import { Tmux } from "./tmux.js";
-import {
-  DEFAULT_WORKER_COMMAND,
-  RESURRECT_WORKER_COMMAND,
-  deserializeCommand,
-  parseTmuxSessionName,
-  resurrectionCommand,
-  sanitizeTmuxSegment,
-  serializeCommand,
-} from "./tmux-commands.js";
+import { DEFAULT_WORKER_COMMAND, sanitizeTmuxSegment, serializeCommand } from "./tmux-commands.js";
+
+export { type ReconcileResult } from "./reconcile.js";
 
 export {
   DEFAULT_WORKER_COMMAND,
@@ -50,7 +47,12 @@ export {
 export interface SpawnWorkerOptions {
   /** Issue the worker is spawned for (recorded on the Worker). */
   issueNumber: number;
-  /** Working directory for the worker pane; defaults to the project's clone dir. */
+  /**
+   * Working directory for the worker pane. When omitted (the default), the
+   * daemon prepares a fresh per-worker workspace: a git worktree branched
+   * off origin's current default-branch HEAD (issue #287). An explicit cwd
+   * is caller-owned and used as-is.
+   */
   cwd?: string;
   /** Command to launch; defaults to {@link DEFAULT_WORKER_COMMAND}. */
   command?: string[];
@@ -77,34 +79,14 @@ export interface SpawnedWorker {
  */
 const ARCHIVED_SCROLLBACK_LINES = 2000;
 
-/**
- * Worker statuses that are terminal: guard helpers must never overwrite them
- * (a `done` worker's pipeline state must not regress, an `archived` worker
- * stays in the archived log view). Shared by {@link SessionManager.reconcile}'s
- * {@link SessionManager.markWorkerStopped} and {@link SessionManager.killSession}
- * so the two guards cannot drift (issue #132).
- */
-const TERMINAL_WORKER_STATUSES: ReadonlySet<WorkerStatus> = new Set<WorkerStatus>([
-  "done", "failed", "stopped", "archived",
-]);
-
-/** Result of {@link SessionManager.reconcile}. */
-export interface ReconcileResult {
-  /** Registry sessions whose tmux session is alive (re-attachable as-is). */
-  alive: Session[];
-  /** Registry sessions whose tmux session had died and was recreated. */
-  resurrected: Session[];
-  /** Registry sessions that could not be resurrected (workers marked stopped). */
-  lost: Session[];
-  /** Live tmux sessions adopted into the registry (no prior record). */
-  adopted: Session[];
-}
-
 export class SessionManager {
   private readonly tmux: Tmux;
   private readonly registry: SessionRegistry;
   private readonly layout: ProjectLayout;
   private readonly archivedLogs: ArchivedLogStore;
+  private readonly git: GitRunner;
+  /** Collaborators for the extracted reconcile machinery (reconcile.ts). */
+  private readonly deps: ReconcileDeps;
 
   constructor(deps: {
     tmux: Tmux;
@@ -112,10 +94,14 @@ export class SessionManager {
     layout: ProjectLayout;
     /** Archived-scrollback store (issue #104); defaults to the state-dir file. */
     archivedLogs?: ArchivedLogStore;
+    /** Git runner for worker workspace preparation (issue #287); defaults to the real git binary. */
+    git?: GitRunner;
   }) {
     this.tmux = deps.tmux;
     this.registry = deps.registry;
     this.layout = deps.layout;
+    this.git = deps.git ?? defaultGitRunner;
+    this.deps = { tmux: deps.tmux, registry: deps.registry, layout: deps.layout };
     this.archivedLogs = deps.archivedLogs ?? new ArchivedLogStore(deps.layout.archivedLogsFilePath());
   }
 
@@ -176,17 +162,17 @@ export class SessionManager {
   async spawnWorker(projectId: string, options: SpawnWorkerOptions): Promise<SpawnedWorker> {
     await this.ensureProject(projectId);
     const name = await this.nextTmuxSessionName(projectId, "worker");
-    const cwd = options.cwd ?? this.layout.cloneDir(projectId);
-    const command = options.command ?? [...DEFAULT_WORKER_COMMAND];
 
     const session = this.registry.createSession({
       projectId,
       role: "worker",
       tmuxSession: name,
       // Record what is actually launched so reconcile() can resurrect the
-      // same pane after a daemon restart or reboot (issue #27).
-      cwd,
-      command: serializeCommand(command),
+      // same pane after a daemon restart or reboot (issue #27). For the
+      // default path the cwd is patched after workspace preparation below
+      // (issue #287); an explicit cwd is recorded as-is.
+      ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+      command: serializeCommand(options.command ?? [...DEFAULT_WORKER_COMMAND]),
       workerId: null,
     });
     const worker = this.registry.registerWorker({
@@ -202,11 +188,35 @@ export class SessionManager {
     });
     this.registry.setSessionWorker(session.id, worker.id);
 
+    // Issue #287: default-path workers start in a fresh per-worker worktree
+    // (named after the worker) branched off origin's current default branch.
+    // A fetch failure aborts the spawn — never start work on a stale base.
+    // An explicit cwd is caller-owned and used as-is.
+    let workspace: { path: string; discard: () => Promise<void> } | null;
+    let cwd: string;
+    try {
+      if (options.cwd === undefined) {
+        workspace = await prepareWorkerWorkspace(this.git, this.layout, projectId, worker.id);
+        this.registry.setSessionCwd(session.id, workspace.path);
+        cwd = workspace.path;
+      } else {
+        workspace = null;
+        cwd = options.cwd;
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.registry.updateWorkerStatus(worker.id, "failed", `workspace preparation failed: ${reason}`);
+      this.registry.deleteSession(session.id);
+      throw err;
+    }
+    const command = options.command ?? [...DEFAULT_WORKER_COMMAND];
+
     try {
       await this.tmux.newSession(name, { cwd, command });
     } catch (err) {
       this.registry.updateWorkerStatus(worker.id, "failed", `tmux launch failed: ${err instanceof Error ? err.message : String(err)}`);
       this.registry.deleteSession(session.id);
+      if (workspace !== null) await workspace.discard();
       throw err;
     }
 
@@ -243,100 +253,8 @@ export class SessionManager {
     return this.registry.setWorkerPr(workerId, prNumber);
   }
 
-  /**
-   * Reconciles the registry with live tmux state. Call once at daemon
-   * startup (and optionally periodically) so sessions survive a daemon
-   * restart or a machine reboot (issue #15):
-   *
-   * - registry sessions whose tmux session is still alive are kept as-is
-   *   (already re-attachable from the web terminal);
-   * - registry sessions whose tmux session died (daemon restart or reboot
-   *   killed the tmux server) are **resurrected**: the tmux session is
-   *   recreated in the session's recorded cwd and, for workers, re-running
-   *   the recorded command guarded by {@link resurrectionCommand}; records
-   *   without recorded cwd/command (e.g. written by older daemons) fall
-   *   back to the role's default working directory and command;
-   * - sessions that cannot be resurrected (e.g. their directory vanished)
-   *   are reported as lost and any attached worker is marked `stopped`;
-   * - live tmux sessions following our naming scheme with no registry
-   *   record (e.g. the registry file was lost) are adopted.
-   */
   async reconcile(options: { resurrect?: boolean } = {}): Promise<ReconcileResult> {
-    const result: ReconcileResult = { alive: [], resurrected: [], lost: [], adopted: [] };
-    const live = new Set(await this.tmux.listSessions());
-
-    for (const session of this.registry.listSessions()) {
-      // Issue #64: a terminated worker stays terminated — never resurrect
-      // (or report lost) an archived worker session across restarts.
-      if (this.isArchivedWorkerSession(session)) continue;
-      if (live.has(session.tmuxSession)) {
-        result.alive.push(session);
-        continue;
-      }
-      if (options.resurrect === false) {
-        this.markWorkerStopped(session, `tmux session ${session.tmuxSession} is gone`);
-        result.lost.push(session);
-        continue;
-      }
-      try {
-        const { cwd, command } = this.launchPath(session);
-        await this.tmux.newSession(session.tmuxSession, {
-          cwd,
-          ...(command === undefined ? {} : { command }),
-        });
-        result.resurrected.push(session);
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        this.markWorkerStopped(session, `tmux pane died and could not be recreated: ${reason}`);
-        result.lost.push(session);
-      }
-    }
-
-    for (const name of live) {
-      if (this.registry.getSessionByTmuxName(name) !== undefined) continue;
-      const parsed = parseTmuxSessionName(name);
-      if (!parsed) continue; // not a daemon-managed session; leave it alone
-      result.adopted.push(
-        this.registry.createSession({
-          projectId: parsed.projectId,
-          role: parsed.role,
-          tmuxSession: name,
-          workerId: null,
-        }),
-      );
-    }
-    return result;
-  }
-
-  /**
-   * Resolves a session's launch path — the cwd and command used to
-   * (re)create its tmux pane. Shared by {@link reconcile} (reboot recovery,
-   * issue #27) and {@link relaunchSession} (user relaunch, issue #117) so
-   * the two launch paths cannot drift (issue #132): workers re-run their
-   * recorded command through the reboot-resilient guard
-   * {@link resurrectionCommand} (binary on PATH → verbatim, else
-   * interactive shell; legacy records without a recorded command keep the
-   * role default); orchestrators get a plain interactive shell the way
-   * {@link ensureOrchestrator} created them.
-   */
-  private launchPath(session: Session): { cwd: string; command?: string[] } {
-    const cwd = session.cwd ??
-      (session.role === "worker" ? this.layout.cloneDir(session.projectId) : this.layout.projectDir(session.projectId));
-    const command = session.role === "worker"
-      ? session.command !== undefined ? resurrectionCommand(deserializeCommand(session.command)) : [...RESURRECT_WORKER_COMMAND]
-      : undefined;
-    return { cwd, ...(command === undefined ? {} : { command }) };
-  }
-
-  /** Marks a session's worker `stopped` (unless already terminal). */
-  private markWorkerStopped(session: Session, message: string): void {
-    if (session.workerId === null) return;
-    const worker = this.registry.getWorker(session.workerId);
-    if (!worker) return;
-    if (TERMINAL_WORKER_STATUSES.has(worker.status)) {
-      return;
-    }
-    this.registry.updateWorkerStatus(worker.id, "stopped", message);
+    return reconcileSessions(this.deps, options);
   }
 
   /**
@@ -377,12 +295,6 @@ export class SessionManager {
     return this.archivedLogs.get(workerId);
   }
 
-  /** Whether the session is a worker session whose worker was archived (issue #64). */
-  private isArchivedWorkerSession(session: Session): boolean {
-    if (session.role !== "worker" || session.workerId === null) return false;
-    return this.registry.getWorker(session.workerId)?.status === "archived";
-  }
-
   /**
    * Relaunches a session's tmux pane (issue #117): the recovery path for a
    * pane the user exited (Ctrl+C, `exit`) or that otherwise died. Idempotent
@@ -405,13 +317,13 @@ export class SessionManager {
    */
   async relaunchSession(sessionId: string): Promise<Session> {
     const session = this.requireSession(sessionId);
-    if (this.isArchivedWorkerSession(session)) {
+    if (isArchivedWorkerSession(this.deps, session)) {
       throw new Error(`session ${sessionId} is archived: archived sessions cannot be relaunched`);
     }
     if (await this.tmux.hasSession(session.tmuxSession)) {
       await this.tmux.killSession(session.tmuxSession);
     }
-    const { cwd, command } = this.launchPath(session);
+    const { cwd, command } = launchPath(this.deps, session);
     await this.tmux.newSession(session.tmuxSession, { cwd, ...(command === undefined ? {} : { command }) });
     if (session.workerId !== null) {
       const worker = this.registry.getWorker(session.workerId);
@@ -435,7 +347,7 @@ export class SessionManager {
     }
     if (session.workerId !== null) {
       const worker = this.registry.getWorker(session.workerId);
-      if (worker && !TERMINAL_WORKER_STATUSES.has(worker.status)) {
+      if (worker && !isTerminalWorkerStatus(worker.status)) {
         this.registry.updateWorkerStatus(worker.id, "stopped", "tmux session killed");
       }
     }

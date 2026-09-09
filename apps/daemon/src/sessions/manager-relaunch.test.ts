@@ -15,6 +15,7 @@ import { SessionManager } from "./manager.js";
 import { DEFAULT_WORKER_COMMAND, resurrectionCommand } from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
+import { FakeGitRunner } from "./testing/fake-git.js";
 import { Tmux } from "./tmux.js";
 
 let stateDir: string;
@@ -32,7 +33,7 @@ function makeManager(): {
   const tmux = new Tmux({ runner: (args) => fake.run(args) });
   const layout = new ProjectLayout(stateDir);
   const registry = new SessionRegistry(layout.sessionsFilePath());
-  return { manager: new SessionManager({ tmux, registry, layout }), fake, layout };
+  return { manager: new SessionManager({ tmux, registry, layout, git: new FakeGitRunner().asRunner() }), fake, layout };
 }
 
 const fakePaneState = (command: string[], cwd: string | undefined) => ({

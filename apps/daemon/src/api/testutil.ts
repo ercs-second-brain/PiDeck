@@ -101,6 +101,18 @@ export interface FakeGitOptions {
 }
 
 /**
+ * Worker workspace preparation commands (issue #287): fetch, origin/HEAD
+ * resolution, and worktree management. `null` when `args` is not one of them.
+ */
+function fakeWorkspaceGit(args: string[]): { stdout: string; stderr: string } | null {
+  if (args[0] === "fetch") return { stdout: "", stderr: "" };
+  if (args[0] === "worktree") return { stdout: "", stderr: "" };
+  if (args[0] === "symbolic-ref" && args.includes("refs/remotes/origin/HEAD")) return { stdout: "origin/main\n", stderr: "" };
+  return null;
+}
+
+ 
+/**
  * The one api-layer git fake, covering every command the daemon issues:
  * `clone` (recorded into `cloned`), `symbolic-ref --short HEAD`
  * (default-branch detection → `main`), and the self-update probes
@@ -114,6 +126,8 @@ export function fakeGit(options: FakeGitOptions = {}): GitRunner {
       mkdirSync(dest, { recursive: true });
       return { stdout: "", stderr: "" };
     }
+    const workspace = fakeWorkspaceGit(args);
+    if (workspace !== null) return workspace;
     if (args[0] === "symbolic-ref") return { stdout: "main\n", stderr: "" };
     if (args[0] === "rev-parse" && args[1] === "HEAD") {
       if (options.failRevParse || options.localSha === undefined) {
@@ -128,6 +142,7 @@ export function fakeGit(options: FakeGitOptions = {}): GitRunner {
     throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
   };
 }
+ 
 
 export interface TestDaemon {
   services: DaemonServices;
