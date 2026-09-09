@@ -32,6 +32,9 @@ const restPullSchema = z.object({
   // shapes degrade to cards without diff counts instead of failing.
   additions: z.number().int().nonnegative().optional(),
   deletions: z.number().int().nonnegative().optional(),
+  // Issue #322: GitHub's mergeability verdict. `null` while GitHub computes
+  // it — mapped to "not known to conflict".
+  mergeable: z.boolean().nullable().optional(),
 });
 
 export interface PullRequestRecord {
@@ -60,6 +63,7 @@ export function mapRestPull(projectId: string, raw: unknown): PullRequestRecord 
     ...(r.additions !== undefined && r.deletions !== undefined
       ? { additions: r.additions, deletions: r.deletions }
       : {}),
+    ...(r.mergeable !== undefined && r.mergeable !== null ? { mergeConflicts: !r.mergeable } : {}),
   });
   return { pullRequest, headSha: r.head.sha };
 }
@@ -88,6 +92,7 @@ query($owner: String!, $name: String!, $first: Int!) {
         baseRefName
         headRefOid
         reviewDecision
+        mergeable
         additions
         deletions
         commits(last: 1) {
@@ -114,6 +119,9 @@ const graphqlPullsSchema = z.object({
           baseRefName: z.string(),
           headRefOid: z.string(),
           reviewDecision: z.enum(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"]).nullable(),
+          // Optional so unexpected shapes degrade (issue #261 pattern) — the
+          // mapping treats an absent verdict as "not known to conflict".
+          mergeable: z.enum(["MERGEABLE", "CONFLICTING", "UNKNOWN"]).nullable().optional(),
           additions: z.number().int().nonnegative(),
           deletions: z.number().int().nonnegative(),
           commits: z.object({
@@ -192,6 +200,7 @@ export async function listOpenPullRequestsBatched(gh: GhClient, projectId: strin
       updatedAt: node.updatedAt,
       additions: node.additions,
       deletions: node.deletions,
+      ...(node.mergeable === "CONFLICTING" ? { mergeConflicts: true } : {}),
     }),
   );
 }
@@ -204,6 +213,7 @@ const checkRunsSchema = z.object({
   total_count: z.number().int(),
   check_runs: z.array(
     z.object({
+      name: z.string(),
       status: z.enum(["queued", "in_progress", "completed"]),
       conclusion: z
         .enum(["success", "failure", "neutral", "cancelled", "timed_out", "action_required", "stale", "startup_failure", "skipped"])
@@ -215,6 +225,15 @@ const checkRunsSchema = z.object({
 const combinedStatusSchema = z.object({
   state: z.enum(["error", "failure", "pending", "success"]),
   total_count: z.number().int(),
+});
+
+const combinedStatusContextsSchema = z.object({
+  statuses: z.array(
+    z.object({
+      context: z.string(),
+      state: z.enum(["error", "failure", "pending", "success"]),
+    }),
+  ),
 });
 
 const BAD_CONCLUSIONS = new Set(["failure", "timed_out", "cancelled", "action_required", "startup_failure"]);
@@ -245,6 +264,23 @@ export async function getCiStatus(gh: GhClient, repo: RepoRef, headSha: string):
   if (sawRunning) return "running";
   if (sawPending) return "pending";
   return "success";
+}
+
+/**
+ * Names of the failing checks on a commit (issue #322): completed check runs
+ * with a bad conclusion; when the commit has no check runs, the legacy
+ * combined-status contexts in a failing state. Feeds the autoFixCi prompt so
+ * the worker gets actionable targets instead of a bare "CI is failing".
+ */
+export async function getFailingChecks(gh: GhClient, repo: RepoRef, headSha: string): Promise<string[]> {
+  const runs = checkRunsSchema.parse(await gh.apiJson(`/repos/${repo.owner}/${repo.repo}/commits/${headSha}/check-runs`));
+  if (runs.check_runs.length === 0) {
+    const status = combinedStatusContextsSchema.parse(await gh.apiJson(`/repos/${repo.owner}/${repo.repo}/commits/${headSha}/status`));
+    return status.statuses.filter((s) => s.state === "failure" || s.state === "error").map((s) => s.context);
+  }
+  return runs.check_runs
+    .filter((run) => run.status === "completed" && run.conclusion !== null && BAD_CONCLUSIONS.has(run.conclusion))
+    .map((run) => run.name);
 }
 
 // ---------------------------------------------------------------------------

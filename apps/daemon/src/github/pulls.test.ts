@@ -70,7 +70,7 @@ describe("listPullRequests", () => {
 });
 
 describe("getCiStatus", () => {
-  function checkRuns(runs: Array<{ status: string; conclusion: string | null }>) {
+  function checkRuns(runs: Array<{ name: string; status: string; conclusion: string | null }>) {
     return async (args: string[]) => {
       if (args[1]?.includes("/check-runs")) {
         return { stdout: JSON.stringify({ total_count: runs.length, check_runs: runs }), stderr: "" };
@@ -83,18 +83,18 @@ describe("getCiStatus", () => {
   }
 
   it("success when all completed runs succeeded (skipped/neutral are ok)", async () => {
-    const gh = new GhClient(checkRuns([{ status: "completed", conclusion: "success" }, { status: "completed", conclusion: "skipped" }]));
+    const gh = new GhClient(checkRuns([{ name: "build", status: "completed", conclusion: "success" }, { name: "build", status: "completed", conclusion: "skipped" }]));
     await expect(getCiStatus(gh, REPO, "abc123")).resolves.toBe("success");
   });
 
   it("failure as soon as one completed run failed", async () => {
-    const gh = new GhClient(checkRuns([{ status: "completed", conclusion: "success" }, { status: "completed", conclusion: "timed_out" }]));
+    const gh = new GhClient(checkRuns([{ name: "build", status: "completed", conclusion: "success" }, { name: "build", status: "completed", conclusion: "timed_out" }]));
     await expect(getCiStatus(gh, REPO, "abc123")).resolves.toBe("failure");
   });
 
   it("running / pending map from in_progress / queued", async () => {
-    await expect(getCiStatus(new GhClient(checkRuns([{ status: "in_progress", conclusion: null }])), REPO, "s")).resolves.toBe("running");
-    await expect(getCiStatus(new GhClient(checkRuns([{ status: "queued", conclusion: null }])), REPO, "s")).resolves.toBe("pending");
+    await expect(getCiStatus(new GhClient(checkRuns([{ name: "build", status: "in_progress", conclusion: null }])), REPO, "s")).resolves.toBe("running");
+    await expect(getCiStatus(new GhClient(checkRuns([{ name: "build", status: "queued", conclusion: null }])), REPO, "s")).resolves.toBe("pending");
   });
 
   it("falls back to the legacy combined status when there are no check runs", async () => {
@@ -216,7 +216,7 @@ describe("listPullRequestsWithMeta", () => {
     const gh = new GhClient(async (args) => {
       const path = args[1] ?? "";
       if (path.includes("/pulls?state=open")) return { stdout: JSON.stringify([REST_PR]), stderr: "" };
-      if (path.includes("/check-runs")) return { stdout: JSON.stringify({ total_count: 1, check_runs: [{ status: "completed", conclusion: "failure" }] }), stderr: "" };
+      if (path.includes("/check-runs")) return { stdout: JSON.stringify({ total_count: 1, check_runs: [{ name: "build", status: "completed", conclusion: "failure" }] }), stderr: "" };
       if (path.includes("/reviews")) {
         return { stdout: JSON.stringify([{ user: { login: "a" }, state: "CHANGES_REQUESTED", submitted_at: "2026-09-06T12:00:00Z" }]), stderr: "" };
       }

@@ -174,7 +174,7 @@ function fixtureGhRunner(): GhRunner {
     }
     if (path === "/repos/fixture-owner/fixture-repo/commits/abc123/check-runs") {
       return {
-        stdout: JSON.stringify({ total_count: 1, check_runs: [{ status: "completed", conclusion: "success" }] }),
+        stdout: JSON.stringify({ total_count: 1, check_runs: [{ name: "build", status: "completed", conclusion: "success" }] }),
         stderr: "",
       };
     }

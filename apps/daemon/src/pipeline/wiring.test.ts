@@ -35,7 +35,7 @@ const NOW = "2026-09-06T12:00:00.000Z";
 const NO_TICK = 3_600_000;
 
 /** Baseline routes: empty issue/PR snapshots so start() has nothing to see. */
-function emptyRoutes(): FakeGhRoutes & { api: Record<string, unknown>; graphql: Record<string, unknown> } {
+export function emptyRoutes(): FakeGhRoutes & { api: Record<string, unknown>; graphql: Record<string, unknown> } {
   return {
     api: {
       "/repos/octo/repo/issues": [],
@@ -86,7 +86,7 @@ function restPull(number: number, sha: string): Record<string, unknown> {
   return sharedRestPull(number, { sha, author: AUTO_USER, headBranch: `feature-${number}`, updatedAt: NOW });
 }
 
-async function registeredDaemon(ghRoutes: FakeGhRoutes = emptyRoutes()): Promise<TestDaemon & { automation: GithubAutomation }> {
+export async function registeredDaemon(ghRoutes: FakeGhRoutes = emptyRoutes()): Promise<TestDaemon & { automation: GithubAutomation }> {
   const daemon = testDaemon(ghRoutes, { watcherPollIntervalMs: NO_TICK });
   await daemon.services.projects.register({
     mode: "clone",
@@ -267,7 +267,7 @@ describe("GithubAutomation (issue #46 wiring)", () => {
         "/repos/octo/repo/pulls/7": restPull(7, "sha-1"),
         "/repos/octo/repo/commits/sha-1/check-runs": {
           total_count: 1,
-          check_runs: [{ status: "completed", conclusion: "failure" }],
+          check_runs: [{ name: "build", status: "completed", conclusion: "failure" }],
         },
         "/repos/octo/repo/pulls/7/reviews": [],
         "/repos/octo/repo/pulls/7/comments": [],
@@ -291,20 +291,18 @@ describe("GithubAutomation (issue #46 wiring)", () => {
     });
 
     expect(daemon.services.registry.getWorker(worker.id)!.prNumber).toBe(7);
-    const trackedCard = events.find((e) => e.type === "kanban.card.moved" && e.cardId === `pr:${PROJECT}:7`);
-    expect(trackedCard).toMatchObject({ card: { kind: "pull_request", number: 7, column: "in_progress", workerId: worker.id } });
-
-    // The loop drives the red PR: a CI-fix prompt goes to the worker's
-    // tmux session, bounded attempts start at 1, and the worker status
-    // change reaches the hub.
+    expect(events.find((e) => e.type === "kanban.card.moved" && e.cardId === `pr:${PROJECT}:7`))
+      .toMatchObject({ card: { kind: "pull_request", number: 7, column: "in_progress", workerId: worker.id } });
+    // The loop drives the red PR: a bounded CI-fix prompt goes to the
+    // worker's tmux session, and the status change reaches the hub.
     const sendKeys = vi.spyOn(daemon.services.sessions, "sendKeys");
     await daemon.automation.pollPrPipeline(PROJECT);
 
     expect(sendKeys).toHaveBeenCalledTimes(1);
     const [sessionId, prompt] = sendKeys.mock.calls[0] ?? [];
     expect(sessionId).toBe(worker.sessionId);
-    expect(String(prompt)).toContain("CI is failing on your PR #7");
-    expect(String(prompt)).toContain("attempt 1 of ");
+    // #322: the prompt names the failing check from the check-runs route.
+    expect(String(prompt)).toMatch(/CI is failing on your PR #7.*Failing checks: build.*attempt 1 of /);
     expect(events.some((e) => e.type === "worker.status.changed" && e.status === "fixing_ci")).toBe(true);
   });
 

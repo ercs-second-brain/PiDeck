@@ -54,6 +54,10 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
   }
   const settings = ctx.settings() ?? DEFAULT_WORKER_PIPELINE_SETTINGS;
   if (!settings.autoReview) return;
+  // Issue #322: a conflicted PR is not reviewable — GitHub cannot merge it
+  // however green its checks are. Gate the spawn (and any re-round) until
+  // the author rebases; the CI-green gate above already ran.
+  if (pr.mergeConflicts === true) return;
 
   const reviewer = tracked.reviewWorkerId === null ? undefined : ctx.sessions.getWorker(tracked.reviewWorkerId);
   if (reviewer !== undefined && ACTIVE_WORKER_STATUSES.has(reviewer.status)) {

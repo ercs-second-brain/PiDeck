@@ -84,7 +84,7 @@ describe("PullRequestPipeline: lifecycle", () => {
 
     // Worker pushes a fix and CI goes green → ends green without manual commands.
     h.prs.get(12)!.pull = restPull(12, { sha: "sha-2" });
-    h.prs.get(12)!.checkRuns = { total_count: 1, check_runs: [{ status: "completed", conclusion: "success" }] };
+    h.prs.get(12)!.checkRuns = { total_count: 1, check_runs: [{ name: "build", status: "completed", conclusion: "success" }] };
     await pipeline2.pollOnce();
     expect(sessions2.prompts).toHaveLength(0);
     expect(tracker2.get(PROJECT, 12)).toMatchObject({ state: "watching", fixAttempts: 0 });

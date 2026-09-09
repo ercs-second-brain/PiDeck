@@ -64,6 +64,21 @@ describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => 
     expect(noSpawn.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: null });
   });
 
+  it("does not spawn a reviewer while the PR has merge conflicts, even when CI is green (issue #322)", async () => {
+    const h = greenHarness();
+    h.prs.get(12)!.pull = restPull(12, { sha: "sha-1", mergeConflicts: true });
+    await h.poll();
+    await h.poll();
+    expect(h.sessions.spawned).toHaveLength(0);
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: null });
+
+    // Conflicts resolved (author rebased) → the reviewer spawns on a later poll.
+    h.prs.get(12)!.pull = restPull(12, { sha: "sha-1" });
+    await h.poll();
+    expect(h.sessions.spawned).toHaveLength(1);
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: "worker-reviewer-1", reviewedHeadSha: "sha-1" });
+  });
+
   it("respects the project's worker concurrency cap and spawns when a slot frees", async () => {
     let cap: number | undefined = 1;
     const h = greenHarness({ workerCap: () => cap });

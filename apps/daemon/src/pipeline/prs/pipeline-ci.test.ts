@@ -80,9 +80,7 @@ describe("PullRequestPipeline: CI-fix loop", () => {
     expect(h.sessions.statuses).toHaveLength(2); // initial tracking + the disabled notice
     expect(events.some((e) => e.type === "kanban.pr.card")).toBe(true);
   });
-});
 
-describe("PullRequestPipeline: review comments", () => {
   it("skips review-comment delivery when autoFixReviewComments is off (issue #106)", async () => {
     const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: false, autoReview: false }) });
     h.openList.push(12);

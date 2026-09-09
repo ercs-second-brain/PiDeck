@@ -75,6 +75,8 @@ export interface RestPullOverrides {
   headBranch?: string;
   author?: string;
   updatedAt?: string;
+  /** Issue #322: when true the fake PR payload reports `mergeable: false`. */
+  mergeConflicts?: boolean;
 }
 
 /** Builds the REST pull payload in the `mapRestPull` input shape. */
@@ -87,6 +89,8 @@ export function restPull(number: number, overrides: RestPullOverrides = {}): Rec
     user: { login: overrides.author ?? "worker" },
     head: { ref: overrides.headBranch ?? `agent/issue-${number}`, sha: overrides.sha ?? "sha-1" },
     base: { ref: "main" },
+    // Issue #322: GitHub's mergeability verdict; `null` while it computes.
+    mergeable: overrides.mergeConflicts === true ? false : null,
     html_url: `${REPO_URL}/pull/${number}`,
     updated_at: overrides.updatedAt ?? "2026-09-06T12:00:00Z",
   };
