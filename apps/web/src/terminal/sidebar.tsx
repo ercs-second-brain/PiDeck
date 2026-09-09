@@ -9,13 +9,22 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { agentKindInfo, GLOBAL_AGENT_PROJECT_ID, type AgentKind, type Session, type Worker } from "@pideck/shared";
+import {
+  SHIPPED_AGENT_KINDS,
+  agentKindInfo,
+  GLOBAL_AGENT_PROJECT_ID,
+  type AgentKind,
+  type AgentKindSpec,
+  type Session,
+  type Worker,
+} from "@pideck/shared";
 import { boardStore } from "../store/store";
 import {
   fetchProjects,
   fetchAllSessions,
   fetchWorkers,
   apiDeleteProject,
+  apiListAgentKinds,
   apiSpawnAgent,
   apiTerminateAgentSession,
   startOrchestrator as apiStartOrchestrator,
@@ -41,6 +50,14 @@ export interface SidebarContextValue {
   startingGlobalAgent: boolean;
   /** Forces an immediate sidebar refresh (e.g. after onboarding registers a project). */
   reload: () => void;
+  /**
+   * The live agent-kind registry (issue #330): shipped + user-defined kinds.
+   * Feeds the spawn-agent submenu (issue #331). Falls back to the shipped
+   * kinds when the registry fetch fails (an old daemon must not break the
+   * menu). Optional: main-pane routes don't need it; the picker defaults
+   * to the shipped kinds when absent.
+   */
+  agentKinds?: readonly AgentKindSpec[];
   /** Starts the project's orchestrator, then navigates to its terminal. */
   startOrchestrator: (projectId: string) => void;
   /** Starts (or attaches to) the global agent, then navigates to its terminal. */
@@ -96,10 +113,15 @@ export function shouldAutoOpenOnboarding(state: { loaded: boolean; error: string
 /**
  * One sidebar poll: the project list plus ONE daemon-wide sessions fetch
  * (per-project groups and the workspace-level global agent — the
- * hierarchy's top layer, projectId `global`) and the per-project workers.
+ * hierarchy's top layer, projectId `global`), the per-project workers, and
+ * the agent-kind registry (issue #330 — the spawn submenu's data; falls
+ * back to the shipped kinds when the fetch fails).
  */
-async function loadSidebarData(): Promise<{ entries: ProjectEntry[]; globalAgent: Session | null }> {
+async function loadSidebarData(): Promise<{ entries: ProjectEntry[]; globalAgent: Session | null; agentKinds: AgentKindSpec[] }> {
   const [projects, allSessions] = await Promise.all([fetchProjects(), fetchAllSessions()]);
+  const agentKinds = await apiListAgentKinds()
+    .then((list) => list.kinds)
+    .catch(() => [...SHIPPED_AGENT_KINDS]);
   const byProject = new Map<string, Session[]>();
   let globalAgent: Session | null = null;
   for (const session of allSessions) {
@@ -117,7 +139,7 @@ async function loadSidebarData(): Promise<{ entries: ProjectEntry[]; globalAgent
       return { project, sessions: byProject.get(project.id) ?? [], workers };
     }),
   );
-  return { entries, globalAgent };
+  return { entries, globalAgent, agentKinds };
 }
 
 /** Polls the daemon for the sidebar's project/session/worker data. */
@@ -127,6 +149,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
   const [loaded, setLoaded] = useState(false);
   const [startingProjectId, setStartingProjectId] = useState<string | null>(null);
   const [globalAgent, setGlobalAgent] = useState<Session | null>(null);
+  const [agentKinds, setAgentKinds] = useState<readonly AgentKindSpec[]>([...SHIPPED_AGENT_KINDS]);
   const [startingGlobalAgent, setStartingGlobalAgent] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -138,12 +161,10 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
       if (pending) return;
       pending = true;
       try {
-        const { entries: nextEntries, globalAgent } = await loadSidebarData();
+        const { entries: nextEntries, globalAgent, agentKinds: nextKinds } = await loadSidebarData();
         if (!cancelled) {
-          setEntries(nextEntries);
-          setGlobalAgent(globalAgent);
-          setError(null);
-          setLoaded(true);
+          setEntries(nextEntries); setGlobalAgent(globalAgent); setAgentKinds(nextKinds);
+          setError(null); setLoaded(true);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -229,7 +250,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     },
     [reload],
   );
-  return { entries, error, loaded, startingProjectId, globalAgent, startingGlobalAgent, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject, spawnAgentSession, terminateAgentSession };
+  return { entries, error, loaded, startingProjectId, globalAgent, startingGlobalAgent, agentKinds, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject, spawnAgentSession, terminateAgentSession };
 }
 
 /** Context through which the shell shares sidebar data with main-pane routes. */

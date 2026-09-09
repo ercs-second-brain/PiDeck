@@ -9,7 +9,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { agentKindInfo, type AgentKind } from "@pideck/shared";
+import { agentKindInfo, type AgentKind, type AgentKindSpec } from "@pideck/shared";
 
 /**
  * Shared shell for the sidebar's small centered confirmation modals
@@ -173,55 +173,66 @@ export function TerminateAgentSessionModal(props: {
 }
 
 /**
- * The input-taking spawn modal (docs/agent-kinds.md, issue #297 + #324): a
- * small centered modal asking for the question the kind's report must
- * answer — for the kinds whose shared spec takesInput (the researcher
- * today; the audits spawn directly from the menu). Confirm stays disabled
- * until a question is typed; failures surface inside the modal. The title,
- * labels, and confirm target derive from the kind's metadata.
+ * The input-taking spawn modal (docs/agent-kinds.md, issues #297/#324/#331):
+ * a small centered modal asking for the input a `waitForInput` kind waits
+ * for — the researcher's question today, any custom `waitForInput` kind's
+ * task. Confirm stays disabled until input is typed; failures surface
+ * inside the modal. Title, labels, and confirm target derive from the
+ * kind's metadata; the read-only claim follows the kind's spec (shipped
+ * kinds are read-only by default). Pure rendering.
  */
-export function ResearcherPromptModal(props: {
+export function SpawnInputModal(props: {
   projectName: string;
-  /** The kind whose spec takesInput — drives the copy and confirm target. */
+  /** The kind being spawned — drives the copy and confirm target. */
   agentKind: AgentKind;
-  /** The spawn request is in flight (confirm shows "Spawning…"). */
+  /**
+   * The kind's registry spec, when resolvable from the fetched registry
+   * (drives the read-only claim). Absent (unknown/unfetched): the shipped
+   * read-only default.
+   */
+  spec?: AgentKindSpec;
+  /** The spawn request is in flight (confirm shows "Spawning..."). */
   pending: boolean;
   /** Failure from the daemon, shown inside the modal. */
   error?: string | null;
   onConfirm: (question: string) => void;
   onCancel: () => void;
 }) {
-  const [question, setQuestion] = useState("");
-  const ready = question.trim().length > 0;
-  const info = agentKindInfo(props.agentKind);
+  const [input, setInput] = useState("");
+  const ready = input.trim().length > 0;
+  const fallback = agentKindInfo(props.agentKind);
+  // Registry-v2 specs carry their own presentation fields — prefer them.
+  const menuLabel = props.spec?.menuLabel ?? fallback.menuLabel;
+  const readOnly = props.spec?.readOnly ?? true;
+  const isQuestion = props.spec?.name === "researcher" || props.spec === undefined;
   return (
     <ConfirmModal
       ariaLabel={`Spawn ${props.agentKind}`}
-      title={`Spawn ${info.menuLabel}?`}
+      title={`Spawn ${menuLabel}?`}
       confirmDisabled={!ready}
       confirmLabel="Spawn"
       pendingLabel="Spawning…"
       body={
         <>
           <p>
-            A read-only researcher will research <code>{props.projectName}</code> and report its findings — with
-            file-and-line citations — back to the session that spawned it.
+            A{readOnly ? " read-only" : "n"} agent will take your {isQuestion ? "question" : "task"} for{" "}
+            <code>{props.projectName}</code> and carry it out per its persona{isQuestion ? ", reporting its findings back to the session that spawned it" : ""}.
           </p>
           <textarea
             className="modal-textarea"
-            placeholder="What should it research?"
-            aria-label={`${info.menuLabel} question`}
+            placeholder={isQuestion ? "What should it research?" : "Describe the task…"}
+            aria-label={`${menuLabel} ${isQuestion ? "question" : "task"}`}
             rows={3}
-            value={question}
+            value={input}
             disabled={props.pending}
             autoFocus
-            onChange={(event) => setQuestion(event.target.value)}
+            onChange={(event) => setInput(event.target.value)}
           />
         </>
       }
       error={props.error}
       pending={props.pending}
-      onConfirm={() => props.onConfirm(question.trim())}
+      onConfirm={() => props.onConfirm(input.trim())}
       onCancel={props.onCancel}
     />
   );

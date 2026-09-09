@@ -251,6 +251,21 @@
   padding: 8px 12px;
 }
 
+/* Issue #331: the spawn-agent submenu — an in-place expansion under its
+   "Spawn agent ▸" toggle, indented one step so the nesting reads. Same
+   chrome as the parent menu; its buttons inherit the menu button styles. */
+.picker-submenu {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 2px 12px;
+  padding-left: 6px;
+  border-left: 2px solid var(--border);
+}
+
+.picker-submenu button {
+  padding: 8px 12px;
+}
+
 .picker-list {
   list-style: none;
   margin: 0;

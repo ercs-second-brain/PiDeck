@@ -205,10 +205,10 @@ export const SHIPPED_AGENT_KINDS: readonly AgentKindSpec[] = [
 ];
 
 /**
- * The shipped kinds' ids in spawn-menu order (issue #324's table, now
- * derived from {@link SHIPPED_AGENT_KINDS}). The web ⋯ menu lists these
- * until the spawn-submenu ticket widens it to the full registry
- * (`GET /api/agent-kinds`).
+ * The shipped kinds' ids (issue #324's table, now derived from
+ * {@link SHIPPED_AGENT_KINDS}). The web spawn-agent submenu (#331) uses
+ * this to group built-ins apart from user-defined kinds — the entries
+ * themselves come from the full live registry (`GET /api/agent-kinds`).
  */
 export const AGENT_KINDS: readonly string[] = SHIPPED_AGENT_KINDS.map((kind) => kind.name);
 
