@@ -149,8 +149,11 @@ describe("agent-kind spawn: parent-of-any-role resolution", () => {
     const persona = personaFile(projectId, session.id);
     expect(persona).toContain(`pideck send --session ${orchestrator!.id}`);
     expect(persona).not.toContain("{{ORCHESTRATOR_SESSION_ID}}");
-    // Audits take no question input: nothing typed into the pane.
-    expect(daemon.tmux.sentBytes(session.tmuxSession).toString("utf8")).toBe("");
+    // Audits take no question input: the pane bytes carry only the persona
+    // launch line (typed by the bootstrap, #290 pattern).
+    const bytes = daemon.tmux.sentBytes(session.tmuxSession).toString("utf8");
+    expect(bytes).toContain("pi --append-system-prompt");
+    expect(bytes).not.toContain("why is build slow?");
   });
 });
 
@@ -168,11 +171,10 @@ describe("agent-kind spawn: read-only enforcement + gating", () => {
       });
       expect(res.status).toBe(201);
       const session = sessionSchema.parse(res.json);
-      const pane = daemon.tmux.sessions.get(session.tmuxSession);
-      const command = pane?.command.join(" ") ?? "";
-      expect(command).toContain("--append-system-prompt");
-      expect(command).toContain("--exclude-tools edit,write");
-      expect(command).toContain(`PD_SESSION_ID=${session.id}`);
+      const launchLine = daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "";
+      expect(launchLine).toContain("pi --append-system-prompt");
+      expect(launchLine).toContain("--exclude-tools edit,write");
+      expect(launchLine).toContain(`PD_SESSION_ID=${session.id}`);
     }
   });
 
@@ -224,6 +226,20 @@ describe("agent-kind spawn: caps + route parity", () => {
       (await api("POST", `/api/projects/${projectId}/spawn`, { kind: "investigator", name: "i1", parentSessionId: parent.id }))
         .status,
     ).toBe(201);
+  });
+
+  it("spawns kiss-audit from the menu into exactly ONE session (issue #310 double-fire guard)", async () => {
+    const { api, daemon } = server;
+    const projectId = await registerProject("single1");
+    const res = await api("POST", `/api/projects/${projectId}/spawn-agent`, { kind: "kiss-audit", name: "kiss-audit" });
+    expect(res.status).toBe(200);
+    const projectSessions = daemon.services.sessions.listSessions(projectId);
+    // Exactly one kind session (plus the ensured orchestrator) — never a
+    // legacy worker alongside it — and the pane carries the persona line.
+    expect(projectSessions.filter((s) => s.agentKind !== undefined)).toHaveLength(1);
+    expect(daemon.services.sessions.listWorkers({ projectId })).toEqual([]);
+    const session = sessionSchema.parse(res.json);
+    expect(daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "").toContain("pi --append-system-prompt");
   });
 
   it("rejects kind bodies that violate the spawn rules (400) and unknown projects (404)", async () => {

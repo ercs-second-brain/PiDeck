@@ -44,17 +44,25 @@ export interface ReconcileDeps {
  * Resolves a session's launch path — the cwd and command used to
  * (re)create its tmux pane. Shared by reconcile (reboot recovery, issue
  * #27) and SessionManager.relaunchSession (user relaunch, issue #117) so
- * the two launch paths cannot drift (issue #132): workers re-run their
- * recorded command through the reboot-resilient guard
- * {@link resurrectionCommand} (binary on PATH → verbatim, else interactive
- * shell; legacy records without a recorded command keep the role default);
- * orchestrators get a plain interactive shell — the persona relaunch (pi
- * with the orchestrator prompt, issue #290) is `OrchestratorBootstrap`'s
- * job, layered above this module.
+ * the two launch paths cannot drift (issue #132):
+ *
+ * - workers re-run their recorded command through the reboot-resilient
+ *   guard {@link resurrectionCommand} (binary on PATH → verbatim, else
+ *   interactive shell; legacy records without a recorded command keep the
+ *   role default);
+ * - agent-kind sessions (docs/agent-kinds.md) get a **bare shell** in
+ *   their recorded cwd — putting pi back with the kind persona is the
+ *   bootstrap's job (`OrchestratorBootstrap.ensureForSession`, the #290
+ *   pattern: one idempotent typing step for spawn, relaunch, and the
+ *   startup sweep), never a stale recorded command;
+ * - orchestrators get a plain interactive shell — the persona relaunch
+ *   (pi with the orchestrator prompt, issue #290) is `OrchestratorBootstrap`'s
+ *   job, layered above this module.
  */
 export function launchPath(deps: ReconcileDeps, session: Session): { cwd: string; command?: string[] } {
   const cwd = session.cwd ??
     (session.role === "worker" ? deps.layout.cloneDir(session.projectId) : deps.layout.projectDir(session.projectId));
+  if (session.agentKind !== undefined) return { cwd };
   const command = session.role === "worker"
     ? session.command !== undefined ? resurrectionCommand(deserializeCommand(session.command)) : [...RESURRECT_WORKER_COMMAND]
     : undefined;

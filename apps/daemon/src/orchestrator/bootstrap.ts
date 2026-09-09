@@ -31,14 +31,21 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { GLOBAL_AGENT_PROJECT_ID, type Project, type Session } from "@pideck/shared";
+import { AGENT_KIND_REPORT_TARGET, GLOBAL_AGENT_PROJECT_ID, type Project, type Session } from "@pideck/shared";
 import type { ProjectService } from "../api/projects.js";
 import { atomicWrite } from "../json-store.js";
+import { agentKindLaunchCommand, agentKindPromptFilePath, agentKindSpec } from "../sessions/agent-kinds.js";
 import { ProjectLayout } from "../sessions/layout.js";
-import { shQuote, type SessionManager } from "../sessions/manager.js";
+import { serializeCommand, shQuote, type SessionManager } from "../sessions/manager.js";
 import type { Tmux } from "../sessions/tmux.js";
 
-import { findAgentPromptPath, renderGlobalAgentPrompt, renderOrchestratorPrompt } from "./prompt.js";
+import {
+  findAgentPromptPath,
+  orchestratorPromptValues,
+  renderGlobalAgentPrompt,
+  renderOrchestratorPrompt,
+  renderTemplate,
+} from "./prompt.js";
 
 /** Rendered prompt file written into the project's state dir. */
 export const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
@@ -158,13 +165,16 @@ export class OrchestratorBootstrap {
    * Shared ensure tail: with the persona prompt file already written, make
    * sure the session exists and type the pi launch command into the pane —
    * only when the pane is not already running the agent (idempotence).
+   * `launchLine` defaults to the orchestrator launch command; agent-kind
+   * sessions pass their kind-specific line (persona file, write-tool
+   * exclusions).
    */
-  private async ensureAgentPane(ensure: () => Promise<Session>, promptFile: string): Promise<Session> {
+  private async ensureAgentPane(ensure: () => Promise<Session>, promptFile: string, launchLine?: string): Promise<Session> {
     const session = await ensure();
     if (!(await this.isAgentRunning(session.tmuxSession))) {
       await this.tmux.sendKeys(
         session.tmuxSession,
-        orchestratorLaunchCommand({ sessionId: session.id, promptFile }),
+        launchLine ?? orchestratorLaunchCommand({ sessionId: session.id, promptFile }),
         { enter: true },
       );
     }
@@ -172,19 +182,21 @@ export class OrchestratorBootstrap {
   }
 
   /**
-   * Re-launches the agent persona in a freshly (re)created orchestrator
-   * pane (issue #290): the relaunch/reconcile launch paths recreate
-   * orchestrator panes as bare shells — putting pi back with its persona
-   * is the bootstrap's job (this module's issue #12 machinery), so a
-   * relaunched orchestrator is identical to a fresh boot: same rendered
-   * persona prompt, session id env, and workspace. Dispatches on the
-   * session: the global agent re-ensures the global persona, a project
-   * orchestrator re-ensures the project's. Returns `null` for worker
-   * sessions (their relaunch re-runs their recorded command, issue #27)
-   * and for orchestrators whose project is unknown. Idempotent: the pane
-   * probe skips the launch when the agent is already running.
+   * Re-launches the agent persona in a freshly (re)created pane (issue
+   * #290): the relaunch/reconcile launch paths recreate orchestrator and
+   * agent-kind panes as bare shells — putting pi back with the persona is
+   * the bootstrap's job (this module's issue #12 machinery), so a
+   * relaunched agent is identical to a fresh boot: same rendered persona
+   * prompt, session id env, and workspace. Dispatches on the session: the
+   * global agent re-ensures the global persona, a project orchestrator
+   * re-ensures the project's, an agent-kind session (docs/agent-kinds.md)
+   * re-ensures its kind persona. Returns `null` for plain worker sessions
+   * (their relaunch re-runs their recorded command, issue #27) and for
+   * sessions whose project is unknown. Idempotent: the pane probe skips
+   * the launch when the agent is already running.
    */
   async ensureForSession(session: Session): Promise<Session | null> {
+    if (session.agentKind !== undefined) return this.ensureAgentKindSession(session);
     if (session.role !== "orchestrator") return null;
     if (session.projectId === GLOBAL_AGENT_PROJECT_ID) return this.ensureGlobalAgent();
     const project = this.projects.get(session.projectId);
@@ -193,8 +205,48 @@ export class OrchestratorBootstrap {
   }
 
   /**
-   * Ensures the global agent first (the hierarchy's top layer) and then the
-   * orchestrator of every registered project. Per-project failures are
+   * Puts pi back into an agent-kind session's bare-shell pane
+   * (docs/agent-kinds.md, issue #310): renders the kind persona
+   * (`agent/prompts/<kind>.md`) with the project placeholders, the
+   * recorded parent lineage (`{{PARENT_SESSION_ID}}`), and the live
+   * project orchestrator for orchestrator-routed kinds
+   * (`{{ORCHESTRATOR_SESSION_ID}}`), writes it next to the project state,
+   * and types the launch line (`env PD_SESSION_ID=… pi
+   * --append-system-prompt <file>` — write tools excluded for read-only
+   * kinds) into the pane — only when the pane is not already running the
+   * agent (the same idempotence probe as orchestrator panes). Returns
+   * `null` for sessions whose project is unknown.
+   */
+  async ensureAgentKindSession(session: Session): Promise<Session | null> {
+    if (session.agentKind === undefined) return null;
+    const project = this.projects.get(session.projectId);
+    if (project === undefined) return null;
+    const spec = agentKindSpec(session.agentKind);
+    const orchestrator =
+      AGENT_KIND_REPORT_TARGET[session.agentKind] === "project-orchestrator"
+        ? (await this.sessions.ensureOrchestrator(session.projectId)).id
+        : (session.parentSessionId ?? "");
+    const template = readFileSync(findAgentPromptPath(undefined, spec.personaFile), "utf8");
+    const content = renderTemplate(template, {
+      ...orchestratorPromptValues(project, session.cwd ?? this.layout.cloneDir(session.projectId)),
+      PARENT_SESSION_ID: session.parentSessionId ?? "",
+      ...(AGENT_KIND_REPORT_TARGET[session.agentKind] === "project-orchestrator" ? { ORCHESTRATOR_SESSION_ID: orchestrator } : {}),
+    });
+    const promptFile = agentKindPromptFilePath(this.layout, session.projectId, session.id);
+    atomicWrite(promptFile, content);
+    return this.ensureAgentPane(
+      async () => session,
+      promptFile,
+      serializeCommand(agentKindLaunchCommand({ sessionId: session.id, promptFile, readOnly: spec.readOnly })),
+    );
+  }
+
+  /**
+   * Ensures the global agent first (the hierarchy's top layer), then the
+   * orchestrator of every registered project, then every registered
+   * agent-kind session (docs/agent-kinds.md): the startup sweep heals
+   * kind panes that reconcile resurrected as bare shells (issue #310 —
+   * their launch line is typed, not recorded). Per-session failures are
    * reported through `onError` and do not stop the others.
    */
   async ensureAll(): Promise<Session[]> {
@@ -209,6 +261,14 @@ export class OrchestratorBootstrap {
         sessions.push(await this.ensureForProject(project));
       } catch (err) {
         this.onError(err, project.id);
+      }
+    }
+    for (const session of this.sessions.listSessions()) {
+      if (session.agentKind === undefined) continue;
+      try {
+        sessions.push((await this.ensureAgentKindSession(session)) ?? session);
+      } catch (err) {
+        this.onError(err, session.projectId);
       }
     }
     return sessions;

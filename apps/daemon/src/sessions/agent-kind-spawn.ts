@@ -1,22 +1,20 @@
 /**
- * Agent-kind spawn machinery (docs/agent-kinds.md, issues #297/#300/#302).
+ * Agent-kind spawn mechanics (docs/agent-kinds.md, issues #297/#300/#302).
  *
  * An agent-kind spawn creates a **session** — never a worker record — with
- * the preset persona (the caller renders it; see the api-layer
- * `spawnAgentKindSession`, which owns persona/parent/report-target
- * knowledge) and a fixed pane command (`agentKindLaunchCommand`): pi with
- * the rendered persona file, the session id in the environment, and — for
- * read-only kinds — the write tools excluded. This module owns everything
- * mechanical: the tmux name, the registry session (role `worker` with
- * `agentKind` + `parentSessionId` + `workerId: null`), the workspace
- * rules, command recording, and failure cleanup.
+ * the session id, kind, parent lineage, and sidebar label recorded, and the
+ * pane opened as a **bare shell** in the kind's workspace. Putting pi into
+ * the pane with the rendered kind persona is the bootstrap's job
+ * (`OrchestratorBootstrap.ensureForSession`, the #290 pattern — identical
+ * to how orchestrator panes are launched), so every launch path (spawn,
+ * relaunch, startup sweep) heals through ONE idempotent typing step.
  *
  * Workspace rules per kind spec (`agent-kinds.ts`): worker-like kinds get
  * a fresh per-session worktree branched off origin's default branch (the
  * #287 machinery, keyed by session id); cheap kinds run read-only in the
- * project clone. The built command is recorded (`setSessionCommand`) so
- * relaunch (#117) and reconcile/resurrect (#27) re-run the identical
- * command — persona embedded — exactly like worker panes.
+ * project clone. The resolved cwd is recorded (`setSessionCwd`) — the
+ * persona's `{{PROJECT_PATH}}` and the relaunch/reconcile launch paths
+ * (issues #27/#117) read it from the registry.
  *
  * Split from `manager.ts` (kiss max-lines budget) following the
  * `reconcile.ts` pattern: explicit deps, free function; the
@@ -30,7 +28,7 @@ import { agentKindSpec } from "./agent-kinds.js";
 import type { ProjectLayout } from "./layout.js";
 import type { SessionRegistry } from "./registry.js";
 import type { Tmux } from "./tmux.js";
-import { nextTmuxSessionName, serializeCommand } from "./tmux-commands.js";
+import { nextTmuxSessionName } from "./tmux-commands.js";
 import { prepareWorkerWorkspace } from "./workspace.js";
 
 export interface AgentKindSpawnDeps {
@@ -46,19 +44,14 @@ export interface AgentKindSpawnRequest {
   parentSessionId: string;
   /** Sidebar label (the spawn's `--name`, ≤ 20 characters). */
   name?: string;
-  /**
-   * Builds the pane command once the session record and cwd are resolved:
-   * personas embed the session id and working directory, so they can only
-   * render at launch time. The returned argv is launched AND recorded.
-   * Rendering failures abort the spawn cleanly (no half-registered state).
-   */
-  buildCommand: (ctx: { sessionId: string; cwd: string }) => string[];
 }
 
 /**
- * Spawns one agent-kind session. Throws on failure with the registry
- * cleaned up (the session record is gone; a prepared worktree is
- * discarded) — a failed spawn never leaves half-registered state.
+ * Spawns one agent-kind session: registry records + workspace + a bare
+ * shell pane. Throws on failure with the registry cleaned up (the session
+ * record is gone; a prepared worktree is discarded) — a failed spawn never
+ * leaves half-registered state. The persona launch happens afterwards via
+ * the bootstrap (`ensureForSession`), which needs the returned session.
  */
 export async function spawnAgentKindSession(deps: AgentKindSpawnDeps, projectId: string, request: AgentKindSpawnRequest): Promise<Session> {
   const { tmux, registry, layout } = deps;
@@ -79,19 +72,16 @@ export async function spawnAgentKindSession(deps: AgentKindSpawnDeps, projectId:
   // cheap kinds run read-only in the project clone. A fetch failure aborts
   // the spawn — never start an audit on a stale base.
   let workspace: { path: string; discard: () => Promise<void> } | null = null;
-  let cwd: string;
   try {
     if (spec.workerLike) {
       workspace = await prepareWorkerWorkspace(deps.git, layout, projectId, session.id);
       registry.setSessionCwd(session.id, workspace.path);
-      cwd = workspace.path;
     } else {
-      cwd = layout.cloneDir(projectId);
-      registry.setSessionCwd(session.id, cwd);
+      registry.setSessionCwd(session.id, layout.cloneDir(projectId));
     }
-    const command = request.buildCommand({ sessionId: session.id, cwd });
-    registry.setSessionCommand(session.id, serializeCommand(command));
-    await tmux.newSession(name, { cwd, command });
+    // Bare shell: the bootstrap types the persona launch line (issue #290
+    // pattern) — spawn, relaunch, and the startup sweep all heal identically.
+    await tmux.newSession(name, { cwd: registry.getSession(session.id)?.cwd });
   } catch (err) {
     registry.deleteSession(session.id);
     if (workspace !== null) await workspace.discard();
