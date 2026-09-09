@@ -14,7 +14,8 @@
  * | `{{PROJECT_DEFAULT_BRANCH}}` | `Project.defaultBranch`           |
  * | `{{PROJECT_PATH}}`      | local checkout path (the clone dir)    |
  * | `{{WORKSPACE_PATH}}`    | global-agent prompt only: the daemon state dir root |
- * | `{{ORCHESTRATOR_SESSION_ID}}` | worker prompt only — not set here |
+ * | `{{ORCHESTRATOR_SESSION_ID}}` | agent-kind prompts (docs/agent-kinds.md): the project orchestrator session id — the audit kinds' report target |
+ * | `{{PARENT_SESSION_ID}}` | agent-kind prompts (docs/agent-kinds.md): the calling session's id — the investigator's report target |
  *
  * The rendered prompt is written to a per-project file which the
  * orchestrator's pi session loads via `pi --append-system-prompt <file>`
@@ -34,7 +35,9 @@ export type PromptPlaceholder =
   | "PROJECT_REPO_URL"
   | "PROJECT_DEFAULT_BRANCH"
   | "PROJECT_PATH"
-  | "WORKSPACE_PATH";
+  | "WORKSPACE_PATH"
+  | "ORCHESTRATOR_SESSION_ID"
+  | "PARENT_SESSION_ID";
 
 const PLACEHOLDER_PATTERN = /\{\{([A-Z0-9_]+)\}\}/g;
 

@@ -32,6 +32,7 @@ import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";
 import { listAccessibleRepos } from "../github/repos.js";
 import { nodeStatus } from "./node-version.js";
+import { spawnAgentKindSession } from "./agent-kind-spawn.js";
 import type { DaemonServices } from "./context.js";
 
 // ---------------------------------------------------------------------------
@@ -318,6 +319,8 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
 
     // Worker files-changed (issue #126): PR files, or branch vs default branch pre-PR.
     getWorkerFilesChanged: ({ params }) => workerFilesChangedPayload(services, params.workerId),
+
+    spawnProjectAgent: ({ params, body }) => spawnAgentKindSession(services, params.projectId, body), // docs/agent-kinds.md
 
     /**
      * Relaunch a dead session's tmux pane (issue #117): kills any lingering

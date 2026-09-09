@@ -252,6 +252,25 @@ export const agentKindSchema = z.enum(AGENT_KINDS);
 export type AgentKind = z.infer<typeof agentKindSchema>;
 
 /**
+ * Body of the agent-kind spawn (docs/agent-kinds.md): the persona IS the
+ * prompt, so a spawn carries the kind, a sidebar label, and — for
+ * investigators — the question to investigate. `parentSessionId` is the
+ * explicit parent-of-any-role; when omitted the daemon resolves the
+ * calling pane and falls back to the project orchestrator for
+ * orchestrator-routed kinds.
+ */
+export const spawnAgentRequestSchema = z.object({
+  kind: agentKindSchema,
+  /** Sidebar label, <= 20 characters (pinned by the spawn-worker skill). */
+  name: z.string().min(1).max(20),
+  /** Question typed into the pane after launch (investigator input). */
+  question: z.string().min(1).optional(),
+  /** Parent session of any role (docs/agent-kinds.md §3); resolved from the spawn context when omitted. */
+  parentSessionId: idSchema.optional(),
+});
+export type SpawnAgentRequest = z.infer<typeof spawnAgentRequestSchema>;
+
+/**
  * Who receives an agent kind's final report (docs/agent-kinds.md §4).
  * The delivery mechanism is always `pideck send --session <id>`: kinds
  * with target `caller` deliver to `{{PARENT_SESSION_ID}}` (the calling
@@ -302,6 +321,12 @@ export const sessionSchema = z.object({
    * producers that don't track it may omit it.
    */
   command: z.string().min(1).optional(),
+  /**
+   * Sidebar label (the spawn's `--name`, ≤ 20 characters). Optional:
+   * producers that don't track it may omit it — consumers fall back to the
+   * kind's label plus the tmux session name.
+   */
+  name: z.string().min(1).max(20).optional(),
   /** Set when `role` is `"worker"` and the session belongs to a worker. */
   workerId: idSchema.nullable(),
   createdAt: isoDateTimeSchema,

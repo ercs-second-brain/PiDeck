@@ -27,6 +27,12 @@ export interface FakePaneState {
   paneLines: string[];
   cols: number;
   rows: number;
+  /**
+   * The pane's PID (`#{pane_pid}`), assigned sequentially at `new-session`
+   * (agent-kind caller discovery, docs/agent-kinds.md §3). Sessions seeded
+   * directly into the map without one are invisible to `list-panes`.
+   */
+  panePid?: number;
   /** Simulated pane cursor (reported via `display-message`; issue #92). */
   cursorX?: number;
   cursorY?: number;
@@ -65,6 +71,8 @@ export class FakeTmuxRunner {
   private readonly initialPaneLines: string[] | undefined;
   private readonly initialCols: number;
   private readonly initialRows: number;
+  /** Monotonic fake pane PID source (caller discovery, docs/agent-kinds.md). */
+  private nextPanePid = 42_000;
 
   constructor(options: FakeTmuxRunnerOptions = {}) {
     this.initialPaneLines = options.initialPaneLines;
@@ -153,6 +161,11 @@ export class FakeTmuxRunner {
         return this.newSession(cmdArgs, args);
       case "list-sessions":
         return [...this.sessions.keys()].join("\n");
+      case "list-panes":
+        return [...this.sessions.entries()]
+          .filter(([, pane]) => pane.panePid !== undefined)
+          .map(([name, pane]) => `${name}\t${pane.panePid}`)
+          .join("\n");
       case "kill-session":
         return this.killSession(cmdArgs, args);
       case "capture-pane":
@@ -187,6 +200,7 @@ export class FakeTmuxRunner {
       paneLines: this.initialPaneLines ? [...this.initialPaneLines] : [],
       cols: this.initialCols,
       rows: this.initialRows,
+      panePid: this.nextPanePid++,
       cursorX: 0,
       cursorY: 0,
       cursorVisible: true,

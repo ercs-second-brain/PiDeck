@@ -15,6 +15,7 @@ import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
 import { GithubAutomation, watcherOptionsFromEnv } from "../pipeline/wiring.js";
 import { OrchestratorBootstrap } from "../orchestrator/bootstrap.js";
+import { procSnapshot, type ProcessInfo } from "../sessions/caller-discovery.js";
 import { ProjectLayout, defaultStateDir } from "../sessions/layout.js";
 import { agentSessionEnv } from "../sessions/agent-env.js";
 import { SessionManager } from "../sessions/manager.js";
@@ -73,9 +74,18 @@ export interface DaemonServices {
   piAuth: PiAuthProbe;
   /**
    * Initial-prompt readiness gate (issue #56): holds prompts for spawns
-   * made before pi auth is ready and delivers them once it is.
+   * made before pi auth is ready and delivers them once it is. Agent-kind
+   * sessions (docs/agent-kinds.md) queue their prompts (the investigator's
+   * question) here too, via `queueSession`.
    */
   promptGate: PromptGate;
+  /**
+   * Live process-table snapshot for agent-kind caller discovery
+   * (docs/agent-kinds.md §3 — the calling pane is resolved from the spawn
+   * process's ancestry). Defaults to the real `/proc` (Linux); tests inject
+   * a deterministic fake.
+   */
+  callerProcesses: () => Promise<ProcessInfo[]>;
   /** Injectable clock (ISO timestamps for events). */
   now: () => Date;
   /**
@@ -118,6 +128,24 @@ export interface DaemonContextOptions {
   promptGatePollIntervalMs?: number;
   /** pi-auth probe result TTL in ms (tests; `0` disables caching). */
   piAuthTtlMs?: number;
+  /** Override the process-table snapshot used for agent-kind caller discovery (tests). */
+  callerProcesses?: () => Promise<ProcessInfo[]>;
+}
+
+/**
+ * Builds the initial-prompt readiness gate (issue #56) over the session
+ * manager and the pi auth probe: worker prompts and agent-kind session
+ * prompts (the investigator's question, docs/agent-kinds.md) both queue
+ * here until a provider is ready.
+ */
+function buildPromptGate(sessions: SessionManager, piAuth: PiAuthProbe, options: DaemonContextOptions): PromptGate {
+  return new PromptGate({
+    sendKeys: (sessionId, keys, sendOptions) => sessions.sendKeys(sessionId, keys, sendOptions),
+    getWorker: (workerId) => sessions.getWorker(workerId),
+    updateWorkerStatus: (workerId, status, statusMessage) => sessions.updateWorkerStatus(workerId, status, statusMessage),
+    isReady: async () => (await piAuth.payload()).ready,
+    ...(options.promptGatePollIntervalMs !== undefined ? { pollIntervalMs: options.promptGatePollIntervalMs } : {}),
+  });
 }
 
 /** Resolves the daemon state dir honoring `PD_HOME`. */
@@ -221,20 +249,15 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // Orchestrator bootstrap (#12/#166): shared by the startup sweep and the registration handler.
   const orchestratorBootstrap = new OrchestratorBootstrap({ sessions, tmux, projects, layout });
 
-  // pi auth readiness (issue #57) + worker initial-prompt gate (issue #56): the
-  // gate polls through the same probe so queued prompts deliver when ready.
+  // pi auth readiness (issue #57) + worker/agent-kind initial-prompt gate
+  // (issue #56, docs/agent-kinds.md): the gate polls through the same probe
+  // so queued prompts deliver when ready.
   const piAuth = new PiAuthProbe({
     ...(options.piRunner !== undefined ? { run: options.piRunner } : {}),
     ...(options.piReady !== undefined ? { readyOverride: options.piReady } : {}),
     ...(options.piAuthTtlMs !== undefined ? { ttlMs: options.piAuthTtlMs } : {}),
   });
-  const promptGate = new PromptGate({
-    sendKeys: (sessionId, keys, sendOptions) => sessions.sendKeys(sessionId, keys, sendOptions),
-    getWorker: (workerId) => sessions.getWorker(workerId),
-    updateWorkerStatus: (workerId, status, statusMessage) => sessions.updateWorkerStatus(workerId, status, statusMessage),
-    isReady: async () => (await piAuth.payload()).ready,
-    ...(options.promptGatePollIntervalMs !== undefined ? { pollIntervalMs: options.promptGatePollIntervalMs } : {}),
-  });
+  const promptGate = buildPromptGate(sessions, piAuth, options);
   // Warm the pi version memo (issue #223) at boot, fire-and-forget: the
   // installed pi only changes through an apply (which restarts the daemon),
   // so the memo never needs refreshing — and the first /api/status poll must
@@ -279,6 +302,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     update,
     piAuth,
     promptGate,
+    callerProcesses: options.callerProcesses ?? (async () => procSnapshot()),
     now: () => new Date(),
     runtimeStats: new RuntimeStats(),
   };

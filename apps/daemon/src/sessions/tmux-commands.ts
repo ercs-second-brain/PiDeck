@@ -6,6 +6,8 @@
  */
 
 import type { SessionRole } from "./registry.js";
+import type { SessionRegistry } from "./registry.js";
+import type { Tmux } from "./tmux.js";
 
 /** Characters that are safe in a POSIX shell word without quoting. */
 const SH_BARE_WORD = /^[A-Za-z0-9_./:=,+@%^-]+$/;
@@ -130,4 +132,28 @@ export function parseTmuxSessionName(name: string): {
 export function sanitizeTmuxSegment(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
   return cleaned.length > 0 ? cleaned : "project";
+}
+
+/** The collaborators the name allocator reads (satisfied by SessionManager's deps). */
+interface TmuxNameAllocatorDeps {
+  tmux: Pick<Tmux, "listSessions">;
+  registry: Pick<SessionRegistry, "listSessions">;
+}
+
+/**
+ * Next free tmux session name for a project+role, considering both live
+ * tmux sessions and registry records so names never collide across
+ * reloads: `pideck-<projectId>-<role>-<n>` with n starting at 1. The one
+ * allocator for every spawn path (workers, orchestrators, agent kinds —
+ * issues #4/#297) so the naming scheme cannot drift.
+ */
+export async function nextTmuxSessionName(deps: TmuxNameAllocatorDeps, projectId: string, role: SessionRole): Promise<string> {
+  const prefix = `pideck-${sanitizeTmuxSegment(projectId)}-${role}-`;
+  const known = new Set([
+    ...(await deps.tmux.listSessions()),
+    ...deps.registry.listSessions().map((s) => s.tmuxSession),
+  ]);
+  let n = 1;
+  while (known.has(`${prefix}${n}`)) n++;
+  return `${prefix}${n}`;
 }

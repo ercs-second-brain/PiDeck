@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import {
   sessionSchema,
   workerSchema,
+  type AgentKind,
   type Session,
   type Worker,
   type WorkerKind,
@@ -32,6 +33,12 @@ export interface CreateSessionInput {
   /** Command the pane is launched with (`Session.command` contract field). */
   command?: string;
   workerId?: string | null;
+  /** Preset-prompt agent kind (docs/agent-kinds.md); absent for ordinary sessions. */
+  agentKind?: AgentKind;
+  /** Parent session of any role (docs/agent-kinds.md §3); absent for ordinary sessions. */
+  parentSessionId?: string;
+  /** Sidebar label (`Session.name`, ≤ 20 characters); agent-kind spawns carry their `--name`. */
+  name?: string;
 }
 
 export interface RegisterWorkerInput {
@@ -118,6 +125,9 @@ export class SessionRegistry {
     };
     if (input.cwd !== undefined) session.cwd = input.cwd;
     if (input.command !== undefined) session.command = input.command;
+    if (input.agentKind !== undefined) session.agentKind = input.agentKind;
+    if (input.parentSessionId !== undefined) session.parentSessionId = input.parentSessionId;
+    if (input.name !== undefined) session.name = input.name;
     this.sessions.set(session.id, session);
     this.save();
     return session;
@@ -162,6 +172,21 @@ export class SessionRegistry {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`unknown session: ${sessionId}`);
     session.cwd = cwd;
+    this.save();
+    return session;
+  }
+
+  /**
+   * Records the pane's launch command after it is built: agent-kind
+   * personas (docs/agent-kinds.md) can only be rendered once the session id
+   * and working directory are known, so the command is patched onto the
+   * record post-creation — relaunch/reconcile then re-run it verbatim
+   * (issues #27/#117).
+   */
+  setSessionCommand(sessionId: string, command: string): Session {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`unknown session: ${sessionId}`);
+    session.command = command;
     this.save();
     return session;
   }

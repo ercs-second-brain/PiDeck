@@ -25,11 +25,12 @@ import { GLOBAL_AGENT_PROJECT_ID } from "@pideck/shared";
 import { defaultGitRunner, type GitRunner } from "../github/repos.js";
 import { ProjectLayout } from "./layout.js";
 import { prepareWorkerWorkspace } from "./workspace.js";
+import { spawnAgentKindSession, type AgentKindSpawnRequest } from "./agent-kind-spawn.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
 import { isArchivedWorkerSession, isTerminalWorkerStatus, launchPath, reconcileSessions, type ReconcileDeps, type ReconcileResult } from "./reconcile.js";
 import { Tmux } from "./tmux.js";
-import { DEFAULT_WORKER_COMMAND, sanitizeTmuxSegment, serializeCommand } from "./tmux-commands.js";
+import { DEFAULT_WORKER_COMMAND, nextTmuxSessionName, serializeCommand } from "./tmux-commands.js";
 
 export { type ReconcileResult } from "./reconcile.js";
 
@@ -227,6 +228,21 @@ export class SessionManager {
     };
   }
 
+  /**
+   * Spawns a preset-prompt agent-kind session (docs/agent-kinds.md, issues
+   * #297/#300/#302) — a session with a pre-baked persona prompt and a fixed
+   * report route, never a worker record. Mechanics live in
+   * `agent-kind-spawn.ts`; persona/parent/report-target knowledge stays
+   * with the caller (the api-layer `spawnAgentKindSession`).
+   */
+  spawnAgentKind(projectId: string, request: AgentKindSpawnRequest): Promise<Session> {
+    return spawnAgentKindSession(
+      { tmux: this.tmux, registry: this.registry, layout: this.layout, git: this.git },
+      projectId,
+      request,
+    );
+  }
+
   /** The registry session for `sessionId`, or `undefined` when unknown. */
   getSession(sessionId: string): Session | undefined {
     return this.registry.getSession(sessionId);
@@ -387,19 +403,12 @@ export class SessionManager {
   }
 
   /**
-   * Next free tmux session name for a project+role, considering both live
-   * tmux sessions and registry records so names never collide across
-   * reloads: `pideck-<projectId>-<role>-<n>` with n starting at 1.
+   * Next free tmux session name for a project+role (see
+   * `nextTmuxSessionName` in tmux-commands.ts — the one allocator shared
+   * with the agent-kind spawn path).
    */
-  async nextTmuxSessionName(projectId: string, role: SessionRole): Promise<string> {
-    const prefix = `pideck-${sanitizeTmuxSegment(projectId)}-${role}-`;
-    const known = new Set([
-      ...(await this.tmux.listSessions()),
-      ...this.registry.listSessions().map((s) => s.tmuxSession),
-    ]);
-    let n = 1;
-    while (known.has(`${prefix}${n}`)) n++;
-    return `${prefix}${n}`;
+  nextTmuxSessionName(projectId: string, role: SessionRole): Promise<string> {
+    return nextTmuxSessionName(this.deps, projectId, role);
   }
 
   private requireSession(sessionId: string): Session {
