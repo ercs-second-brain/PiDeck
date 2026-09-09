@@ -2,7 +2,7 @@
 
 A self-hosted, single-command AI coding agent orchestration platform — pi coding agent workers, driven by GitHub issues and PRs, managed from a kanban and browser terminals on your own machine.
 
-See [docs/pideck-prd.md](docs/pideck-prd.md) for the PRD and [docs/pideck-concept.md](docs/pideck-concept.md) for the concept brief (the spec of record). Detailed operator documentation lives in [install/README.md](install/README.md); the agent integration contract in [agent/README.md](agent/README.md); PWA install support (manifest, minimal service worker, iOS caveats) in [docs/pwa.md](docs/pwa.md).
+See [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) for the PiDeck-vs-Pi split (PiDeck is the plumber; Pi is the agent). See [docs/pideck-prd.md](docs/pideck-prd.md) for the PRD and [docs/pideck-concept.md](docs/pideck-concept.md) for the concept brief (the spec of record). Detailed operator documentation lives in [install/README.md](install/README.md); the agent integration contract in [agent/README.md](agent/README.md); PWA install support (manifest, minimal service worker, iOS caveats) in [docs/pwa.md](docs/pwa.md).
 
 ## How the pieces fit together
 
