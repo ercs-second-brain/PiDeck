@@ -48,7 +48,9 @@ export interface ReconcileDeps {
  * recorded command through the reboot-resilient guard
  * {@link resurrectionCommand} (binary on PATH → verbatim, else interactive
  * shell; legacy records without a recorded command keep the role default);
- * orchestrators get a plain interactive shell.
+ * orchestrators get a plain interactive shell — the persona relaunch (pi
+ * with the orchestrator prompt, issue #290) is `OrchestratorBootstrap`'s
+ * job, layered above this module.
  */
 export function launchPath(deps: ReconcileDeps, session: Session): { cwd: string; command?: string[] } {
   const cwd = session.cwd ??

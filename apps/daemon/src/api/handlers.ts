@@ -196,6 +196,14 @@ async function relaunchSessionPayload(services: DaemonServices, sessionId: strin
   // Registry workers are mutated in place, so capture the status value.
   const statusBefore = worker?.status;
   const session = await services.sessions.relaunchSession(sessionId);
+  // Issue #290: the launch paths recreate orchestrator panes as bare
+  // shells — putting pi back with its persona is the bootstrap's job
+  // (identical to a fresh orchestrator boot, global agent included).
+  // Errors propagate: a relaunch that leaves a bare shell is the bug this
+  // fixes, not a success.
+  if (session.role === "orchestrator") {
+    await services.orchestratorBootstrap.ensureForSession(session);
+  }
   const after = existing.workerId !== null ? services.sessions.getWorker(existing.workerId) : undefined;
   if (after && after.status !== statusBefore) {
     services.hub.broadcast({

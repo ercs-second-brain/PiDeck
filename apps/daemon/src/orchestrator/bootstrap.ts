@@ -172,6 +172,27 @@ export class OrchestratorBootstrap {
   }
 
   /**
+   * Re-launches the agent persona in a freshly (re)created orchestrator
+   * pane (issue #290): the relaunch/reconcile launch paths recreate
+   * orchestrator panes as bare shells — putting pi back with its persona
+   * is the bootstrap's job (this module's issue #12 machinery), so a
+   * relaunched orchestrator is identical to a fresh boot: same rendered
+   * persona prompt, session id env, and workspace. Dispatches on the
+   * session: the global agent re-ensures the global persona, a project
+   * orchestrator re-ensures the project's. Returns `null` for worker
+   * sessions (their relaunch re-runs their recorded command, issue #27)
+   * and for orchestrators whose project is unknown. Idempotent: the pane
+   * probe skips the launch when the agent is already running.
+   */
+  async ensureForSession(session: Session): Promise<Session | null> {
+    if (session.role !== "orchestrator") return null;
+    if (session.projectId === GLOBAL_AGENT_PROJECT_ID) return this.ensureGlobalAgent();
+    const project = this.projects.get(session.projectId);
+    if (project === undefined) return null;
+    return this.ensureForProject(project);
+  }
+
+  /**
    * Ensures the global agent first (the hierarchy's top layer) and then the
    * orchestrator of every registered project. Per-project failures are
    * reported through `onError` and do not stop the others.
