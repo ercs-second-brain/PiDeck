@@ -1,10 +1,10 @@
 /**
- * Unit tests for the terminal fit/resize controller (issue #124): the
- * wiring that turns xterm fit measurements into `terminal.resize` frames.
+ * Unit tests for the terminal fit/resize controller (issues #124 and #353):
+ * the wiring that turns xterm fit measurements into `terminal.resize` frames.
  * Pure node — the xterm connection and fit calls are fakes.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFitController } from "./terminal-fit";
 
 function makeHarness(initial: { cols: number; rows: number } = { cols: 80, rows: 24 }) {
@@ -24,11 +24,22 @@ function makeHarness(initial: { cols: number; rows: number } = { cols: 80, rows:
     onFitted,
     fit,
     pending: { ...initial },
-    fitNow: () => {},
+    fitNow: (() => {}) as () => void,
+    dispose: () => {},
   };
-  harness.fitNow = createFitController({ terminal, fit, connection, onFitted });
+  const controller = createFitController({ terminal, fit, connection, onFitted });
+  harness.fitNow = controller;
+  harness.dispose = controller.dispose;
   return harness;
 }
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("createFitController (issue #124)", () => {
   it("sends a resize frame when the fitted size changes", () => {
@@ -46,6 +57,7 @@ describe("createFitController (issue #124)", () => {
     h.fitNow();
     h.fitNow();
     h.fitNow();
+    vi.advanceTimersByTime(200);
     expect(h.resize).toHaveBeenCalledTimes(1);
   });
 
@@ -56,6 +68,7 @@ describe("createFitController (issue #124)", () => {
     expect(h.resize).toHaveBeenLastCalledWith(100, 40);
     h.pending = { cols: 100, rows: 45 };
     h.fitNow();
+    vi.advanceTimersByTime(200);
     expect(h.resize).toHaveBeenLastCalledWith(100, 45);
   });
 
@@ -76,5 +89,77 @@ describe("createFitController (issue #124)", () => {
     expect(() => fitNow()).not.toThrow();
     expect(onFitted).toHaveBeenCalledWith({ cols: 80, rows: 24 });
     expect(resize).not.toHaveBeenCalled(); // unchanged size → no frame
+  });
+});
+
+describe("createFitController resize coalescing (issue #353)", () => {
+  it("fits synchronously on the first call (the pane attaches with that size)", () => {
+    const h = makeHarness();
+    h.pending = { cols: 120, rows: 40 };
+    h.fitNow();
+    // No timer advance: the leading fit must already have happened.
+    expect(h.fit).toHaveBeenCalledOnce();
+    expect(h.resize).toHaveBeenCalledWith(120, 40);
+  });
+
+  it("coalesces a resize burst into one trailing fit", () => {
+    const h = makeHarness({ cols: 120, rows: 40 });
+    // Simulate a drag: the container changes on every observer event.
+    for (let cols = 121; cols <= 130; cols++) {
+      h.pending = { cols, rows: 40 };
+      h.fitNow();
+    }
+    // Nothing landed yet — the burst is still being coalesced.
+    expect(h.fit).toHaveBeenCalledTimes(1); // leading fit only
+    expect(h.resize).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(150);
+    expect(h.fit).toHaveBeenCalledTimes(2);
+    expect(h.resize).toHaveBeenLastCalledWith(130, 40);
+    expect(h.onFitted).toHaveBeenLastCalledWith({ cols: 130, rows: 40 });
+  });
+
+  it("does not fit while the container keeps changing", () => {
+    const h = makeHarness();
+    h.fitNow(); // leading
+    for (let i = 0; i < 10; i++) {
+      vi.advanceTimersByTime(100); // events keep arriving inside the window
+      h.pending = { cols: 100 + i, rows: 40 };
+      h.fitNow();
+    }
+    expect(h.fit).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(150);
+    expect(h.fit).toHaveBeenCalledTimes(2);
+    expect(h.resize).toHaveBeenLastCalledWith(109, 40);
+  });
+
+  it("dispose cancels a pending trailing fit", () => {
+    const h = makeHarness();
+    h.pending = { cols: 120, rows: 40 };
+    h.fitNow(); // leading — also sends the first resize frame
+    h.pending = { cols: 90, rows: 30 };
+    h.fitNow(); // scheduled trailing fit
+    h.dispose();
+    vi.advanceTimersByTime(500);
+    expect(h.fit).toHaveBeenCalledTimes(1);
+    expect(h.resize).toHaveBeenCalledTimes(1);
+  });
+
+  it("debounceMs 0 disables the coalescing (immediate every call)", () => {
+    const terminal = { cols: 80, rows: 24 };
+    const resize = vi.fn();
+    const fit = vi.fn(() => {
+      terminal.cols = 100;
+      terminal.rows = 40;
+    });
+    const fitNow = createFitController({
+      terminal,
+      fit,
+      connection: { resize },
+      debounceMs: 0,
+    });
+    fitNow();
+    fitNow();
+    expect(fit).toHaveBeenCalledTimes(2);
+    expect(resize).toHaveBeenLastCalledWith(100, 40);
   });
 });
