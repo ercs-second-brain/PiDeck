@@ -17,6 +17,7 @@ import {
   fetchWorkers,
   apiDeleteProject,
   apiSpawnAgent,
+  apiTerminateAgentSession,
   startOrchestrator as apiStartOrchestrator,
   startGlobalAgent as apiStartGlobalAgent,
   terminateWorker as apiTerminateWorker,
@@ -59,6 +60,12 @@ export interface SidebarContextValue {
    * the investigator modal can own the error.
    */
   spawnAgentSession: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
+  /**
+   * Terminates an agent-kind session (issue #311): the daemon kills the
+   * pane and removes the record; refreshes so the row disappears. Rejects
+   * so the terminate modal owns the error (#268 lifecycle).
+   */
+  terminateAgentSession: (sessionId: string) => Promise<void>;
   /** Opens the project onboarding wizard (sidebar "+" / empty states). */
   openOnboarding: () => void;
 }
@@ -127,8 +134,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     let cancelled = false;
     let pending = false;
     const load = async () => {
-      // In-flight guard (#88): never stack loads when the daemon is slow —
-      // the still-running load's result is fresher than a duplicate tick.
+      // In-flight guard (#88): never stack loads when the daemon is slow.
       if (pending) return;
       pending = true;
       try {
@@ -180,10 +186,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
 
   const startOrchestrator = useCallback(
     (projectId: string) =>
-      startSession(
-        () => apiStartOrchestrator(projectId),
-        (pending) => setStartingProjectId(pending ? projectId : null),
-      ),
+      startSession(() => apiStartOrchestrator(projectId), (pending) => setStartingProjectId(pending ? projectId : null)),
     [startSession],
   );
 
@@ -196,8 +199,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
   /** Terminates a worker (#64) and refreshes; rethrows for the modal (issue #268). */
   const terminateWorker = useCallback(
     async (workerId: string) => {
-      await apiTerminateWorker(workerId);
-      reload();
+      await apiTerminateWorker(workerId); reload();
     },
     [reload],
   );
@@ -205,24 +207,29 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
   /** Deletes a project locally (#172) and refreshes; rethrows for the modal. */
   const deleteProject = useCallback(
     async (projectId: string) => {
-      await apiDeleteProject(projectId);
-      reload();
+      await apiDeleteProject(projectId); reload();
     },
     [reload],
   );
 
-  // Spawns an agent-kind session (#297/#300/#302); rethrows — the
-  // investigator modal owns the error. Body = shared SpawnAgentRequest.
+  // Spawns an agent-kind session (#297/#300/#302); rethrows for the modal.
   const spawnAgentSession = useCallback(
     async (projectId: string, kind: AgentKind, question?: string) => {
-      const body = { kind, name: kind === "investigator" ? "investigate" : kind, ...(question !== undefined ? { question } : {}) };
+      const body = { kind, name: kind === "investigator" ? "investigate" : kind, ...(question === undefined ? {} : { question }) };
       const session = await apiSpawnAgent(projectId, body);
-      reload(); onStartOrchestratorNavigate(session.id); // refresh, then navigate to the new pane
+      reload(); onStartOrchestratorNavigate(session.id);
     },
     [onStartOrchestratorNavigate, reload],
   );
 
-  return { entries, error, loaded, startingProjectId, globalAgent, startingGlobalAgent, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject, spawnAgentSession };
+  // #311: terminates an agent-kind session and refreshes; rethrows for the modal.
+  const terminateAgentSession = useCallback(
+    async (sessionId: string) => {
+      await apiTerminateAgentSession(sessionId); reload();
+    },
+    [reload],
+  );
+  return { entries, error, loaded, startingProjectId, globalAgent, startingGlobalAgent, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject, spawnAgentSession, terminateAgentSession };
 }
 
 /** Context through which the shell shares sidebar data with main-pane routes. */

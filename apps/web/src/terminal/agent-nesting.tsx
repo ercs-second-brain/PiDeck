@@ -42,13 +42,24 @@ export function splitAgentSessions(sessions: Session[], orchestratorId: string |
 export function AgentChildrenList(props: {
   sessions: Session[] | undefined;
   selectedSessionId: string | null;
+  /** Session id whose terminate request is in flight (✕ disabled, #311). */
+  pendingTerminateSessionId?: string | null;
+  /** Opens the terminate-confirm modal for an agent session (#311). */
+  onAskTerminate?: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
 }) {
   if (props.sessions === undefined || props.sessions.length === 0) return null;
   return (
     <ul className="picker-list picker-agent-children">
       {props.sessions.map((agent) => (
-        <AgentRow key={agent.id} session={agent} selectedSessionId={props.selectedSessionId} onSelectSession={props.onSelectSession} />
+        <AgentRow
+          key={agent.id}
+          session={agent}
+          selectedSessionId={props.selectedSessionId}
+          pending={props.pendingTerminateSessionId === agent.id}
+          onAskTerminate={props.onAskTerminate}
+          onSelectSession={props.onSelectSession}
+        />
       ))}
     </ul>
   );

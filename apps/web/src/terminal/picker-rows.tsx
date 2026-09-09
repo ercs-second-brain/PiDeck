@@ -27,14 +27,14 @@ export function workerFor(session: Session, workers: Worker[]): Worker | undefin
 }
 
 /**
- * Terminate affordance for an active worker row (issue #64): a small "✕".
+ * Terminate affordance for an active session row (issue #64): a small "✕".
  * Issue #116: the confirmation is no longer inline — clicking ✕ opens the
  * small terminate modal ({@link TerminateWorkerModal}), so a stray click
- * never kills a worker.
+ * never kills a worker. Used by worker rows and agent-kind rows (#311).
  */
-export function TerminateWorkerButton(props: { pending: boolean; onAsk: () => void }) {
+export function TerminateWorkerButton(props: { pending: boolean; onAsk: () => void; title?: string }) {
   return (
-    <button type="button" className="picker-terminate" title="Terminate worker" disabled={props.pending} onClick={props.onAsk}>
+    <button type="button" className="picker-terminate" title={props.title ?? "Terminate worker"} disabled={props.pending} onClick={props.onAsk}>
       ✕
     </button>
   );
@@ -138,11 +138,16 @@ export function WorkerRow(props: {
  * #297/#300/#302): an attachable button with the kind as its badge (the
  * persona — investigator, devex-audit, kiss-audit — is the identity, not a
  * worker status). Rendered nested under the session that spawned it; shows
- * the spawn's sidebar label (`Session.name`) with the tmux name as fallback.
+ * the spawn's sidebar label (`Session.name`) with the tmux name as fallback,
+ * and the terminate affordance (#311, confirmed per the #268 modal pattern).
  */
 export function AgentRow(props: {
   session: Session;
   selectedSessionId: string | null;
+  /** The terminate request for this row is in flight (✕ disabled). */
+  pending?: boolean;
+  /** Opens the terminate-confirm modal for this agent session (#311). */
+  onAskTerminate?: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
 }) {
   return (
@@ -156,6 +161,9 @@ export function AgentRow(props: {
         <span className="role-badge role-agent">{props.session.agentKind}</span>
         <span className="picker-session-name">{props.session.name ?? props.session.tmuxSession}</span>
       </button>
+      {props.onAskTerminate && (
+        <TerminateWorkerButton pending={props.pending === true} title="Terminate session" onAsk={() => props.onAskTerminate!(props.session.id)} />
+      )}
     </li>
   );
 }
@@ -289,7 +297,7 @@ function ProjectMenu(props: { projectName: string; projectId: string } & Project
           title="Spawn an investigator — it investigates one question against the codebase and reports back"
           onClick={() => props.onAskInvestigator(props.projectId)}
         >
-          Investigator…
+          Investigator
         </button>
         <button
           type="button"

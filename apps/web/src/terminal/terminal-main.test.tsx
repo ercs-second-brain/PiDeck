@@ -57,6 +57,7 @@ function renderMain(path: string, context: Partial<SidebarContextValue>) {
     terminateWorker: async () => {},
     deleteProject: async () => {},
     spawnAgentSession: async () => {},
+    terminateAgentSession: async () => {},
     openOnboarding: () => {},
     ...context,
   };

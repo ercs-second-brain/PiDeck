@@ -4,7 +4,9 @@
  * their kind as the badge, NESTED under their caller per the #187
  * child-group pattern (menu spawns — parented to the orchestrator — sit at
  * the project's child level; worker spawns nest under the worker's row),
- * and they are attachable like worker rows. The picker is pure, so it is
+ * and they are attachable like worker rows. Issue #311: every agent row —
+ * nested or not — also carries the ✕ terminate affordance confirmed through
+ * the #268 modal pattern. The picker is pure, so it is
  * exercised directly without xterm or effects.
  */
 
@@ -12,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { Session } from "@pideck/shared";
 import { SessionPicker, type ProjectEntry } from "./SessionPicker";
+import { TerminateAgentSessionModal } from "./picker-modals";
 import { makeProject } from "./test-fixtures";
 
 const project = makeProject();
@@ -54,6 +57,7 @@ function renderPicker(entries: ProjectEntry[], overrides: Partial<Parameters<typ
       onOpenGlobalSettings={() => {}}
       onStartOrchestrator={() => {}}
       onSpawnAgentSession={overrides.onSpawnAgentSession}
+      onTerminateAgentSession={overrides.onTerminateAgentSession}
     />,
   );
 }
@@ -117,3 +121,52 @@ describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => 
     expect(html).not.toContain("agentskiss-investigate");
   });
 });
+
+describe("agent-row terminate affordance (issue #311, #268 modal pattern)", () => {
+  it("renders the ✕ affordance on root-level agent rows when a terminate handler is wired", () => {
+    const html = renderPicker([entryWith([orchestrator, devexAudit])], { onTerminateAgentSession: async () => {} });
+    expect(html).toContain("picker-terminate");
+    expect(html).toContain('title="Terminate session"');
+    expect(html.indexOf("sess-agent-1")).toBeLessThan(html.indexOf("picker-terminate"));
+  });
+
+  it("renders the ✕ affordance on nested agent rows too (nested or not, per #311)", () => {
+    const html = renderPicker([entryWith([orchestrator, worker, investigator])], { onTerminateAgentSession: async () => {} });
+    expect(html).toContain("picker-agent-children");
+    expect(html).toContain("picker-terminate");
+  });
+
+  it("omits the affordance without a terminate handler (legacy hosts/tests)", () => {
+    const html = renderPicker([entryWith([orchestrator, devexAudit])]);
+    expect(html).not.toContain("picker-terminate");
+  });
+
+  it("renders the agent terminate modal with label, kind, and no-archived-log copy", () => {
+    const html = renderToString(
+      <TerminateAgentSessionModal
+        sessionLabel="devex-audit"
+        agentKind="devex-audit"
+        pending={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(html).toContain("Terminate session?");
+    expect(html).toContain("<code>devex-audit</code>");
+    expect(html).toContain("keep no archived log");
+    expect(html).toContain(">Terminate</button>");
+  });
+
+  it("shows the in-flight and failure states inside the agent terminate modal", () => {
+    const pending = renderToString(
+      <TerminateAgentSessionModal sessionLabel="x" agentKind="kiss-audit" pending onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(pending).toContain("Terminating…");
+    const failed = renderToString(
+      <TerminateAgentSessionModal sessionLabel="x" agentKind="kiss-audit" pending={false} error="no route for POST" onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(failed).toContain("terminate-modal-error");
+    expect(failed).toContain("no route for POST");
+  });
+});
+

@@ -59,6 +59,7 @@ function renderMain(sessionId: string, contextEntries: ProjectEntry[] = [entry])
     terminateWorker: async () => {},
     deleteProject: async () => {},
     spawnAgentSession: async () => {},
+    terminateAgentSession: async () => {},
     openOnboarding: () => {},
   };
   return renderToString(

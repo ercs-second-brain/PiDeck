@@ -117,7 +117,7 @@ function Shell() {
     startOrchestrator,
     startGlobalAgent,
     terminateWorker,
-    deleteProject, spawnAgentSession,
+    deleteProject, spawnAgentSession, terminateAgentSession,
   } = useSidebarData((sessionId) => navigateFromSidebar(`/terminal/${sessionId}`));
   // The two onboarding modals (issues #62, #90, #183): see use-onboarding-gates.
   const onboarding = useOnboardingGates({ loaded, error, entryCount: entries.length });
@@ -138,7 +138,7 @@ function Shell() {
     startOrchestrator: (projectId: string) => startOrchestrator(projectId),
     startGlobalAgent: () => startGlobalAgent(),
     terminateWorker,
-    deleteProject, spawnAgentSession,
+    deleteProject, spawnAgentSession, terminateAgentSession,
     openOnboarding: onboarding.openProject,
   };
 
@@ -180,6 +180,7 @@ function Shell() {
             onTerminateWorker={terminateWorker}
             onDeleteProject={deleteProjectAndLeave}
             onSpawnAgentSession={spawnAgentSession}
+            onTerminateAgentSession={terminateAgentSession}
             updateSlot={<UpdatePopup />}
           />
           <main className="app-main">

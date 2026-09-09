@@ -160,7 +160,7 @@ export function usePickerState(
 ) {
   // Issue #64/#116: which worker is confirming its termination (modal #268).
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
-  const terminateConfirm = useTerminateConfirm();
+  const terminateConfirm = useTerminateConfirm(); // worker rows + agent-kind rows (#311) share the #268 lifecycle
   // Issue #64: which projects' "Archived" sections are expanded.
   const [archivedOpen, setArchivedOpen] = useState<Set<string>>(() =>
     seedArchivedOpen ? new Set(entries.map((entry) => entry.project.id)) : new Set(),
@@ -177,24 +177,21 @@ export function usePickerState(
   const toggleArchived = (projectId: string) =>
     setArchivedOpen((open) => {
       const next = new Set(open);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
+      if (next.has(projectId)) next.delete(projectId); else next.add(projectId);
       return next;
     });
 
   const toggleCollapsed = (projectId: string) =>
     setCollapsedProjects((collapsed) => {
       const next = new Set(collapsed);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
+      if (next.has(projectId)) next.delete(projectId); else next.add(projectId);
       saveCollapsedProjects(next);
       return next;
     });
 
   const allSessions = entries.flatMap((entry) => entry.sessions);
   const confirmingSession = confirmingSessionId ? allSessions.find((session) => session.id === confirmingSessionId) : undefined;
-  // In flight: the confirm's own request, or an externally tracked one
-  // (the `terminatingWorkerId` overlay, tests/legacy hosts).
+  // In flight: the confirm's own request, or the terminatingWorkerId overlay (tests).
   const pendingTerminate =
     terminateConfirm.pending || (confirmingSession?.workerId != null && confirmingSession.workerId === terminatingWorkerId);
 
@@ -207,8 +204,7 @@ export function usePickerState(
     return () => window.removeEventListener("keydown", onKey);
   }, [confirmingSession, pendingTerminate]);
 
-  // Issue #172: the delete modal dismisses on Escape (except while the
-  // delete request is in flight).
+  // Issue #172: the delete modal dismisses on Escape (not while pending).
   useEffect(() => {
     if (deleteConfirm.confirmingId === null) return;
     const onKey = (event: KeyboardEvent) => {
@@ -239,6 +235,9 @@ export function usePickerState(
 
   const confirmTerminate = (onTerminateWorker: (workerId: string) => Promise<void>) =>
     terminateConfirm.confirm(confirmingSession?.workerId ?? null, onTerminateWorker, () => setConfirmingSessionId(null));
+  // #311: agent sessions have no worker record — the confirm target is the session id.
+  const confirmTerminateAgent = (onTerminateAgentSession: (sessionId: string) => Promise<void>) =>
+    terminateConfirm.confirm(confirmingSessionId, onTerminateAgentSession, () => setConfirmingSessionId(null));
 
   return {
     confirmingSessionId,
@@ -248,6 +247,7 @@ export function usePickerState(
     askTerminate: setConfirmingSessionId,
     cancelTerminate: () => setConfirmingSessionId(null),
     confirmTerminate,
+    confirmTerminateAgent,
     deleteConfirm,
     archivedOpen,
     toggleArchived,

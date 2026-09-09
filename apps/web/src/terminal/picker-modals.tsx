@@ -9,6 +9,7 @@
  */
 
 import { useState, type ReactNode } from "react";
+import type { AgentKind } from "@pideck/shared";
 
 /**
  * Shared shell for the sidebar's small centered confirmation modals
@@ -127,6 +128,44 @@ export function DeleteProjectModal(props: {
       pendingLabel="Deleting…"
       pending={props.pending}
       error={props.error}
+      onConfirm={props.onConfirm}
+      onCancel={props.onCancel}
+    />
+  );
+}
+
+/**
+ * The agent-session terminate modal (issue #311, #268 modal pattern): the
+ * daemon kills the pane and removes the agent-kind session's record —
+ * unlike workers there is no archived log (the report, already delivered,
+ * stays in the session it was sent to). Pure rendering.
+ */
+export function TerminateAgentSessionModal(props: {
+  /** Sidebar label (Session.name) or tmux name of the session. */
+  sessionLabel: string;
+  /** The kind, shown for context ("devex-audit"). */
+  agentKind: AgentKind;
+  /** The terminate request is in flight (confirm shows "Terminating…"). */
+  pending: boolean;
+  /** Failure from the daemon, shown inside the modal. */
+  error?: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <ConfirmModal
+      ariaLabel="Terminate agent session"
+      title="Terminate session?"
+      body={
+        <p>
+          <code>{props.sessionLabel}</code> ({props.agentKind}) will be killed and removed from the sidebar. Agent-kind
+          sessions keep no archived log — a report already delivered stays in the session it was sent to.
+        </p>
+      }
+      confirmLabel="Terminate"
+      pendingLabel="Terminating…"
+      error={props.error}
+      pending={props.pending}
       onConfirm={props.onConfirm}
       onCancel={props.onCancel}
     />
