@@ -11,9 +11,14 @@
  *   pideck workers --project <id> [--json]
  *   pideck pulls --project <id> [--json]
  *   pideck diff --project <id> <pr-number>
- *   pideck spawn --project <id> [--issue <number>] --name <label ≤20> [--prompt <task>]
+ *   pideck spawn --project <id> [--issue <number> | --kind <agent-kind> [--question <q>]] --name <label ≤20> [--prompt <task>]
  *   pideck send --session <id> --message <text>
  *   pideck report-pr <pr-number>   (worker panes only: self-identifies via tmux)
+ *
+ * Agent kinds (docs/agent-kinds.md): preset-persona, read-only sessions —
+ * `investigator` (needs --question; report returns to the calling session)
+ * and `devex-audit`/`kiss-audit` (report to the project orchestrator). The
+ * persona is the prompt: agent kinds never take --prompt/--issue.
  *
  * (Service control — `pideck start|stop|...` — is the installer shim in
  * install/bin/pideck, which forwards agent commands here.)
@@ -26,6 +31,7 @@ import { CliError, optionalFlag, parseArgs, positional, requireFlag, type Parsed
 import { DaemonClient } from "./client.js";
 import { PI_NODE_MIN_VERSION } from "../api/node-version.js";
 import { currentTmuxSession } from "./tmux-context.js";
+import { AGENT_KINDS, AGENT_KIND_REPORT_TARGET, agentKindSchema, type AgentKind } from "@pideck/shared";
 
 /** Injectables for tests (defaults: the live tmux context). */
 export interface RunDeps {
@@ -44,9 +50,14 @@ Usage:
   pideck workers --project <id> [--json]
   pideck pulls --project <id> [--json]
   pideck diff --project <id> <pr-number>
-  pideck spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]
+  pideck spawn --project <id> [--issue <n> | --kind <agent-kind> [--question <q>]] --name <label> [--prompt <task>]
   pideck send --session <id> --message <text>
   pideck report-pr <pr-number>
+
+Agent kinds (preset persona, read-only; docs/agent-kinds.md):
+  investigator    --kind investigator --question "<q>"  (report → calling session)
+  devex-audit     --kind devex-audit                    (report → project orchestrator)
+  kiss-audit      --kind kiss-audit                     (report → project orchestrator)
 
 Environment:
   PD_DAEMON_URL   daemon base URL (default http://127.0.0.1:$PD_WEB_PORT or :8321)
@@ -153,7 +164,7 @@ async function cmdSessions(ctx: CommandContext): Promise<number> {
     else
       for (const session of sessions) {
         console.log(
-          `${session.id}\t${session.projectId}\t${session.role}\ttmux:${session.tmuxSession}${session.workerId !== null ? `\tworker:${session.workerId}` : ""}`,
+          `${session.id}\t${session.projectId}\t${session.role}\ttmux:${session.tmuxSession}${session.workerId !== null ? `\tworker:${session.workerId}` : ""}${session.agentKind !== undefined ? `\tkind:${session.agentKind}` : ""}${session.parentSessionId !== undefined ? `\tparent:${session.parentSessionId}` : ""}`,
         );
       }
   });
@@ -209,15 +220,75 @@ async function cmdDiff(ctx: CommandContext): Promise<number> {
   return 0;
 }
 
+/**
+ * Validated agent kind for a `spawn --kind` invocation (docs/agent-kinds.md),
+ * or `null` for a plain worker spawn. Kind rules: never `--issue`/`--prompt`
+ * (the persona is the prompt); investigators take `--question`, audits don't.
+ */
+function parseAgentKindSpawn(
+  kindRaw: string | boolean | undefined,
+  issueRaw: string | undefined,
+  prompt: string | undefined,
+  question: string | undefined,
+): AgentKind | null {
+  if (typeof kindRaw !== "string" || kindRaw.length === 0) {
+    if (question !== undefined) {
+      throw new CliError("--question is an agent-kind flag; worker spawns take --issue or --prompt");
+    }
+    return null;
+  }
+  const kind = agentKindSchema.safeParse(kindRaw);
+  if (!kind.success) {
+    throw new CliError(`unknown agent kind "${kindRaw}" (valid kinds: ${AGENT_KINDS.join(", ")})`);
+  }
+  if (issueRaw !== undefined) throw new CliError("--issue cannot be combined with --kind (agent kinds are not issue-owned)");
+  if (prompt !== undefined) throw new CliError("--prompt cannot be combined with --kind (the persona is the prompt)");
+  if (kind.data === "investigator" && question === undefined) {
+    throw new CliError("spawn --kind investigator needs --question <question>");
+  }
+  if (kind.data !== "investigator" && question !== undefined) {
+    throw new CliError(`--question is investigator-only (kind "${kind.data}" takes no input)`);
+  }
+  return kind.data;
+}
+
 async function cmdSpawn(ctx: CommandContext): Promise<number> {
-  const usage = "pideck spawn --project <id> [--issue <n>] --name <label> [--prompt <task>]";
+  const usage = "pideck spawn --project <id> [--issue <n> | --kind <agent-kind> [--question <q>]] --name <label> [--prompt <task>]";
   const projectId = requireFlag(ctx.parsed.flags, "project", usage);
   const name = requireFlag(ctx.parsed.flags, "name", usage);
   if (name.length > 20) throw new CliError(`--name must be ≤ 20 characters (got ${name.length})`);
   const issueRaw = optionalFlag(ctx.parsed.flags, "issue");
   const prompt = optionalFlag(ctx.parsed.flags, "prompt");
+  const question = optionalFlag(ctx.parsed.flags, "question");
+
+  // Agent-kind spawn (issues #297/#300/#302): the kind fixes the persona
+  // and the report route (AGENT_KIND_REPORT_TARGET). Repeated --kind
+  // normalizes to its first value (parseArgs collects repeats as arrays).
+  const kindFlag = ctx.parsed.flags["kind"];
+  const kind = parseAgentKindSpawn(
+    Array.isArray(kindFlag) ? kindFlag[0] : kindFlag,
+    issueRaw,
+    prompt,
+    question,
+  );
+  if (kind !== null) {
+    const session = await ctx.client.spawnAgent(projectId, {
+      name,
+      kind,
+      ...(question !== undefined ? { question } : {}),
+    });
+    const target = AGENT_KIND_REPORT_TARGET[kind];
+    emit(ctx.json, session, () =>
+      console.log(
+        `${kind} session ${session.id} spawned (tmux: ${session.tmuxSession}, report → ${target === "caller" ? "calling session" : "project orchestrator"})`,
+      ),
+    );
+    return 0;
+  }
+
+  // Worker spawn (issues #14/#120): unchanged path.
   if (issueRaw === undefined && prompt === undefined) {
-    throw new CliError("spawn needs --issue <number> or --prompt <task>");
+    throw new CliError("spawn needs --issue <number>, --prompt <task>, or --kind <agent-kind>");
   }
   if (issueRaw !== undefined && !/^\d+$/.test(issueRaw)) throw new CliError(`--issue must be a positive number (got ${issueRaw})`);
   const worker = await ctx.client.spawn(projectId, {

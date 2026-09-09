@@ -18,6 +18,7 @@ import {
   sessionSchema,
   settingsSchema,
   workerSchema,
+  type AgentKind,
   type KanbanBoard,
   type Project,
   type PullRequest,
@@ -95,6 +96,20 @@ export class DaemonClient {
     if (input.issueNumber !== undefined) body["issueNumber"] = input.issueNumber;
     if (input.prompt !== undefined) body["prompt"] = input.prompt;
     return this.request("POST", `/api/projects/${encodeURIComponent(projectId)}/spawn`, body, workerSchema);
+  }
+
+  /**
+   * `pideck spawn --kind <agent-kind>` (issues #297/#300/#302,
+   * docs/agent-kinds.md): spawn a preset-prompt agent-kind session. The
+   * persona is the prompt, so the body carries the kind (and, for
+   * investigators, the question) instead of a freeform task prompt; the
+   * daemon stamps the calling session as `parentSessionId` and returns the
+   * new session record (agent-kind sessions are not workers).
+   */
+  async spawnAgent(projectId: string, input: { name: string; kind: AgentKind; question?: string }): Promise<Session> {
+    const body: Record<string, unknown> = { name: input.name, kind: input.kind };
+    if (input.question !== undefined) body["question"] = input.question;
+    return this.request("POST", `/api/projects/${encodeURIComponent(projectId)}/spawn`, body, sessionSchema);
   }
 
   /** `pideck send` — deliver a message into a session's tmux pane. */
