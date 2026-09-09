@@ -58,7 +58,7 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `pideck project get <id>` | `--json` | `GET /api/projects/:projectId` | Returns `Project` |
 | `pideck project ls` | `--json` | `GET /api/projects` | Returns `Project[]` |
 | `pideck kanban --project <id>` | `--json` | `GET /api/projects/:projectId/kanban` | Returns `KanbanBoard` |
-| `pideck sessions --project <id>` | `--json` | `GET /api/projects/:projectId/sessions` | Returns `Session[]`; agent-kind sessions carry `agentKind` and `parentSessionId` (docs/agent-kinds.md) |
+| `pideck sessions --project <id>` | `--json` | `GET /api/projects/:projectId/sessions` | Returns `Session[]`; agent-kind sessions carry `agentKind`, `parentSessionId`, and the `name` sidebar label (docs/agent-kinds.md) |
 | `pideck workers --project <id>` | `--json` | `GET /api/projects/:projectId/workers` | Returns `Worker[]` |
 | `pideck pulls --project <id>` | `--json` | `GET /api/projects/:projectId/pulls` | Returns `PullRequest[]` (incl. `ciStatus`, `reviewState`) |
 | `pideck diff --project <id> <pr>` | — | `GET /api/projects/:projectId/pulls/:prNumber/diff` | Returns `PullRequestDiff` |

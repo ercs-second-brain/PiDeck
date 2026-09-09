@@ -21,6 +21,12 @@
  * Spawns with no initial prompt (issue-backed auto-spawns) are also held at
  * `spawning` until auth is ready, so the board never shows an
  * unauthenticated worker as `running` (issue #56).
+ *
+ * Agent-kind sessions (docs/agent-kinds.md) share the same gate via
+ * {@link queueSession}: their prompts (the investigator's question) are
+ * queued until pi auth is ready and retried by the same loop — sessions
+ * have no worker status, so a delivery failure drops the entry loudly
+ * (the pane is gone; the question can never be answered).
  */
 
 import type { Worker } from "@pideck/shared";
@@ -33,6 +39,14 @@ interface PendingPrompt {
   sessionId: string;
   /** Initial task prompt, `undefined` for issue-backed spawns without one. */
   prompt: string | undefined;
+}
+
+/** A queued prompt for an agent-kind session (docs/agent-kinds.md) — e.g. the
+ * investigator's question — held until pi auth is ready (issue #56 parity).
+ * Sessions have no worker status, so these retry until deliverable. */
+interface PendingSessionPrompt {
+  sessionId: string;
+  prompt: string;
 }
 
 export interface PromptGateDeps {
@@ -56,6 +70,7 @@ export class PromptGate {
   private readonly onError: (err: unknown) => void;
 
   private readonly pending: PendingPrompt[] = [];
+  private readonly pendingSessions: PendingSessionPrompt[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private delivering: Promise<void> | null = null;
 
@@ -85,6 +100,23 @@ export class PromptGate {
   /** Number of queued prompts (tests/observability). */
   get size(): number {
     return this.pending.length;
+  }
+
+  /** Number of queued agent-kind session prompts (tests/observability). */
+  get sessionSize(): number {
+    return this.pendingSessions.length;
+  }
+
+  /**
+   * Queues an agent-kind session's prompt after an unauthenticated spawn
+   * (issue #56 parity for docs/agent-kinds.md spawns — the investigator's
+   * question is never typed into an agent that cannot run). Idempotent per
+   * session; retried by the same poll loop until deliverable.
+   */
+  queueSession(sessionId: string, prompt: string): void {
+    if (this.pendingSessions.some((entry) => entry.sessionId === sessionId)) return;
+    this.pendingSessions.push({ sessionId, prompt });
+    this.ensureTimer();
   }
 
   /**
@@ -136,7 +168,33 @@ export class PromptGate {
         this.drop(entry);
       }
     }
-    if (this.pending.length === 0) this.clearTimer();
+    await this.deliverSessionPrompts();
+    if (this.pending.length === 0 && this.pendingSessions.length === 0) this.clearTimer();
+  }
+
+  /**
+   * One delivery pass over the agent-kind session queue (docs/agent-kinds.md):
+   * keep waiting while auth is unready, deliver once it is, and drop loudly
+   * when the pane rejects the delivery (the question can never be answered).
+   */
+  private async deliverSessionPrompts(): Promise<void> {
+    for (const entry of [...this.pendingSessions]) {
+      let ready: boolean;
+      try {
+        ready = await this.deps.isReady();
+      } catch (err) {
+        this.onError(err);
+        continue;
+      }
+      if (!ready) continue;
+      try {
+        await this.deps.sendKeys(entry.sessionId, entry.prompt, { enter: true });
+        this.dropSession(entry);
+      } catch (err) {
+        this.dropSession(entry);
+        this.onError(err instanceof Error ? err : new Error(String(err)));
+      }
+    }
   }
 
   /** Stops the poll timer (daemon shutdown); queued entries stay inspectable. */
@@ -147,6 +205,11 @@ export class PromptGate {
   private drop(entry: PendingPrompt): void {
     const index = this.pending.indexOf(entry);
     if (index !== -1) this.pending.splice(index, 1);
+  }
+
+  private dropSession(entry: PendingSessionPrompt): void {
+    const index = this.pendingSessions.indexOf(entry);
+    if (index !== -1) this.pendingSessions.splice(index, 1);
   }
 
   private ensureTimer(): void {

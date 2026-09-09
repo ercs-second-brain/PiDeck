@@ -188,3 +188,52 @@ describe("PromptGate.deliverPending", () => {
     }
   });
 });
+
+describe("PromptGate.queueSession (agent-kind sessions, docs/agent-kinds.md)", () => {
+  it("holds the question while auth is unready, delivers once ready, and is idempotent", async () => {
+    const h = harness();
+    h.gate.queueSession("sess-kind-1", "why is spawn slow?");
+    h.gate.queueSession("sess-kind-1", "why is spawn slow?"); // idempotent per session
+    expect(h.gate.sessionSize).toBe(1);
+    expect(h.gate.size).toBe(0); // worker and session queues stay separate
+
+    await h.gate.deliverPending();
+    expect(h.typed).toEqual([]); // never typed into an agent that cannot run
+
+    h.setReady(true);
+    await h.gate.deliverPending();
+    expect(h.typed).toEqual([{ sessionId: "sess-kind-1", keys: "why is spawn slow?", enter: true }]);
+    expect(h.gate.sessionSize).toBe(0);
+
+    // Delivered entries are dropped: a second pass re-delivers nothing.
+    await h.gate.deliverPending();
+    expect(h.typed).toHaveLength(1);
+  });
+
+  it("drops the entry loudly when the pane rejects the delivery (the question can never be answered)", async () => {
+    const onError = vi.fn();
+    const h = harness({
+      sendKeys: async () => {
+        throw new Error("pane sess-dead-1 is gone");
+      },
+      onError,
+    });
+    h.gate.queueSession("sess-dead-1", "q");
+    h.setReady(true);
+    await h.gate.deliverPending();
+    // The pane is gone: the entry is dropped (no infinite retry) and the
+    // failure surfaces through the error sink instead of a worker status.
+    expect(h.gate.sessionSize).toBe(0);
+    expect(h.typed).toEqual([]);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("sess-dead-1") }));
+  });
+
+  it("keeps retrying session entries across passes while auth stays unready", async () => {
+    const h = harness();
+    h.gate.queueSession("sess-kind-2", "q2");
+    await h.gate.deliverPending();
+    await h.gate.deliverPending();
+    expect(h.gate.sessionSize).toBe(1);
+    expect(h.typed).toEqual([]);
+  });
+});

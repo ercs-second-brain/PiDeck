@@ -16,6 +16,7 @@ import { nodeStatus } from "./node-version.js";
 import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";
 import { requireOr404 } from "./handlers.js";
+import { spawnAgentKindSession } from "./agent-kind-spawn.js";
 import { projectSpawnSchema, sessionReportPrSchema, sessionSendSchema } from "./cli-routes.js";
 
 /**
@@ -150,12 +151,23 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
   registerPiAuthRoute(router, services);
 
   router.add("POST", "/api/projects/:projectId/spawn", (ctx) =>
-    Promise.resolve(projectSpawnSchema.parse(ctx.body)).then((input) =>
-      spawnWorker(services, ctx.params["projectId"] as string, input).then((worker) => ({
+    Promise.resolve(projectSpawnSchema.parse(ctx.body)).then((input) => {
+      const projectId = ctx.params["projectId"] as string;
+      // One route, two spawn types (docs/agent-kinds.md): a `kind` body
+      // spawns a preset-prompt agent-kind session (the response is a
+      // Session — agent-kind sessions are not workers); anything else is a
+      // worker spawn (the response is a Worker).
+      if (input.kind !== undefined) {
+        return spawnAgentKindSession(services, projectId, { ...input, kind: input.kind }).then((session) => ({
+          status: 201,
+          body: session,
+        }));
+      }
+      return spawnWorker(services, projectId, input).then((worker) => ({
         status: 201,
         body: worker,
-      })),
-    ),
+      }));
+    }),
   );
 
   router.add("POST", "/api/sessions/:sessionId/send", (ctx) => {

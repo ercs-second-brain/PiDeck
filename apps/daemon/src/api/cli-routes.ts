@@ -8,9 +8,16 @@
  */
 
 import { z } from "zod";
-import { refNumberSchema } from "@pideck/shared";
+import { agentKindSchema, idSchema, refNumberSchema } from "@pideck/shared";
 
-/** `POST /api/projects/:projectId/spawn` — spawn a worker in a project. */
+/**
+ * `POST /api/projects/:projectId/spawn` — spawn a worker in a project, or
+ * — with `kind` — a preset-prompt agent-kind session (docs/agent-kinds.md,
+ * `pideck spawn --kind`). One route, two spawn types: kind spawns carry
+ * `kind` (+ the investigator's `question`, an explicit `parentSessionId`)
+ * and never `issueNumber`/`prompt` (the persona is the prompt; agent kinds
+ * are not issue-owned); worker spawns keep the original shape.
+ */
 export const projectSpawnSchema = z
   .object({
     /** GitHub issue the worker works; omitted for freeform (`--prompt`) workers. */
@@ -19,9 +26,22 @@ export const projectSpawnSchema = z
     name: z.string().min(1).max(20),
     /** Initial task prompt delivered into the worker's pane. */
     prompt: z.string().min(1).optional(),
+    /** Agent kind (docs/agent-kinds.md) — present marks an agent-kind spawn. */
+    kind: agentKindSchema.optional(),
+    /** The investigator's question (`pideck spawn --kind investigator --question`). */
+    question: z.string().min(1).optional(),
+    /** Explicit parent session of any role (docs/agent-kinds.md §3); resolved from the spawn context when omitted. */
+    parentSessionId: idSchema.optional(),
   })
-  .refine((input) => input.issueNumber !== undefined || input.prompt !== undefined, {
-    message: "spawn needs --issue <number> or --prompt <task>",
+  .refine((input) => input.kind !== undefined || input.issueNumber !== undefined || input.prompt !== undefined, {
+    message: "spawn needs --issue <number>, --prompt <task>, or --kind <agent-kind>",
+  })
+  .refine(
+    (input) => input.kind === undefined || (input.issueNumber === undefined && input.prompt === undefined),
+    { message: "--issue/--prompt cannot be combined with --kind (agent kinds are not issue-owned; the persona is the prompt)" },
+  )
+  .refine((input) => input.question === undefined || input.kind === "investigator", {
+    message: "--question is investigator-only (audit kinds take no input)",
   });
 
 /** `POST /api/sessions/:sessionId/send` — deliver a message into a tmux pane. */
