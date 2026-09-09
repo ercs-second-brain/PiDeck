@@ -9,7 +9,7 @@ import { BoardPage } from "./routes/BoardPage";
 import { DiffPage } from "./routes/DiffPage";
 import { GlobalOnboardingModal } from "./routes/onboarding/GlobalOnboarding";
 import { OnboardingModal } from "./routes/OnboardingWizard";
-import { SettingsPage, GlobalSettingsPage } from "./routes/SettingsPage";
+import { GlobalSettingsModal, ProjectSettingsModal } from "./routes/SettingsModal";
 import { useOnboardingGates } from "./routes/use-onboarding-gates";
 import { TerminalPage } from "./terminal/TerminalPage";
 import { SessionPicker } from "./terminal/SessionPicker";
@@ -28,8 +28,11 @@ import { SidebarContext, useSidebarData } from "./terminal/sidebar";
  * opening the project's settings (#167), an "+ Add project" bottom row
  * (issue #259), and per-agent rows that attach terminals — while the main
  * pane renders the terminal, the all-projects combined board, a project
- * board, settings, or a PR diff. Deep links keep working
- * (`/terminal/:sessionId`, `/projects/:projectId`, `/settings`, …).
+ * board, or a PR diff. Settings are modal dialogs over the current view
+ * (issue #264): the project's ⋯ menu opens the project settings modal, the
+ * sidebar footer the global one — there are no settings routes anymore.
+ * Deep links keep working (`/terminal/:sessionId`, `/projects/:projectId`,
+ * …).
  *
  * pi/gh auth is PiDeck-global (issues #183, #209): unless the daemon's
  * probes report ready or the recorded shell onboarding says done, the
@@ -51,8 +54,6 @@ const router = createBrowserRouter([
       { path: "terminal", element: <TerminalPage /> },
       { path: "terminal/:sessionId", element: <TerminalPage /> },
       { path: "projects/:projectId", element: <BoardPage /> },
-      { path: "projects/:projectId/settings", element: <SettingsPage /> },
-      { path: "settings", element: <GlobalSettingsPage /> },
       { path: "projects/:projectId/pulls/:prNumber", element: <DiffPage /> },
       { path: "*", element: <NotFound /> },
     ],
@@ -116,9 +117,9 @@ function Shell() {
   } = useSidebarData((sessionId) => navigateFromSidebar(`/terminal/${sessionId}`));
   // The two onboarding modals (issues #62, #90, #183): see use-onboarding-gates.
   const onboarding = useOnboardingGates({ loaded, error, entryCount: entries.length });
-  // Issue #93: on small viewports the sidebar collapses into a drawer; the
-  // hamburger (header) opens it, navigating or tapping the backdrop closes it.
+  // Issue #93: on small viewports the sidebar is a drawer — hamburger opens it, navigating closes it.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const settings = useSettingsModal();
   const navigateFromSidebar = (to: string) => {
     setSidebarOpen(false);
     navigate(to);
@@ -139,10 +140,9 @@ function Shell() {
     openOnboarding: onboarding.openProject,
   };
 
-  // Issue #172: after a successful delete, leave the deleted project's
-  // board/settings/diff route — its data is gone.
   const deleteProjectAndLeave = async (deletedId: string) => {
     await deleteProject(deletedId);
+    // Issue #172: leave the deleted project's board/diff route — its data is gone.
     if (projectId === deletedId) navigate("/");
   };
 
@@ -163,10 +163,16 @@ function Shell() {
             startingGlobalAgent={startingGlobalAgent}
             onSelectSession={(id) => navigateFromSidebar(`/terminal/${id}`)}
             onSelectProject={(projectId) => navigateFromSidebar(`/projects/${projectId}`)}
-            onOpenSettings={(projectId) => navigateFromSidebar(`/projects/${projectId}/settings`)}
+            onOpenSettings={(projectId) => {
+              setSidebarOpen(false);
+              settings.open({ kind: "project", projectId });
+            }}
             onSelectAllProjects={() => navigateFromSidebar("/")}
             onStartOnboarding={onboarding.openProject}
-            onOpenGlobalSettings={() => navigateFromSidebar("/settings")}
+            onOpenGlobalSettings={() => {
+              setSidebarOpen(false);
+              settings.open({ kind: "global" });
+            }}
             onStartOrchestrator={(projectId) => startOrchestrator(projectId)}
             onStartGlobalAgent={startGlobalAgent}
             onTerminateWorker={terminateWorker}
@@ -179,20 +185,57 @@ function Shell() {
         </SidebarContext.Provider>
       </div>
       <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+      <AppModals
+        onboarding={onboarding}
+        settingsModal={settings.modal}
+        onCloseSettings={settings.close}
+        onProjectRegistered={(project: Project) => {
+          onboarding.closeProject();
+          reload();
+          navigate(`/projects/${project.id}`);
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * Settings modal state for the Shell (issue #264): which settings dialog is
+ * open over the current view — global, or one project's — or none.
+ */
+function useSettingsModal() {
+  const [modal, setModal] = useState<{ kind: "global" } | { kind: "project"; projectId: string } | null>(null);
+  return {
+    modal,
+    open: (next: NonNullable<typeof modal>) => setModal(next),
+    close: () => setModal(null),
+  };
+}
+
+/**
+ * All app-level modal dialogs, rendered over the current main pane by the
+ * Shell: the onboarding gates (issues #62, #90, #183) and the settings
+ * dialogs (issue #264 — opened by the sidebar's per-project ⋯ menu and the
+ * footer's global button, closed by the × in the card; no navigation).
+ */
+function AppModals(props: {
+  onboarding: ReturnType<typeof useOnboardingGates>;
+  settingsModal: { kind: "global" } | { kind: "project"; projectId: string } | null;
+  onCloseSettings: () => void;
+  onProjectRegistered: (project: Project) => void;
+}) {
+  const { onboarding, settingsModal, onCloseSettings, onProjectRegistered } = props;
+  return (
+    <>
       {onboarding.globalOpen && (
         <GlobalOnboardingModal onClose={onboarding.closeGlobal} onFinished={onboarding.finishGlobal} />
       )}
-      {onboarding.projectOpen && (
-        <OnboardingModal
-          onClose={onboarding.closeProject}
-          onRegistered={(project: Project) => {
-            onboarding.closeProject();
-            reload();
-            navigate(`/projects/${project.id}`);
-          }}
-        />
+      {onboarding.projectOpen && <OnboardingModal onClose={onboarding.closeProject} onRegistered={onProjectRegistered} />}
+      {settingsModal?.kind === "global" && <GlobalSettingsModal onClose={onCloseSettings} />}
+      {settingsModal?.kind === "project" && (
+        <ProjectSettingsModal projectId={settingsModal.projectId} onClose={onCloseSettings} />
       )}
-    </div>
+    </>
   );
 }
 

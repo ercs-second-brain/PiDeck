@@ -1,58 +1,70 @@
+/**
+ * Settings as modal dialogs over the current view (issue #264): the
+ * sidebar's per-project ⋯ menu opens {@link ProjectSettingsModal}, the
+ * sidebar footer opens {@link GlobalSettingsModal} — there are no dedicated
+ * settings routes or pages anymore, and no back links. The per-project vs
+ * global distinction is unchanged: the project modal edits the project's
+ * autoAgentUsername and workerConcurrency cap; both modals show the
+ * daemon-wide {@link GlobalWorkerSettings} toggles.
+ */
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
 import type { Project, Settings } from "@pideck/shared";
-import { apiGetSettings, apiUpdateProject, apiUpdateSettings, errorMessage } from "../lib/api";
+import { apiUpdateProject, apiUpdateSettings, apiGetSettings, errorMessage } from "../lib/api";
 import { useProject } from "../lib/use-project";
 import { BROWSER_NOTIFICATIONS_UNSUPPORTED, permissionState, requestNotificationPermission } from "../components/NotificationCenter";
 import { boardStore } from "../store/store";
 
 /**
- * Global settings surface (issue #176): the daemon-wide worker-pipeline
- * toggles (#106) and the merged-PR browser-notification toggle (#111),
- * reachable from the sidebar footer without picking a project first.
- * pi/gh auth is PiDeck-global, configured once (issue #183) — it surfaces
- * via the global onboarding modal, not here. The per-project form lives in
- * {@link SettingsPage}.
+ * Global settings modal (issue #264, originally the global settings page
+ * #176): the daemon-wide worker-pipeline toggles (#106) and the
+ * merged-PR browser-notification toggle (#111), reachable from the sidebar
+ * footer without picking a project first. pi/gh auth is PiDeck-global
+ * (issue #183) — it surfaces via the global onboarding modal, not here.
  */
-export function GlobalSettingsPage() {
+export function GlobalSettingsModal({ onClose }: { onClose: () => void }) {
   return (
-    <main className="page">
-      <h1 className="page-title">Global settings</h1>
-      <p className="project-repo">Daemon-wide — applies to every project.</p>
-      <GlobalWorkerSettings />
-      <Link to="/" className="back-link">
-        ← All projects
-      </Link>
-    </main>
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Global settings">
+      <div className="modal-card">
+        <button type="button" className="modal-close" aria-label="Close global settings" onClick={onClose}>
+          ×
+        </button>
+        <h1 className="page-title">Global settings</h1>
+        <p className="project-repo">Daemon-wide — applies to every project.</p>
+        <GlobalWorkerSettings />
+      </div>
+    </div>
   );
 }
 
 /**
- * Project settings surface: auto-agent username and the worker concurrency
- * cap, plus the daemon-wide worker-pipeline toggles (issue #106) and the
- * merged-PR browser-notification toggle (issue #111).
- * pi/gh auth is PiDeck-global, configured once (issue #183) — it is no
- * longer surfaced per project here; the global onboarding modal opens
- * whenever pi has no ready provider.
- * `workerConcurrency` unset means unbounded (issue #14 semantics: every
- * unblocked issue spawns a worker immediately); saving an empty field sends
- * `null` explicitly so the cap actually clears (issue #168).
+ * Project settings modal (issue #264, originally the project settings
+ * page): auto-agent username and the worker concurrency cap, plus the
+ * daemon-wide worker-pipeline toggles (issue #106) and the merged-PR
+ * browser-notification toggle (issue #111). pi/gh auth is PiDeck-global,
+ * configured once (issue #183) — it is no longer surfaced per project
+ * here; the global onboarding modal opens whenever pi has no ready
+ * provider.
  */
-export function SettingsPage() {
-  const { projectId } = useParams();
-  const { project, fallback } = useProject(projectId);
-  if (project === undefined) return fallback;
-
+export function ProjectSettingsModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const { project, loaded } = useProject(projectId);
   return (
-    <main className="page">
-      <h1 className="page-title">{project.name} — settings</h1>
-      <p className="project-repo">{project.repoUrl}</p>
-      <GlobalWorkerSettings />
-      <SettingsForm key={project.id} project={project} />
-      <Link to={`/projects/${project.id}`} className="back-link">
-        ← Board
-      </Link>
-    </main>
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Project settings">
+      <div className="modal-card">
+        <button type="button" className="modal-close" aria-label="Close project settings" onClick={onClose}>
+          ×
+        </button>
+        {project === undefined ? (
+          <p className="empty">{loaded ? `Project “${projectId}” not found.` : "Loading…"}</p>
+        ) : (
+          <>
+            <h1 className="page-title">{project.name} — settings</h1>
+            <p className="project-repo">{project.repoUrl}</p>
+            <GlobalWorkerSettings />
+            <SettingsForm key={project.id} project={project} />
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -89,9 +101,9 @@ type ToggleKey = (typeof WORKER_TOGGLES)[number]["key"] | (typeof NOTIFICATION_T
  * persisted by the daemon, read fresh on every pipeline decision — a
  * change here takes effect without a daemon restart. Each toggle saves
  * immediately. Enabling browser notifications first asks the browser for
- * Notification permission (a denied grant keeps the toggle off). Also
- * rendered by the sidebar-footer GlobalSettingsPage (issue #176). Exported
- * for tests (the toggle-display ratchet in SettingsPage.test.tsx).
+ * Notification permission (a denied grant keeps the toggle off). Rendered
+ * by both settings modals (issue #264). Exported for tests (the
+ * toggle-display ratchet in SettingsModal.test.tsx).
  */
 export function GlobalWorkerSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
