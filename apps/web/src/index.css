@@ -90,13 +90,14 @@ code {
 /* --- App shell ----------------------------------------------------------- */
 
 /* Issue #294: edge-to-edge iOS PWA — the header clears the notch/status
-   bar via safe-area insets (0 on platforms without them). */
+   bar via safe-area insets (0 on platforms without them). Issue #325:
+   slightly tighter header (10px vertical rhythm instead of 14px). */
 .app-header {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: calc(14px + env(safe-area-inset-top, 0px)) calc(24px + env(safe-area-inset-right, 0px)) 14px
+  padding: calc(10px + env(safe-area-inset-top, 0px)) calc(24px + env(safe-area-inset-right, 0px)) 10px
     calc(24px + env(safe-area-inset-left, 0px));
   border-bottom: 1px solid var(--border);
   background: var(--bg-raised);
@@ -161,8 +162,10 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  /* Issue #325: subtler bell on pointer viewports; touch viewports keep
+     the 40×40 target (DESIGN.md) via the ≤768px block at the file's end. */
+  width: 34px;
+  height: 34px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
@@ -705,22 +708,26 @@ code {
   font-size: var(--fs-md);
 }
 
-/* Self-update surface (issue #55): a compact popup anchored above the
-   sidebar's settings entry (issue #260) — see .update-popup below. */
+/* Self-update surface (issue #55): compact strips inside the sidebar's
+   popup (.update-popup, below) and the update-apply modal's body — quiet
+   chrome per DESIGN.md: raised surface, --border edge, amber only as the
+   warning accent (3px left rule). Issue #325: restyled from the old
+   all-amber loud banner. */
 .update-banner {
-  margin: 0 0 16px;
-  padding: 10px 14px;
-  border: 1px solid var(--amber);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--amber);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--amber) 12%, var(--bg-raised));
+  background: var(--bg-raised);
   color: var(--text);
-  font-size: var(--fs-base);
+  font-size: var(--fs-md);
+  line-height: 1.45;
 }
 
 /* Issue #260 (B8): the update surface is a compact popup anchored above
-   the sidebar's settings entry instead of a full-width strip. The sticky
-   footer is the containing block, so the popup floats above Settings
-   regardless of scroll; the inner strips reuse .update-banner, compacted. */
+   the sidebar's settings entry. The footer (.picker-footer) is the
+   containing block, so the popup floats above Settings regardless of
+   scroll; the inner strips reuse .update-banner, compacted. */
 .update-popup {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -733,31 +740,40 @@ code {
 }
 
 .update-popup .update-banner {
-  margin: 0;
   padding: 8px 10px;
   font-size: var(--fs-sm);
   box-shadow: var(--shadow-pop);
+}
+
+/* Popup strips are fs-sm — hints/errors follow the strip, not the page. */
+.update-popup .update-banner-hint,
+.update-popup .update-banner-error {
+  font-size: inherit;
 }
 
 .update-banner code {
   color: var(--amber);
 }
 
-/* Click-to-update (issue #76): affordance + gate hint inside the banner. */
+/* Click-to-update (issue #76): affordance + gate hint inside the banner.
+   Issue #325: quiet outline button in the amber accent instead of a solid
+   amber slab; hover is the token tint, not a brightness filter. */
 .update-apply {
-  margin-left: 10px;
-  padding: 4px 14px;
+  margin-left: 8px;
+  padding: 3px 12px;
   border: 1px solid var(--amber);
   border-radius: var(--radius);
-  background: var(--amber);
-  color: var(--bg);
-  font-size: var(--fs-md);
+  background: none;
+  color: var(--amber);
+  font: inherit;
+  font-size: var(--fs-sm);
   font-weight: 600;
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .update-apply:hover:enabled {
-  filter: brightness(1.1);
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
 }
 
 .update-apply:disabled {
@@ -766,8 +782,7 @@ code {
 }
 
 .update-banner.updating {
-  border-color: var(--issue);
-  background: color-mix(in srgb, var(--issue) 12%, var(--bg-raised));
+  border-left-color: var(--issue);
 }
 
 .update-banner.updating code {
@@ -1679,6 +1694,13 @@ code {
   }
 
   .modal-close {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Issue #325: touch viewports keep the 40×40 bell target (DESIGN.md);
+     pointer viewports get the subtler 34px bell in the base rule. */
+  .notif-bell {
     width: 40px;
     height: 40px;
   }

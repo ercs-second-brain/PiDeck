@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate, useLocation } from "react-router";
 import type { Project } from "@pideck/shared";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -14,6 +14,7 @@ import { useOnboardingGates } from "./routes/use-onboarding-gates";
 import { TerminalPage } from "./terminal/TerminalPage";
 import { SessionPicker } from "./terminal/SessionPicker";
 import { SidebarContext, useSidebarData } from "./terminal/sidebar";
+import { loadSidebarOpen, saveSidebarOpen, SIDEBAR_DRAWER_QUERY } from "./lib/sidebar-open";
 
 /**
  * The whole app is one page (issue #62): the terminals page. The app header
@@ -43,7 +44,9 @@ import { SidebarContext, useSidebarData } from "./terminal/sidebar";
  *
  * The app header contains `<Link>`s, so it must render *inside* the router
  * context — it lives in the root layout route (`Shell`), not around
- * `RouterProvider`.
+ * `RouterProvider`. The hamburger (issue #326) toggles the sidebar's single
+ * open/closed state: the drawer slides in on mobile, the sidebar slides off
+ * and back on desktop — persisted in localStorage (`pideck.sidebar.open`).
  */
 const router = createBrowserRouter([
   {
@@ -74,6 +77,7 @@ function AppHeader(props: { sidebarOpen: boolean; onToggleSidebar: () => void })
         className="menu-toggle"
         aria-label="Toggle the project sidebar"
         title="Projects"
+        aria-expanded={props.sidebarOpen}
         onClick={props.onToggleSidebar}
       >
         ☰
@@ -106,6 +110,27 @@ function UpdatePopup() {
   return <UpdateBanner />;
 }
 
+/**
+ * Issue #326: one hamburger-toggled visibility state for every viewport —
+ * the mobile drawer (issue #93) on ≤768px, a slide-off collapse on desktop
+ * — persisted in localStorage so it survives reloads. When the viewport
+ * crosses into the mobile breakpoint the drawer closes (a desktop-open
+ * state must not cover the main pane as a drawer).
+ */
+function useSidebarOpen(): [boolean, () => void, () => void] {
+  const [open, setOpen] = useState(loadSidebarOpen);
+  useEffect(() => saveSidebarOpen(open), [open]);
+  useEffect(() => {
+    const drawer = window.matchMedia(SIDEBAR_DRAWER_QUERY);
+    const onChange = (e: MediaQueryListEvent): void => {
+      if (e.matches) setOpen(false);
+    };
+    drawer.addEventListener("change", onChange);
+    return () => drawer.removeEventListener("change", onChange);
+  }, []);
+  return [open, () => setOpen((o) => !o), () => setOpen(false)];
+}
+
 function Shell() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -128,15 +153,14 @@ function Shell() {
   } = useSidebarData((sessionId) => navigateFromSidebar(`/terminal/${sessionId}`));
   // The two onboarding modals (issues #62, #90, #183): see use-onboarding-gates.
   const onboarding = useOnboardingGates({ loaded, error, entryCount: entries.length });
-  // Issue #93: on small viewports the sidebar is a drawer — hamburger opens it, navigating closes it.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, toggleSidebar, closeSidebar] = useSidebarOpen();
   const settings = useSettingsModal();
   const navigateFromSidebar = (to: string) => {
-    setSidebarOpen(false);
+    closeSidebar();
     navigate(to);
   };
   /** Opens a settings-kind modal over the current view (#264, #315). */
-  const openSettings = (kind: "global" | "agent-assets") => { setSidebarOpen(false); settings.open({ kind }); };
+  const openSettings = (kind: "global" | "agent-assets") => { closeSidebar(); settings.open({ kind }); };
 
   const sidebar = {
     entries,
@@ -159,7 +183,7 @@ function Shell() {
 
   return (
     <div className={`app${sidebarOpen ? " sidebar-open" : ""}`}>
-      <AppHeader sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} />
+      <AppHeader sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />
       <div className="app-body">
         <SidebarContext.Provider value={sidebar}>
           <SessionPicker
@@ -175,7 +199,7 @@ function Shell() {
             onSelectSession={(id) => navigateFromSidebar(`/terminal/${id}`)}
             onSelectProject={(projectId) => navigateFromSidebar(`/projects/${projectId}`)}
             onOpenSettings={(projectId) => {
-              setSidebarOpen(false);
+              closeSidebar();
               settings.open({ kind: "project", projectId });
             }}
             onSelectAllProjects={() => navigateFromSidebar("/")}
@@ -195,7 +219,7 @@ function Shell() {
           </main>
         </SidebarContext.Provider>
       </div>
-      <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+      <div className="sidebar-backdrop" onClick={closeSidebar} />
       <AppModals
         onboarding={onboarding}
         settingsModal={settings.modal}
