@@ -328,6 +328,83 @@ export const AGENT_KIND_INFO: Record<AgentKind, AgentKindInfo> = {
 };
 
 // ---------------------------------------------------------------------------
+// Per-persona agent assets (issue #315): user-owned prompt overrides + skills
+// ---------------------------------------------------------------------------
+
+/**
+ * The boot personas PiDeck ships (`agent/prompts/<persona>.md`) and shapes
+ * panes for: the workspace-level global agent, per-project orchestrators,
+ * workers (implementers and review agents alike), and the preset-prompt
+ * agent kinds (docs/agent-kinds.md — a kind's persona file shares the
+ * persona name). The one vocabulary for prompt overrides and skill
+ * application: which persona's panes a user asset reaches.
+ */
+export const PERSONAS = ["global-agent", "orchestrator", "worker", "investigator", "devex-audit", "kiss-audit"] as const;
+export const personaSchema = z.enum(PERSONAS);
+export type Persona = z.infer<typeof personaSchema>;
+
+/**
+ * User-owned prompt override for one persona (issue #315): the rendered
+ * boot prompt uses this content instead of the shipped
+ * `agent/prompts/<persona>.md` default — which stays the fallback. Stored
+ * in the daemon state dir (user-owned, update-safe); `{{PLACEHOLDER}}`
+ * tokens keep working (unknown tokens stay verbatim). Absent override = the
+ * shipped default runs.
+ */
+export const promptOverrideSchema = z.object({
+  persona: personaSchema,
+  content: z.string(),
+  updatedAt: isoDateTimeSchema,
+});
+export type PromptOverride = z.infer<typeof promptOverrideSchema>;
+
+/** Slug-shaped asset id (skill): safe as a filename and a CLI-visible name. */
+export const agentSkillIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/, "must be a slug (letters, digits, `-`, `_`)");
+
+/**
+ * One user-owned pi skill, single-file in v1 (issue #315, KISS): the content
+ * is a complete skill markdown file (pi frontmatter with `name`/
+ * `description` + body) deployed verbatim and surfaced to the personas'
+ * panes via pi's `--skill <file>`. `personas` lists which persona panes get
+ * it — empty means created but applied nowhere.
+ */
+export const agentSkillSchema = z.object({
+  id: agentSkillIdSchema,
+  content: z.string(),
+  personas: z.array(personaSchema),
+  updatedAt: isoDateTimeSchema,
+});
+export type AgentSkill = z.infer<typeof agentSkillSchema>;
+
+/**
+ * The full per-persona asset state served to the webapp (issue #315):
+ * stored overrides/skills plus the shipped default prompt content per
+ * persona (the editor's fallback text — the daemon resolves the shipped
+ * `agent/prompts/*.md` files; the webapp has no repo access).
+ */
+export const agentAssetsSchema = z.object({
+  prompts: z.array(promptOverrideSchema),
+  skills: z.array(agentSkillSchema),
+  defaults: z.record(personaSchema, z.string()),
+});
+export type AgentAssets = z.infer<typeof agentAssetsSchema>;
+
+/** Body of `PUT /api/agent-assets/prompts/:persona`: the override content. */
+export const savePromptOverrideRequestSchema = z.object({ content: z.string() });
+export type SavePromptOverrideRequest = z.infer<typeof savePromptOverrideRequestSchema>;
+
+/** Body of `PUT /api/agent-assets/skills/:skillId` (upsert): content + applied personas. */
+export const saveAgentSkillRequestSchema = z.object({
+  content: z.string(),
+  personas: z.array(personaSchema),
+});
+export type SaveAgentSkillRequest = z.infer<typeof saveAgentSkillRequestSchema>;
+
+// ---------------------------------------------------------------------------
 // Session (tmux-backed terminal sessions)
 // ---------------------------------------------------------------------------
 

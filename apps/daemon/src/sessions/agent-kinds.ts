@@ -76,7 +76,9 @@ const READ_ONLY_EXCLUDED_TOOLS = ["edit", "write"] as const;
  * The pane launch command for an agent-kind session: pi with the rendered
  * persona appended to its system prompt and the session id in the
  * environment (agent/README.md: every agent session gets `PD_SESSION_ID`);
- * read-only kinds additionally exclude the write tools. Recorded verbatim
+ * read-only kinds additionally exclude the write tools; user skills applied
+ * to the kind's persona (issue #315) are surfaced via `--skill <file>`. The
+ * persona name IS the kind (`agent/prompts/<kind>.md`). Recorded verbatim
  * on the session, so relaunch/reconcile re-run the identical command
  * (issues #27/#117).
  */
@@ -84,6 +86,8 @@ export function agentKindLaunchCommand(options: {
   sessionId: string;
   promptFile: string;
   readOnly: boolean;
+  /** User-skill argv pairs (issue #315): `--skill <file>` per applied skill. */
+  skillArgs?: string[];
 }): string[] {
   return [
     "env",
@@ -91,6 +95,7 @@ export function agentKindLaunchCommand(options: {
     "pi",
     "--append-system-prompt",
     options.promptFile,
+    ...(options.skillArgs ?? []),
     ...(options.readOnly ? ["--exclude-tools", READ_ONLY_EXCLUDED_TOOLS.join(",")] : []),
   ];
 }

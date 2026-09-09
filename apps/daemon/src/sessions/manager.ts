@@ -23,6 +23,7 @@
 import type { Session, Worker, WorkerKind, WorkerStatus } from "@pideck/shared";
 import { GLOBAL_AGENT_PROJECT_ID } from "@pideck/shared";
 import { defaultGitRunner, type GitRunner } from "../github/repos.js";
+import type { PersonaLaunchAssets } from "../api/agent-assets.js";
 import { ProjectLayout } from "./layout.js";
 import { prepareWorkerWorkspace } from "./workspace.js";
 import { spawnAgentKindSession, type AgentKindSpawnRequest } from "./agent-kind-spawn.js";
@@ -86,6 +87,7 @@ export class SessionManager {
   private readonly layout: ProjectLayout;
   private readonly archivedLogs: ArchivedLogStore;
   private readonly git: GitRunner;
+  private readonly personaAssets: PersonaLaunchAssets | undefined;
   /** Collaborators for the extracted reconcile machinery (reconcile.ts). */
   private readonly deps: ReconcileDeps;
 
@@ -97,11 +99,18 @@ export class SessionManager {
     archivedLogs?: ArchivedLogStore;
     /** Git runner for worker workspace preparation (issue #287); defaults to the real git binary. */
     git?: GitRunner;
+    /**
+     * Per-persona user assets (issue #315): the default worker command gains
+     * the worker persona's deployed prompt override (`--append-system-prompt`)
+     * and applied skills (`--skill <file>`). Absent (default): plain `pi`.
+     */
+    personaAssets?: PersonaLaunchAssets;
   }) {
     this.tmux = deps.tmux;
     this.registry = deps.registry;
     this.layout = deps.layout;
     this.git = deps.git ?? defaultGitRunner;
+    this.personaAssets = deps.personaAssets;
     this.deps = { tmux: deps.tmux, registry: deps.registry, layout: deps.layout };
     this.archivedLogs = deps.archivedLogs ?? new ArchivedLogStore(deps.layout.archivedLogsFilePath());
   }
@@ -156,6 +165,22 @@ export class SessionManager {
   }
 
   /**
+   * The default worker pane command (issue #315): plain `pi` plus the worker
+   * persona's user assets — the deployed prompt override (via
+   * `--append-system-prompt`; no override = no appended prompt, the shipped
+   * worker conventions stay prompt-level) and applied skills (`--skill`).
+   * Recorded on the session, so relaunch/reconcile re-run the identical
+   * command (issues #27/#117).
+   */
+  private defaultWorkerCommand(): string[] {
+    return [
+      ...DEFAULT_WORKER_COMMAND,
+      ...(this.personaAssets?.promptLaunchArgs("worker") ?? []),
+      ...(this.personaAssets?.skillLaunchArgs("worker") ?? []),
+    ];
+  }
+
+  /**
    * Spawns a worker: creates the project layout, opens a tmux session
    * running the pi coding agent in the project's workspace, and registers
    * both the session and the worker.
@@ -173,7 +198,7 @@ export class SessionManager {
       // default path the cwd is patched after workspace preparation below
       // (issue #287); an explicit cwd is recorded as-is.
       ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-      command: serializeCommand(options.command ?? [...DEFAULT_WORKER_COMMAND]),
+      command: serializeCommand(options.command ?? this.defaultWorkerCommand()),
       workerId: null,
     });
     const worker = this.registry.registerWorker({
@@ -210,7 +235,7 @@ export class SessionManager {
       this.registry.deleteSession(session.id);
       throw err;
     }
-    const command = options.command ?? [...DEFAULT_WORKER_COMMAND];
+    const command = options.command ?? this.defaultWorkerCommand();
 
     try {
       await this.tmux.newSession(name, { cwd, command });

@@ -1332,6 +1332,106 @@ code {
   margin-top: 2px;
 }
 
+/* --- Agent assets modal (issue #315) ----------------------------------------------- */
+
+.agent-assets-modal {
+  max-width: 760px;
+}
+
+.asset-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.asset-name {
+  flex: 0 0 auto;
+  font-size: var(--fs-base);
+  color: var(--text);
+}
+
+.asset-name-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.asset-personas {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.asset-chip {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.asset-chip-on {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.asset-action {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  font-size: var(--fs-xs);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.asset-action:hover {
+  background: var(--bg-hover);
+}
+
+.asset-action-dim {
+  color: var(--text-dim);
+}
+
+.agent-assets-editor {
+  margin-top: 20px;
+  max-width: 700px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.asset-persona-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0;
+}
+
+.asset-persona-checks .toggle-row span {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.asset-editor-text {
+  min-height: 260px;
+}
+
 /* --- Card diff link ---------------------------------------------------------------- */
 
 .card-diff-link {

@@ -15,12 +15,19 @@
 
 import { z } from "zod";
 import {
+  agentAssetsSchema,
+  agentSkillIdSchema,
   archivedWorkerLogSchema,
+  agentSkillSchema,
   kanbanBoardSchema,
+  personaSchema,
   projectSchema,
   projectSettingsSchema,
+  promptOverrideSchema,
   pullRequestSchema,
   refNumberSchema,
+  saveAgentSkillRequestSchema,
+  savePromptOverrideRequestSchema,
   sessionSchema,
   spawnAgentRequestSchema,
   workerSchema,
@@ -329,65 +336,34 @@ export type UpdateApplyResponse = z.infer<typeof updateApplyResponseSchema>;
 export const endpoints = {
   // Projects
   listProjects: {
-    method: "GET",
-    path: "/api/projects",
-    params: z.object({}),
-    request: null,
-    response: z.array(projectSchema),
+    method: "GET", path: "/api/projects", params: z.object({}), request: null, response: z.array(projectSchema),
   },
   registerProject: {
-    method: "POST",
-    path: "/api/projects",
-    params: z.object({}),
-    request: registerProjectRequestSchema,
-    response: projectSchema,
+    method: "POST", path: "/api/projects", params: z.object({}), request: registerProjectRequestSchema, response: projectSchema,
   },
   getProject: {
-    method: "GET",
-    path: "/api/projects/:projectId",
-    params: z.object({ projectId: z.string().min(1) }),
-    request: null,
-    response: projectSchema,
+    method: "GET", path: "/api/projects/:projectId", params: z.object({ projectId: z.string().min(1) }), request: null, response: projectSchema,
   },
   updateProject: {
-    method: "PATCH",
-    path: "/api/projects/:projectId",
-    params: z.object({ projectId: z.string().min(1) }),
-    request: updateProjectRequestSchema,
-    response: projectSchema,
+    method: "PATCH", path: "/api/projects/:projectId", params: z.object({ projectId: z.string().min(1) }), request: updateProjectRequestSchema, response: projectSchema,
   },
   deleteProject: {
-    method: "DELETE",
-    path: "/api/projects/:projectId",
-    params: z.object({ projectId: z.string().min(1) }),
-    request: null,
+    method: "DELETE", path: "/api/projects/:projectId", params: z.object({ projectId: z.string().min(1) }), request: null,
     /** 204 No Content. */
     response: z.undefined(),
   },
 
   // Kanban
   getProjectKanban: {
-    method: "GET",
-    path: "/api/projects/:projectId/kanban",
-    params: z.object({ projectId: z.string().min(1) }),
-    request: null,
-    response: kanbanBoardSchema,
+    method: "GET", path: "/api/projects/:projectId/kanban", params: z.object({ projectId: z.string().min(1) }), request: null, response: kanbanBoardSchema,
   },
 
   // Sessions & workers
   listProjectSessions: {
-    method: "GET",
-    path: "/api/projects/:projectId/sessions",
-    params: z.object({ projectId: z.string().min(1) }),
-    request: null,
-    response: z.array(sessionSchema),
+    method: "GET", path: "/api/projects/:projectId/sessions", params: z.object({ projectId: z.string().min(1) }), request: null, response: z.array(sessionSchema),
   },
   listProjectWorkers: {
-    method: "GET",
-    path: "/api/projects/:projectId/workers",
-    params: z.object({ projectId: z.string().min(1) }),
-    request: null,
-    response: z.array(workerSchema),
+    method: "GET", path: "/api/projects/:projectId/workers", params: z.object({ projectId: z.string().min(1) }), request: null, response: z.array(workerSchema),
   },
 
   /**
@@ -552,6 +528,31 @@ export const endpoints = {
     response: settingsSchema,
   },
   listAccessibleRepos: { method: "GET", path: "/api/gh/repos", params: z.object({}), request: null, response: z.array(accessibleRepoSchema) }, // issue #217
+
+  /**
+   * Per-persona agent assets (issue #315): the user-owned prompt overrides and
+   * skills stored in the daemon state, plus the shipped default prompt content
+   * per persona (the editor's fallback text). Backs the webapp's agent-assets
+   * surface (sidebar, above Settings).
+   */
+  getAgentAssets: { method: "GET", path: "/api/agent-assets", params: z.object({}), request: null, response: agentAssetsSchema },
+  /**
+   * Upsert one persona's prompt override (issue #315): takes precedence over
+   * the shipped `agent/prompts/<persona>.md` default on the persona's next
+   * boot/relaunch; the shipped file stays the fallback. Update-safe: stored in
+   * the daemon state dir, never in the checkout.
+   */
+  savePromptOverride: { method: "PUT", path: "/api/agent-assets/prompts/:persona", params: z.object({ persona: personaSchema }), request: savePromptOverrideRequestSchema, response: promptOverrideSchema },
+  /** Remove a persona's prompt override; the persona's panes go back to the shipped default. 404 when none stored. */
+  deletePromptOverride: { method: "DELETE", path: "/api/agent-assets/prompts/:persona", params: z.object({ persona: personaSchema }), request: null, response: z.undefined() },
+  /**
+   * Upsert one user skill (issue #315): single-file pi skill, deployed into
+   * the daemon state and surfaced via `--skill` to the panes of every persona
+   * in `personas` (applied on the persona's next spawn/relaunch).
+   */
+  saveAgentSkill: { method: "PUT", path: "/api/agent-assets/skills/:skillId", params: z.object({ skillId: agentSkillIdSchema }), request: saveAgentSkillRequestSchema, response: agentSkillSchema },
+  /** Remove a user skill (and its deployed file); 404 for unknown ids. */
+  deleteAgentSkill: { method: "DELETE", path: "/api/agent-assets/skills/:skillId", params: z.object({ skillId: agentSkillIdSchema }), request: null, response: z.undefined() },
 } as const satisfies Record<string, EndpointShape>;
 
 /** Structural constraint every entry of `endpoints` must satisfy. */

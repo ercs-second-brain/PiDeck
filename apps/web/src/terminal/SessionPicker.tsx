@@ -239,6 +239,8 @@ export interface SessionPickerProps {
   onSelectAllProjects: () => void;
   /** Opens the global settings page in the main pane (the sidebar footer, #176). */
   onOpenGlobalSettings: () => void;
+  /** Opens the agent-assets editor (per-persona prompts & skills) over the current view (issue #315). */
+  onOpenAgentAssets?: () => void;
   /** Opens the project onboarding wizard (the "+ Add project" row, #259). */
   onStartOnboarding: () => void;
   /**
@@ -266,6 +268,38 @@ export interface SessionPickerProps {
   /** Issue #260 (B8): compact update popup rendered inside the footer,
    * anchored above the settings entry. Quiet when up to date / loading. */
   updateSlot?: ReactNode;
+}
+
+/**
+ * The sidebar's sticky footer (issue #176): the agent-assets entry above the
+ * settings entry (issue #315 — the same quiet footer chrome, one group), plus
+ * the #260 update-popup slot. Pinned to the bottom; visible regardless of
+ * project-list state.
+ */
+function PickerFooter(props: { updateSlot?: ReactNode; onOpenAgentAssets?: () => void; onOpenGlobalSettings: () => void }) {
+  return (
+    <div className="picker-footer">
+      {/* Issue #260 (B8): the update popup anchors above the settings
+          entry — the sticky footer is its containing block. */}
+      {props.updateSlot}
+      <button
+        type="button"
+        className="picker-footer-agent-assets"
+        title="Agent assets — per-persona prompts & skills"
+        onClick={props.onOpenAgentAssets}
+      >
+        ✎ Prompts & skills
+      </button>
+      <button
+        type="button"
+        className="picker-footer-settings"
+        title="Global settings — worker pipeline, notifications, pi auth"
+        onClick={props.onOpenGlobalSettings}
+      >
+        ⚙ Settings
+      </button>
+    </div>
+  );
 }
 
 /** Sidebar: project name opens the board, chat icon the orchestrator (#173), workers nested beneath. */
@@ -350,23 +384,7 @@ export function SessionPicker(props: SessionPickerProps) {
       {/* Issue #259 (B7): the add-project affordance as the sidebar's
           bottom row, styled like a project row (the former header "+"). */}
       <AddProjectRow onStartOnboarding={props.onStartOnboarding} />
-      {/* Issue #176: persistent footer — sticky so it stays visible while
-          the project list scrolls; flex `margin-top: auto` pins it to the
-          bottom when the list is short. Renders even with no projects or a
-          daemon error, so global settings are always one click away. */}
-      <div className="picker-footer">
-        {/* Issue #260 (B8): the update popup anchors above the settings
-            entry — the sticky footer is its containing block. */}
-        {props.updateSlot}
-        <button
-          type="button"
-          className="picker-footer-settings"
-          title="Global settings — worker pipeline, notifications, pi auth"
-          onClick={props.onOpenGlobalSettings}
-        >
-          ⚙ Settings
-        </button>
-      </div>
+      <PickerFooter updateSlot={props.updateSlot} onOpenAgentAssets={props.onOpenAgentAssets} onOpenGlobalSettings={props.onOpenGlobalSettings} />
     </aside>
   );
 }

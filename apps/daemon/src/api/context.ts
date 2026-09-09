@@ -10,6 +10,7 @@ import { ACTIVE_WORKER_STATUSES } from "@pideck/shared";
 
 import { PiAuthProbe, type PiRunner } from "../agent/pi-auth.js";
 import { PromptGate } from "../agent/prompt-gate.js";
+import { AgentAssetsStore } from "./agent-assets.js";
 import { GhClient } from "../github/index.js";
 import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
@@ -37,6 +38,13 @@ export interface DaemonServices {
   projects: ProjectService;
   projectStore: ProjectStore;
   settings: SettingsStore;
+  /**
+   * Per-persona agent assets (issue #315): user-owned prompt overrides +
+   * skills, persisted in the state dir and deployed into spawned panes —
+   * shared by the launch paths (bootstrap, worker spawn) and the
+   * agent-assets REST endpoints (the webapp's asset editor).
+   */
+  agentAssets: AgentAssetsStore;
   kanban: KanbanService;
   diffs: DiffService;
   /** Batched + TTL-cached open-PR listing shared by kanban/diffs (issue #40). */
@@ -211,7 +219,10 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // Sessions get the daemon's resolved runtime env (agent-env.ts), never the
   // tmux server's stale global environment.
   const tmux = options.tmux ?? new Tmux({ defaultSessionEnv: agentSessionEnv() });
-  const sessions = new SessionManager({ tmux, registry, layout, ...(options.git !== undefined ? { git: options.git } : {}) });
+  // Per-persona user assets (issue #315) — built before the session manager
+  // and bootstrap so both launch paths shape panes from the same store.
+  const agentAssets = new AgentAssetsStore(stateDir);
+  const sessions = new SessionManager({ tmux, registry, layout, personaAssets: agentAssets, ...(options.git !== undefined ? { git: options.git } : {}) });
 
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
   const projectStore = new ProjectStore(stateDir);
@@ -247,7 +258,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const hub = new WsHub();
 
   // Orchestrator bootstrap (#12/#166): shared by the startup sweep and the registration handler.
-  const orchestratorBootstrap = new OrchestratorBootstrap({ sessions, tmux, projects, layout });
+  const orchestratorBootstrap = new OrchestratorBootstrap({ sessions, tmux, projects, layout, agentAssets });
 
   // pi auth readiness (issue #57) + worker/agent-kind initial-prompt gate
   // (issue #56, docs/agent-kinds.md): the gate polls through the same probe
@@ -289,6 +300,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     projects,
     projectStore,
     settings,
+    agentAssets,
     kanban,
     diffs,
     pullListing,

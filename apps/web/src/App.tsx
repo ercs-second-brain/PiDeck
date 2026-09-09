@@ -9,6 +9,7 @@ import { DiffPage } from "./routes/DiffPage";
 import { GlobalOnboardingModal } from "./routes/onboarding/GlobalOnboarding";
 import { OnboardingModal } from "./routes/OnboardingWizard";
 import { GlobalSettingsModal, ProjectSettingsModal } from "./routes/SettingsModal";
+import { AgentAssetsModal } from "./routes/AgentAssetsModal";
 import { useOnboardingGates } from "./routes/use-onboarding-gates";
 import { TerminalPage } from "./terminal/TerminalPage";
 import { SessionPicker } from "./terminal/SessionPicker";
@@ -128,6 +129,8 @@ function Shell() {
     setSidebarOpen(false);
     navigate(to);
   };
+  /** Opens a settings-kind modal over the current view (#264, #315). */
+  const openSettings = (kind: "global" | "agent-assets") => { setSidebarOpen(false); settings.open({ kind }); };
 
   const sidebar = {
     entries,
@@ -171,10 +174,8 @@ function Shell() {
             }}
             onSelectAllProjects={() => navigateFromSidebar("/")}
             onStartOnboarding={onboarding.openProject}
-            onOpenGlobalSettings={() => {
-              setSidebarOpen(false);
-              settings.open({ kind: "global" });
-            }}
+            onOpenGlobalSettings={() => openSettings("global")}
+            onOpenAgentAssets={() => openSettings("agent-assets")}
             onStartOrchestrator={(projectId) => startOrchestrator(projectId)}
             onStartGlobalAgent={startGlobalAgent}
             onTerminateWorker={terminateWorker}
@@ -208,7 +209,7 @@ function Shell() {
  * open over the current view — global, or one project's — or none.
  */
 function useSettingsModal() {
-  const [modal, setModal] = useState<{ kind: "global" } | { kind: "project"; projectId: string } | null>(null);
+  const [modal, setModal] = useState<{ kind: "global" } | { kind: "project"; projectId: string } | { kind: "agent-assets" } | null>(null);
   return {
     modal,
     open: (next: NonNullable<typeof modal>) => setModal(next),
@@ -224,7 +225,7 @@ function useSettingsModal() {
  */
 function AppModals(props: {
   onboarding: ReturnType<typeof useOnboardingGates>;
-  settingsModal: { kind: "global" } | { kind: "project"; projectId: string } | null;
+  settingsModal: { kind: "global" } | { kind: "project"; projectId: string } | { kind: "agent-assets" } | null;
   onCloseSettings: () => void;
   onProjectRegistered: (project: Project) => void;
 }) {
@@ -239,6 +240,7 @@ function AppModals(props: {
       {settingsModal?.kind === "project" && (
         <ProjectSettingsModal projectId={settingsModal.projectId} onClose={onCloseSettings} />
       )}
+      {settingsModal?.kind === "agent-assets" && <AgentAssetsModal onClose={onCloseSettings} />}
     </>
   );
 }

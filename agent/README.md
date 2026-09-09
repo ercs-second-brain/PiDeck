@@ -4,6 +4,30 @@ Prompts and pi skills for PiDeck orchestration. The daemon loads `prompts/` into
 
 Scope note: these prompts and skills are integration-level only — how agents talk to PiDeck. Capability customization (tools, skills, extensions) is a pi-level, user-owned choice; see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md).
 
+## Per-persona overrides & skills (issue #315)
+
+Everything in this directory is the **shipped default**. PiDeck users can
+override and extend it per persona, without touching the checkout, from the
+webapp's "Prompts & skills" editor (sidebar, above Settings) backed by
+`AgentAssetsStore` (`apps/daemon/src/api/agent-assets.ts`):
+
+- **Prompt overrides** — one optional slot per persona (`global-agent`,
+  `orchestrator`, `worker`, `investigator`, `devex-audit`, `kiss-audit`). A
+  stored override replaces this file's content as the boot-prompt template;
+  `{{PLACEHOLDER}}` rendering works the same, and this file stays the
+  fallback. For orchestrator/global-agent/kind personas the daemon applies
+  the override at boot/relaunch; for the worker persona it rides the recorded
+  spawn command (`pi --append-system-prompt …`, no override = plain `pi`).
+- **Per-persona skills** — user-created single-file pi skills applied to any
+  set of personas, deployed under `<stateDir>/agent-assets/skills/<id>.md`
+  and surfaced via pi's `--skill <file>` on every newly spawned pane of an
+  applied persona. Shipped skills below stay global (installed by
+  `install/lib/assets.sh`) and are untouched by this mechanism.
+
+Both are stored in the daemon state dir (`<stateDir>/agent-assets.json`) —
+user-owned and update-safe. PiDeck stays unopinionated about the content
+(docs/PHILOSOPHY.md): it is the editor/deployer of these user assets, nothing more.
+
 ## Layout
 
 ```
