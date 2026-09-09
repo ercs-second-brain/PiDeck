@@ -496,6 +496,9 @@
 .picker-footer-settings {
   display: flex;
   align-items: center;
+  /* Issue #279 (B23): center the gear + label within the sidebar slot
+     instead of hugging the left edge. */
+  justify-content: center;
   gap: 8px;
   width: 100%;
   padding: 6px 8px;
@@ -504,7 +507,6 @@
   background: none;
   color: var(--text-dim);
   font-size: 13px;
-  text-align: left;
   cursor: pointer;
 }
 
