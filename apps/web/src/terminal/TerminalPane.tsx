@@ -13,6 +13,7 @@ import { relaunchSession } from "../lib/api";
 import { InputBatcher } from "./input-batcher";
 import { TerminalConnection, type TerminalStatus } from "./connection";
 import { createFitController } from "./terminal-fit";
+import { TERMINAL_THEME } from "./terminal-theme";
 import { TERMINAL_KEYS } from "./keys";
 
 const STATUS_LABELS: Record<TerminalStatus, string> = {
@@ -92,12 +93,13 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
       fontSize: 14,
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
       cursorBlink: true,
-      theme: {
-        background: "#0f1216",
-        foreground: "#e6e2d8",
-        cursor: "#e6e2d8",
-        selectionBackground: "#3a4453",
-      },
+      // Terminal theme (issue #299): the app palette's ANSI counterpart —
+      // see DESIGN.md's terminal section for the derivation rules. Extracted
+      // to ./terminal-theme.ts so the palette is documented and testable.
+      theme: TERMINAL_THEME,
+      // Issue #299: allow-priority contrast floor for dim ANSI foregrounds
+      // against the dark background; xterm adjusts colors that fall below it.
+      minimumContrastRatio: 4.5,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
