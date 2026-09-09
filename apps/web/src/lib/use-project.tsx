@@ -1,7 +1,7 @@
 /**
- * Resolves the project for a `/projects/:projectId…` route (BoardPage,
- * SettingsPage): triggers the store's project load when the id first
- * appears, and returns the project together with a fallback to render
+ * Resolves the project for a project id (BoardPage, the project settings
+ * modal): triggers the store's project load when the id first appears, and
+ * returns the project, the store's loaded flag, and a fallback to render
  * while it is missing — the loading notice, or the not-found page once the
  * store has loaded.
  *
@@ -15,7 +15,7 @@ import { Link } from "react-router";
 import type { Project } from "@pideck/shared";
 import { boardStore, useAppState } from "../store/store";
 
-export function useProject(projectId: string | undefined): { project: Project | undefined; fallback: ReactNode } {
+export function useProject(projectId: string | undefined): { project: Project | undefined; loaded: boolean; fallback: ReactNode } {
   const state = useAppState();
 
   useEffect(() => {
@@ -26,6 +26,7 @@ export function useProject(projectId: string | undefined): { project: Project | 
   const project = state.projects.find((p) => p.id === projectId);
   return {
     project,
+    loaded: state.loaded,
     fallback:
       project === undefined ? (
         <main className="page">

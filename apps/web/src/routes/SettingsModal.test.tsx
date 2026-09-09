@@ -1,0 +1,136 @@
+/**
+ * Tests for the settings modals (issue #264): settings are modal dialogs
+ * over the current view — the global modal from the sidebar footer, the
+ * project modal from the sidebar's ⋯ menu — with no dedicated routes and
+ * no back links. The per-project vs global distinction is preserved
+ * (autoAgentUsername / workerConcurrency are project-level; the worker
+ * pipeline + notification toggles are daemon-wide).
+ *
+ * The notification toggle display ratchet (issue #204) keeps its tests at
+ * the bottom, exercised via GlobalWorkerSettings with the api layer mocked.
+ */
+
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { renderToString } from "react-dom/server";
+import { projectSchema, type Project, type Settings } from "@pideck/shared";
+
+vi.mock("../lib/api", () => ({
+  apiGetSettings: vi.fn(),
+  apiUpdateSettings: vi.fn(),
+  apiUpdateProject: vi.fn(),
+  errorMessage: (err: unknown) => String(err),
+}));
+
+const store = vi.hoisted(() => ({
+  state: null as import("../store/store").AppState | null,
+}));
+
+vi.mock("../store/store", () => ({
+  useAppState: () => store.state,
+  boardStore: {
+    getState: () => store.state,
+    subscribe: () => () => {},
+    loadProject: async () => {},
+    refresh: async () => {},
+    upsertProject: () => {},
+  },
+}));
+
+import { GlobalSettingsModal, GlobalWorkerSettings, ProjectSettingsModal } from "./SettingsModal";
+import type { AppState } from "../store/store";
+
+const SETTINGS: Settings = {
+  autoAgentUsername: null,
+  defaultWorkerConcurrency: 0,
+  terminateOnMerge: true,
+  autoFixCi: true,
+  autoFixReviewComments: true,
+  autoReview: true,
+  browserMergeNotifications: false,
+};
+
+const { apiGetSettings } = vi.mocked(await import("../lib/api"));
+
+beforeEach(() => {
+  apiGetSettings.mockResolvedValue(SETTINGS);
+});
+
+afterEach(() => {
+  delete (globalThis as { Notification?: unknown }).Notification;
+  delete (globalThis as { window?: unknown }).window;
+});
+
+const PROJECT_ID = "demo";
+
+const project: Project = projectSchema.parse({
+  id: PROJECT_ID,
+  name: "Demo",
+  repoUrl: "https://github.com/o/r",
+  defaultBranch: "main",
+  settings: { autoAgentUsername: "octocat" },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+});
+
+function storeState(projects: Project[], loaded: boolean): AppState {
+  return { projects, loaded } as unknown as AppState;
+}
+
+describe("settings modals (issue #264)", () => {
+  it("global modal: dialog over the current view, daemon-wide framing, close affordance", () => {
+    const html = renderToString(<GlobalSettingsModal onClose={() => {}} />);
+    expect(html).toContain('aria-label="Global settings"');
+    expect(html).toContain("Daemon-wide — applies to every project.");
+    expect(html).toContain("Worker pipeline (all projects)");
+    expect(html).toContain('aria-label="Close global settings"');
+    // No page chrome, no back link.
+    expect(html).not.toContain("back-link");
+    expect(html).not.toContain("← All projects");
+  });
+
+  it("project modal: loading state before the store resolves", () => {
+    store.state = storeState([], false);
+    const html = renderToString(<ProjectSettingsModal projectId={PROJECT_ID} onClose={() => {}} />);
+    expect(html).toContain("Loading…");
+  });
+
+  it("project modal: not-found state once the store has loaded", () => {
+    store.state = storeState([], true);
+    const html = renderToString(<ProjectSettingsModal projectId={PROJECT_ID} onClose={() => {}} />);
+    expect(html).toContain(`Project “${PROJECT_ID}” not found.`);
+  });
+
+  it("project modal: per-project form and daemon-wide toggles, no back link", () => {
+    store.state = storeState([project], true);
+    const html = renderToString(<ProjectSettingsModal projectId={PROJECT_ID} onClose={() => {}} />);
+    // React marks the interpolated name with a comment node — assert the
+    // pieces separately.
+    expect(html).toContain(">Demo");
+    expect(html).toContain("— settings");
+    expect(html).toContain("https://github.com/o/r");
+    // The per-project distinction: autoAgentUsername prefilled from the project.
+    expect(html).toContain('id="auto-agent-username"');
+    expect(html).toContain('value="octocat"');
+    expect(html).toContain('id="worker-concurrency"');
+    // …plus the daemon-wide toggles shared with the global modal.
+    expect(html).toContain("Worker pipeline (all projects)");
+    expect(html).toContain('aria-label="Close project settings"');
+    expect(html).not.toContain("back-link");
+  });
+});
+
+describe("browser-notification toggle (issue #204)", () => {
+  it("is disabled with an honest message on insecure origins", () => {
+    const html = renderToString(<GlobalWorkerSettings />);
+    expect(html).toContain("Browser notifications require HTTPS (or localhost). In-app toasts and the notification center still work.");
+    expect(html).toContain("disabled");
+  });
+
+  it("keeps the normal toggle on secure contexts", () => {
+    (globalThis as { Notification?: unknown }).Notification = { permission: "granted" };
+    (globalThis as { window?: unknown }).window = { isSecureContext: true };
+    const html = renderToString(<GlobalWorkerSettings />);
+    expect(html).toContain("Fires an OS-level browser notification when a worker&#x27;s PR merges");
+    expect(html).not.toContain("require HTTPS");
+  });
+});
