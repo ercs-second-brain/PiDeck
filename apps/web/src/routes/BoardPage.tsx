@@ -2,21 +2,7 @@ import { Link, useParams } from "react-router";
 import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { WorkersPanel } from "../components/WorkersPanel";
 import { useProject } from "../lib/use-project";
-import { useAppState, type ConnectionState } from "../store/store";
-
-const CONNECTION_LABELS = {
-  connecting: "connecting…",
-  online: "live",
-  offline: "reconnecting…",
-} as const;
-
-export function ConnectionIndicator({ connection }: { connection: ConnectionState }) {
-  return (
-    <span className={`connection connection-${connection}`} title="WebSocket connection to the daemon">
-      <span className="connection-dot" /> {CONNECTION_LABELS[connection]}
-    </span>
-  );
-}
+import { useAppState } from "../store/store";
 
 /**
  * Kanban board for one project (issue #62) — rendered in the app shell's
@@ -44,9 +30,10 @@ export function BoardPage() {
           </span>
         </div>
         <div className="board-actions">
-          <ConnectionIndicator connection={state.connection} />
-          {/* Issue #175: no Settings button here — the project row's ⋯ menu
-              (#167) is the single path to the settings page. */}
+          {/* Issue #276: the live indicator is removed from the kanban — the
+              sidebar's own daemon status covers connectivity. Also issue
+              #175: no Settings button here — the project row's ⋯ menu (#167)
+              is the single path to the settings page. */}
         </div>
       </div>
 

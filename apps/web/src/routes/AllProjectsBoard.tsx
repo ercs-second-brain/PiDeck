@@ -3,7 +3,6 @@ import type { KanbanBoard } from "@pideck/shared";
 import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { WorkersPanel } from "../components/WorkersPanel";
 import { boardStore, useAppState } from "../store/store";
-import { ConnectionIndicator } from "./BoardPage";
 import { useSidebar } from "../terminal/sidebar";
 
 /**
@@ -82,9 +81,7 @@ export function AllProjectsBoard() {
             {state.projects.length} project{state.projects.length === 1 ? "" : "s"} · combined board
           </span>
         </div>
-        <div className="board-actions">
-          <ConnectionIndicator connection={state.connection} />
-        </div>
+        {/* Issue #276: the live indicator is removed from the kanban. */}
       </div>
 
       {state.loadError !== null && <p className="error-note">Daemon unreachable: {state.loadError}</p>}

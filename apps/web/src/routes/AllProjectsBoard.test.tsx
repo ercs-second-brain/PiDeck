@@ -134,7 +134,6 @@ describe("AllProjectsBoard (issue #244 smoke)", () => {
     const html = render().replace(/<!-- -->/g, ""); // rejoin React's text-node separators
     expect(html).toContain("All projects");
     expect(html).toContain("2 projects · combined board");
-    expect(html).toContain("live"); // ConnectionIndicator's online label
     expect(html).toContain("card 9");
     expect(html).toContain("card 7");
     expect(html).toContain("w-1");

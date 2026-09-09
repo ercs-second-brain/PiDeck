@@ -32,7 +32,7 @@ const REVIEW_LABELS = {
  */
 export function KanbanCardView({ card, pr }: { card: KanbanCard; pr?: PullRequest }) {
   return (
-    <article className={`card card-${card.kind}`}>
+    <article className={`card card-${card.kind} card-${card.column}`}>
       <div className="card-top">
         <span className={`kind-badge kind-${card.kind}`}>
           {card.kind === "issue" ? "◆ Issue" : "⇅ Pull Request"}
