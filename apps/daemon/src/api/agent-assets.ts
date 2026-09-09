@@ -92,12 +92,19 @@ type PersistedAssets = z.infer<typeof persistedSchema>;
 
 /** The launch-shaped view of the store (`SessionManager` / bootstrap deps). */
 export interface PersonaLaunchAssets {
-  /** A persona's stored prompt override content, when one exists. */
-  promptOverride: (persona: Persona) => string | undefined;
+  /** A persona's stored prompt override content, when one exists.
+   *
+   * Takes any persona name string (not just the `Persona` enum): agent-kind
+   * launch paths pass the kind id — user-defined kinds (registry v2, issue
+   * #330) are not enum personas. An override can only exist for enum
+   * personas (the override API validates the param), so unknown names just
+   * resolve to `undefined`.
+   */
+  promptOverride: (persona: string) => string | undefined;
   /** `--skill <file>` argv pairs for the skills applied to the persona. */
-  skillLaunchArgs: (persona: Persona) => string[];
+  skillLaunchArgs: (persona: string) => string[];
   /** System-prompt argv for the persona's deployed override file (worker panes). */
-  promptLaunchArgs: (persona: Persona) => string[];
+  promptLaunchArgs: (persona: string) => string[];
 }
 
 export class AgentAssetsStore implements PersonaLaunchAssets {
@@ -138,8 +145,8 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
   }
 
   /** A persona's stored override content; `undefined` = shipped default runs. */
-  promptOverride(persona: Persona): string | undefined {
-    return this.current.prompts[persona]?.content;
+  promptOverride(persona: string): string | undefined {
+    return this.current.prompts[persona as Persona]?.content;
   }
 
   /** Upserts the override and deploys its file; returns the stored record. */
@@ -201,10 +208,10 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
   }
 
   /** `["--skill", file, ...]` for the skills applied to the persona's panes. */
-  skillLaunchArgs(persona: Persona): string[] {
+  skillLaunchArgs(persona: string): string[] {
     const args: string[] = [];
     for (const skill of this.current.skills) {
-      if (skill.personas.includes(persona)) args.push("--skill", this.skillFilePath(skill.id));
+      if (skill.personas.includes(persona as Persona)) args.push("--skill", this.skillFilePath(skill.id));
     }
     return args;
   }
@@ -215,8 +222,8 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
    * the shipped template directly; this is for the worker persona, whose
    * pane command is recorded at spawn rather than rebuilt at boot).
    */
-  promptLaunchArgs(persona: Persona): string[] {
-    if (this.current.prompts[persona] === undefined) return [];
+  promptLaunchArgs(persona: string): string[] {
+    if (this.current.prompts[persona as Persona] === undefined) return [];
     return ["--append-system-prompt", this.promptOverrideFilePath(persona)];
   }
 
@@ -226,7 +233,7 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
   }
 
   /** Where a prompt override is deployed (`<stateDir>/agent-assets/prompts/<persona>.md`). */
-  private promptOverrideFilePath(persona: Persona): string {
+  private promptOverrideFilePath(persona: string): string {
     return path.join(this.stateDir, "agent-assets", "prompts", `${persona}.md`);
   }
 

@@ -11,6 +11,8 @@ import { ACTIVE_WORKER_STATUSES } from "@pideck/shared";
 import { PiAuthProbe, type PiRunner } from "../agent/pi-auth.js";
 import { PromptGate } from "../agent/prompt-gate.js";
 import { AgentAssetsStore } from "./agent-assets.js";
+import { AgentKindRegistry } from "../sessions/agent-kinds.js";
+import { AgentKindStore } from "../sessions/agent-kind-store.js";
 import { GhClient } from "../github/index.js";
 import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
@@ -46,6 +48,14 @@ export interface DaemonServices {
    * agent-assets REST endpoints (the webapp's asset editor).
    */
   agentAssets: AgentAssetsStore;
+  /**
+   * Agent-kind registry (v2, issue #330): shipped + user-defined kind
+   * specs for the spawn/relaunch paths, the CRUD endpoints, and CLI
+   * validation. The store behind it is `agentKindStore`.
+   */
+  agentKinds: AgentKindRegistry;
+  /** User-defined kind store (registry v2, issue #330): backs the CRUD endpoints. */
+  agentKindStore: AgentKindStore;
   kanban: KanbanService;
   diffs: DiffService;
   /** Batched + TTL-cached open-PR listing shared by kanban/diffs (issue #40). */
@@ -236,14 +246,17 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const stateDir = resolveStateDir(options.stateDir);
   const layout = new ProjectLayout(stateDir);
   const registry = options.registry ?? new SessionRegistry(layout.sessionsFilePath());
-  // Sessions get the daemon's resolved runtime env (agent-env.ts), never the
-  // tmux server's stale global environment.
+  // Sessions get the daemon's resolved runtime env (agent-env.ts), never tmux's stale env.
   const tmux = options.tmux ?? new Tmux({ defaultSessionEnv: agentSessionEnv() });
-  // Per-persona user assets (issue #315) — built before the session manager
-  // and bootstrap so both launch paths shape panes from the same store.
+  // Per-persona user assets (issue #315) — before the manager + bootstrap so
+  // both launch paths shape panes from the same store.
   const agentAssets = new AgentAssetsStore(stateDir);
-  // Issue #318: pane-input readiness probe (overridable by tests).
-  const sessions = new SessionManager({ tmux, registry, layout, personaAssets: agentAssets, paneReady: options.paneReady ?? ((name: string) => waitForPaneInputReady(tmux, name)), ...(options.git !== undefined ? { git: options.git } : {}) });
+  // Agent-kind registry v2 (issue #330): user kinds (state-dir store) resolve
+  // ahead of shipped; shared by spawn paths and CRUD.
+  const agentKindStore = new AgentKindStore(stateDir);
+  const agentKinds = new AgentKindRegistry(agentKindStore);
+  // Issue #318: pane-input readiness probe (test-overridable).
+  const sessions = new SessionManager({ tmux, registry, layout, personaAssets: agentAssets, agentKinds, paneReady: options.paneReady ?? ((name: string) => waitForPaneInputReady(tmux, name)), ...(options.git !== undefined ? { git: options.git } : {}) });
 
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
   const projectStore = new ProjectStore(stateDir);
@@ -252,13 +265,13 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const automationRef: { current?: GithubAutomation } = {};
 
   // Kanban derives boards from gh + workers; built before the project service
-  // so project deletion (issue #172) can drop the board cache with the project.
+  // so deletion (issue #172) drops the board cache with the project.
   const pullListing = new PullListingService({ gh });
   const kanban = new KanbanService({
     gh,
     listWorkers: () => sessions.listWorkers(),
     // Batched + cached PR listing (issue #40) — the API layer shares the
-    // GitHub token with watchers/pipelines, so it must not burn O(PR) calls.
+    // GitHub token, so it must not burn O(PR) calls.
     listPullRequests: (project) => pullListing.list(project.id, project.repoUrl),
   });
 
@@ -279,17 +292,15 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const hub = new WsHub();
 
   // Orchestrator bootstrap (#12/#166): shared by the startup sweep and the registration handler.
-  const orchestratorBootstrap = new OrchestratorBootstrap({ sessions, tmux, projects, layout, agentAssets });
+  const orchestratorBootstrap = new OrchestratorBootstrap({ sessions, tmux, projects, layout, agentAssets, agentKinds });
 
-  // pi auth readiness (issue #57) + worker/agent-kind initial-prompt gate
-  // (issue #56, docs/agent-kinds.md): the gate polls through the same probe
-  // so queued prompts deliver when ready.
+  // pi auth readiness (issue #57) + worker/agent-kind initial-prompt gate (issue #56):
+  // the gate polls the same probe so queued prompts deliver when ready.
   const piAuth = buildPiAuthProbe(options);
   const promptGate = buildPromptGate(sessions, piAuth, options);
-  // Warm the pi version memo (issue #223) at boot, fire-and-forget: the
-  // installed pi only changes through an apply (which restarts the daemon),
-  // so the memo never needs refreshing — and the first /api/status poll must
-  // not pay the `pi --version` spawn (issue #100 latency discipline).
+  // Warm the pi version memo (issue #223) at boot, fire-and-forget: the memo
+  // never needs refreshing (pi only changes through an apply + restart), and
+  // the first /api/status poll must not pay the spawn (issue #100 discipline).
   void piAuth.version();
 
   const diffs = new DiffService({ gh, pullListing: (projectId, repoUrl) => pullListing.list(projectId, repoUrl) });
@@ -318,6 +329,8 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     projectStore,
     settings,
     agentAssets,
+    agentKinds,
+    agentKindStore,
     kanban,
     diffs,
     pullListing,

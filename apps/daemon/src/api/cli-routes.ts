@@ -8,7 +8,7 @@
  */
 
 import { z } from "zod";
-import { AGENT_KIND_INFO, agentKindSchema, idSchema, refNumberSchema } from "@pideck/shared";
+import { agentKindIdSchema, idSchema, refNumberSchema } from "@pideck/shared";
 
 /**
  * `POST /api/projects/:projectId/spawn` — spawn a worker in a project, or
@@ -26,9 +26,9 @@ export const projectSpawnSchema = z
     name: z.string().min(1).max(20),
     /** Initial task prompt delivered into the worker's pane. */
     prompt: z.string().min(1).optional(),
-    /** Agent kind (docs/agent-kinds.md) — present marks an agent-kind spawn. */
-    kind: agentKindSchema.optional(),
-    /** The researcher's question (`pideck spawn --kind researcher --question`). */
+    /** Agent kind id (docs/agent-kinds.md) — present marks an agent-kind spawn. */
+    kind: agentKindIdSchema.optional(),
+    /** A waitForInput kind's input (`pideck spawn --kind <kind> --question`). */
     question: z.string().min(1).optional(),
     /** Explicit parent session of any role (docs/agent-kinds.md §3); resolved from the spawn context when omitted. */
     parentSessionId: idSchema.optional(),
@@ -39,13 +39,10 @@ export const projectSpawnSchema = z
   .refine(
     (input) => input.kind === undefined || (input.issueNumber === undefined && input.prompt === undefined),
     { message: "--issue/--prompt cannot be combined with --kind (agent kinds are not issue-owned; the persona is the prompt)" },
-  )
-  .refine(
-    // Issue #324: the researcher-only rule, derived from the shared kind
-    // spec — a question is valid exactly when the kind takesInput.
-    (input) => input.question === undefined || (input.kind !== undefined && AGENT_KIND_INFO[input.kind].takesInput),
-    { message: "--question requires a kind whose spec takes input (audit kinds take none)" },
   );
+  // The question rule (waitForInput kinds only, issue #330) is enforced
+  // dynamically in the spawn handler — this static schema cannot know the
+  // user-defined kinds' triggers.
 
 /** `POST /api/sessions/:sessionId/send` — deliver a message into a tmux pane. */
 export const sessionSendSchema = z.object({

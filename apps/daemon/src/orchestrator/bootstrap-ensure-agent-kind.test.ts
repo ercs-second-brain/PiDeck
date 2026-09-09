@@ -122,4 +122,46 @@ describe("OrchestratorBootstrap.ensureAgentKindSession (issue #310)", () => {
       expect(line).toContain(`agent-prompt-${session.id}.md`);
     }
   });
+
+});
+
+describe("OrchestratorBootstrap.ensureAgentKindSession: user-defined kinds (registry v2, issue #330)", () => {
+  it("renders a user-defined kind's spec-v2 persona content", async () => {
+    // The harness's bootstrap is constructed without the store-backed
+    // registry — this test wires it (the context.ts wiring) and stores a
+    // user kind whose persona lives IN the spec, with no shipped-default
+    // file to fall back to.
+    const h = await harness();
+    h.daemon.services.agentKindStore.save({
+      name: "historian",
+      label: "historian",
+      persona: "You are the historian. Report to {{PARENT_SESSION_ID}} in {{PROJECT_PATH}}.",
+      spawnableBy: ["orchestrator"],
+      callerWaits: false,
+      readOnly: true,
+      trigger: "waitForInput",
+      reportTarget: "caller",
+      workerLike: false,
+    });
+    const bootstrap = new OrchestratorBootstrap({
+      sessions: h.daemon.services.sessions,
+      tmux: h.daemon.services.tmux,
+      layout: new ProjectLayout(h.daemon.stateDir),
+      projects: h.daemon.services.projects,
+      agentKinds: h.daemon.services.agentKinds,
+    });
+    const session = await h.daemon.services.sessions.spawnAgentKind(h.project.id, {
+      kind: "historian",
+      parentSessionId: "sess-parent-2",
+      name: "hist",
+    });
+    await bootstrap.ensureForSession(session);
+
+    const persona = readFileSync(agentKindPromptFilePath(new ProjectLayout(h.daemon.stateDir), h.project.id, session.id), "utf8");
+    expect(persona).toContain("You are the historian.");
+    expect(persona).toContain("Report to sess-parent-2");
+    expect(persona).not.toContain("{{PARENT_SESSION_ID}}");
+    const line = h.daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "";
+    expect(line).toContain("pi --append-system-prompt");
+  });
 });

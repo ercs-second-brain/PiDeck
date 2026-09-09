@@ -15,7 +15,14 @@
 
 import { z } from "zod";
 import {
+  agentKindListSchema,
+  agentKindSpecSchema,
+  spawnAgentRequestSchema,
+  upsertAgentKindRequestSchema,
+} from "./agent-kinds.js";
+import {
   agentAssetsSchema,
+  agentKindIdSchema,
   agentSkillIdSchema,
   archivedWorkerLogSchema,
   agentSkillSchema,
@@ -29,7 +36,6 @@ import {
   saveAgentSkillRequestSchema,
   savePromptOverrideRequestSchema,
   sessionSchema,
-  spawnAgentRequestSchema,
   workerSchema,
   type PullRequest,
 } from "./domain.js";
@@ -553,6 +559,34 @@ export const endpoints = {
   saveAgentSkill: { method: "PUT", path: "/api/agent-assets/skills/:skillId", params: z.object({ skillId: agentSkillIdSchema }), request: saveAgentSkillRequestSchema, response: agentSkillSchema },
   /** Remove a user skill (and its deployed file); 404 for unknown ids. */
   deleteAgentSkill: { method: "DELETE", path: "/api/agent-assets/skills/:skillId", params: z.object({ skillId: agentSkillIdSchema }), request: null, response: z.undefined() },
+
+  /**
+   * Agent-kind registry v2 (issue #330, docs/agent-kinds.md): the full kind
+   * list — shipped kinds first, then user-defined ones — for the spawn
+   * submenu (#331), the persona editor v2 (#332), and CLI validation.
+   */
+  listAgentKinds: { method: "GET", path: "/api/agent-kinds", params: z.object({}), request: null, response: agentKindListSchema },
+  /**
+   * Create a user-defined kind (spec v2): persona content is mandatory
+   * (shipped kinds fall back to `agent/prompts/<name>.md`; user kinds have
+   * no shipped default). 409 when the name collides with a shipped kind or
+   * an existing user kind.
+   */
+  createAgentKind: { method: "POST", path: "/api/agent-kinds", params: z.object({}), request: upsertAgentKindRequestSchema, response: agentKindSpecSchema },
+  /**
+   * Update a user-defined kind (spec v2): the body's `name` must match the
+   * `:kind` path param. Affects future spawns (and relaunched panes, like
+   * every persona asset) — never a running pane. 409 for shipped kinds
+   * (immutable specs; their personas are editable via agent-assets prompt
+   * overrides), 404 for unknown ids.
+   */
+  updateAgentKind: { method: "PUT", path: "/api/agent-kinds/:kind", params: z.object({ kind: agentKindIdSchema }), request: upsertAgentKindRequestSchema, response: agentKindSpecSchema },
+  /**
+   * Delete a user-defined kind. 409 while any live session of the kind
+   * exists (terminate them first), 409 for shipped kinds, 404 for unknown
+   * ids. Existing sessions keep working; only future spawns are affected.
+   */
+  deleteAgentKind: { method: "DELETE", path: "/api/agent-kinds/:kind", params: z.object({ kind: agentKindIdSchema }), request: null, response: z.undefined() },
 } as const satisfies Record<string, EndpointShape>;
 
 /** Structural constraint every entry of `endpoints` must satisfy. */

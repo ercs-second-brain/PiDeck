@@ -24,7 +24,7 @@
 import type { AgentKind, Session } from "@pideck/shared";
 
 import type { GitRunner } from "../github/repos.js";
-import { agentKindSpec } from "./agent-kinds.js";
+import type { AgentKindLookup } from "./agent-kinds.js";
 import type { ProjectLayout } from "./layout.js";
 import type { SessionRegistry } from "./registry.js";
 import type { Tmux } from "./tmux.js";
@@ -36,6 +36,8 @@ export interface AgentKindSpawnDeps {
   registry: SessionRegistry;
   layout: ProjectLayout;
   git: GitRunner;
+  /** The kind registry (v2): specs resolve from here, never hardcoded. */
+  agentKinds: AgentKindLookup;
 }
 
 export interface AgentKindSpawnRequest {
@@ -55,7 +57,8 @@ export interface AgentKindSpawnRequest {
  */
 export async function spawnAgentKindSession(deps: AgentKindSpawnDeps, projectId: string, request: AgentKindSpawnRequest): Promise<Session> {
   const { tmux, registry, layout } = deps;
-  const spec = agentKindSpec(request.kind);
+  const spec = deps.agentKinds.get(request.kind);
+  if (spec === undefined) throw new Error(`unknown agent kind: ${request.kind}`);
   const name = await nextTmuxSessionName({ tmux, registry }, projectId, "worker");
   const session = registry.createSession({
     projectId,

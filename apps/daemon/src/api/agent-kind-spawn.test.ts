@@ -250,13 +250,15 @@ describe("agent-kind spawn: caps + route parity", () => {
     expect(daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "").toContain("pi --append-system-prompt");
   });
 
-  it("rejects kind bodies that violate the spawn rules (400) and unknown projects (404)", async () => {
+  it("rejects kind bodies that violate the spawn rules (409/400) and unknown projects (404)", async () => {
     const { api } = server;
     const projectId = await registerProject("bad1");
-    // --question is researcher-only; --issue/--prompt never combine with --kind.
+    // --question on an auto kind is a trigger violation (409, enforced in the
+    // handler — the static schema cannot know user kinds' triggers, #330);
+    // --prompt never combines with --kind (400, the static spawn schema).
     expect(
       (await api("POST", `/api/projects/${projectId}/spawn`, { kind: "devex-audit", name: "x", question: "q" })).status,
-    ).toBe(400);
+    ).toBe(409);
     expect(
       (await api("POST", `/api/projects/${projectId}/spawn`, { kind: "researcher", name: "x", prompt: "do" })).status,
     ).toBe(400);

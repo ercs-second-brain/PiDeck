@@ -31,7 +31,6 @@ import { CliError, optionalFlag, parseArgs, positional, requireFlag, type Parsed
 import { DaemonClient } from "./client.js";
 import { PI_NODE_MIN_VERSION } from "../api/node-version.js";
 import { currentTmuxSession } from "./tmux-context.js";
-import { AGENT_KIND_INFO, AGENT_KINDS, AGENT_KIND_REPORT_TARGET, agentKindSchema, type AgentKind } from "@pideck/shared";
 
 /** Injectables for tests (defaults: the live tmux context). */
 export interface RunDeps {
@@ -221,36 +220,28 @@ async function cmdDiff(ctx: CommandContext): Promise<number> {
 }
 
 /**
- * Validated agent kind for a `spawn --kind` invocation (docs/agent-kinds.md),
- * or `null` for a plain worker spawn. Kind rules: never `--issue`/`--prompt`
- * (the persona is the prompt); kinds whose shared spec takesInput take
- * `--question`, the others don't (the researcher-only rule, derived from
- * AGENT_KIND_INFO, issue #324).
+ * Static agent-kind spawn checks for a `spawn --kind` invocation
+ * (docs/agent-kinds.md), or `null` for a plain worker spawn. Kind rules
+ * that need no daemon: never `--issue`/`--prompt` (the persona is the
+ * prompt). The kind-specific rules (existence, trigger/question, report
+ * target) resolve against the daemon's kind registry in `cmdSpawn` —
+ * user-defined kinds (registry v2, issue #330) live there, not in shared.
  */
 function parseAgentKindSpawn(
   kindRaw: string | boolean | undefined,
   issueRaw: string | undefined,
   prompt: string | undefined,
   question: string | undefined,
-): AgentKind | null {
+): string | null {
   if (typeof kindRaw !== "string" || kindRaw.length === 0) {
     if (question !== undefined) {
       throw new CliError("--question is an agent-kind flag; worker spawns take --issue or --prompt");
     }
     return null;
   }
-  const kind = agentKindSchema.safeParse(kindRaw);
-  if (!kind.success) {
-    throw new CliError(`unknown agent kind "${kindRaw}" (valid kinds: ${AGENT_KINDS.join(", ")})`);
-  }
   if (issueRaw !== undefined) throw new CliError("--issue cannot be combined with --kind (agent kinds are not issue-owned)");
   if (prompt !== undefined) throw new CliError("--prompt cannot be combined with --kind (the persona is the prompt)");
-  if (AGENT_KIND_INFO[kind.data].takesInput) {
-    if (question === undefined) throw new CliError(`spawn --kind ${kind.data} needs --question <question>`);
-  } else if (question !== undefined) {
-    throw new CliError(`--question is not an input of kind "${kind.data}" (it takes no input)`);
-  }
-  return kind.data;
+  return kindRaw;
 }
 
 async function cmdSpawn(ctx: CommandContext): Promise<number> {
@@ -273,12 +264,24 @@ async function cmdSpawn(ctx: CommandContext): Promise<number> {
     question,
   );
   if (kind !== null) {
+    // Registry v2 (issue #330): the kind's rules come from the daemon's
+    // registry — shipped and user-defined kinds validate identically.
+    const kinds = await ctx.client.agentKinds();
+    const spec = kinds.find((entry) => entry.name === kind);
+    if (spec === undefined) {
+      throw new CliError(`unknown agent kind "${kind}" (valid kinds: ${kinds.map((entry) => entry.name).join(", ")})`);
+    }
+    if (spec.trigger === "waitForInput") {
+      if (question === undefined) throw new CliError(`spawn --kind ${kind} needs --question <question>`);
+    } else if (question !== undefined) {
+      throw new CliError(`--question is not an input of kind "${kind}" (it takes no input)`);
+    }
     const session = await ctx.client.spawnAgent(projectId, {
       name,
       kind,
       ...(question !== undefined ? { question } : {}),
     });
-    const target = AGENT_KIND_REPORT_TARGET[kind];
+    const target = spec.reportTarget;
     emit(ctx.json, session, () =>
       console.log(
         `${kind} session ${session.id} spawned (tmux: ${session.tmuxSession}, report → ${target === "caller" ? "calling session" : "project orchestrator"})`,

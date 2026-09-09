@@ -22,6 +22,18 @@ export const isoDateTimeSchema = z.iso.datetime();
 export const idSchema = z.string().min(1);
 export type Id = z.infer<typeof idSchema>;
 
+/**
+ * Agent-kind id (docs/agent-kinds.md): a kebab-case slug, safe as a
+ * filename and a CLI-visible name. Lives with the domain primitives (the
+ * session schema uses it); the spec-v2 schema and the shipped kinds live
+ * in `agent-kinds.ts`.
+ */
+export const agentKindIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9-]*$/, "must be a kebab-case slug (lowercase letters, digits, `-`)");
+
 /** GitHub issue or PR number (positive integer). */
 export const refNumberSchema = z.number().int().positive();
 export type RefNumber = z.infer<typeof refNumberSchema>;
@@ -252,102 +264,6 @@ export const kanbanBoardSchema = z.object({
 });
 export type KanbanBoard = z.infer<typeof kanbanBoardSchema>;
 
-// ---------------------------------------------------------------------------
-// Preset-prompt agent kinds (issues #297/#300/#302 — docs/agent-kinds.md)
-// ---------------------------------------------------------------------------
-
-/**
- * Preset-prompt agent kinds: sessions spawned with a pre-baked persona
- * prompt (`agent/prompts/<kind>.md`) and a fixed report route, instead of
- * a bespoke code path per kind. Deliberately distinct from
- * {@link workerKindSchema} (`implementer`/`reviewer`), which keeps its
- * meaning for PR-ownership semantics: a spawn is either a worker
- * (issue/PR-owned) or an agent-kind session (preset persona,
- * report-routed).
- */
-export const AGENT_KINDS = ["researcher", "devex-audit", "kiss-audit"] as const;
-export const agentKindSchema = z.enum(AGENT_KINDS);
-export type AgentKind = z.infer<typeof agentKindSchema>;
-
-/**
- * Body of the agent-kind spawn (docs/agent-kinds.md): the persona IS the
- * prompt, so a spawn carries the kind, a sidebar label, and — for
- * researchers — the question to research. `parentSessionId` is the
- * explicit parent-of-any-role; when omitted the daemon resolves the
- * calling pane and falls back to the project's orchestrator — the
- * caller-of-record for project-context spawns (issue #328).
- */
-export const spawnAgentRequestSchema = z.object({
-  kind: agentKindSchema,
-  /** Sidebar label, <= 20 characters (pinned by the spawn-worker skill). */
-  name: z.string().min(1).max(20),
-  /** Question typed into the pane after launch (researcher input). */
-  question: z.string().min(1).optional(),
-/** Parent session of any role (docs/agent-kinds.md §3); resolved from the spawn context when omitted — the calling pane when one exists, else the project's orchestrator (issue #328). */
-  parentSessionId: idSchema.optional(),
-});
-export type SpawnAgentRequest = z.infer<typeof spawnAgentRequestSchema>;
-
-/**
- * Who receives an agent kind's final report (docs/agent-kinds.md §4).
- * The delivery mechanism is always `pideck send --session <id>`: kinds
- * with target `caller` deliver to `{{PARENT_SESSION_ID}}` (the calling
- * session), kinds with `project-orchestrator` deliver to
- * `{{ORCHESTRATOR_SESSION_ID}}`.
- */
-export const AGENT_KIND_REPORT_TARGET = {
-  researcher: "caller",
-  "devex-audit": "project-orchestrator",
-  "kiss-audit": "project-orchestrator",
-} as const satisfies Record<AgentKind, "caller" | "project-orchestrator">;
-export type AgentKindReportTarget = (typeof AGENT_KIND_REPORT_TARGET)[AgentKind];
-
-/**
- * Per-kind presentation metadata (issue #324, deep audit #295 findings
- * 2-5): the shared source the web ⋯-menu buttons, the sidebar naming, and
- * the input rules render from. This makes docs/agent-kinds.md's "adding a
- * kind = registry row + persona file" claim true for the web too — no
- * per-kind edits outside this table. The enum guarantees coverage.
- */
-export interface AgentKindInfo {
-  /** Sidebar label — the spawn's default `--name` (the web renders "◇ <label>"). */
-  label: string;
-  /** The ⋯-menu button's display text ("Researcher"). */
-  menuLabel: string;
-  /** One-line behavior summary (the ⋯-menu buttons' title). */
-  description: string;
-  /**
-   * Whether the kind takes free-text input (the researcher's question):
-   * drives the web input modal, the CLI `--question` rules, and the spawn
-   * schema's question refine.
-   */
-  takesInput: boolean;
-}
-
-export const AGENT_KIND_INFO: Record<AgentKind, AgentKindInfo> = {
-  researcher: {
-    label: "research",
-    menuLabel: "Researcher",
-    description: "Spawn a researcher — it researches one question against the codebase and reports back",
-    takesInput: true,
-  },
-  "devex-audit": {
-    label: "devex-audit",
-    menuLabel: "Devex audit",
-    description: "Spawn a devex audit — mines prior sessions for friction, reports to the orchestrator",
-    takesInput: false,
-  },
-  "kiss-audit": {
-    label: "kiss-audit",
-    menuLabel: "KISS audit",
-    description: "Spawn a KISS audit — complexity findings, reported to the orchestrator",
-    takesInput: false,
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Per-persona agent assets (issue #315): user-owned prompt overrides + skills
-// ---------------------------------------------------------------------------
 
 /**
  * The boot personas PiDeck ships (`agent/prompts/<persona>.md`) and shapes
@@ -465,12 +381,12 @@ export const sessionSchema = z.object({
   /** Name of the backing tmux session. */
   tmuxSession: z.string().min(1),
   /**
-   * Preset-prompt agent kind (issues #297/#300/#302, docs/agent-kinds.md):
-   * set on agent-kind sessions (researcher / devex-audit / kiss-audit);
-   * absent on plain orchestrator/worker sessions. The kind fixes the
-   * persona and the report route — see {@link AGENT_KIND_REPORT_TARGET}.
+   * Agent kind (issues #297/#300/#302/#330, docs/agent-kinds.md): the kind
+   * id of agent-kind sessions (shipped or user-defined); absent on plain
+   * orchestrator/worker sessions. The kind fixes the persona and the
+   * report route — see {@link AgentKindSpec.reportTarget}.
    */
-  agentKind: agentKindSchema.optional(),
+  agentKind: agentKindIdSchema.optional(),
   /**
    * Parent session id (parent-of-any-role linkage, docs/agent-kinds.md §3):
    * a researcher's calling session, or the project orchestrator an

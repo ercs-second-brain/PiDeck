@@ -9,7 +9,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { AGENT_KIND_INFO, GLOBAL_AGENT_PROJECT_ID, type AgentKind, type Session, type Worker } from "@pideck/shared";
+import { agentKindInfo, GLOBAL_AGENT_PROJECT_ID, type AgentKind, type Session, type Worker } from "@pideck/shared";
 import { boardStore } from "../store/store";
 import {
   fetchProjects,
@@ -215,7 +215,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
   // Spawns an agent-kind session (#297/#300/#302); rethrows for the modal.
   const spawnAgentSession = useCallback(
     async (projectId: string, kind: AgentKind, question?: string) => {
-      const body = { kind, name: AGENT_KIND_INFO[kind].label, ...(question === undefined ? {} : { question }) };
+      const body = { kind, name: agentKindInfo(kind).label, ...(question === undefined ? {} : { question }) };
       const session = await apiSpawnAgent(projectId, body);
       reload(); onStartOrchestratorNavigate(session.id);
     },

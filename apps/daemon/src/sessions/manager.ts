@@ -27,6 +27,7 @@ import type { PersonaLaunchAssets } from "../api/agent-assets.js";
 import { ProjectLayout } from "./layout.js";
 import { prepareWorkerWorkspace } from "./workspace.js";
 import { spawnAgentKindSession, type AgentKindSpawnRequest } from "./agent-kind-spawn.js";
+import { AgentKindRegistry, type AgentKindLookup } from "./agent-kinds.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
 import { isArchivedWorkerSession, isTerminalWorkerStatus, launchPath, reconcileSessions, type ReconcileDeps, type ReconcileResult } from "./reconcile.js";
@@ -89,6 +90,8 @@ export class SessionManager {
   private readonly archivedLogs: ArchivedLogStore;
   private readonly git: GitRunner;
   private readonly personaAssets: PersonaLaunchAssets | undefined;
+  /** Agent-kind registry (v2, issue #330): shipped-only default; the daemon context wires the store-backed one. */
+  private readonly agentKinds: AgentKindLookup;
   /** Pane-input readiness probe (issue #318) — see the constructor dep. */
   private readonly paneReady: (tmuxSession: string) => Promise<boolean>;
   /** Collaborators for the extracted reconcile machinery (reconcile.ts). */
@@ -109,6 +112,13 @@ export class SessionManager {
      */
     personaAssets?: PersonaLaunchAssets;
     /**
+     * Agent-kind registry (registry v2, issue #330): consulted by
+     * `spawnAgentKind` for the kind's workspace/read-only rules. Absent
+     * (default): the shipped built-in kinds only — user kinds need the
+     * store-backed registry from the daemon context.
+     */
+    agentKinds?: AgentKindLookup;
+    /**
      * Pane-input readiness probe for {@link deliverPromptWhenReady} (issue #318);
      * defaults to the real pi input-box probe (pane-ready.ts). Tests inject
      * a constant so hermetic fake panes count as ready.
@@ -120,6 +130,7 @@ export class SessionManager {
     this.layout = deps.layout;
     this.git = deps.git ?? defaultGitRunner;
     this.personaAssets = deps.personaAssets;
+    this.agentKinds = deps.agentKinds ?? new AgentKindRegistry();
     this.paneReady = deps.paneReady ?? ((name) => waitForPaneInputReady(deps.tmux, name));
     this.deps = { tmux: deps.tmux, registry: deps.registry, layout: deps.layout };
     this.archivedLogs = deps.archivedLogs ?? new ArchivedLogStore(deps.layout.archivedLogsFilePath());
@@ -272,7 +283,7 @@ export class SessionManager {
    */
   spawnAgentKind(projectId: string, request: AgentKindSpawnRequest): Promise<Session> {
     return spawnAgentKindSession(
-      { tmux: this.tmux, registry: this.registry, layout: this.layout, git: this.git },
+      { tmux: this.tmux, registry: this.registry, layout: this.layout, git: this.git, agentKinds: this.agentKinds },
       projectId,
       request,
     );

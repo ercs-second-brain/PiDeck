@@ -33,6 +33,7 @@ import { NotFoundError } from "./projects.js";
 import { listAccessibleRepos } from "../github/repos.js";
 import { nodeStatus } from "./node-version.js";
 import { handleAgentKindSpawn } from "./agent-kind-spawn.js";
+import { agentKindHandlers } from "./agent-kinds.js";
 import type { DaemonServices } from "./context.js";
 
 // ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ import type { DaemonServices } from "./context.js";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- params/body are validated against the shared zod schemas in handleEndpoint before reaching a handler; the registry is endpoint-typed via EndpointRegistry
 type AnyHandler = (args: { params: any; body: any; query?: string }) => Promise<unknown> | unknown;
 
-type EndpointRegistry = {
+export type EndpointRegistry = {
   [N in EndpointName]: AnyHandler;
 };
 
@@ -308,8 +309,8 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
 
     listProjectSessions: ({ params }) => projectSessionsPayload(services, params.projectId),
 
-    // Every session daemon-wide (including the global agent's, projectId
-    // `global`): backs the sidebar's global-agent row and `pideck sessions`.
+    // Every session daemon-wide (incl. the global agent's, projectId `global`):
+    // backs the sidebar's global-agent row and `pideck sessions`.
     listAllSessions: () => services.sessions.listSessions(),
 
     // Start (or attach to) the workspace-level global agent (hierarchy top).
@@ -329,9 +330,9 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     },
 
     /**
-     * Terminate a worker (issue #64): kills its tmux session, marks the
-     * worker `archived`, and keeps the registry records for history. The
-     * new status is announced on the hub so open sidebars update live.
+     * Terminate a worker (issue #64): kills its tmux session, marks it
+     * `archived`, keeps the registry records for history, and announces the
+     * new status on the hub so open sidebars update live.
      */
     terminateWorker: ({ params }) => terminateWorkerPayload(services, params.workerId),
 
@@ -350,10 +351,9 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     /**
      * Relaunch a dead session's tmux pane (issue #117): kills any lingering
      * tmux session of the name and re-runs the session's launch path (see
-     * `SessionManager.relaunchSession`). 404 for unknown sessions, 409 for
-     * archived ones (their history is the archived log view). A worker
-     * bumped from `stopped` back to `running` is announced on the hub so
-     * open sidebars/kanban boards update live.
+     * `SessionManager.relaunchSession`). 404 unknown, 409 archived (their
+     * history is the archived log view). A worker bumped from `stopped` back
+     * to `running` is announced on the hub so open sidebars update live.
      */
     relaunchSession: ({ params }) => relaunchSessionPayload(services, params.sessionId),
 
@@ -375,6 +375,7 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     updateSettings: ({ body }) => services.settings.update(updateSettingsRequestSchema.parse(body)),
 
     ...agentAssetHandlers(services),
+    ...agentKindHandlers(services),
 
     // Self-update (issues #55, #76, #82): the check result plus the live
     // active-worker count — the webapp disables its update button on the

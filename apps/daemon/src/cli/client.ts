@@ -18,7 +18,8 @@ import {
   sessionSchema,
   settingsSchema,
   workerSchema,
-  type AgentKind,
+  agentKindListSchema,
+  type AgentKindList,
   type KanbanBoard,
   type Project,
   type PullRequest,
@@ -109,10 +110,20 @@ export class DaemonClient {
    * daemon stamps the calling session as `parentSessionId` and returns the
    * new session record (agent-kind sessions are not workers).
    */
-  async spawnAgent(projectId: string, input: { name: string; kind: AgentKind; question?: string }): Promise<Session> {
+  async spawnAgent(projectId: string, input: { name: string; kind: string; question?: string }): Promise<Session> {
     const body: Record<string, unknown> = { name: input.name, kind: input.kind };
     if (input.question !== undefined) body["question"] = input.question;
     return this.request("POST", `/api/projects/${encodeURIComponent(projectId)}/spawn`, body, sessionSchema);
+  }
+
+  /**
+   * `GET /api/agent-kinds` (registry v2, issue #330): every spawnable kind
+   * — shipped first, then user-defined — for CLI kind validation and the
+   * trigger/report-target rules the daemon enforces.
+   */
+  async agentKinds(): Promise<AgentKindList["kinds"]> {
+    const list = await this.request("GET", endpoints.listAgentKinds.path, undefined, agentKindListSchema);
+    return list.kinds;
   }
 
   /** `pideck send` — deliver a message into a session's tmux pane. */
