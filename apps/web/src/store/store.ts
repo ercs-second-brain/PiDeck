@@ -22,7 +22,6 @@
 import { useSyncExternalStore } from "react";
 import {
   terminalServerEventSchema,
-  wsServerEventSchema,
   type KanbanBoard,
   type KanbanColumnSummary,
   type KanbanUpdateEvent,
@@ -35,6 +34,7 @@ import {
 
 import { apiGetKanban, apiListPullRequests, apiListProjects, apiListWorkers, errorMessage } from "../lib/api";
 import { shareInFlight, type InFlight } from "../lib/in-flight";
+import { parseWsServerEvent } from "../lib/ws-parse";
 import { nextBackoffMs } from "../lib/backoff";
 
 // ---------------------------------------------------------------------------
@@ -301,15 +301,8 @@ class LiveBoardStore implements BoardStore {
   }
 
   private onWsMessage(payload: string): void {
-    let json: unknown;
-    try {
-      json = JSON.parse(payload);
-    } catch {
-      return;
-    }
-    const parsed = wsServerEventSchema.safeParse(json);
-    if (!parsed.success) return;
-    const event = parsed.data;
+    const event = parseWsServerEvent(payload);
+    if (event === null) return;
     if (isTerminalEvent(event)) {
       return; // terminal events: the /ws bridge, not this store
     }

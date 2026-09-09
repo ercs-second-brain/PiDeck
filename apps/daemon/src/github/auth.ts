@@ -72,7 +72,7 @@ export async function getAuthStatus(gh: GhClient): Promise<AuthStatus> {
  * scopes (fine-grained PAT / GitHub App token), so sufficiency cannot be
  * inferred client-side; the caller must try and handle the failure.
  */
-export type Permission = "yes" | "no" | "unknown";
+type Permission = "yes" | "no" | "unknown";
 
 export interface RepoCreationPermissions {
   /** Can create repos with the daemon's default (private) visibility — requires the `repo` scope. */

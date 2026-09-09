@@ -48,7 +48,7 @@ import {
 } from "./prompt.js";
 
 /** Rendered prompt file written into the project's state dir. */
-export const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
+const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
 
 /**
  * Pane commands that count as "the orchestrator agent is already running".

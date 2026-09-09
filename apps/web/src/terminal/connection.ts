@@ -14,13 +14,10 @@
  *   session); tmux keeps the pane alive server-side.
  */
 
-import {
-  wsServerEventSchema,
-  type TerminalClientMessage,
-  type WsServerEvent,
-} from "@pideck/shared";
+import { type TerminalClientMessage } from "@pideck/shared";
 
 import { nextBackoffMs } from "../lib/backoff";
+import { parseWsServerEvent } from "../lib/ws-parse";
 
 export type TerminalStatus =
   | "connecting"
@@ -43,7 +40,7 @@ export interface TerminalCallbacks {
 }
 
 /** Default WebSocket URL: same origin, terminal path. */
-export function defaultTerminalWsUrl(): string {
+function defaultTerminalWsUrl(): string {
   const secure = window.location.protocol === "https:";
   return `${secure ? "wss" : "ws"}://${window.location.host}/ws`;
 }
@@ -142,15 +139,8 @@ export class TerminalConnection {
   }
 
   private handlePayload(payload: string): void {
-    let json: unknown;
-    try {
-      json = JSON.parse(payload);
-    } catch {
-      return;
-    }
-    const parsed = wsServerEventSchema.safeParse(json);
-    if (!parsed.success) return;
-    const event: WsServerEvent = parsed.data;
+    const event = parseWsServerEvent(payload);
+    if (event === null) return;
     if (!event.type.startsWith("terminal.")) return; // kanban events: other UI
     switch (event.type) {
       case "terminal.attached":

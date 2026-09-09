@@ -76,7 +76,7 @@ function apiRoute(routes: FakeGhRoutes, args: string[]): GhRunResult | undefined
 }
 
 /** Builds a GhClient whose runner answers from in-memory route tables. */
-export function fakeGh(routes: FakeGhRoutes): (repoUrl: string) => GhClient {
+function fakeGh(routes: FakeGhRoutes): (repoUrl: string) => GhClient {
   const runner: GhRunner = async (args) => {
     if (args[0] === "api" && args[1] === "graphql") return graphqlRoute(routes.graphql ?? {}, args);
     const simple = simpleRoutes(routes, args);

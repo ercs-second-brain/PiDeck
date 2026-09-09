@@ -376,33 +376,12 @@ code {
   gap: 12px;
 }
 
-.project-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 16px 18px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.project-card:hover {
-  border-color: var(--accent);
-  background: var(--bg-hover);
-}
-
 .project-name {
   font-size: var(--fs-lg);
   font-weight: 600;
 }
 
 .project-repo {
-  color: var(--text-dim);
-  font-size: var(--fs-sm);
-}
-
-.project-meta {
   color: var(--text-dim);
   font-size: var(--fs-sm);
 }
@@ -415,11 +394,6 @@ code {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 20px;
-}
-
-.simulate-button:hover {
-  border-color: var(--accent);
-  background: var(--bg-hover);
 }
 
 .board {
@@ -611,8 +585,7 @@ code {
   white-space: nowrap;
 }
 
-.badge-open,
-.badge-open-pr {
+.badge-open {
   color: var(--green);
   border-color: color-mix(in srgb, var(--green) 40%, transparent);
 }
@@ -847,14 +820,6 @@ code {
 .update-banner-error {
   color: var(--red);
   font-size: var(--fs-md);
-}
-
-.inline-link {
-  color: var(--issue);
-}
-
-.inline-link:hover {
-  text-decoration: underline;
 }
 
 /* --- Connection indicator -------------------------------------------------- */

@@ -7,11 +7,12 @@
 import { z } from "zod";
 import { ciStatusSchema, reviewStateSchema, pullRequestSchema, type PullRequest } from "@pideck/shared";
 
+import type { GhClient, RepoRef } from "./gh.js";
+import { graphqlNodeSchema } from "./graphql-node.js";
+
 /** Derived from the shared schemas (shared does not export these as named types). */
 type CiStatus = z.infer<typeof ciStatusSchema>;
 type ReviewState = z.infer<typeof reviewStateSchema>;
-
-import type { GhClient, RepoRef } from "./gh.js";
 
 // ---------------------------------------------------------------------------
 // REST list + mapping
@@ -107,10 +108,7 @@ const graphqlPullsSchema = z.object({
     pullRequests: z.object({
       nodes: z.array(
         z.object({
-          number: z.number().int().positive(),
-          title: z.string(),
-          url: z.string().url(),
-          updatedAt: z.string(),
+          ...graphqlNodeSchema.shape,
           author: z.object({ login: z.string() }).nullable(),
           headRefName: z.string(),
           baseRefName: z.string(),
@@ -333,11 +331,6 @@ export async function fetchReviewComments(gh: GhClient, repo: RepoRef, prNumber:
 // ---------------------------------------------------------------------------
 // Enrichment
 // ---------------------------------------------------------------------------
-
-export interface PullRequestMeta {
-  ciStatus: CiStatus;
-  reviewState: ReviewState;
-}
 
 /** Fills in CI status and review decision for one PR (two API calls). */
 export async function enrichPullRequest(gh: GhClient, repo: RepoRef, record: PullRequestRecord): Promise<PullRequest> {

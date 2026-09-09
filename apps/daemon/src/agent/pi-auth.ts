@@ -36,7 +36,7 @@ import { TtlSwrCache } from "../api/swr-cache.js";
  * Providers probed for ready credentials. Mirrors `PD_PI_PROVIDERS` in
  * `install/onboard.sh` — keep the two lists in sync.
  */
-export const PI_PROVIDERS = [
+const PI_PROVIDERS = [
   "anthropic",
   "openai",
   "google",
@@ -139,7 +139,7 @@ export interface PiStartupDefaults {
 }
 
 /** Resolves the pi settings dir: `PD_PI_DIR`, else `~/.pi/agent` (matches install/lib/common.sh). */
-export function piSettingsDir(explicit?: string): string {
+function piSettingsDir(explicit?: string): string {
   if (explicit !== undefined && explicit.length > 0) return explicit;
   const fromEnv = process.env["PD_PI_DIR"];
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
