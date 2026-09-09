@@ -31,6 +31,7 @@ import {
   type SpawnAgentRequest,
   type UpdateProjectRequest,
   type UpdateSettingsRequest,
+  type UpsertAgentKindRequest,
 } from "@pideck/shared";
 
 import { shareInFlight, type InFlight } from "./in-flight";
@@ -288,6 +289,18 @@ export const apiDeleteAgentSkill = (skillId: string): Promise<EndpointResponse<"
   request("deleteAgentSkill", { skillId });
 
 export type { AgentAssets, AgentSkill, Persona, PromptOverride };
+
+// --- Agent-kind registry v2 (issue #330; the web editor is issue #332) --------
+// (`apiListAgentKinds` lives with the spawn submenu above — #331/#348.)
+
+export const apiCreateAgentKind = (body: UpsertAgentKindRequest): Promise<EndpointResponse<"createAgentKind">> =>
+  request("createAgentKind", {}, body);
+
+export const apiUpdateAgentKind = (kind: string, body: UpsertAgentKindRequest): Promise<EndpointResponse<"updateAgentKind">> =>
+  request("updateAgentKind", { kind }, body);
+
+export const apiDeleteAgentKind = (kind: string): Promise<EndpointResponse<"deleteAgentKind">> =>
+  request("deleteAgentKind", { kind });
 
 // --- gh auth probe (onboarding wizard step 2) --------------------------------
 //

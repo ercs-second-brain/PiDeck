@@ -12,6 +12,10 @@
  * - **Skills** — user-created single-file pi skills, applied to zero or many
  *   personas via checkboxes; every newly spawned pane of an applied persona
  *   gets the skill via pi's `--skill <file>`.
+ * - **Agent kinds** (issue #332) — the registry-v2 persona editor
+ *   ({@link AgentKindsSection}): shipped kinds as immutable rows, user kinds
+ *   editable (persona, task template, config) and deletable, plus a
+ *   validated create-new-kind flow.
  *
  * Content is edited in a plain textarea (KISS): the daemon persists the text
  * verbatim in its state dir — user-owned and update-safe — and stays
@@ -21,6 +25,9 @@
 
 import { useEffect, useState } from "react";
 import { PERSONAS, agentSkillIdSchema, type AgentAssets, type AgentSkill, type Persona } from "@pideck/shared";
+
+import { AgentKindsSection } from "./AgentKindsSection";
+import { EditorActions } from "./AssetEditorActions";
 
 import {
   apiDeleteAgentSkill,
@@ -76,8 +83,8 @@ export function AgentAssetsModal({ onClose }: { onClose: () => void }) {
         </button>
         <h1 className="page-title">Agent assets</h1>
         <p className="project-repo">
-          Per-persona prompts &amp; skills — user-owned, stored by the daemon, applied when a session spawns. Shipped
-          defaults stay as fallback.
+          Per-persona prompts, skills, and agent kinds — user-owned, stored by the daemon, applied when a session
+          spawns. Shipped defaults stay as fallback.
         </p>
         {loadError !== null && <p className="error-note">Failed to load agent assets: {loadError}</p>}
         {assets !== null && <AgentAssetsView assets={assets} onReload={setAssets} />}
@@ -126,6 +133,7 @@ function AssetLists(props: {
           })}
         </ul>
       </section>
+      <AgentKindsSection />
       <section className="global-worker-settings">
         <h2 className="section-title">Skills</h2>
         <p className="field-hint">Single-file pi skills; checked personas&apos; new sessions load the skill.</p>
@@ -217,12 +225,7 @@ function AssetEditorPanel(props: {
         spellCheck={false}
       />
       {props.error !== null && <p className="error-note">{props.error}</p>}
-      <div className="wizard-actions">
-        <AssetAction label="Cancel" dim onAct={() => props.onChange(null)} />
-        <button type="button" className="button button-primary" onClick={props.onSave} disabled={props.saving}>
-          {props.saving ? "Saving…" : "Save"}
-        </button>
-      </div>
+      <EditorActions saving={props.saving} onSave={props.onSave} onCancel={() => props.onChange(null)} />
     </section>
   );
 }
