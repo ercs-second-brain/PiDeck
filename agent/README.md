@@ -2,6 +2,8 @@
 
 Prompts and pi skills for PiDeck orchestration. The daemon loads `prompts/` into orchestrator/worker pi sessions at session start; the installer symlinks `skills/` into pi's skill location (`~/.pi/agent/skills/`); the `pideck` CLI the skills call is implemented in `apps/daemon/src/cli`.
 
+Scope note: these prompts and skills are integration-level only — how agents talk to PiDeck. Capability customization (tools, skills, extensions) is a pi-level, user-owned choice; see [docs/PHILOSOPHY.md](../docs/PHILOSOPHY.md).
+
 ## Layout
 
 ```
