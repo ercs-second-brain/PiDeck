@@ -20,6 +20,7 @@ import { z } from "zod";
 import { issueSchema, type Issue, type RefNumber } from "@pideck/shared";
 
 import { formatRepoRef, type GhClient, type RepoRef } from "./gh.js";
+import { graphqlNodeSchema } from "./graphql-node.js";
 
 // ---------------------------------------------------------------------------
 // REST list + mapping
@@ -174,10 +175,7 @@ const graphqlIssuesSchema = z.object({
         pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
         nodes: z.array(
           z.object({
-            number: z.number().int().positive(),
-            title: z.string(),
-            url: z.string().url(),
-            updatedAt: z.string(),
+            ...graphqlNodeSchema.shape,
             assignees: z.object({ nodes: z.array(z.object({ login: z.string() })) }),
             blockedBy: z.object({
               nodes: z.array(z.object({ number: z.number().int().positive(), state: z.enum(["OPEN", "CLOSED"]), repository: z.object({ nameWithOwner: z.string() }) })),

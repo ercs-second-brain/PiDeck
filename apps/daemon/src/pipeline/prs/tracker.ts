@@ -31,8 +31,7 @@ import { z } from "zod";
 
 import { JsonStore } from "../../json-store.js";
 
-export const trackedPrStateSchema = z.enum(["watching", "fixing", "addressing", "done", "failed"]);
-export type TrackedPRState = z.infer<typeof trackedPrStateSchema>;
+const trackedPrStateSchema = z.enum(["watching", "fixing", "addressing", "done", "failed"]);
 
 const trackedPRSchema = z.object({
   projectId: z.string().min(1),

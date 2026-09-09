@@ -17,7 +17,7 @@ const execFileAsync = promisify(execFile);
 // git clone
 // ---------------------------------------------------------------------------
 
-export interface GitRunResult {
+interface GitRunResult {
   stdout: string;
   stderr: string;
 }

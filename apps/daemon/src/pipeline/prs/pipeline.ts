@@ -41,7 +41,7 @@ import { prCardId } from "@pideck/shared";
 export const DEFAULT_MAX_FIX_ATTEMPTS = 5;
 
 /** Default age at which an unanswered prompt is treated as stale. */
-export const DEFAULT_FIX_PROMPT_TIMEOUT_MS = 15 * 60_000;
+const DEFAULT_FIX_PROMPT_TIMEOUT_MS = 15 * 60_000;
 
 /**
  * The slice of {@link import("../sessions/manager.js").SessionManager} the

@@ -30,12 +30,15 @@ import {
 
 import { CliError } from "./args.js";
 
-/** Daemon base URL: `PD_DAEMON_URL`, else host/port env, else loopback:8321. */
-export function daemonBaseUrl(): string {
+/** Default daemon port when neither `PD_DAEMON_URL` nor `PD_WEB_PORT` is set. */
+export const DEFAULT_DAEMON_PORT = "8321";
+
+/** Daemon base URL: `PD_DAEMON_URL`, else host/port env, else loopback:${DEFAULT_DAEMON_PORT}. */
+function daemonBaseUrl(): string {
   const url = process.env["PD_DAEMON_URL"];
   if (url !== undefined && url.length > 0) return url.replace(/\/$/, "");
   const host = process.env["PD_WEB_HOST"];
-  const port = process.env["PD_WEB_PORT"] ?? "8321";
+  const port = process.env["PD_WEB_PORT"] ?? DEFAULT_DAEMON_PORT;
   return `http://${host !== undefined && host.length > 0 ? host : "127.0.0.1"}:${port}`;
 }
 

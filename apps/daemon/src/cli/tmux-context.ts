@@ -27,7 +27,7 @@ function execFileAsync(bin: string, args: string[]): Promise<string> {
 }
 
 /** Default runner: the real `tmux` on PATH (the pane's own server via `$TMUX`). */
-export function defaultTmuxDisplayRunner(bin = "tmux"): TmuxDisplayRunner {
+function defaultTmuxDisplayRunner(bin = "tmux"): TmuxDisplayRunner {
   return (args) => execFileAsync(bin, args);
 }
 

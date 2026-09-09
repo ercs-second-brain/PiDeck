@@ -49,7 +49,7 @@ interface Persisted {
 type ProjectSettingsPatch = Partial<Pick<ProjectSettings, "autoAgentUsername" | "workerConcurrency">>;
 
 /** Extracts the stored project settings from a request's optional patch. */
-export function resolveSettings(
+function resolveSettings(
   base: ProjectSettings,
   patch: ProjectSettingsPatch | undefined,
 ): ProjectSettings {

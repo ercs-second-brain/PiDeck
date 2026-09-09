@@ -24,12 +24,13 @@ import { fileURLToPath } from "node:url";
 import { createDaemonContext, type DaemonServices } from "./api/context.js";
 import { nodeStatus, PI_NODE_MIN_VERSION } from "./api/node-version.js";
 import { createDaemonServer } from "./api/server.js";
+import { DEFAULT_DAEMON_PORT } from "./cli/client.js";
 import { TerminalBridge } from "./terminal/bridge.js";
 import { attachTerminalWebSocket } from "./terminal/ws-server.js";
 
 export async function main(options: { stateDir?: string; host?: string; port?: number; webDist?: string | null } = {}): Promise<void> {
   const host = options.host ?? process.env["PD_WEB_HOST"] ?? "127.0.0.1";
-  const port = options.port ?? Number(process.env["PD_WEB_PORT"] ?? "8321");
+  const port = options.port ?? Number(process.env["PD_WEB_PORT"] ?? DEFAULT_DAEMON_PORT);
   const webDist = options.webDist ?? undefined;
 
   const services = createDaemonContext({ stateDir: options.stateDir });
