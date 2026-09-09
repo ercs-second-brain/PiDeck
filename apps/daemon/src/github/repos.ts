@@ -45,11 +45,24 @@ interface GitExecError extends Error {
   stderr?: string;
 }
 
+/**
+ * Env vars that would redirect git at a repository other than the explicit
+ * `cwd` (e.g. GIT_DIR inherited from a git hook that spawned the daemon):
+ * stripped so the command's cwd is always the repo being operated on.
+ */
+const REPO_REDIRECT_ENV_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY"] as const;
+
 /** Default {@link GitRunner}: spawns the real `git` binary. */
 export const defaultGitRunner: GitRunner = async (args, options) => {
   try {
+    const env = { ...process.env };
+    if (options?.cwd !== undefined) {
+      // Issue #287: an inherited GIT_DIR (git hooks export it) would send
+      // every command at the wrong repository — explicit cwd must win.
+      for (const key of REPO_REDIRECT_ENV_VARS) delete env[key];
+    }
     const { stdout, stderr } = await execFileAsync("git", args, {
-      ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
+      ...(options?.cwd === undefined ? {} : { cwd: options.cwd, env }),
       maxBuffer: 128 * 1024 * 1024,
       windowsHide: true,
     });
