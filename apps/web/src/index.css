@@ -311,16 +311,6 @@ code {
   color: var(--text-dim);
 }
 
-.back-link {
-  display: inline-block;
-  margin-top: 24px;
-  color: var(--text-dim);
-}
-
-.back-link:hover {
-  color: var(--text);
-}
-
 /* --- Project list --------------------------------------------------------- */
 
 .project-list {
@@ -1597,9 +1587,5 @@ code {
 
   .worker-terminal {
     padding: 12px 0;
-  }
-
-  .back-link {
-    padding: 10px 0;
   }
 }

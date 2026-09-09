@@ -116,14 +116,12 @@ describe("BoardPage (issue #244 smoke)", () => {
     expect(html).toContain("Workers");
     expect(html).toContain("w-1");
     expect(html).toContain("Working");
-    expect(html).toContain("← All projects");
   });
 
   it("renders the not-found fallback for a project missing from the store", () => {
     store.state = state({ projects: [], boards: {}, workers: {} });
     const html = renderBoard();
     expect(html).toContain("not found");
-    expect(html).toContain("← All projects");
   });
 
   it("renders the daemon-error note when the store failed to load", () => {

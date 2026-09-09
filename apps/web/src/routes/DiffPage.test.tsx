@@ -35,11 +35,11 @@ function renderDiff(path: string): string {
 }
 
 describe("DiffPage (issue #244 smoke)", () => {
-  it("derives the PR loading title and board back-link from the route", () => {
+  it("derives the PR loading title from the route (no back-link: sidebar handles navigation, issue #277)", () => {
     const html = renderDiff("/projects/demo/pulls/9");
     expect(html).toContain("PR #9");
     expect(html).toContain("Loading diff…");
-    expect(html).toContain("← Board");
+    expect(html).not.toContain("← Board");
   });
 
   it("derives the per-worker files-changed loading title from the route", () => {
