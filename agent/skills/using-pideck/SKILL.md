@@ -37,5 +37,9 @@ The command catalog above is generic. Task-oriented orchestration skills build o
 - `ci-status` — CI status lookup and CI-fix routing.
 - `review-comments` — review-comment retrieval and addressing workflow.
 - `review-pr` — the auto review agent's workflow: review a PR diff and post the GitHub review (issue #107).
+- `bash-triage` — findings → confirmed list → triaged GitHub issues → worker batch run to done (orchestrator default, issue #338).
+- `concept-brief` — raw idea → one-page verbatim brief (orchestrator default, issue #338).
+- `prd` — interview → one-page PRD (orchestrator default, issue #338).
+- `spec-to-issues` — brief + PRD → phased, file-disjoint issue graph, ready for worker waves (orchestrator default, issue #338).
 
 Use [references to `packages/shared/src/rest.ts`] only when a request does not map clearly to a command above.

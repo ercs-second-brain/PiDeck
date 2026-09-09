@@ -44,10 +44,18 @@ agent/
     ├── report-pr/             # worker self-report of an opened PR (issue #49)
     ├── ci-status/             # CI status lookup
     ├── review-comments/       # review-comment retrieval
-    └── review-pr/             # auto review agent: review a PR, post the GitHub review (issue #107)
+    ├── review-pr/             # auto review agent: review a PR, post the GitHub review (issue #107)
+    ├── bash-triage/           # findings → issues → worker batch (orchestrator default, issue #338)
+    ├── concept-brief/         # raw idea → one-page verbatim brief (orchestrator default, issue #338)
+    ├── prd/                   # interview → one-page PRD (orchestrator default, issue #338)
+    └── spec-to-issues/        # brief + PRD → phased issue graph (orchestrator default, issue #338)
 ```
 
 Skills follow pi's skill conventions (frontmatter with `name`/`description`, loaded on demand); see pi's `docs/skills.md`.
+
+### Shipped orchestrator defaults (issue #338)
+
+`bash-triage`, `concept-brief`, `prd`, and `spec-to-issues` are the shipped **orchestrator-default** workflow skills: they ship applied to the orchestrator persona out of the box and are registered in `SHIPPED_DEFAULT_SKILLS` (`packages/shared/src/domain.ts`), typed against the canonical `PERSONAS` vocabulary and the `agentSkillIdSchema` id contract from #315. They are not hardcoded always-on: `SHIPPED_DEFAULT_SKILLS` is the shipped-default seed data for the agent-assets surface (#315), where every entry stays per-persona configurable (turn-off-able, re-appliable to other personas) and user-authored skills deploy per persona via the same surface. The installer symlinks all of `agent/skills/` globally and pi loads skills on demand, so until a persona-level toggle is wired to the table, per-persona application is a matter of which persona's workflow actually invokes them — these four describe curator work, so only orchestrators use them.
 
 ## Prompts
 
@@ -104,7 +112,8 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 
 | Invocation | Canonical location |
 |---|---|
-| `gh issue create ...` | `skills/create-issue/SKILL.md` |
+| `gh issue create ...` | `skills/create-issue/SKILL.md` (bulk creation with labels/relations: `skills/bash-triage/SKILL.md`, `skills/spec-to-issues/SKILL.md`) |
+| `gh label create ...` | `skills/bash-triage/SKILL.md` (type/rank labels), `skills/spec-to-issues/SKILL.md` (phase labels) |
 | `pideck spawn ...` | `skills/spawn-worker/SKILL.md` (reference doc: `skills/using-pideck/commands/spawn.md`) |
 | `pideck pulls ...`, `pideck diff ...` | `skills/ci-status/SKILL.md` |
 | `gh pr checks ...`, `gh run view ...`, `gh api .../pulls/<n>/comments`, `gh pr view --comments` | `skills/review-comments/SKILL.md` |
