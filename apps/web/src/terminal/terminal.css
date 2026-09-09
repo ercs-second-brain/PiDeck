@@ -930,8 +930,8 @@
 
 /* --- Mobile terminal key row (issue #105) ------------------------------------
 
-   Touch keyboards lack Esc/Tab/Ctrl and arrows; the key row supplies them
-   above the status bar. Hidden by default (desktop unchanged), shown only on
+   Touch keyboards lack Esc/Tab/Ctrl/Enter and arrows; the key row supplies
+   them above the status bar. Hidden by default (desktop unchanged), shown only on
    the #93 mobile breakpoint. Buttons send on pointerdown with
    preventDefault so they never steal focus from the xterm textarea, and
    touch-action rules keep taps from scrolling/zooming the page. */
