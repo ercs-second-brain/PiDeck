@@ -104,7 +104,7 @@ function renderBoard(path = `/projects/${PROJECT_ID}`): string {
 }
 
 describe("BoardPage (issue #244 smoke)", () => {
-  it("renders the project's identity, connection state, cards, workers and back link", () => {
+  it("renders the project's identity, cards, workers and back link", () => {
     store.state = state();
     const html = renderBoard();
     expect(html).toContain("Demo");
@@ -112,7 +112,6 @@ describe("BoardPage (issue #244 smoke)", () => {
     expect(html).toContain("main");
     expect(html).toContain("auto-spawn @");
     expect(html).toContain("octocat");
-    expect(html).toContain("live"); // ConnectionIndicator's online label
     expect(html).toContain("card 9");
     expect(html).toContain("Workers");
     expect(html).toContain("w-1");

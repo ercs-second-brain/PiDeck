@@ -439,8 +439,20 @@ code {
   padding: 1px 8px;
 }
 
-.column-done .column-label {
-  color: var(--green);
+/* Issue #276: backlog is intentionally grey — the neutral backlog column and
+   its cards carry no issue/PR accent. */
+.column-backlog .column-label,
+.card-backlog {
+  color: var(--text-dim);
+}
+
+.card-backlog {
+  border-left-color: var(--border);
+}
+
+.card-backlog .kind-badge {
+  color: var(--text-dim);
+  background: var(--bg-hover);
 }
 
 .column-in_progress .column-label {
@@ -449,6 +461,10 @@ code {
 
 .column-in_review .column-label {
   color: var(--pr);
+}
+
+.column-done .column-label {
+  color: var(--green);
 }
 
 .column-cards {
@@ -822,40 +838,6 @@ code {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.connection {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 10px;
-}
-
-.connection-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--text-dim);
-}
-
-.connection-online .connection-dot {
-  background: var(--green);
-}
-
-.connection-online {
-  color: var(--green);
-}
-
-.connection-offline .connection-dot {
-  background: var(--amber);
-}
-
-.connection-offline {
-  color: var(--amber);
 }
 
 /* --- Onboarding wizard ------------------------------------------------------ */
