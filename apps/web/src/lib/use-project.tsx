@@ -11,7 +11,6 @@
  */
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-import { Link } from "react-router";
 import type { Project } from "@pideck/shared";
 import { boardStore, useAppState } from "../store/store";
 
@@ -30,10 +29,8 @@ export function useProject(projectId: string | undefined): { project: Project | 
     fallback:
       project === undefined ? (
         <main className="page">
+          {/* Issue #277: navigation lives in the sidebar — no back-link here. */}
           <p className="empty">{state.loaded ? `Project “${projectId ?? "?"}” not found.` : "Loading…"}</p>
-          <Link to="/" className="back-link">
-            ← All projects
-          </Link>
         </main>
       ) : null,
   };

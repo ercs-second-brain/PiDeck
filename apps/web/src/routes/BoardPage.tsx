@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router";
+import { useParams } from "react-router";
 import { BoardColumns, mergedCardDetails } from "../components/BoardColumns";
 import { WorkersPanel } from "../components/WorkersPanel";
 import { useProject } from "../lib/use-project";
@@ -45,10 +45,6 @@ export function BoardPage() {
       )}
 
       <WorkersPanel projectId={project.id} workers={workers} />
-
-      <Link to="/" className="back-link">
-        ← All projects
-      </Link>
     </main>
   );
 }

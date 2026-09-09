@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useParams } from "react-router";
 import type { DiffFile, PullRequestDiff, WorkerFilesChanged } from "@pideck/shared";
 import { apiGetPullRequestDiff, apiGetWorkerFilesChanged, errorMessage } from "../lib/api";
 import { DiffView } from "../components/DiffView";
@@ -101,9 +101,6 @@ export function DiffPage() {
             </span>
           )}
         </div>
-        <Link className="button" to={`/projects/${projectId ?? ""}`}>
-          ← Board
-        </Link>
       </div>
 
       {error !== null && <p className="error-note">Could not load diff: {error}</p>}

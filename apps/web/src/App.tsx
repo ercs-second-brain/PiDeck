@@ -246,10 +246,8 @@ function AppModals(props: {
 function NotFound() {
   return (
     <main className="page">
+      {/* Issue #277: navigation lives in the sidebar — no back-link here. */}
       <p className="empty">Page not found.</p>
-      <Link to="/" className="back-link">
-        ← All projects
-      </Link>
     </main>
   );
 }
