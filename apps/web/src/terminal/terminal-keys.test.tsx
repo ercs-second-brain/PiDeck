@@ -1,6 +1,6 @@
 /**
  * Tests for the mobile terminal key row (issue #105): the pane renders a
- * button per touch-keyboard-missing key (Esc, Tab, Ctrl+C, four arrows)
+ * button per touch-keyboard-missing key (Esc, Tab, Ctrl+C, Enter, four arrows)
  * between the terminal and the status bar, and the key map holds the exact
  * byte sequences (single control bytes, arrows as CSI sequences).
  */
@@ -23,6 +23,7 @@ describe("terminal key row (issue #105)", () => {
       ["Esc", "\x1b"],
       ["Tab", "\x09"],
       ["Ctrl+C", "\x03"],
+      ["Enter", "\r"],
       ["↑", "\x1b[A"],
       ["↓", "\x1b[B"],
       ["←", "\x1b[D"],
@@ -30,7 +31,7 @@ describe("terminal key row (issue #105)", () => {
     ]);
   });
 
-  it("renders a button for Esc, Tab, Ctrl+C, and all four arrows", () => {
+  it("renders a button for Esc, Tab, Ctrl+C, Enter, and all four arrows", () => {
     const html = renderToString(<TerminalPane sessionId="sess-1" />);
     expect(html).toContain("terminal-keyrow");
     for (const key of TERMINAL_KEYS) {
