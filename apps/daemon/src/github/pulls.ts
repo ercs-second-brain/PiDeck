@@ -27,6 +27,10 @@ const restPullSchema = z.object({
   base: z.object({ ref: z.string() }),
   html_url: z.string().url(),
   updated_at: z.string(),
+  // Issue #261: present on the REST PR payload; optional so unexpected
+  // shapes degrade to cards without diff counts instead of failing.
+  additions: z.number().int().nonnegative().optional(),
+  deletions: z.number().int().nonnegative().optional(),
 });
 
 export interface PullRequestRecord {
@@ -52,6 +56,9 @@ export function mapRestPull(projectId: string, raw: unknown): PullRequestRecord 
     author: r.user?.login ?? "unknown",
     url: r.html_url,
     updatedAt: r.updated_at,
+    ...(r.additions !== undefined && r.deletions !== undefined
+      ? { additions: r.additions, deletions: r.deletions }
+      : {}),
   });
   return { pullRequest, headSha: r.head.sha };
 }
@@ -80,6 +87,8 @@ query($owner: String!, $name: String!, $first: Int!) {
         baseRefName
         headRefOid
         reviewDecision
+        additions
+        deletions
         commits(last: 1) {
           nodes {
             commit {
@@ -107,6 +116,8 @@ const graphqlPullsSchema = z.object({
           baseRefName: z.string(),
           headRefOid: z.string(),
           reviewDecision: z.enum(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"]).nullable(),
+          additions: z.number().int().nonnegative(),
+          deletions: z.number().int().nonnegative(),
           commits: z.object({
             nodes: z.array(
               z.object({
@@ -181,6 +192,8 @@ export async function listOpenPullRequestsBatched(gh: GhClient, projectId: strin
       author: node.author?.login ?? "unknown",
       url: node.url,
       updatedAt: node.updatedAt,
+      additions: node.additions,
+      deletions: node.deletions,
     }),
   );
 }

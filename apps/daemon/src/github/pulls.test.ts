@@ -43,6 +43,18 @@ describe("mapRestPull", () => {
     expect(mapRestPull(PROJECT, { ...REST_PR, state: "closed", merged_at: "2026-09-06T13:00:00Z" }).pullRequest.state).toBe("merged");
     expect(mapRestPull(PROJECT, { ...REST_PR, state: "closed", merged_at: null }).pullRequest.state).toBe("closed");
   });
+
+  it("maps REST diff totals onto additions/deletions (issue #261)", () => {
+    const rec = mapRestPull(PROJECT, { ...REST_PR, additions: 120, deletions: 3 });
+    expect(rec.pullRequest.additions).toBe(120);
+    expect(rec.pullRequest.deletions).toBe(3);
+  });
+
+  it("omits diff counts when the REST payload lacks them", () => {
+    const pr = mapRestPull(PROJECT, REST_PR).pullRequest;
+    expect(pr.additions).toBeUndefined();
+    expect(pr.deletions).toBeUndefined();
+  });
 });
 
 describe("listPullRequests", () => {
@@ -230,6 +242,8 @@ describe("listOpenPullRequestsBatched", () => {
       baseRefName: "main",
       headRefOid: "abc123",
       reviewDecision: "CHANGES_REQUESTED",
+      additions: 120,
+      deletions: 3,
       commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] },
       ...overrides,
     };
@@ -254,6 +268,9 @@ describe("listOpenPullRequestsBatched", () => {
     expect(pr.reviewState).toBe("changes_requested");
     expect(pr.state).toBe("open");
     expect(pr.headBranch).toBe("ao/pideck-4/shared-contracts");
+    // Issue #261: diff totals ride along in the same GraphQL call.
+    expect(pr.additions).toBe(120);
+    expect(pr.deletions).toBe(3);
   });
 
   it("passes the recency limit via -F and maps missing rollup/review to unknown/none", async () => {

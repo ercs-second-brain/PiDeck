@@ -512,11 +512,37 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Issue #261: the title doubles as the GitHub link when the card has a URL. */
+.card-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-title-link:hover {
+  text-decoration: underline;
+}
+
 .card-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+/* Issue #261: +N/−M diff totals on PR cards. */
+.card-diffstat {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.diffstat-additions {
+  color: var(--green);
+}
+
+.diffstat-deletions {
+  color: var(--red);
 }
 
 .badge {

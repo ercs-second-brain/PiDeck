@@ -65,6 +65,8 @@ function gqlPull(pr: PullRequest, overrides: Record<string, unknown> = {}): Reco
     baseRefName: pr.baseBranch,
     headRefOid: "abc123",
     reviewDecision: pr.reviewState === "approved" ? "APPROVED" : pr.reviewState === "changes_requested" ? "CHANGES_REQUESTED" : null,
+    additions: 12,
+    deletions: 4,
     commits: { nodes: [{ commit: { statusCheckRollup: rollup } }] },
     ...overrides,
   };
@@ -177,7 +179,12 @@ describe("PullRequestWatcher", () => {
     expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["pull_request.opened"]);
     const second = await watcher.pollOnce();
     expect(second.map((e) => e.type)).toEqual(["pull_request.opened"]);
-    expect(second[0]?.type === "pull_request.opened" && second[0]?.pullRequest).toEqual(makePullRequest(8));
+    expect(second[0]?.type === "pull_request.opened" && second[0]?.pullRequest).toEqual({
+      ...makePullRequest(8),
+      // The gqlPull node carries diff totals now (issue #261).
+      additions: 12,
+      deletions: 4,
+    });
     expect(calls).toHaveLength(2);
   });
 

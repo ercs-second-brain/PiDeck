@@ -250,3 +250,52 @@ describe("deriveBoard: archived workers (issue #102)", () => {
     expect(backlog).toMatchObject({ workerId: null, column: "backlog" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// deriveBoard card URL + diff counts (issue #261)
+// ---------------------------------------------------------------------------
+
+describe("deriveBoard: card url + diff counts (issue #261)", () => {
+  const updatedAt = "2026-09-06T12:00:00Z";
+  const boardProject = projectSchema.parse({
+    id: PROJECT,
+    name: "Demo",
+    repoUrl: REPO_URL,
+    defaultBranch: "main",
+    settings: { autoAgentUsername: null },
+    createdAt: updatedAt,
+    updatedAt,
+  });
+  const issue = {
+    projectId: PROJECT,
+    number: 5,
+    title: "Worked",
+    state: "open" as const,
+    blockedBy: [],
+    assignee: null,
+    url: `${REPO_URL}/issues/5`,
+    updatedAt,
+  };
+  const cards = (prs: PullRequest[]) => deriveBoard(boardProject, [issue], prs, []).columns.flatMap((c) => c.cards);
+
+  it("issue cards carry the issue URL and no diff counts", () => {
+    const card = cards([]).find((c) => c.kind === "issue");
+    expect(card?.url).toBe(`${REPO_URL}/issues/5`);
+    expect(card?.additions).toBeUndefined();
+    expect(card?.deletions).toBeUndefined();
+  });
+
+  it("PR cards carry the PR URL and the payload's +/- diff counts", () => {
+    const card = cards([{ ...pr(18, "Counts"), additions: 120, deletions: 3 }]).find((c) => c.kind === "pull_request");
+    expect(card?.url).toBe(`${REPO_URL}/pull/18`);
+    expect(card?.additions).toBe(120);
+    expect(card?.deletions).toBe(3);
+  });
+
+  it("PR cards without resolved diff totals omit the counts (event-derived PRs)", () => {
+    const card = cards([pr(19, "No counts yet")]).find((c) => c.kind === "pull_request");
+    expect(card?.url).toBe(`${REPO_URL}/pull/19`);
+    expect(card?.additions).toBeUndefined();
+    expect(card?.deletions).toBeUndefined();
+  });
+});

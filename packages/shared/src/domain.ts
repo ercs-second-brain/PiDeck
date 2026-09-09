@@ -167,6 +167,14 @@ export const pullRequestSchema = z.object({
   author: z.string().min(1),
   url: z.url(),
   updatedAt: isoDateTimeSchema,
+  /**
+   * Lines added across the PR's diff, when the producer resolved diff totals
+   * (kanban cards, issue #261). Optional: consumers must not assume it is
+   * present, and event-derived cards may omit it until the next board fetch.
+   */
+  additions: z.number().int().nonnegative().optional(),
+  /** Lines deleted across the PR's diff — see {@link pullRequestSchema `additions`}. */
+  deletions: z.number().int().nonnegative().optional(),
 });
 export type PullRequest = z.infer<typeof pullRequestSchema>;
 
@@ -197,6 +205,16 @@ export const kanbanCardSchema = z.object({
   /** Worker currently driving this card, if any. */
   workerId: idSchema.nullable(),
   updatedAt: isoDateTimeSchema,
+  /**
+   * GitHub URL of the underlying issue/PR (issue #261), when the producer
+   * resolved it. Optional: event-derived cards may omit it, and consumers
+   * must render the title as plain text when absent.
+   */
+  url: z.url().optional(),
+  /** Lines added by the PR's diff — PR cards only, when known (issue #261). */
+  additions: z.number().int().nonnegative().optional(),
+  /** Lines deleted by the PR's diff — see {@link kanbanCardSchema `additions`}. */
+  deletions: z.number().int().nonnegative().optional(),
 });
 export type KanbanCard = z.infer<typeof kanbanCardSchema>;
 
