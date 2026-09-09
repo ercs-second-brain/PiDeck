@@ -242,3 +242,48 @@ describe("SessionRegistry: reviewer linkage (issue #107)", () => {
     expect(sibling.parentWorkerId).toBeUndefined();
   });
 });
+
+describe("SessionRegistry: legacy kind-id migration (issue #335)", () => {
+  it("rewrites sessions persisted with the pre-rename researcher kind id on load", () => {
+    // A registry file written before the researcher rename: the legacy kind
+    // id is no longer in the shared enum, so the loader must rewrite it —
+    // otherwise the session is dropped (invisible + unterminable).
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            id: "s-legacy",
+            projectId: "proj",
+            role: "worker",
+            tmuxSession: "pideck-proj-worker-1",
+            agentKind: "investigator",
+            parentSessionId: "s-parent",
+            workerId: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "s-current",
+            projectId: "proj",
+            role: "orchestrator",
+            tmuxSession: "pideck-proj-orchestrator-1",
+            workerId: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        workers: [],
+      }),
+    );
+    const reloaded = new SessionRegistry(filePath);
+
+    const migrated = reloaded.getSession("s-legacy");
+    expect(migrated?.agentKind).toBe("researcher");
+    expect(migrated?.parentSessionId).toBe("s-parent");
+    expect(reloaded.getSession("s-current")?.agentKind).toBeUndefined();
+
+    // The rewrite persists: the next save drops the legacy id from the file.
+    reloaded.setSessionCwd("s-legacy", path.join(dir, "cwd"));
+    expect(readFileSync(filePath, "utf8")).not.toContain("investigator");
+  });
+});

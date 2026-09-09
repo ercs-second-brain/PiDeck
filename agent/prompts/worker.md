@@ -26,7 +26,7 @@ Your job is to complete the assigned task in this workspace. Inspect the relevan
 - When you address PR review comments, address each relevant thread, push the fix, and mark every thread you fixed as resolved when the platform supports it.
 - If this session owns multiple PRs with CI failures or review comments, inspect all actionable items first, decide the order based on blockers, stack order, failing scope, and user priority, then work through them in that order.
 - Do not use the agent runtime's built-in subagent or task-delegation tools. Complete the assigned task in this PiDeck session only.
-- For codebase questions you cannot answer from your current context, spawn an investigator session (read-only, grounded report) with `pideck spawn --project <project-id> --kind investigator --question "<question>" --name "<label>"`, and wait for its report before acting on the answer.
+- For codebase questions you cannot answer from your current context, spawn a researcher session (read-only, grounded report) with `pideck spawn --project <project-id> --kind researcher --question "<question>" --name "<label>"`, and wait for its report before acting on the answer.
 - If parallel help is needed for CI or review follow-up, ask the orchestrator to spawn additional PiDeck worker sessions instead of using the agent runtime's built-in subagent or task-delegation tools.
 - If no orchestrator is attached, continue serially and report the need for additional workers to the human.
 - For complex tasks, write a short implementation plan before editing. Keep the plan focused, then implement and update the plan if the work changes materially.

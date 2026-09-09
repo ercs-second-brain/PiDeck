@@ -4,12 +4,12 @@
  *
  * Covers the kind lifecycle end to end at the contract boundary:
  * 1. spawn — `pideck spawn --kind ...` sends the agent-kind body (kind +
- *    question for investigators, never --prompt/--issue) to the daemon's
+ *    question for researchers, never --prompt/--issue) to the daemon's
  *    spawn endpoint and parses the returned Session (agent-kind sessions
  *    are not workers);
  * 2. run — the kind's persona is the prompt, so the CLI contract pins the
  *    persona files' read-only rules;
- * 3. report routing — per AGENT_KIND_REPORT_TARGET: the investigator
+ * 3. report routing — per AGENT_KIND_REPORT_TARGET: the researcher
  *    persona delivers its report to `{{PARENT_SESSION_ID}}` (the calling
  *    session, via `pideck send`), the audit personas deliver to
  *    `{{ORCHESTRATOR_SESSION_ID}}` (the project orchestrator).
@@ -55,14 +55,14 @@ describe("pideck spawn --kind (CLI validation)", () => {
 
   it("rejects an unknown kind, listing the valid kinds", async () => {
     await expect(
-      run(["spawn", "--project", "p1", "--kind", "researcher", "--name", "x"], unreachable),
-    ).rejects.toThrow(/unknown agent kind "researcher".*investigator, devex-audit, kiss-audit/s);
+      run(["spawn", "--project", "p1", "--kind", "historian", "--name", "x"], unreachable),
+    ).rejects.toThrow(/unknown agent kind "historian".*researcher, devex-audit, kiss-audit/s);
   });
 
-  it("requires --question for investigators (the question is their input)", async () => {
+  it("requires --question for researchers (the question is their input)", async () => {
     await expect(
-      run(["spawn", "--project", "p1", "--kind", "investigator", "--name", "x"], unreachable),
-    ).rejects.toThrow(/investigator needs --question/);
+      run(["spawn", "--project", "p1", "--kind", "researcher", "--name", "x"], unreachable),
+    ).rejects.toThrow(/researcher needs --question/);
   });
 
   it("rejects --question for audit kinds (they take no input — the rule derives from the shared takesInput spec, #324)", async () => {
@@ -77,7 +77,7 @@ describe("pideck spawn --kind (CLI validation)", () => {
   it("rejects --issue and --prompt alongside --kind (agent kinds are not issue-owned; the persona is the prompt)", async () => {
     await expect(
       run(
-        ["spawn", "--project", "p1", "--kind", "investigator", "--question", "q", "--issue", "5", "--name", "x"],
+        ["spawn", "--project", "p1", "--kind", "researcher", "--question", "q", "--issue", "5", "--name", "x"],
         unreachable,
       ),
     ).rejects.toThrow(/--issue cannot be combined with --kind/);
@@ -122,7 +122,7 @@ describe("pideck spawn --kind (daemon contract, stub daemon)", () => {
             return;
           }
           res.statusCode = 201;
-          res.end(JSON.stringify(kindSession(kind ?? "investigator")));
+          res.end(JSON.stringify(kindSession(kind ?? "researcher")));
         });
         return;
       }
@@ -138,14 +138,14 @@ describe("pideck spawn --kind (daemon contract, stub daemon)", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it("investigator: sends kind + question (no prompt/issue) and parses the session response", async () => {
+  it("researcher: sends kind + question (no prompt/issue) and parses the session response", async () => {
     const client = new DaemonClient(base);
     const code = await run(
-      ["spawn", "--project", "p1", "--kind", "investigator", "--question", "why is spawn slow?", "--name", "inv"],
+      ["spawn", "--project", "p1", "--kind", "researcher", "--question", "why is spawn slow?", "--name", "inv"],
       client,
     );
     expect(code).toBe(0);
-    expect(lastSpawnBody).toEqual({ name: "inv", kind: "investigator", question: "why is spawn slow?" });
+    expect(lastSpawnBody).toEqual({ name: "inv", kind: "researcher", question: "why is spawn slow?" });
   });
 
   it("audit kinds: send kind + name only (persona is the prompt, no input flag)", async () => {
@@ -186,7 +186,7 @@ describe("pideck sessions (kind + parent rendering)", () => {
               workerId: null,
               createdAt: "2026-01-01T00:00:00.000Z",
             },
-            kindSession("investigator"),
+            kindSession("researcher"),
             kindSession("kiss-audit", { id: "sess-kind-2", agentKind: "kiss-audit" }),
           ]),
         );
@@ -210,7 +210,7 @@ describe("pideck sessions (kind + parent rendering)", () => {
     const sessions = await new DaemonClient(base).sessions();
     expect(sessions.map((s) => [s.id, s.agentKind, s.parentSessionId])).toEqual([
       ["orch-1", undefined, undefined],
-      ["sess-kind-1", "investigator", "sess-caller-1"],
+      ["sess-kind-1", "researcher", "sess-caller-1"],
       ["sess-kind-2", "kiss-audit", "sess-caller-1"],
     ]);
   });
@@ -220,7 +220,7 @@ describe("pideck sessions (kind + parent rendering)", () => {
     expect(code).toBe(0);
     const lines = logSpy.mock.calls.map((c: unknown[]) => String(c[0]));
     expect(lines[0]).not.toMatch(/kind:/);
-    expect(lines[1]).toMatch(/\tkind:investigator\tparent:sess-caller-1/);
+    expect(lines[1]).toMatch(/\tkind:researcher\tparent:sess-caller-1/);
     expect(lines[2]).toMatch(/\tkind:kiss-audit\tparent:sess-caller-1/);
   });
 });

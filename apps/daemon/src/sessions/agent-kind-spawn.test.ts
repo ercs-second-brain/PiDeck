@@ -2,7 +2,7 @@
  * Agent-kind spawn mechanics (docs/agent-kinds.md, issues #297/#300/#302):
  * sessions — never worker records — with the per-kind workspace rules
  * (fresh-origin worktree for worker-like audits, project clone for cheap
- * investigators) and a **bare shell** pane: putting pi in with the persona
+ * researchers) and a **bare shell** pane: putting pi in with the persona
  * is the bootstrap's job (#290 pattern, issue #310), shared by spawn,
  * relaunch, and the startup sweep.
  */
@@ -39,7 +39,7 @@ describe("agent-kind spawn (docs/agent-kinds.md)", () => {
     const { manager, git, registry, fake } = makeManager();
 
     const session = await manager.spawnAgentKind("proj", {
-      kind: "investigator",
+      kind: "researcher",
       parentSessionId: "sess-caller-1",
       name: "inv",
     });
@@ -47,7 +47,7 @@ describe("agent-kind spawn (docs/agent-kinds.md)", () => {
     // A session, not a worker: no workerId, kind + parent lineage recorded.
     expect(session.role).toBe("worker");
     expect(session.workerId).toBeNull();
-    expect(session.agentKind).toBe("investigator");
+    expect(session.agentKind).toBe("researcher");
     expect(session.parentSessionId).toBe("sess-caller-1");
     expect(session.name).toBe("inv");
     expect(session.cwd).toBe(path.join(stateDir, "projects", "proj", "clone"));
@@ -101,7 +101,7 @@ describe("agent-kind spawn (docs/agent-kinds.md)", () => {
   it("relaunches a kind pane as a bare shell in its recorded cwd (the bootstrap types the persona)", async () => {
     const { manager, fake } = makeManager();
     const session = await manager.spawnAgentKind("proj", {
-      kind: "investigator",
+      kind: "researcher",
       parentSessionId: "p",
     });
 

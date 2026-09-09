@@ -105,7 +105,7 @@ export class DaemonClient {
    * `pideck spawn --kind <agent-kind>` (issues #297/#300/#302,
    * docs/agent-kinds.md): spawn a preset-prompt agent-kind session. The
    * persona is the prompt, so the body carries the kind (and, for
-   * investigators, the question) instead of a freeform task prompt; the
+   * researchers, the question) instead of a freeform task prompt; the
    * daemon stamps the calling session as `parentSessionId` and returns the
    * new session record (agent-kind sessions are not workers).
    */

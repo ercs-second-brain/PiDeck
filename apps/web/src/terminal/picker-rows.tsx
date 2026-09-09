@@ -125,7 +125,7 @@ export function WorkerRow(props: {
       {props.onTerminateWorker && worker && (
         <TerminateWorkerButton pending={props.pending} onAsk={() => props.onAskTerminate(props.session.id)} />
       )}
-      {/* Agent-kind sessions spawned by this worker (investigator, docs/
+      {/* Agent-kind sessions spawned by this worker (researcher, docs/
           agent-kinds.md) nest under their caller per the #187 child-group
           pattern — SessionPicker passes them in as a nested list. */}
       {props.children}
@@ -136,7 +136,7 @@ export function WorkerRow(props: {
 /**
  * One preset-prompt agent-kind session row (docs/agent-kinds.md, issues
  * #297/#300/#302): an attachable button with the kind as its badge (the
- * persona — investigator, devex-audit, kiss-audit — is the identity, not a
+ * persona — researcher, devex-audit, kiss-audit — is the identity, not a
  * worker status). Rendered nested under the session that spawned it; shows
  * the spawn's sidebar label (`Session.name`) with the tmux name as fallback,
  * and the terminate affordance (#311, confirmed per the #268 modal pattern).

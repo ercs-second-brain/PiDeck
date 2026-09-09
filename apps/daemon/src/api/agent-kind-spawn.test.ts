@@ -46,13 +46,13 @@ function personaFile(projectId: string, sessionId: string): string {
 }
 
 describe("agent-kind spawn: persona, question, report target (docs/agent-kinds.md)", () => {
-  it("spawns an investigator with an explicit parent and delivers the question (pi auth ready)", async () => {
+  it("spawns a researcher with an explicit parent and delivers the question (pi auth ready)", async () => {
     const { api, daemon } = server;
     const projectId = await registerProject("inv1");
     const parent = await daemon.services.sessions.ensureOrchestrator(projectId);
 
     const res = await api("POST", `/api/projects/${projectId}/spawn`, {
-      kind: "investigator",
+      kind: "researcher",
       name: "inv",
       question: "why is spawn slow?",
       parentSessionId: parent.id,
@@ -60,7 +60,7 @@ describe("agent-kind spawn: persona, question, report target (docs/agent-kinds.m
     expect(res.status).toBe(201);
     // Agent-kind sessions are sessions, not workers (the #306 CLI contract).
     const session = sessionSchema.parse(res.json);
-    expect(session.agentKind).toBe("investigator");
+    expect(session.agentKind).toBe("researcher");
     expect(session.parentSessionId).toBe(parent.id);
     expect(session.workerId).toBeNull();
     expect(session.name).toBe("inv");
@@ -96,7 +96,7 @@ describe("agent-kind spawn: parent-of-any-role resolution", () => {
       {
         pid: panePid + 2,
         ppid: panePid + 1,
-        cmdline: ["node", "/home/me/.pideck/bin/pideck", "spawn", "--kind", "investigator", "--question", "q"],
+        cmdline: ["node", "/home/me/.pideck/bin/pideck", "spawn", "--kind", "researcher", "--question", "q"],
       },
     ];
     // Swap in a deterministic process table for the discovery probe.
@@ -104,7 +104,7 @@ describe("agent-kind spawn: parent-of-any-role resolution", () => {
     services.callerProcesses = async () => callerChain;
     try {
       const res = await api("POST", `/api/projects/${projectId}/spawn`, {
-        kind: "investigator",
+        kind: "researcher",
         name: "inv",
         question: "who called?",
       });
@@ -122,7 +122,7 @@ describe("agent-kind spawn: parent-of-any-role resolution", () => {
     const original = services.callerProcesses;
     services.callerProcesses = async () => [];
     try {
-      const res = await api("POST", `/api/projects/${projectId}/spawn`, { kind: "investigator", name: "inv" });
+      const res = await api("POST", `/api/projects/${projectId}/spawn`, { kind: "researcher", name: "inv" });
       expect(res.status).toBe(409);
       expect((res.json as { error: string }).error).toContain("calling session");
     } finally {
@@ -162,12 +162,12 @@ describe("agent-kind spawn: read-only enforcement + gating", () => {
     const { api, daemon } = server;
     const projectId = await registerProject("ro1");
     const parent = await daemon.services.sessions.ensureOrchestrator(projectId);
-    for (const kind of ["investigator", "devex-audit", "kiss-audit"] as const) {
+    for (const kind of ["researcher", "devex-audit", "kiss-audit"] as const) {
       const res = await api("POST", `/api/projects/${projectId}/spawn`, {
         kind,
         name: "x",
         parentSessionId: parent.id,
-        ...(kind === "investigator" ? { question: "q" } : {}),
+        ...(kind === "researcher" ? { question: "q" } : {}),
       });
       expect(res.status).toBe(201);
       const session = sessionSchema.parse(res.json);
@@ -178,7 +178,7 @@ describe("agent-kind spawn: read-only enforcement + gating", () => {
     }
   });
 
-  it("queues the investigator's question when pi auth is not ready (issue #56 parity)", async () => {
+  it("queues the researcher's question when pi auth is not ready (issue #56 parity)", async () => {
     // A dedicated daemon with a flipper auth probe (fresh per payload): the
     // question is never typed into an agent that cannot run.
     let authReady = false;
@@ -192,7 +192,7 @@ describe("agent-kind spawn: read-only enforcement + gating", () => {
       await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/ak/inv4" });
       const parent = await daemon.services.sessions.ensureOrchestrator("ak-inv4");
       const res = await api("POST", "/api/projects/ak-inv4/spawn", {
-        kind: "investigator",
+        kind: "researcher",
         name: "inv",
         question: "held question",
         parentSessionId: parent.id,
@@ -214,7 +214,7 @@ describe("agent-kind spawn: read-only enforcement + gating", () => {
 });
 
 describe("agent-kind spawn: caps + route parity", () => {
-  it("applies the worker-concurrency cap to worker-like kinds, not investigators", async () => {
+  it("applies the worker-concurrency cap to worker-like kinds, not researchers", async () => {
     const { api, daemon } = server;
     const projectId = await registerProject("cap1", { workerConcurrency: 1 });
     const parent = await daemon.services.sessions.ensureOrchestrator(projectId);
@@ -223,7 +223,7 @@ describe("agent-kind spawn: caps + route parity", () => {
     expect((await api("POST", `/api/projects/${projectId}/spawn`, { kind: "devex-audit", name: "a2" })).status).toBe(409);
     // Cheap kinds are exempt (docs/agent-kinds.md §5).
     expect(
-      (await api("POST", `/api/projects/${projectId}/spawn`, { kind: "investigator", name: "i1", parentSessionId: parent.id }))
+      (await api("POST", `/api/projects/${projectId}/spawn`, { kind: "researcher", name: "i1", parentSessionId: parent.id }))
         .status,
     ).toBe(201);
   });
@@ -245,12 +245,12 @@ describe("agent-kind spawn: caps + route parity", () => {
   it("rejects kind bodies that violate the spawn rules (400) and unknown projects (404)", async () => {
     const { api } = server;
     const projectId = await registerProject("bad1");
-    // --question is investigator-only; --issue/--prompt never combine with --kind.
+    // --question is researcher-only; --issue/--prompt never combine with --kind.
     expect(
       (await api("POST", `/api/projects/${projectId}/spawn`, { kind: "devex-audit", name: "x", question: "q" })).status,
     ).toBe(400);
     expect(
-      (await api("POST", `/api/projects/${projectId}/spawn`, { kind: "investigator", name: "x", prompt: "do" })).status,
+      (await api("POST", `/api/projects/${projectId}/spawn`, { kind: "researcher", name: "x", prompt: "do" })).status,
     ).toBe(400);
     expect((await api("POST", "/api/projects/nope/spawn", { kind: "kiss-audit", name: "x" })).status).toBe(404);
   });

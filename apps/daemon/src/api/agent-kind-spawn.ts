@@ -10,12 +10,12 @@
  *   otherwise the calling pane is discovered from the live spawn process
  *   (the caller may be a global-agent, orchestrator, worker, or reviewer
  *   session); otherwise audit kinds fall back to the project orchestrator
- *   they report to, while caller-routed kinds (investigator) reject — a
+ *   they report to, while caller-routed kinds (researcher) reject — a
  *   guessed parent would misroute the report;
- * - issue #56 parity: the investigator's question is typed into the pane
+ * - issue #56 parity: the researcher's question is typed into the pane
  *   only when pi auth is ready, else queued on the prompt gate;
  * - concurrency (§5): worker-like kinds (audits) count toward the project's
- *   `workerConcurrency` cap alongside workers; investigator spawns are
+ *   `workerConcurrency` cap alongside workers; researcher spawns are
  *   cheap and exempt.
  */
 
@@ -39,7 +39,7 @@ export interface SpawnAgentKindInput {
  * Resolves the parent session id (docs/agent-kinds.md §3): explicit → the
  * calling pane (discovery) → the project orchestrator for
  * orchestrator-routed kinds. Caller-routed kinds without a resolvable
- * parent reject: the investigator's report MUST reach its caller, and a
+ * parent reject: the researcher's report MUST reach its caller, and a
  * guessed parent would silently misroute it.
  */
 async function resolveParentSessionId(
@@ -90,7 +90,7 @@ export async function handleAgentKindSpawn(services: DaemonServices, projectId: 
   const spec = agentKindSpec(input.kind);
 
   // Worker-concurrency cap applies to worker-like kinds (docs/agent-kinds.md
-  // §5): they occupy a real workspace like workers; investigator spawns are
+  // §5): they occupy a real workspace like workers; researcher spawns are
   // exempt. Counted alongside the project's active workers.
   if (spec.workerLike) {
     const cap = project.settings.workerConcurrency;

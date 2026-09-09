@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { makeProject } from "./test-fixtures";
 import { ProjectRow } from "./picker-rows";
-import { DeleteProjectModal, InvestigatorPromptModal } from "./picker-modals";
+import { DeleteProjectModal, ResearcherPromptModal } from "./picker-modals";
 
 const project = makeProject();
 
@@ -74,27 +74,27 @@ describe("Spawn agent menu section (docs/agent-kinds.md, #297/#300/#302)", () =>
     expect(html).toContain("Spawn agent");
     expect(html).toContain("role=\"group\"");
     // Issue #309: no stray ellipsis — the label is a plain word (the "…"
-    // in the old "Investigator…" rendered as stray dots in the menu).
-    expect(html).toContain(">Investigator</button>");
-    expect(html).not.toContain("Investigator…");
+    // in the old "Researcher…" rendered as stray dots in the menu).
+    expect(html).toContain(">Researcher</button>");
+    expect(html).not.toContain("Researcher…");
     expect(html).toContain(">Devex audit</button>");
     expect(html).toContain(">KISS audit</button>");
   });
 
   it("states each kind's behavior in its menu title", () => {
     const html = renderRow(true);
-    expect(html).toContain("Spawn an investigator — it investigates one question against the codebase and reports back");
+    expect(html).toContain("Spawn a researcher — it researches one question against the codebase and reports back");
     expect(html).toContain("Spawn a devex audit — mines prior sessions for friction, reports to the orchestrator");
     expect(html).toContain("Spawn a KISS audit — complexity findings, reported to the orchestrator");
   });
 
-  it("renders the investigator question modal with its confirm disabled while the question is empty", () => {
+  it("renders the researcher question modal with its confirm disabled while the question is empty", () => {
     const html = renderToString(
-      <InvestigatorPromptModal projectName={project.name} agentKind="investigator" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+      <ResearcherPromptModal projectName={project.name} agentKind="researcher" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
-    expect(html).toContain("Spawn Investigator?");
+    expect(html).toContain("Spawn Researcher?");
     expect(html).toContain("<code>agentsKISS</code>");
-    expect(html).toContain("aria-label=\"Investigator question\"");
+    expect(html).toContain("aria-label=\"Researcher question\"");
     // Empty question in SSR: the confirm renders its label but stays disabled
     // (typing enables it client-side — the input state is client-only).
     expect(html).toContain(">Spawn</button>");
@@ -103,19 +103,19 @@ describe("Spawn agent menu section (docs/agent-kinds.md, #297/#300/#302)", () =>
 
   it("derives the modal copy from the kind's shared metadata (issue #324)", () => {
     const html = renderToString(
-      <InvestigatorPromptModal projectName={project.name} agentKind="investigator" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+      <ResearcherPromptModal projectName={project.name} agentKind="researcher" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
-    expect(html).toContain("aria-label=\"Spawn investigator\"");
-    expect(html).toContain("aria-label=\"Investigator question\"");
+    expect(html).toContain("aria-label=\"Spawn researcher\"");
+    expect(html).toContain("aria-label=\"Researcher question\"");
   });
 
-  it("shows the in-flight and failure states inside the investigator modal", () => {
+  it("shows the in-flight and failure states inside the researcher modal", () => {
     const pending = renderToString(
-      <InvestigatorPromptModal projectName="p" agentKind="investigator" pending onConfirm={() => {}} onCancel={() => {}} />,
+      <ResearcherPromptModal projectName="p" agentKind="researcher" pending onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(pending).toContain("Spawning…");
     const failed = renderToString(
-      <InvestigatorPromptModal projectName="p" agentKind="investigator" pending={false} error="agent sessions are not wired yet" onConfirm={() => {}} onCancel={() => {}} />,
+      <ResearcherPromptModal projectName="p" agentKind="researcher" pending={false} error="agent sessions are not wired yet" onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(failed).toContain("terminate-modal-error");
     expect(failed).toContain("agent sessions are not wired yet");

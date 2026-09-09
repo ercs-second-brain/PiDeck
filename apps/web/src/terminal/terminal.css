@@ -306,7 +306,7 @@
   color: var(--issue);
 }
 
-/* Issues #297/#300/#302: preset-prompt agent-kind sessions (investigator,
+/* Issues #297/#300/#302: preset-prompt agent-kind sessions (researcher,
    devex-audit, kiss-audit) carry the kind itself as the badge. */
 .role-agent {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -415,7 +415,7 @@
   min-width: 0;
 }
 
-/* Shared modal textarea chrome (#297 investigator question, #315 asset
+/* Shared modal textarea chrome (#297 researcher question, #315 asset
    editor): the modal card's typography for free-text editing. */
 .modal-textarea {
   width: 100%;

@@ -33,7 +33,7 @@ export interface AgentKindSpec {
   /**
    * Worker-like spawns occupy a real workspace — a fresh per-session
    * worktree (issue #287) — and count against the project's
-   * `workerConcurrency` cap. Cheap kinds (investigator) run read-only in
+   * `workerConcurrency` cap. Cheap kinds (researcher) run read-only in
    * the project clone and are exempt.
    */
   workerLike: boolean;
@@ -42,8 +42,8 @@ export interface AgentKindSpec {
 }
 
 const AGENT_KIND_SPECS: Record<AgentKind, AgentKindSpec> = {
-  investigator: {
-    personaFile: "investigator.md",
+  researcher: {
+    personaFile: "researcher.md",
     workerLike: false,
     readOnly: true,
   },

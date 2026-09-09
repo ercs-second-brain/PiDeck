@@ -219,7 +219,7 @@ export const terminateWorker = (workerId: string): Promise<EndpointResponse<"ter
 
 /**
  * Spawns a preset-prompt agent-kind session (docs/agent-kinds.md, issues
- * #297/#300/#302): the investigator carries its `question`, the audit
+ * #297/#300/#302): the researcher carries its `question`, the audit
  * kinds take none. The `name` is the sidebar label (≤ 20 chars); the
  * daemon resolves the parent session (the project orchestrator for
  * menu spawns) and routes the report per the kind's registry spec.

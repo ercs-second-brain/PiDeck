@@ -69,7 +69,7 @@ describe("AgentAssetsStore (issue #315)", () => {
       path.join(stateDir, "agent-assets", "skills", "tweak.md"),
     ]);
     expect(store.skillLaunchArgs("worker")).toEqual(["--skill", path.join(stateDir, "agent-assets", "skills", "tweak.md")]);
-    expect(store.skillLaunchArgs("investigator")).toEqual([]);
+    expect(store.skillLaunchArgs("researcher")).toEqual([]);
 
     // Unapplying (personas without the skill) drops the args but keeps the file.
     store.saveSkill("tweak", { content: "unchanged", personas: [] });
@@ -102,5 +102,31 @@ describe("AgentAssetsStore (issue #315)", () => {
     const store = new AgentAssetsStore(stateDir);
     expect(store.list().skills).toEqual([]);
     expect(store.promptOverride("orchestrator")).toBeUndefined();
+  });
+
+  it("migrates assets persisted with the pre-rename researcher persona id (issue #335)", () => {
+    // A store file written before the researcher rename: the legacy persona
+    // id is no longer in the enum, so without the load-time rewrite the
+    // whole file would fail validation and the user's edits would vanish.
+    stateDir = mkdtempSync(path.join(tmpdir(), "pideck-assets-"));
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      path.join(stateDir, "agent-assets.json"),
+      JSON.stringify({
+        version: 1,
+        prompts: { investigator: { persona: "investigator", content: "legacy override", updatedAt: "2026-01-01T00:00:00.000Z" } },
+        skills: [{ id: "prd", content: "prd skill", personas: ["investigator", "orchestrator"], updatedAt: "2026-01-01T00:00:00.000Z" }],
+      }),
+    );
+    const store = new AgentAssetsStore(stateDir);
+
+    expect(store.promptOverride("researcher")).toBe("legacy override");
+    expect(store.list().skills[0]?.personas).toEqual(["researcher", "orchestrator"]);
+    // Launch shaping works for the migrated persona.
+    expect(store.skillLaunchArgs("researcher")).toEqual(["--skill", path.join(stateDir, "agent-assets", "skills", "prd.md")]);
+
+    // The rewrite persists: the next save drops the legacy id from the file.
+    store.saveSkill("extra", { content: "x", personas: [] });
+    expect(readFileSync(path.join(stateDir, "agent-assets.json"), "utf8")).not.toContain("investigator");
   });
 });

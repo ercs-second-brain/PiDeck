@@ -87,7 +87,7 @@ function validatePersistedState(value: unknown): PersistedState | undefined {
   const raw = value as Partial<PersistedState>;
   const sessions: Session[] = [];
   for (const entry of raw.sessions ?? []) {
-    const parsed = sessionSchema.safeParse(entry);
+    const parsed = sessionSchema.safeParse(migrateSessionKind(entry));
     if (parsed.success) sessions.push(parsed.data);
   }
   const workers: Worker[] = [];
@@ -96,6 +96,21 @@ function validatePersistedState(value: unknown): PersistedState | undefined {
     if (parsed.success) workers.push(parsed.data);
   }
   return { version: STATE_VERSION, sessions, workers };
+}
+
+/**
+ * One-time kind-id migration (issue #335, docs/agent-kinds.md §7): sessions
+ * persisted before the researcher rename still carry the legacy kind id
+ * (spelled "investigator"); without this rewrite they would fail the
+ * session schema (the enum no longer contains the legacy id) and be DROPPED
+ * by the loader — the session would vanish from the sidebar and become
+ * unterminable. Rewritten on load, so the next save persists the new id;
+ * this is the one place in the codebase that still mentions the legacy id.
+ */
+function migrateSessionKind(entry: unknown): unknown {
+  if (typeof entry !== "object" || entry === null) return entry;
+  const raw = entry as Record<string, unknown>;
+  return raw["agentKind"] === "investigator" ? { ...raw, agentKind: "researcher" } : entry;
 }
 
 function newId(prefix: string): string {

@@ -25,8 +25,8 @@ describe("AGENT_KIND_INFO (issue #324)", () => {
     }
   });
 
-  it("marks the investigator as the one kind that takes input", () => {
-    expect(AGENT_KIND_INFO.investigator.takesInput).toBe(true);
+  it("marks the researcher as the one kind that takes input", () => {
+    expect(AGENT_KIND_INFO.researcher.takesInput).toBe(true);
     expect(AGENT_KIND_INFO["devex-audit"].takesInput).toBe(false);
     expect(AGENT_KIND_INFO["kiss-audit"].takesInput).toBe(false);
   });

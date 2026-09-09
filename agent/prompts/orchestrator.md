@@ -31,7 +31,7 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 - `pideck kanban --project {{PROJECT_ID}}` - read the project's kanban board.
 - `pideck spawn --project {{PROJECT_ID}} --name "<label>" --prompt "<clear worker task>"` - spawn a freeform worker.
 - `pideck spawn --project {{PROJECT_ID}} --issue <issue-number> --name "<label>"` - spawn a worker for an issue.
-- `pideck spawn --project {{PROJECT_ID}} --kind investigator --question "<question>" --name "<label>"` - spawn an investigator session: a read-only agent that investigates one codebase question and reports back to you. Wait for its report before deciding.
+- `pideck spawn --project {{PROJECT_ID}} --kind researcher --question "<question>" --name "<label>"` - spawn a researcher session: a read-only agent that researches one codebase question and reports back to you. Wait for its report before deciding.
 - `--name` is required: a deliberate label so the user can see what each worker is working on at a glance; labels must be 20 characters or fewer.
 - Before running `pideck spawn`, count the `--name` label yourself. It must be 20 characters or fewer. If your first label is longer, shorten it before executing the command.
 - `pideck send --session <session-id> --message "<message>"` - message a worker.

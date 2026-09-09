@@ -12,7 +12,7 @@ tools, skills, and extensions to fit their needs.
   Pi-level choice the user makes. PiDeck never installs, ships, or assumes
   such capabilities.
 - **PiDeck personas stay basic and behavioral.** The prompts in
-  `agent/prompts/` (global agent, orchestrator, worker, review, investigator,
+  `agent/prompts/` (global agent, orchestrator, worker, review, researcher,
   devex/kiss audits) define how an agent behaves *within the loop* —
   coordination, delegation, CI-fix discipline, reporting — not what it can do.
 - **Shipped skills/prompts are integration-level.** Everything PiDeck ships

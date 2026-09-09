@@ -25,9 +25,10 @@ const NOW = "2025-06-01T12:00:00.000Z";
 
 describe("domain: per-persona agent assets (issue #315)", () => {
   it("contracts the six boot personas", () => {
-    expect(PERSONAS).toEqual(["global-agent", "orchestrator", "worker", "investigator", "devex-audit", "kiss-audit"]);
+    expect(PERSONAS).toEqual(["global-agent", "orchestrator", "worker", "researcher", "devex-audit", "kiss-audit"]);
     for (const persona of PERSONAS) expect(personaSchema.safeParse(persona).success).toBe(true);
-    expect(personaSchema.safeParse("researcher").success).toBe(false);
+    expect(personaSchema.safeParse("researcher").success).toBe(true);
+    expect(personaSchema.safeParse("historian").success).toBe(false);
   });
 
   it("keeps skill ids slug-shaped (they become filenames)", () => {

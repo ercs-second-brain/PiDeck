@@ -77,7 +77,7 @@ describe("PR prompts", () => {
     const prompt = buildReviewAgentPrompt(PR, { projectId: "proj", repo: "o/r" });
     expect(prompt).not.toContain("\n");
     expect(prompt).toContain("review agent for PR #12");
-    expect(prompt).toContain("--kind investigator");
+    expect(prompt).toContain("--kind researcher");
     expect(prompt).toContain("wait for its report before posting your review");
     expect(prompt).toContain("gh pr diff 12 --repo o/r");
     expect(prompt).toContain("--approve");

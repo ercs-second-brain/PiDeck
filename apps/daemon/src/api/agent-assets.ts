@@ -49,6 +49,45 @@ const persistedSchema = z.object({
   skills: z.array(agentSkillSchema),
 });
 
+/**
+ * One-time persona-id migration (issue #335, docs/agent-kinds.md §7): stored
+ * overrides/skills may reference the researcher persona's legacy id (spelled
+ * "investigator"). Without this rewrite they would fail the persona enum and
+ * the whole file would silently fall back to empty assets — the user's edits
+ * would vanish. Rewritten on load; the next save persists the new id.
+ */
+function migrateLegacyPersonas(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  const raw = value as {
+    prompts?: Record<string, unknown>;
+    skills?: Array<{ personas?: unknown }>;
+  };
+  const prompts = raw.prompts;
+  const skills = raw.skills?.map((skill) => ({
+    ...skill,
+    personas: Array.isArray(skill.personas)
+      ? skill.personas.map((p) => (p === "investigator" ? "researcher" : p))
+      : skill.personas,
+  }));
+  return {
+    ...raw,
+    ...(prompts === undefined
+      ? {}
+      : {
+          prompts: Object.fromEntries(
+            Object.entries(prompts).map(([k, v]) => [
+              k === "investigator" ? "researcher" : k,
+              // The override record repeats the persona as a field — rewrite it too.
+              k === "investigator" && typeof v === "object" && v !== null
+                ? { ...(v as Record<string, unknown>), persona: "researcher" }
+                : v,
+            ]),
+          ),
+        }),
+    ...(skills === undefined ? {} : { skills }),
+  };
+}
+
 type PersistedAssets = z.infer<typeof persistedSchema>;
 
 /** The launch-shaped view of the store (`SessionManager` / bootstrap deps). */
@@ -74,7 +113,7 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
     // place, so a shared empty would leak state across reloads.
     this.current = this.file.load(
       (value) => {
-        const parsed = persistedSchema.safeParse(value);
+        const parsed = persistedSchema.safeParse(migrateLegacyPersonas(value));
         return parsed.success ? parsed.data : undefined;
       },
       { version: 1, prompts: {} as Record<Persona, PromptOverride>, skills: [] },

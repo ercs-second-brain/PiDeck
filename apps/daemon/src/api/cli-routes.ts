@@ -14,7 +14,7 @@ import { AGENT_KIND_INFO, agentKindSchema, idSchema, refNumberSchema } from "@pi
  * `POST /api/projects/:projectId/spawn` — spawn a worker in a project, or
  * — with `kind` — a preset-prompt agent-kind session (docs/agent-kinds.md,
  * `pideck spawn --kind`). One route, two spawn types: kind spawns carry
- * `kind` (+ the investigator's `question`, an explicit `parentSessionId`)
+ * `kind` (+ the researcher's `question`, an explicit `parentSessionId`)
  * and never `issueNumber`/`prompt` (the persona is the prompt; agent kinds
  * are not issue-owned); worker spawns keep the original shape.
  */
@@ -28,7 +28,7 @@ export const projectSpawnSchema = z
     prompt: z.string().min(1).optional(),
     /** Agent kind (docs/agent-kinds.md) — present marks an agent-kind spawn. */
     kind: agentKindSchema.optional(),
-    /** The investigator's question (`pideck spawn --kind investigator --question`). */
+    /** The researcher's question (`pideck spawn --kind researcher --question`). */
     question: z.string().min(1).optional(),
     /** Explicit parent session of any role (docs/agent-kinds.md §3); resolved from the spawn context when omitted. */
     parentSessionId: idSchema.optional(),
@@ -41,7 +41,7 @@ export const projectSpawnSchema = z
     { message: "--issue/--prompt cannot be combined with --kind (agent kinds are not issue-owned; the persona is the prompt)" },
   )
   .refine(
-    // Issue #324: the investigator-only rule, derived from the shared kind
+    // Issue #324: the researcher-only rule, derived from the shared kind
     // spec — a question is valid exactly when the kind takesInput.
     (input) => input.question === undefined || (input.kind !== undefined && AGENT_KIND_INFO[input.kind].takesInput),
     { message: "--question requires a kind whose spec takes input (audit kinds take none)" },
