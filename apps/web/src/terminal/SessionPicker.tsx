@@ -105,7 +105,8 @@ function ProjectSection(props: {
   onAskDeleteProject: (projectId: string) => void;
   onToggleMenu: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
-  onTerminateWorker?: (workerId: string) => void;
+  /** Terminates the worker after confirmation (issue #268: awaited by the modal). */
+  onTerminateWorker?: (workerId: string) => Promise<void>;
   /** Opens the terminate-confirmation modal on a worker row (issue #64/#116). */
   onAskTerminate: (sessionId: string) => void;
 }) {
@@ -181,7 +182,8 @@ function ProjectSection(props: {
 function ConfirmModals(props: {
   state: ReturnType<typeof usePickerState>;
   entries: ProjectEntry[];
-  onTerminateWorker?: (workerId: string) => void;
+  /** Terminates the worker after confirmation (issue #268: awaited by the modal). */
+  onTerminateWorker?: (workerId: string) => Promise<void>;
   onDeleteProject?: (projectId: string) => Promise<void>;
 }) {
   const { state } = props;
@@ -192,7 +194,8 @@ function ConfirmModals(props: {
         <TerminateWorkerModal
           sessionName={state.confirmingSession.tmuxSession}
           pending={state.pendingTerminate}
-          onConfirm={() => state.confirmTerminate(props.onTerminateWorker!)}
+          error={state.terminateError}
+          onConfirm={() => void state.confirmTerminate(props.onTerminateWorker!)}
           onCancel={state.cancelTerminate}
         />
       )}
@@ -247,7 +250,8 @@ export interface SessionPickerProps {
   /** Deletes a project locally (issue #172): daemon teardown, GitHub repo
    * kept. Rejecting (e.g. 409 while workers drive a PR) surfaces in the modal. */
   onDeleteProject?: (projectId: string) => Promise<void>;
-  onTerminateWorker?: (workerId: string) => void;
+  /** Terminates a worker after its confirmation (issue #268: awaited by the modal). */
+  onTerminateWorker?: (workerId: string) => Promise<void>;
   /** Issue #260 (B8): compact update popup rendered inside the footer,
    * anchored above the settings entry. Quiet when up to date / loading. */
   updateSlot?: ReactNode;

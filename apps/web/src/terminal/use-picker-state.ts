@@ -13,6 +13,44 @@ import type { Session } from "@pideck/shared";
 import { errorMessage } from "../lib/api";
 import { loadCollapsedProjects, saveCollapsedProjects } from "../lib/sidebar-collapse";
 
+/** Callbacks the pure terminate-confirm lifecycle drives (React state setters). */
+interface TerminateConfirmHooks {
+  setPending: (pending: boolean) => void;
+  setError: (error: string | null) => void;
+  close: () => void;
+}
+
+/**
+ * The terminate-confirm modal lifecycle (issue #268): the confirm button
+ * runs the terminate request, keeps the modal pending while it is in
+ * flight, **closes the modal on success** (previously the modal stayed open
+ * after a successful terminate and the worker seemed un-terminated), and
+ * keeps it open with the failure message on error — mirroring the
+ * delete-confirmation lifecycle (issue #172).
+ *
+ * Pure and hook-free so the lifecycle is testable without a DOM renderer.
+ */
+export async function runTerminateConfirm(
+  workerId: string | null,
+  terminate: (workerId: string) => Promise<void>,
+  hooks: TerminateConfirmHooks,
+): Promise<void> {
+  if (workerId === null) {
+    hooks.close(); // nothing to terminate (stale confirm): dismiss
+    return;
+  }
+  hooks.setPending(true);
+  hooks.setError(null);
+  try {
+    await terminate(workerId);
+    hooks.close();
+  } catch (err) {
+    hooks.setError(errorMessage(err));
+  } finally {
+    hooks.setPending(false);
+  }
+}
+
 /**
  * Delete-confirmation interaction state (issue #172): which project is
  * confirming its deletion (rendered as the centered modal by SessionPicker),
@@ -48,6 +86,21 @@ function useDeleteConfirm() {
   };
 }
 
+/**
+ * Terminate-confirmation interaction state (issue #268): in-flight/error
+ * flags for the terminate request, driven by the pure {@link
+ * runTerminateConfirm} lifecycle — pending while in flight, the modal
+ * closed on success, open with the daemon's error on failure (delete-modal
+ * parity, issue #172). Mirrors {@link useDeleteConfirm}.
+ */
+function useTerminateConfirm() {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const confirm = (workerId: string | null, terminate: (workerId: string) => Promise<void>, close: () => void) =>
+    runTerminateConfirm(workerId, terminate, { setPending, setError, close });
+  return { pending, error, confirm };
+}
+
 export function usePickerState(
   entries: { project: { id: string }; sessions: Session[] }[],
   terminatingWorkerId: string | null,
@@ -57,8 +110,10 @@ export function usePickerState(
 ) {
   // Issue #64/#116: which worker is confirming its termination — the
   // confirm renders as a small centered modal; Escape/Cancel dismisses
-  // (except while the terminate request is in flight).
+  // (except while the terminate request is in flight). Issue #268: the
+  // lifecycle (pending/error/close) is owned here, not left to the caller.
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
+  const terminateConfirm = useTerminateConfirm();
   // Issue #64: which projects' "Archived" sections are expanded.
   const [archivedOpen, setArchivedOpen] = useState<Set<string>>(() =>
     seedArchivedOpen ? new Set(entries.map((entry) => entry.project.id)) : new Set(),
@@ -89,7 +144,10 @@ export function usePickerState(
 
   const allSessions = entries.flatMap((entry) => entry.sessions);
   const confirmingSession = confirmingSessionId ? allSessions.find((session) => session.id === confirmingSessionId) : undefined;
-  const pendingTerminate = confirmingSession?.workerId != null && confirmingSession.workerId === terminatingWorkerId;
+  // In flight: the confirm's own request, or an externally tracked one
+  // (the `terminatingWorkerId` overlay, tests/legacy hosts).
+  const pendingTerminate =
+    terminateConfirm.pending || (confirmingSession?.workerId != null && confirmingSession.workerId === terminatingWorkerId);
 
   useEffect(() => {
     if (!confirmingSession) return;
@@ -130,15 +188,14 @@ export function usePickerState(
     };
   }, [openMenuId]);
 
-  const confirmTerminate = (onTerminateWorker: (workerId: string) => void) => {
-    if (confirmingSession?.workerId != null) onTerminateWorker(confirmingSession.workerId);
-    else setConfirmingSessionId(null);
-  };
+  const confirmTerminate = (onTerminateWorker: (workerId: string) => Promise<void>) =>
+    terminateConfirm.confirm(confirmingSession?.workerId ?? null, onTerminateWorker, () => setConfirmingSessionId(null));
 
   return {
     confirmingSessionId,
     confirmingSession,
     pendingTerminate,
+    terminateError: terminateConfirm.error,
     askTerminate: setConfirmingSessionId,
     cancelTerminate: () => setConfirmingSessionId(null),
     confirmTerminate,

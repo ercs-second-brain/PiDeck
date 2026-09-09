@@ -56,7 +56,7 @@ function renderMain(sessionId: string, contextEntries: ProjectEntry[] = [entry])
     reload: () => {},
     startOrchestrator: () => {},
     startGlobalAgent: () => {},
-    terminateWorker: () => {},
+    terminateWorker: async () => {},
     deleteProject: async () => {},
     openOnboarding: () => {},
   };
