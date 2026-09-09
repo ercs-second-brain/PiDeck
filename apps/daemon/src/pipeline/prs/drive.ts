@@ -28,6 +28,13 @@ export interface DriveContext {
   workerCap: () => number | undefined;
   /** `owner/name` of the PRs' repository (review-agent prompts, issue #107). */
   repo: string;
+  /**
+   * Names of the failing checks on a PR head (issue #322), fetched fresh for
+   * each CI-fix prompt so the worker gets actionable targets. Optional:
+   * absent (or a rejected lookup) degrades to the generic inspect-first
+   * prompt.
+   */
+  failingChecks?: (headSha: string) => Promise<string[]>;
   /** Max consecutive CI-fix prompts per red streak. */
   maxFixAttempts: number;
   /** Age at which an unanswered prompt is treated as stale. */
@@ -82,7 +89,7 @@ async function driveCiFailure(
   // Issue #106: `autoFixCi` OFF means the pipeline skips the CI-fix step;
   // the worker's status reflects why nothing is being driven.
   if (!settingsOf(ctx).autoFixCi) {
-    setStatusIfChanged(ctx, tracked.workerId, "awaiting_ci", `PR #${tracked.prNumber}: CI failed — auto-fix CI disabled (global setting)`);
+    setStatusIfChanged(ctx, tracked.workerId, "awaiting_ci", `PR #${tracked.prNumber}: CI failed — auto-fix CI disabled (setting)`);
     return events;
   }
   const waitingForWorker = tracked.state === "fixing" && !headChangedSincePrompt;
@@ -98,7 +105,11 @@ async function driveCiFailure(
     );
     return events;
   }
-  const attempt = tracked.fixAttempts + 1;  const prompt = buildCiFixPrompt(pr, { attempt, maxAttempts: ctx.maxFixAttempts, comments: newComments });
+  const attempt = tracked.fixAttempts + 1;
+  // Issue #322: name the failing checks in the prompt. A failed lookup must
+  // never block the fix cycle — the prompt degrades to inspect-first.
+  const failingChecks = await ctx.failingChecks?.(headSha).catch(() => undefined);
+  const prompt = buildCiFixPrompt(pr, { attempt, maxAttempts: ctx.maxFixAttempts, comments: newComments, failingChecks });
   await ctx.sessions.sendKeys(tracked.sessionId, prompt, { enter: true });
   tracked.fixAttempts = attempt;
   tracked.state = "fixing";
@@ -126,7 +137,7 @@ async function driveGreen(
         ctx,
         tracked.workerId,
         "awaiting_ci",
-        `PR #${tracked.prNumber}: ${newComments.length} review comment(s) — auto-fix review comments disabled (global setting)`,
+        `PR #${tracked.prNumber}: ${newComments.length} review comment(s) — auto-fix review comments disabled (setting)`,
       );
       return events;
     }

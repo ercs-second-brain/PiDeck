@@ -7,11 +7,11 @@
     "max-lines-per-function::apps/daemon/src/cli/main.test.ts::Arrow function has too many lines (135). Maximum allowed is 100.",
     "max-lines-per-function::apps/daemon/src/pipeline/issues/pipeline.test.ts::Arrow function has too many lines (188). Maximum allowed is 100.",
     "max-lines-per-function::apps/daemon/src/pipeline/wiring.test.ts::Arrow function has too many lines (166). Maximum allowed is 100.",
-    "max-lines-per-function::apps/daemon/src/pipeline/wiring.test.ts::Arrow function has too many lines (190). Maximum allowed is 100.",
+    "max-lines-per-function::apps/daemon/src/pipeline/wiring.test.ts::Arrow function has too many lines (189). Maximum allowed is 100.",
     "max-lines-per-function::apps/daemon/src/sessions/registry.test.ts::Arrow function has too many lines (183). Maximum allowed is 100.",
     "max-lines-per-function::apps/web/src/lib/render.test.tsx::Arrow function has too many lines (102). Maximum allowed is 100.",
     "max-lines-per-function::packages/shared/src/index.test.ts::Arrow function has too many lines (109). Maximum allowed is 100.",
     "max-lines::apps/daemon/src/pipeline/issues/pipeline.test.ts::File has too many lines (459). Maximum allowed is 300.",
-    "max-lines::apps/daemon/src/pipeline/wiring.test.ts::File has too many lines (418). Maximum allowed is 300."
+    "max-lines::apps/daemon/src/pipeline/wiring.test.ts::File has too many lines (417). Maximum allowed is 300."
   ]
 }

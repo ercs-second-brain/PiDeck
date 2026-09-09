@@ -70,6 +70,17 @@ export const projectSettingsSchema = z.object({
    * unset, so a stored project never carries `null`).
    */
   workerConcurrency: z.number().int().min(1).max(16).nullish(),
+  /**
+   * Per-project overrides of the daemon-wide worker-pipeline toggles
+   * (issue #106/#322). Unset/`null` = inherit the daemon-wide setting;
+   * an explicit boolean overrides it for this project's PR loop only.
+   * Read fresh on every pipeline decision, so a change lands without a
+   * restart.
+   */
+  terminateOnMerge: z.boolean().nullish(),
+  autoFixCi: z.boolean().nullish(),
+  autoFixReviewComments: z.boolean().nullish(),
+  autoReview: z.boolean().nullish(),
 });
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
 export type ProjectSettingsInput = z.input<typeof projectSettingsSchema>;
@@ -175,6 +186,13 @@ export const pullRequestSchema = z.object({
   additions: z.number().int().nonnegative().optional(),
   /** Lines deleted across the PR's diff — see {@link pullRequestSchema `additions`}. */
   deletions: z.number().int().nonnegative().optional(),
+  /**
+   * Whether GitHub reports the PR as conflicting with its base branch
+   * (issue #322). Only the explicit-conflict producer sets it; `undefined`
+   * (legacy payloads, GitHub still computing) means "not known to
+   * conflict" — the auto review-agent gate treats that as passable.
+   */
+  mergeConflicts: z.boolean().optional(),
 });
 export type PullRequest = z.infer<typeof pullRequestSchema>;
 

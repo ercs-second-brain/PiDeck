@@ -29,6 +29,7 @@ import type { BlockerResolver, RegisteredProject } from "./issues/ports.js";
 import type { ProjectService } from "../api/projects.js";
 import { PullRequestPipeline, type PRSessionControl } from "./prs/pipeline.js";
 import type { WorkerPipelineSettings } from "./prs/settings.js";
+import { resolvePipelineSettings } from "./prs/settings.js";
 import { PRTracker } from "./prs/tracker.js";
 import { IssueWatcher, PollLoop, PullRequestWatcher, type GithubWatcherEvent } from "../github/watch.js";
 import type { PRPipelineEvent } from "./prs/events.js";
@@ -168,7 +169,10 @@ export function buildUnit(deps: UnitBuilderDeps, projectId: string, repoUrl: str
     tracker,
     emit: (event) => deps.onPrEvent(projectId, event),
     pollIntervalMs: deps.pollIntervalMs,
-    workerSettings: deps.workerSettings,
+    // Issue #322: per-project toggles override the daemon-wide settings —
+    // resolved fresh on every pipeline decision, so a toggle lands without
+    // a restart.
+    workerSettings: () => resolvePipelineSettings(deps.projects.get(projectId), deps.workerSettings?.()),
     // Issue #107: review-agent spawns respect the project's worker cap,
     // read fresh so a settings change lands without a restart.
     workerCap: () => deps.projects.get(projectId)?.settings.workerConcurrency ?? undefined,

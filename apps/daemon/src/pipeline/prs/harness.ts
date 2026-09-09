@@ -32,7 +32,7 @@ export interface FakePR {
 }
 
 export function checkRuns(conclusion: "failure" | "success"): unknown {
-  return { total_count: 1, check_runs: [{ status: "completed", conclusion }] };
+  return { total_count: 1, check_runs: [{ name: "build", status: "completed", conclusion }] };
 }
 
 export function restComment(id: number, body: string, overrides: Partial<{ author: string; path: string; line: number | null }> = {}): Record<string, unknown> {

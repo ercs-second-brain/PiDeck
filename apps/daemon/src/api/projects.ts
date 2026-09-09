@@ -46,7 +46,12 @@ interface Persisted {
 }
 
 /** Per-project settings with only the fields the shared contract defines. */
-type ProjectSettingsPatch = Partial<Pick<ProjectSettings, "autoAgentUsername" | "workerConcurrency">>;
+type ProjectSettingsPatch = Partial<
+  Pick<
+    ProjectSettings,
+    "autoAgentUsername" | "workerConcurrency" | "terminateOnMerge" | "autoFixCi" | "autoFixReviewComments" | "autoReview"
+  >
+>;
 
 /** Extracts the stored project settings from a request's optional patch. */
 export function resolveSettings(
@@ -62,6 +67,14 @@ export function resolveSettings(
     // consumer seeing plain unset semantics.
     workerConcurrency:
       patch.workerConcurrency === undefined ? base.workerConcurrency : (patch.workerConcurrency ?? undefined),
+    // Issue #322: same tri-state as the concurrency cap — `undefined` =
+    // field not sent (keep the base); `null` = explicitly cleared → inherit
+    // the daemon-wide toggle; a boolean = per-project override.
+    terminateOnMerge: patch.terminateOnMerge === undefined ? base.terminateOnMerge : (patch.terminateOnMerge ?? undefined),
+    autoFixCi: patch.autoFixCi === undefined ? base.autoFixCi : (patch.autoFixCi ?? undefined),
+    autoFixReviewComments:
+      patch.autoFixReviewComments === undefined ? base.autoFixReviewComments : (patch.autoFixReviewComments ?? undefined),
+    autoReview: patch.autoReview === undefined ? base.autoReview : (patch.autoReview ?? undefined),
   };
 }
 

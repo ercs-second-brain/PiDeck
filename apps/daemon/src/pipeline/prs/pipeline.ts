@@ -28,7 +28,7 @@ import { ACTIVE_WORKER_STATUSES, type KanbanCard, type KanbanColumn, type PullRe
 
 import type { GhClient, RepoRef } from "../../github/gh.js";
 import { pullRequestColumn } from "../../api/kanban.js";
-import { enrichPullRequest, fetchReviewComments, listPullRequests, mapRestPull } from "../../github/pulls.js";
+import { enrichPullRequest, fetchReviewComments, getFailingChecks, listPullRequests, mapRestPull } from "../../github/pulls.js";
 import { DEFAULT_POLL_INTERVAL_MS, PollLoop, type GithubWatcherEvent } from "../../github/watch.js";
 import type { PRPipelineEvent, PRPipelineEventEmitter } from "./events.js";
 import { driveLoop } from "./drive.js";
@@ -250,6 +250,8 @@ export class PullRequestPipeline {
         settings: this.options.workerSettings ?? (() => undefined),
         workerCap: this.options.workerCap ?? (() => undefined),
         repo: `${this.repo.owner}/${this.repo.repo}`,
+        // Issue #322: name the failing checks in the CI-fix prompt.
+        failingChecks: (headSha) => getFailingChecks(this.gh, this.repo, headSha),
         maxFixAttempts: this.maxFixAttempts,
         fixPromptTimeoutMs: this.fixPromptTimeoutMs,
         now: this.now,

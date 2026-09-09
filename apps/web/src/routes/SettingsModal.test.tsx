@@ -82,6 +82,8 @@ describe("settings modals (issue #264)", () => {
     expect(html).toContain('aria-label="Global settings"');
     expect(html).toContain("Daemon-wide — applies to every project.");
     expect(html).toContain("Worker pipeline (all projects)");
+    // Issue #322: all four pipeline toggles render daemon-wide, incl. auto review.
+    expect(html).toContain("Auto review agents");
     expect(html).toContain('aria-label="Close global settings"');
     // No page chrome, no back link.
     expect(html).not.toContain("back-link");
@@ -112,6 +114,13 @@ describe("settings modals (issue #264)", () => {
     expect(html).toContain('id="auto-agent-username"');
     expect(html).toContain('value="octocat"');
     expect(html).toContain('id="worker-concurrency"');
+    // Issue #322: the four tri-state per-project toggle overrides, defaulting
+    // to "inherit" for a project with no overrides.
+    expect(html).toContain('id="project-autoReview"');
+    expect(html).toContain('id="project-autoFixCi"');
+    expect(html).toContain('id="project-autoFixReviewComments"');
+    expect(html).toContain('id="project-terminateOnMerge"');
+    expect((html.match(/Inherit daemon-wide setting/g) ?? []).length).toBe(4);
     // …plus the daemon-wide toggles shared with the global modal.
     expect(html).toContain("Worker pipeline (all projects)");
     expect(html).toContain('aria-label="Close project settings"');

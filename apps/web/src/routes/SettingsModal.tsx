@@ -8,11 +8,11 @@
  * daemon-wide {@link GlobalWorkerSettings} toggles.
  */
 import { useEffect, useState } from "react";
-import type { Project, Settings } from "@pideck/shared";
-import { apiUpdateProject, apiUpdateSettings, apiGetSettings, errorMessage } from "../lib/api";
+import type { Settings } from "@pideck/shared";
+import { apiUpdateSettings, apiGetSettings, errorMessage } from "../lib/api";
 import { useProject } from "../lib/use-project";
 import { BROWSER_NOTIFICATIONS_UNSUPPORTED, permissionState, requestNotificationPermission } from "../components/NotificationCenter";
-import { boardStore } from "../store/store";
+import { SettingsForm } from "./ProjectSettingsForm";
 
 /**
  * Global settings modal (issue #264, originally the global settings page
@@ -68,8 +68,8 @@ export function ProjectSettingsModal({ projectId, onClose }: { projectId: string
   );
 }
 
-/** The three worker-pipeline toggles (issue #106): what they gate, in the PR loop. */
-const WORKER_TOGGLES: Array<{ key: "terminateOnMerge" | "autoFixCi" | "autoFixReviewComments"; label: string; hint: string }> = [
+/** The four worker-pipeline toggles (issues #106, #107, #322): what they gate, in the PR loop. */
+const WORKER_TOGGLES: Array<{ key: "terminateOnMerge" | "autoFixCi" | "autoFixReviewComments" | "autoReview"; label: string; hint: string }> = [
   {
     key: "terminateOnMerge",
     label: "Terminate workers on merge",
@@ -84,6 +84,11 @@ const WORKER_TOGGLES: Array<{ key: "terminateOnMerge" | "autoFixCi" | "autoFixRe
     key: "autoFixReviewComments",
     label: "Automatically fix review comments",
     hint: "New review comments are delivered to the PR's worker for addressing. Off: the pipeline skips delivery.",
+  },
+  {
+    key: "autoReview",
+    label: "Auto review agents",
+    hint: "A review agent is spawned under a worker whose PR is CI-green, unapproved, and conflict-free. Off: the pipeline never spawns reviewers.",
   },
 ];
 
@@ -190,98 +195,5 @@ export function GlobalWorkerSettings() {
       </section>
       {error !== null && <p className="error-note">{error}</p>}
     </>
-  );
-}
-
-function SettingsForm({ project }: { project: Project }) {
-  const [username, setUsername] = useState(project.settings.autoAgentUsername ?? "");
-  const [concurrency, setConcurrency] = useState(project.settings.workerConcurrency?.toString() ?? "");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const save = async (): Promise<void> => {
-    const trimmed = username.trim();
-    const capRaw = concurrency.trim();
-    let cap: number | undefined;
-    if (capRaw.length > 0) {
-      const parsed = Number(capRaw);
-      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 16) {
-        setError("Worker concurrency must be an integer between 1 and 16 (empty = unlimited).");
-        return;
-      }
-      cap = parsed;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await apiUpdateProject(project.id, {
-        settings: {
-          autoAgentUsername: trimmed.length > 0 ? trimmed : null,
-          // Issue #168: an empty field sends `null` explicitly — the daemon
-          // treats it as unset (unbounded); omitting the field would keep
-          // the previous cap instead of clearing it.
-          workerConcurrency: cap ?? null,
-        },
-      });
-      setSaved(true);
-      await boardStore.refresh();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <form
-      className="settings-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void save();
-      }}
-    >
-      <div className="field">
-        <label htmlFor="auto-agent-username">Auto-agent username</label>
-        <input
-          id="auto-agent-username"
-          type="text"
-          placeholder="GitHub username, empty = disabled"
-          value={username}
-          onChange={(e) => {
-            setUsername(e.target.value);
-            setSaved(false);
-          }}
-        />
-        <small className="field-hint">
-          Issues created by or assigned to this user auto-spawn a worker. Empty disables auto-spawn.
-        </small>
-      </div>
-      <div className="field">
-        <label htmlFor="worker-concurrency">Worker concurrency cap</label>
-        <input
-          id="worker-concurrency"
-          type="number"
-          min={1}
-          max={16}
-          placeholder="empty = unlimited"
-          value={concurrency}
-          onChange={(e) => {
-            setConcurrency(e.target.value);
-            setSaved(false);
-          }}
-        />
-        <small className="field-hint">
-          Max workers running concurrently for this project (1–16). Empty = unlimited.
-        </small>
-      </div>
-      {error !== null && <p className="error-note">{error}</p>}
-      <div className="wizard-actions">
-        <button type="submit" className="button button-primary" disabled={saving}>
-          {saving ? "Saving…" : "Save settings"}
-        </button>
-        {saved && <span className="saved-note">Saved ✓</span>}
-      </div>
-    </form>
   );
 }
