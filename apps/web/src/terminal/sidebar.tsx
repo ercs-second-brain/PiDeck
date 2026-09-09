@@ -42,8 +42,10 @@ export interface SidebarContextValue {
   startOrchestrator: (projectId: string) => void;
   /** Starts (or attaches to) the global agent, then navigates to its terminal. */
   startGlobalAgent: () => void;
-  /** Terminates a worker (issue #64): daemon kills the pane, worker archived; refreshes after. */
-  terminateWorker: (workerId: string) => void;
+  /** Terminates a worker (issue #64): daemon kills the pane, worker archived;
+   * refreshes after. Rejects so the terminate modal owns the error and closes
+   * only on success (issue #268, delete-modal parity #172). */
+  terminateWorker: (workerId: string) => Promise<void>;
   /** Deletes a project locally (issue #172): daemon teardown, GitHub repo kept.
    * Rejects so callers (the delete modal) can surface the daemon's error. */
   deleteProject: (projectId: string) => Promise<void>;
@@ -173,12 +175,13 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     [startSession],
   );
 
-  /** Terminates a worker (issue #64) and refreshes so the archive shows immediately. */
+  /** Terminates a worker (issue #64) and refreshes so the archive shows
+   * immediately. Deliberately rethrows — the confirming modal owns the
+   * error and its close-on-success lifecycle (issue #268). */
   const terminateWorker = useCallback(
-    (workerId: string) => {
-      apiTerminateWorker(workerId)
-        .then(() => reload())
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+    async (workerId: string) => {
+      await apiTerminateWorker(workerId);
+      reload();
     },
     [reload],
   );

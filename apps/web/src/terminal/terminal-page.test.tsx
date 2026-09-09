@@ -263,7 +263,7 @@ describe("SessionPicker (worker status indicators, issue #112)", () => {
 
 describe("SessionPicker (worker termination + archive, issue #64)", () => {
   it("shows the terminate affordance on active worker rows only", () => {
-    const html = renderPicker({ onTerminateWorker: () => {} });
+    const html = renderPicker({ onTerminateWorker: async () => {} });
     // ✕ on the worker row, nothing on the project row.
     expect(html).toContain("picker-terminate");
     expect(html).toContain('title="Terminate worker"');

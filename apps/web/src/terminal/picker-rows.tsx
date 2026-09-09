@@ -103,6 +103,8 @@ export function TerminateWorkerModal(props: {
   sessionName: string;
   /** The terminate request is in flight (Terminate shows "Terminating…"). */
   pending: boolean;
+  /** Failure from the daemon, shown inside the modal (issue #268). */
+  error?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -118,6 +120,7 @@ export function TerminateWorkerModal(props: {
       }
       confirmLabel="Terminate"
       pendingLabel="Terminating…"
+      error={props.error}
       pending={props.pending}
       onConfirm={props.onConfirm}
       onCancel={props.onCancel}

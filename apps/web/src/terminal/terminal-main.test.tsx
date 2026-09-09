@@ -54,7 +54,7 @@ function renderMain(path: string, context: Partial<SidebarContextValue>) {
     reload: () => {},
     startOrchestrator: () => {},
     startGlobalAgent: () => {},
-    terminateWorker: () => {},
+    terminateWorker: async () => {},
     deleteProject: async () => {},
     openOnboarding: () => {},
     ...context,
