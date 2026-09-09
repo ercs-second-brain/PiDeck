@@ -475,12 +475,15 @@ export const endpoints = {
   /**
    * Relaunch a dead session's tmux pane (issue #117): kills any lingering
    * tmux session of the same name (idempotent weird-state cleanup), then
-   * re-runs the session's launch path — orchestrator sessions are recreated
-   * in their recorded cwd with a plain shell; worker sessions are re-spawned
+   * re-runs the session's launch path — worker sessions are re-spawned
    * from their recorded cwd/command (the #27 resurrection machinery,
-   * user-triggered). The registry record (session + worker) is preserved, so
-   * identity and history survive; only the pane is new. Archived sessions
-   * are rejected (409) — their history is #104's read-only log view.
+   * user-triggered); orchestrator sessions (project orchestrator and the
+   * global agent alike) are recreated in their recorded cwd and the
+   * daemon re-launches pi with their persona/prompt, identical to a fresh
+   * orchestrator boot (issue #290). The registry record (session + worker)
+   * is preserved, so identity and history survive; only the pane is new.
+   * Archived sessions are rejected (409) — their history is #104's
+   * read-only log view.
    */
   relaunchSession: {
     method: "POST",

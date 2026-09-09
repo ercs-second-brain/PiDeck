@@ -303,7 +303,10 @@ export class SessionManager {
    *
    * - orchestrator sessions are recreated in their recorded cwd (the
    *   project dir) with a plain interactive shell, the way
-   *   {@link ensureOrchestrator} created them;
+   *   {@link ensureOrchestrator} created them — putting pi back with the
+   *   orchestrator persona is the bootstrap's job (`OrchestratorBootstrap.
+   *   ensureForSession`, issue #290), which the relaunch endpoint calls
+   *   right after this returns;
    * - worker sessions are re-spawned from their recorded cwd/command — the
    *   same #27 resurrection machinery reconcile() uses, but user-triggered.
    *
