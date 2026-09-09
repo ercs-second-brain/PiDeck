@@ -33,17 +33,18 @@
  * view pieces live in {@link ./picker-rows.tsx}.
  */
 
-import type { ReactNode } from "react";
-import type { Project, Session, Worker } from "@pideck/shared";
+import { useState, type ReactNode } from "react";
+import type { AgentKind, Project, Session, Worker } from "@pideck/shared";
 import {
   AddProjectRow,
+  AgentRow,
   ArchivedSection,
-  DeleteProjectModal,
   ProjectRow,
-  TerminateWorkerModal,
   WorkerRow,
   workerFor,
 } from "./picker-rows";
+import { DeleteProjectModal, InvestigatorPromptModal, TerminateWorkerModal } from "./picker-modals";
+import { AgentChildrenList, splitAgentSessions } from "./agent-nesting";
 import { GlobalAgentRow } from "./GlobalAgentRow";
 import { usePickerState } from "./use-picker-state";
 import { useTickingNow } from "./use-ticking-now";
@@ -52,6 +53,39 @@ export interface ProjectEntry {
   project: Project;
   sessions: Session[];
   workers: Worker[];
+}
+
+/** Props of {@link workerRowWithAgents} — everything one worker row needs. */
+type WorkerRowBag = {
+  workers: Worker[];
+  selectedSessionId: string | null;
+  pendingTerminateWorkerId: string | null;
+  now: number;
+  nestedByParent: Map<string, Session[]>;
+  onSelectSession: (sessionId: string) => void;
+  onTerminateWorker?: (workerId: string) => Promise<void>;
+  onAskTerminate: (sessionId: string) => void;
+};
+
+/** One live/archived worker row, with its nested agent-kind spawns (if any) — module-level so ProjectSection stays within budget. */
+function workerRowWithAgents(bag: WorkerRowBag, session: Session, archived: boolean) {
+  const worker = workerFor(session, bag.workers);
+  return (
+    <WorkerRow
+      key={session.id}
+      session={session}
+      workers={bag.workers}
+      archived={archived}
+      selectedSessionId={bag.selectedSessionId}
+      pending={worker !== undefined && bag.pendingTerminateWorkerId === worker.id}
+      now={bag.now}
+      onSelectSession={bag.onSelectSession}
+      onTerminateWorker={bag.onTerminateWorker}
+      onAskTerminate={bag.onAskTerminate}
+    >
+      {!archived && <AgentChildrenList sessions={bag.nestedByParent.get(session.id)} selectedSessionId={bag.selectedSessionId} onSelectSession={bag.onSelectSession} />}
+    </WorkerRow>
+  );
 }
 
 /**
@@ -91,6 +125,10 @@ function ProjectSection(props: {
   onAskDeleteProject: (projectId: string) => void;
   onToggleMenu: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
+  /** Spawns an audit agent-kind session (docs/agent-kinds.md, #300/#302). */
+  onSpawnAgent: (projectId: string, kind: AgentKind) => void;
+  /** Opens the investigator question modal (#297). */
+  onAskInvestigator: (projectId: string) => void;
   /** Terminates the worker after confirmation (issue #268: awaited by the modal). */
   onTerminateWorker?: (workerId: string) => Promise<void>;
   /** Opens the terminate-confirmation modal on a worker row (issue #64/#116). */
@@ -105,22 +143,16 @@ function ProjectSection(props: {
   const archivedWorkers = workerSessions.filter((session) => workerFor(session, workers)?.status === "archived");
   const starting = props.startingProjectId === project.id;
 
-  const workerRow = (session: Session, archived: boolean) => {
-    const worker = workerFor(session, workers);
-    return (
-      <WorkerRow
-        key={session.id}
-        session={session}
-        workers={workers}
-        archived={archived}
-        selectedSessionId={props.selectedSessionId}
-        pending={worker !== undefined && props.pendingTerminateWorkerId === worker.id}
-        now={props.now}
-        onSelectSession={props.onSelectSession}
-        onTerminateWorker={props.onTerminateWorker}
-        onAskTerminate={props.onAskTerminate}
-      />
-    );
+  // Agent-kind sessions nest under their caller (#187 pattern) — see agent-nesting.ts.
+  const { rootAgents, nestedByParent } = splitAgentSessions(sessions, orchestrator?.id);
+  const bag: WorkerRowBag = {
+    workers,
+    selectedSessionId: props.selectedSessionId,
+    pendingTerminateWorkerId: props.pendingTerminateWorkerId,
+    now: props.now, nestedByParent,
+    onSelectSession: props.onSelectSession,
+    onTerminateWorker: props.onTerminateWorker,
+    onAskTerminate: props.onAskTerminate,
   };
 
   return (
@@ -142,9 +174,16 @@ function ProjectSection(props: {
         onDeleteProject={(projectId) => {
           props.onAskDeleteProject(projectId);
         }}
+        onSpawnAgent={props.onSpawnAgent}
+        onAskInvestigator={props.onAskInvestigator}
       />
-      {!props.collapsed && activeWorkers.length > 0 && (
-        <ul className="picker-list picker-workers">{activeWorkers.map((session) => workerRow(session, false))}</ul>
+      {!props.collapsed && (activeWorkers.length > 0 || rootAgents.length > 0) && (
+        <ul className="picker-list picker-workers">
+          {activeWorkers.map((session) => workerRowWithAgents(bag, session, false))}
+          {rootAgents.map((agent) => (
+            <AgentRow key={agent.id} session={agent} selectedSessionId={props.selectedSessionId} onSelectSession={props.onSelectSession} />
+          ))}
+        </ul>
       )}
       {!props.collapsed && archivedWorkers.length > 0 && (
         <ArchivedSection
@@ -152,7 +191,7 @@ function ProjectSection(props: {
           count={archivedWorkers.length}
           open={props.archivedOpen}
           onToggle={props.onToggleArchived}
-          rows={archivedWorkers.map((session) => workerRow(session, true))}
+          rows={archivedWorkers.map((session) => workerRowWithAgents(bag, session, true))}
         />
       )}
     </section>
@@ -170,10 +209,15 @@ function ConfirmModals(props: {
   entries: ProjectEntry[];
   /** Terminates the worker after confirmation (issue #268: awaited by the modal). */
   onTerminateWorker?: (workerId: string) => Promise<void>;
+  /** Spawns agent-kind sessions (docs/agent-kinds.md, #297/#300/#302). */
+  onSpawnAgentSession?: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
   onDeleteProject?: (projectId: string) => Promise<void>;
 }) {
   const { state } = props;
   const deletingName = props.entries.find((entry) => entry.project.id === state.deleteConfirm.confirmingId)?.project.name;
+  const investigatorName =
+    props.entries.find((entry) => entry.project.id === state.investigatorAsk.confirmingProjectId)?.project.name ??
+    state.investigatorAsk.confirmingProjectId;
   return (
     <>
       {state.confirmingSession && props.onTerminateWorker && (
@@ -192,6 +236,19 @@ function ConfirmModals(props: {
           error={state.deleteConfirm.error}
           onConfirm={() => void state.deleteConfirm.confirm(props.onDeleteProject!)}
           onCancel={state.deleteConfirm.cancel}
+        />
+      )}
+      {state.investigatorAsk.confirmingProjectId !== null && props.onSpawnAgentSession !== undefined && (
+        <InvestigatorPromptModal
+          projectName={investigatorName ?? ""}
+          pending={state.investigatorAsk.pending}
+          error={state.investigatorAsk.error}
+          onConfirm={(question) =>
+            void state.investigatorAsk.confirm(question, (projectId, question) =>
+              props.onSpawnAgentSession!(projectId, "investigator", question),
+            )
+          }
+          onCancel={state.investigatorAsk.cancel}
         />
       )}
     </>
@@ -229,6 +286,13 @@ export interface SessionPickerProps {
   onOpenGlobalSettings: () => void;
   /** Opens the project onboarding wizard (the "+ Add project" row, #259). */
   onStartOnboarding: () => void;
+  /**
+   * Spawns a preset-prompt agent-kind session (docs/agent-kinds.md, issues
+   * #297/#300/#302): the investigator carries its question, the audit
+   * kinds take none. Reloads and navigates to the new session's terminal.
+   * Rejects so the investigator modal owns the error.
+   */
+  onSpawnAgentSession?: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
   /** Starts (or attaches to) the project's orchestrator — the chat-icon click (#173, #53). */
   onStartOrchestrator: (projectId: string) => void;
   /** Starts (or attaches to) the workspace-level global agent. */
@@ -247,6 +311,18 @@ export interface SessionPickerProps {
 export function SessionPicker(props: SessionPickerProps) {
   const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
   const now = useTickingNow();
+  // Issues #297/#300/#302: direct audit spawns from the ⋯ menu (no modal —
+  // their persona is the whole prompt). A rejected spawn (daemon unreachable,
+  // kind plumbing not live yet) surfaces above the footer, like the
+  // daemon-unreachable error.
+  const [spawnError, setSpawnError] = useState<string | null>(null);
+  const spawnAgent = (projectId: string, kind: AgentKind, question?: string) => {
+    if (props.onSpawnAgentSession === undefined) return;
+    setSpawnError(null);
+    props.onSpawnAgentSession(projectId, kind, question).catch((err: unknown) =>
+      setSpawnError(err instanceof Error ? err.message : String(err)),
+    );
+  };
 
   return (
     <aside className="session-picker">
@@ -289,15 +365,25 @@ export function SessionPicker(props: SessionPickerProps) {
           }}
           onToggleMenu={state.toggleMenu}
           onStartOrchestrator={props.onStartOrchestrator}
+          onSpawnAgent={(projectId, kind) => {
+            state.closeMenu();
+            spawnAgent(projectId, kind);
+          }}
+          onAskInvestigator={(projectId) => {
+            state.closeMenu();
+            setSpawnError(null);
+            state.investigatorAsk.ask(projectId);
+          }}
           onTerminateWorker={props.onTerminateWorker}
           onAskTerminate={state.askTerminate}
         />
       ))}
-      <ConfirmModals state={state} entries={props.entries} onTerminateWorker={props.onTerminateWorker} onDeleteProject={props.onDeleteProject} />
+      <ConfirmModals state={state} entries={props.entries} onTerminateWorker={props.onTerminateWorker} onSpawnAgentSession={props.onSpawnAgentSession} onDeleteProject={props.onDeleteProject} />
       {props.entries.length === 0 && !props.error && (
         <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — add one below to get started."}</p>
       )}
       {props.error && <p className="picker-error">Daemon unreachable: {props.error}</p>}
+      {spawnError && <p className="picker-error">Spawn failed: {spawnError}</p>}
       {/* Issue #259 (B7): the add-project affordance as the sidebar's
           bottom row, styled like a project row (the former header "+"). */}
       <AddProjectRow onStartOnboarding={props.onStartOnboarding} />

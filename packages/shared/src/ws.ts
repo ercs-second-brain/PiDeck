@@ -14,6 +14,7 @@
 
 import { z } from "zod";
 import {
+  agentKindSchema,
   isoDateTimeSchema,
   issueSchema,
   kanbanCardSchema,
@@ -170,6 +171,28 @@ export const notificationEventSchema = z.discriminatedUnion("type", [
     projectId: projectIdField,
     prNumber: refNumberSchema,
     /** PR title at merge time, for the toast's secondary line. */
+    title: z.string().min(1),
+  }),
+  /**
+   * A preset-prompt agent-kind session finished its run and delivered its
+   * report (docs/agent-kinds.md, issues #297/#300/#302). Emitted for the
+   * orchestrator-routed audit kinds (devex-audit, kiss-audit): the report
+   * itself lands in the project orchestrator's session
+   * (`reportTargetSessionId`), and the notification points there — the
+   * orchestrator triages findings like a bug bash; the user is not the
+   * direct recipient.
+   */
+  z.object({
+    type: z.literal("notification.agent.report"),
+    at: isoDateTimeSchema,
+    projectId: projectIdField,
+    /** Which kind completed (audit kinds only). */
+    agentKind: agentKindSchema,
+    /** The agent-kind session that ran. */
+    sessionId: sessionIdField,
+    /** Session the report was delivered to (the project orchestrator). */
+    reportTargetSessionId: sessionIdField,
+    /** One-line summary of the completed report, for the toast/center. */
     title: z.string().min(1),
   }),
 ]);

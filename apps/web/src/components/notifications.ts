@@ -7,16 +7,24 @@
  * deduped by event key, capped.
  */
 
-import type { NotificationEvent } from "@pideck/shared";
+import type { AgentKind, NotificationEvent } from "@pideck/shared";
 import { toastKey } from "./Toasts";
 
-/** One persisted notification (today: merged PRs; the union grows later). */
+/** One persisted notification (merged PRs #111; agent audit reports #300/#302). */
 export interface CenterNotification {
-  /** Stable dedupe key (`<projectId>#<prNumber>`), shared with toasts. */
+  /** Stable dedupe key, shared with toasts. */
   key: string;
   projectId: string;
-  prNumber: number;
-  /** PR title at merge time. */
+  /** PR number (merged-PR notifications only). */
+  prNumber?: number;
+  /** The agent kind that finished (agent-report notifications only). */
+  agentKind?: AgentKind;
+  /** The agent-kind session that ran (agent-report notifications only). */
+  sessionId?: string;
+  /** Session the report was delivered to (agent-report notifications only):
+   * the project orchestrator, where the report lives. */
+  reportTargetSessionId?: string;
+  /** Headline detail (PR title at merge / report summary). */
   title: string;
   /** Event timestamp (ISO), shown in the dropdown. */
   at: string;
@@ -29,12 +37,23 @@ export const MAX_NOTIFICATIONS = 50;
 
 const STORAGE_KEY = "pideck.notifications.v1";
 
+/** Stable dedupe key for a notification event, shared with toasts. */
+function notificationKey(event: NotificationEvent): string {
+  return event.type === "notification.pr.merged"
+    ? toastKey(event.projectId, event.prNumber)
+    : `agent:${event.projectId}:${event.sessionId}`;
+}
+
 /** Appends an event as an unread notification, deduped and newest-first — pure. */
 export function appendNotification(list: CenterNotification[], event: NotificationEvent): CenterNotification[] {
-  const key = toastKey(event.projectId, event.prNumber);
+  const key = notificationKey(event);
   if (list.some((n) => n.key === key)) return list;
-  const next = [{ key, projectId: event.projectId, prNumber: event.prNumber, title: event.title, at: event.at, read: false }, ...list];
-  return next.slice(0, MAX_NOTIFICATIONS);
+  const base = { key, projectId: event.projectId, title: event.title, at: event.at, read: false };
+  const next =
+    event.type === "notification.pr.merged"
+      ? { ...base, prNumber: event.prNumber }
+      : { ...base, agentKind: event.agentKind, sessionId: event.sessionId, reportTargetSessionId: event.reportTargetSessionId };
+  return [{ ...next }, ...list].slice(0, MAX_NOTIFICATIONS);
 }
 
 /** Marks one notification read — pure. */
@@ -70,7 +89,10 @@ function loadNotifications(): CenterNotification[] {
         typeof n === "object" && n !== null &&
         typeof (n as CenterNotification).key === "string" &&
         typeof (n as CenterNotification).projectId === "string" &&
-        typeof (n as CenterNotification).prNumber === "number" &&
+        (typeof (n as CenterNotification).prNumber === "number" ||
+          (typeof (n as CenterNotification).agentKind === "string" &&
+            typeof (n as CenterNotification).sessionId === "string" &&
+            typeof (n as CenterNotification).reportTargetSessionId === "string")) &&
         typeof (n as CenterNotification).title === "string" &&
         typeof (n as CenterNotification).at === "string" &&
         typeof (n as CenterNotification).read === "boolean",

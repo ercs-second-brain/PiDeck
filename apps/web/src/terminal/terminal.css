@@ -197,6 +197,29 @@
   color: var(--red);
 }
 
+/* Issues #297/#300/#302: the ⋯ menu's "Spawn agent" section label — small,
+   dim, non-interactive group heading above the kind entries. */
+.picker-menu-label {
+  padding: 6px 12px 2px;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.picker-context-menu .picker-menu-section {
+  display: flex;
+  flex-direction: column;
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border);
+}
+
+.picker-context-menu .picker-menu-section button {
+  padding: 8px 12px;
+}
+
 .picker-list {
   list-style: none;
   margin: 0;
@@ -250,6 +273,13 @@
 .role-worker {
   background: color-mix(in srgb, var(--issue) 18%, transparent);
   color: var(--issue);
+}
+
+/* Issues #297/#300/#302: preset-prompt agent-kind sessions (investigator,
+   devex-audit, kiss-audit) carry the kind itself as the badge. */
+.role-agent {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
 }
 
 .worker-badge {
@@ -307,6 +337,7 @@
 .picker-worker-row {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -327,6 +358,37 @@
   border-color: var(--red);
   color: var(--red);
   background: var(--bg-hover);
+}
+
+/* Issues #297/#300/#302: agent-kind sessions spawned by a worker nest under
+   their caller's row per the #187 child-group pattern (same tree-line
+   indent, one level deeper); the nested list wraps below the row's flex
+   line via flex-basis 100%. */
+.picker-agent-children {
+  flex-basis: 100%;
+  margin-left: 22px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+/* Investigator question input (docs/agent-kinds.md, #297): the spawn modal's
+   textarea, matching the modal card's typography. */
+.investigator-question {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  resize: vertical;
+}
+
+.investigator-question:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* --- Terminate-confirmation modal (issue #116) -------------------------

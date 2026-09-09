@@ -9,11 +9,14 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { NotificationEvent, Project } from "@pideck/shared";
 
-import { appendToast, MAX_TOASTS, ToastStack, toastKey, toastText, type MergedPRToast } from "./Toasts";
+import { appendToast, MAX_TOASTS, ToastStack, toastKey, toastText, type AppToast, type MergedPRToast } from "./Toasts";
 
 const NOW = "2026-01-02T03:04:05.000Z";
 
-function mergedEvent(overrides: Partial<NotificationEvent> = {}): NotificationEvent {
+/** The merged-PR member of the notification union (the agent-report member has its own describe below). */
+type MergedEvent = Extract<NotificationEvent, { type: "notification.pr.merged" }>;
+
+function mergedEvent(overrides: Partial<MergedEvent> = {}): MergedEvent {
   return { type: "notification.pr.merged", at: NOW, projectId: "kisstest", prNumber: 42, title: "Fix the flaky test", ...overrides };
 }
 
@@ -51,11 +54,11 @@ describe("appendToast (issue #111)", () => {
   });
 
   it("keeps at most the newest toasts", () => {
-    let toasts: MergedPRToast[] = [];
+    let toasts: AppToast[] = [];
     for (let n = 1; n <= MAX_TOASTS + 1; n++) {
       toasts = appendToast(toasts, mergedEvent({ projectId: "p", prNumber: n }));
     }
-    expect(toasts.map((t) => t.prNumber)).toEqual([2, 3, 4, MAX_TOASTS + 1]);
+    expect(toasts.map((t) => ("prNumber" in t ? t.prNumber : -1))).toEqual([2, 3, 4, MAX_TOASTS + 1]);
   });
 });
 
@@ -87,5 +90,31 @@ describe("ToastStack (issue #111)", () => {
       />,
     );
     expect(html).toContain("ghost #7 merged");
+  });
+});
+
+describe("agent-report toasts (docs/agent-kinds.md, #300/#302)", () => {
+  function agentEvent(): NotificationEvent {
+    return { type: "notification.agent.report", at: NOW, projectId: "kisstest", agentKind: "devex-audit", sessionId: "sess-agent-1", reportTargetSessionId: "sess-orch-1", title: "Report ready for triage" };
+  }
+
+  it("appends an agent event as a toast keyed by the reporting session", () => {
+    const toasts = appendToast([], agentEvent());
+    expect(toasts).toEqual([{ key: "agent:kisstest:sess-agent-1", projectId: "kisstest", agentKind: "devex-audit", title: "Report ready for triage" }]);
+  });
+
+  it("dedupes re-emissions and keeps merged-PR keys separate", () => {
+    const once = appendToast([], agentEvent());
+    expect(appendToast(once, agentEvent())).toBe(once);
+    const withMerge = appendToast(once, mergedEvent());
+    expect(withMerge).toHaveLength(2);
+  });
+
+  it("renders '<project> devex-audit report ready' with the report summary", () => {
+    const html = renderToString(
+      <ToastStack toasts={appendToast([], agentEvent())} projects={[KISSTEST]} onDismiss={() => {}} />,
+    );
+    expect(html).toContain("kisstest devex-audit report ready");
+    expect(html).toContain("Report ready for triage");
   });
 });

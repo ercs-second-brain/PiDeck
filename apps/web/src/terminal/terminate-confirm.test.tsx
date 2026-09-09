@@ -13,7 +13,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 
-import { TerminateWorkerModal } from "./picker-rows";
+import { TerminateWorkerModal } from "./picker-modals";
 import { runTerminateConfirm } from "./use-picker-state";
 
 function deferred() {

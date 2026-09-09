@@ -13,7 +13,8 @@ import { renderToString } from "react-dom/server";
 import type { Session, Worker } from "@pideck/shared";
 import { makeProject } from "./test-fixtures";
 import { SessionPicker } from "./SessionPicker";
-import { TerminateWorkerButton, TerminateWorkerModal } from "./picker-rows";
+import { TerminateWorkerButton } from "./picker-rows";
+import { TerminateWorkerModal } from "./picker-modals";
 
 const project = makeProject();
 
