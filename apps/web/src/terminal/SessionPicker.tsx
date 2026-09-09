@@ -16,8 +16,9 @@
  * worker status badges, then a collapsed "Archived" section for terminated
  * workers (issue #64). Clicking a session
  * attaches its terminal; clicking an archived worker opens its read-only
- * captured log (issue #104); active worker rows carry a terminate
- * affordance (✕ → centered confirm modal, issue #116) that archives the
+ * captured log (issue #104); active worker and agent-kind rows carry a ⋯
+ * context menu (issue #355) whose Terminate entry opens the centered
+ * confirm modal (worker #116; agent session #311) that archives the
  * worker and a live running-time label ticking every second (issue
  * #182; archived rows freeze their final run duration). Each project row
  * also carries a ⋯ context menu (issue #167) whose
@@ -67,8 +68,11 @@ type WorkerRowBag = {
   onSelectSession: (sessionId: string) => void;
   onTerminateWorker?: (workerId: string) => Promise<void>;
   onAskTerminate: (sessionId: string) => void;
-  /** Present only when a terminate handler is wired (undefined hides the ✕). */
+  /** Present only when a terminate handler is wired (undefined hides the ⋯). */
   agentAskTerminate: ((sessionId: string) => void) | undefined;
+  /** Session id whose row ⋯ context menu is open (issue #355, B5). */
+  openRowMenuSessionId: string | null;
+  onToggleRowMenu: (sessionId: string) => void;
 };
 
 /** One live/archived worker row, with its nested agent-kind spawns (if any) — module-level so ProjectSection stays within budget. */
@@ -86,6 +90,8 @@ function workerRowWithAgents(bag: WorkerRowBag, session: Session, archived: bool
       onSelectSession={bag.onSelectSession}
       onTerminateWorker={bag.onTerminateWorker}
       onAskTerminate={bag.onAskTerminate}
+      rowMenuOpen={bag.openRowMenuSessionId === session.id}
+      onToggleRowMenu={bag.onToggleRowMenu}
     >
       {!archived && (
         <AgentChildrenList
@@ -94,6 +100,8 @@ function workerRowWithAgents(bag: WorkerRowBag, session: Session, archived: bool
           pendingTerminateSessionId={bag.pendingTerminateSessionId}
           onAskTerminate={bag.agentAskTerminate}
           onSelectSession={bag.onSelectSession}
+          openRowMenuSessionId={bag.openRowMenuSessionId}
+          onToggleRowMenu={bag.onToggleRowMenu}
         />
       )}
     </WorkerRow>
@@ -147,6 +155,8 @@ function ProjectSection(props: {
   spawnSubmenuOpen: boolean;
   onToggleSpawnSubmenu: (projectId: string) => void;
   agentKinds: readonly AgentKindSpec[];
+  /** Row ⋯ context menu state (issue #355, B5): open session id + toggle. */
+  openRowMenuSessionId: string | null; onToggleRowMenu: (sessionId: string) => void;
   /** Terminate-after-confirm handlers (worker #268; agent-kind session #311). */
   onTerminateWorker?: (workerId: string) => Promise<void>;
   onTerminateAgentSession?: (sessionId: string) => Promise<void>;
@@ -157,12 +167,9 @@ function ProjectSection(props: {
   const orchestrator = sessions.find((session) => session.role === "orchestrator");
   // Issue #316: agent-kind sessions carry role "worker" (they are sessions,
   // never worker records) — they render only through the agent-row grouping
-  // below (splitAgentSessions). Including them here drew a ghost "worker"
-  // row per persona, and since selection keys on the shared session id, both
-  // rows highlighted together.
+  // below (splitAgentSessions); selection keys on the shared session id.
   const workerSessions = sessions.filter((session) => session.role === "worker" && session.agentKind === undefined);
-  // Issue #64: terminated workers move to the collapsed archived section;
-  // only live workers render under the project row.
+  // Issue #64: terminated workers move to the collapsed archived section — only live ones render under the row.
   const activeWorkers = workerSessions.filter((session) => workerFor(session, workers)?.status !== "archived");
   const archivedWorkers = workerSessions.filter((session) => workerFor(session, workers)?.status === "archived");
   const starting = props.startingProjectId === project.id;
@@ -175,6 +182,7 @@ function ProjectSection(props: {
     now: props.now, nestedByParent, onSelectSession: props.onSelectSession,
     onTerminateWorker: props.onTerminateWorker, onAskTerminate: props.onAskTerminate,
     agentAskTerminate: props.onTerminateAgentSession !== undefined ? props.onAskTerminate : undefined,
+    openRowMenuSessionId: props.openRowMenuSessionId, onToggleRowMenu: props.onToggleRowMenu,
   };
 
   return (
@@ -199,7 +207,7 @@ function ProjectSection(props: {
         <ul className="picker-list picker-workers">
           {activeWorkers.map((session) => workerRowWithAgents(bag, session, false))}
           {rootAgents.map((agent) => (
-            <AgentRow key={agent.id} session={agent} selectedSessionId={props.selectedSessionId} pending={props.pendingTerminateSessionId === agent.id} onAskTerminate={bag.agentAskTerminate} onSelectSession={props.onSelectSession} />
+            <AgentRow key={agent.id} session={agent} selectedSessionId={props.selectedSessionId} pending={props.pendingTerminateSessionId === agent.id} onAskTerminate={bag.agentAskTerminate} onSelectSession={props.onSelectSession} rowMenuOpen={props.openRowMenuSessionId === agent.id} onToggleRowMenu={props.onToggleRowMenu} />
           ))}
         </ul>
       )}
@@ -380,7 +388,12 @@ export function SessionPicker(props: SessionPickerProps) {
               state.spawnInput.ask(projectId, kind);
             }}
             onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession}
-            onAskTerminate={state.askTerminate}
+            // Issue #355 (B5): the confirm modal owns the confirm — close the row's ⋯ menu first.
+            onAskTerminate={(sessionId) => {
+              state.closeRowMenu();
+              state.askTerminate(sessionId);
+            }}
+            openRowMenuSessionId={state.openRowMenuId} onToggleRowMenu={state.toggleRowMenu}
           />
         ))}
         <ConfirmModals

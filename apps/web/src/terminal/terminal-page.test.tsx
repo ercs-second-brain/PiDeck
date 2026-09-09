@@ -13,7 +13,7 @@ import { renderToString } from "react-dom/server";
 import type { Session, Worker } from "@pideck/shared";
 import { makeProject } from "./test-fixtures";
 import { SessionPicker } from "./SessionPicker";
-import { TerminateWorkerButton } from "./picker-rows";
+import { RowOptionsMenu } from "./picker-rows";
 import { TerminateWorkerModal } from "./picker-modals";
 
 const project = makeProject();
@@ -263,28 +263,36 @@ describe("SessionPicker (worker status indicators, issue #112)", () => {
 });
 
 describe("SessionPicker (worker termination + archive, issue #64)", () => {
-  it("shows the terminate affordance on active worker rows only", () => {
+  it("shows the row ⋯ menu affordance on active worker rows only (issue #355, B5)", () => {
     const html = renderPicker({ onTerminateWorker: async () => {} });
-    // ✕ on the worker row, nothing on the project row.
-    expect(html).toContain("picker-terminate");
-    expect(html).toContain('title="Terminate worker"');
-    const projectRow = html.slice(0, html.indexOf("picker-worker-row"));
-    expect(projectRow).not.toContain("picker-terminate");
-  });
-
-  it("shows no terminate affordance when no handler is wired", () => {
-    const html = renderPicker();
+    // ⋯ on the worker row, nothing on the project row.
+    expect(html).toContain("picker-row-menu-toggle");
+    expect(html).toContain('title="Session options"');
+    // No standalone delete button on the row (issue #355, B5).
     expect(html).not.toContain("picker-terminate");
+    const projectRow = html.slice(0, html.indexOf("picker-worker-row"));
+    expect(projectRow).not.toContain("picker-row-menu-toggle");
   });
 
-  it("TerminateWorkerButton is just the ✕ trigger; confirmation moved to the modal (issue #116)", () => {
-    const idle = renderToString(<TerminateWorkerButton pending={false} onAsk={() => {}} />);
-    expect(idle).toContain("picker-terminate");
-    expect(idle).toContain("✕");
-    // No inline confirm anymore — no "Terminate?"/"keep" swap (#116).
-    expect(idle).not.toContain("Terminate?");
-    expect(idle).not.toContain("keep");
-    expect(idle).not.toContain("terminate-modal");
+  it("shows no row-menu affordance when no terminate handler is wired", () => {
+    const html = renderPicker();
+    expect(html).not.toContain("picker-row-menu-toggle");
+  });
+
+  it("RowOptionsMenu: the ⋯ trigger opens the danger Terminate entry; no inline confirm (issue #355, B5)", () => {
+    const closed = renderToString(<RowOptionsMenu sessionId="s" open={false} entryLabel="Terminate worker…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />);
+    expect(closed).toContain("picker-row-menu-toggle");
+    expect(closed).toContain('aria-expanded="false"');
+    // Closed by default — no menu until the toggle is clicked.
+    expect(closed).not.toContain('class="picker-row-menu"');
+    const open = renderToString(<RowOptionsMenu sessionId="s" open entryLabel="Terminate worker…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />);
+    expect(open).toContain("picker-row-menu");
+    expect(open).toContain("picker-menu-danger");
+    expect(open).toContain("Terminate worker…");
+    // No inline confirm — the #268 modal owns it (#116/#355).
+    expect(open).not.toContain("Terminate?");
+    expect(open).not.toContain("keep");
+    expect(open).not.toContain("terminate-modal");
   });
 
   it("renders the terminate-confirmation modal (issue #116)", () => {
@@ -336,8 +344,8 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
     expect(html).toContain("worker-badge-archived");
     expect(html).toContain("picker-archived-session");
     expect(html).toContain("View the archived worker");
-    // History only: archived rows carry no terminate affordance.
-    expect(html).not.toContain('title="Terminate worker"');
+    // History only: archived rows carry no row-menu affordance.
+    expect(html).not.toContain('title="Session options"');
     const archivedRow = html.slice(html.indexOf("picker-archived-list"));
     expect(archivedRow).not.toContain("picker-session selected");
   });

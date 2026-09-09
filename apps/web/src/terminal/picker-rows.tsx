@@ -3,7 +3,8 @@
  * worker rows (live + archived), the terminate affordance, the project row
  * (chevron + name-as-kanban-entry + chat/orchestrator icon), the per-project
  * archived section, the bottom add-project row (issue #259), the ⋯ menu's
- * delete entry, and the confirmation modals. Stateless — interaction state
+ * delete entry, the rows' ⋯ context menus (issue #355), and the
+ * confirmation modals. Stateless — interaction state
  * flows in through props, so these render (and unit-test) without xterm or
  * effects.
  */
@@ -28,16 +29,56 @@ export function workerFor(session: Session, workers: Worker[]): Worker | undefin
 }
 
 /**
- * Terminate affordance for an active session row (issue #64): a small "✕".
- * Issue #116: the confirmation is no longer inline — clicking ✕ opens the
- * small terminate modal ({@link TerminateWorkerModal}), so a stray click
- * never kills a worker. Used by worker rows and agent-kind rows (#311).
+ * Row ⋯ context menu (issue #355, B5): the terminate/delete affordance lives
+ * behind a ⋯ toggle instead of a standalone row button — same flyout chrome
+ * as the project row's ⋯ menu (issue #167). The entry opens the #268
+ * terminate-confirm modal (unchanged behavior); the menu drops under its
+ * toggle via the `.picker-row-menu-anchor` wrapper, and the outside-click/
+ * Escape dismissal (state in use-picker-state) targets toggle + menu
+ * together. Pure rendering.
  */
-export function TerminateWorkerButton(props: { pending: boolean; onAsk: () => void; title?: string }) {
+export function RowOptionsMenu(props: {
+  sessionId: string;
+  /** Whether this row's menu is open. */
+  open: boolean;
+  /** The terminate request for this row is in flight (entry disabled). */
+  pending?: boolean;
+  /** The menu entry's label ("Terminate worker…" / "Terminate session…"). */
+  entryLabel: string;
+  /** The menu entry's explanatory title. */
+  entryTitle: string;
+  /** Toggles this row's menu (one open row menu at a time). */
+  onToggle: () => void;
+  /** Opens the terminate-confirm modal for this row (#268). */
+  onAskTerminate: () => void;
+}) {
   return (
-    <button type="button" className="picker-terminate" title={props.title ?? "Terminate worker"} disabled={props.pending} onClick={props.onAsk}>
-      ✕
-    </button>
+    <div className="picker-row-menu-anchor">
+      <button
+        type="button"
+        className="picker-row-menu-toggle"
+        title="Session options"
+        aria-haspopup="menu"
+        aria-expanded={props.open}
+        onClick={props.onToggle}
+      >
+        ⋯
+      </button>
+      {props.open && (
+        <div className="picker-context-menu picker-row-menu" role="menu" aria-label="Session options">
+          <button
+            type="button"
+            role="menuitem"
+            className="picker-menu-danger"
+            title={props.entryTitle}
+            disabled={props.pending}
+            onClick={props.onAskTerminate}
+          >
+            {props.entryLabel}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -67,8 +108,9 @@ export function AddProjectRow(props: {
 
 /**
  * One worker session row (issue #64): live workers are attachable buttons
- * with a status badge, a live running-time label (issue #182), and the
- * terminate affordance; archived workers render
+ * with a status badge, a live running-time label (issue #182), and a ⋯
+ * context menu (issue #355, B5) whose Terminate entry opens the #268
+ * confirm modal; archived workers render
  * as plain history (no badge interaction, not attachable, not terminable)
  * with their final run duration frozen at the archive time (issue #182).
  */
@@ -85,6 +127,10 @@ export function WorkerRow(props: {
   onSelectSession: (sessionId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
   onAskTerminate: (sessionId: string) => void;
+  /** Whether this row's ⋯ context menu is open (issue #355, B5). */
+  rowMenuOpen?: boolean;
+  /** Toggles this row's ⋯ context menu (wired = affordance shown). */
+  onToggleRowMenu?: (sessionId: string) => void;
 }) {
   const worker = workerFor(props.session, props.workers);
   const badge = worker ? workerBadge(worker) : null;
@@ -123,8 +169,16 @@ export function WorkerRow(props: {
         {worker && <span className="picker-runtime">{formatRunningDuration(worker.startedAt, props.now ?? Date.now())}</span>}
         {badge && <span className={badge.className}>{badge.label}</span>}
       </button>
-      {props.onTerminateWorker && worker && (
-        <TerminateWorkerButton pending={props.pending} onAsk={() => props.onAskTerminate(props.session.id)} />
+      {props.onTerminateWorker && worker && props.onToggleRowMenu && (
+        <RowOptionsMenu
+          sessionId={props.session.id}
+          open={props.rowMenuOpen === true}
+          pending={props.pending}
+          entryLabel="Terminate worker…"
+          entryTitle="Terminate this worker — the daemon kills the pane and archives it"
+          onToggle={() => props.onToggleRowMenu!(props.session.id)}
+          onAskTerminate={() => props.onAskTerminate(props.session.id)}
+        />
       )}
       {/* Agent-kind sessions spawned by this worker (researcher, docs/
           agent-kinds.md) nest under their caller per the #187 child-group
@@ -140,16 +194,21 @@ export function WorkerRow(props: {
  * persona — researcher, devex-audit, kiss-audit — is the identity, not a
  * worker status). Rendered nested under the session that spawned it; shows
  * the spawn's sidebar label (`Session.name`) with the tmux name as fallback,
- * and the terminate affordance (#311, confirmed per the #268 modal pattern).
+ * and a ⋯ context menu (issue #355, B5) whose Terminate entry opens the
+ * #268 confirm modal (per the #311 affordance, moved off the row).
  */
 export function AgentRow(props: {
   session: Session;
   selectedSessionId: string | null;
-  /** The terminate request for this row is in flight (✕ disabled). */
+  /** The terminate request for this row is in flight (entry disabled). */
   pending?: boolean;
   /** Opens the terminate-confirm modal for this agent session (#311). */
   onAskTerminate?: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
+  /** Whether this row's ⋯ context menu is open (issue #355, B5). */
+  rowMenuOpen?: boolean;
+  /** Toggles this row's ⋯ context menu (wired = affordance shown). */
+  onToggleRowMenu?: (sessionId: string) => void;
 }) {
   return (
     <li className="picker-agent-row">
@@ -162,8 +221,16 @@ export function AgentRow(props: {
         <span className="role-badge role-agent">{props.session.agentKind}</span>
         <span className="picker-session-name">{props.session.name ?? props.session.tmuxSession}</span>
       </button>
-      {props.onAskTerminate && (
-        <TerminateWorkerButton pending={props.pending === true} title="Terminate session" onAsk={() => props.onAskTerminate!(props.session.id)} />
+      {props.onAskTerminate && props.onToggleRowMenu && (
+        <RowOptionsMenu
+          sessionId={props.session.id}
+          open={props.rowMenuOpen === true}
+          pending={props.pending === true}
+          entryLabel="Terminate session…"
+          entryTitle="Terminate this agent session — the daemon kills the pane and removes the record"
+          onToggle={() => props.onToggleRowMenu!(props.session.id)}
+          onAskTerminate={() => props.onAskTerminate!(props.session.id)}
+        />
       )}
     </li>
   );

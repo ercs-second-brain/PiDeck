@@ -8,7 +8,7 @@
  * the max-lines-per-function budget.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type { AgentKind, Session } from "@pideck/shared";
 import { errorMessage } from "../lib/api";
 import { loadCollapsedProjects, saveCollapsedProjects } from "../lib/sidebar-collapse";
@@ -159,23 +159,53 @@ function useSpawnInput() {
  * extracted to keep {@link usePickerState} under its complexity budget.
  */
 function useOpenMenu() {
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [openSpawnMenuId, setOpenSpawnMenuId] = useState<string | null>(null);
+  const menu = useOneOpenMenu(".picker-project-menu, .picker-context-menu", setOpenSpawnMenuId);
+  return {
+    openMenuId: menu.openId,
+    openSpawnMenuId,
+    toggleMenu: menu.toggle,
+    closeMenu: menu.close,
+    toggleSpawnMenu: (projectId: string) => setOpenSpawnMenuId((current) => (current === projectId ? null : projectId)),
+  };
+}
 
-  // Issue #167: an open ⋯ context menu closes on Escape or on any click
-  // outside the menu and its toggle (the toggle's own click re-toggles).
+/**
+ * The rows' ⋯ context menu open state (issue #355, B5): one open row menu at
+ * a time, keyed by session id, with the shared #167 dismissal — extracted to
+ * keep {@link usePickerState} under its complexity budget.
+ */
+function useOpenRowMenu() {
+  const rowMenu = useOneOpenMenu(".picker-row-menu-toggle, .picker-row-menu");
+  return { openRowMenuId: rowMenu.openId, toggleRowMenu: rowMenu.toggle, closeRowMenu: rowMenu.close };
+}
+
+/**
+ * One-open-at-a-time ⋯ menu state, shared by the project menu (issue #167)
+ * and the rows' menus (issue #355): the open id toggles per key, and an open
+ * menu dismisses on Escape or on any click outside its toggle and menu
+ * (`ignoreSelector` — the toggle's own click re-toggles instead). The
+ * optional `onDismiss` resets companion state with the menu (the project
+ * menu's spawn submenu, issue #331) so a reopened menu always starts
+ * closed. Plain React state; the setter is stable so the effect subscribes
+ * once per open menu.
+ */
+function useOneOpenMenu(ignoreSelector: string, onDismiss?: Dispatch<SetStateAction<string | null>>) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  // Stable across renders (onDismiss is a state setter) — the dismissal
+  // effect below subscribes once per open menu, not once per render.
+  const close = useCallback(() => {
+    setOpenId(null);
+    onDismiss?.(null);
+  }, [onDismiss]);
   useEffect(() => {
-    if (openMenuId === null) return;
-    const dismiss = () => {
-      setOpenMenuId(null);
-      setOpenSpawnMenuId(null);
-    };
+    if (openId === null) return;
     const onClick = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest(".picker-project-menu, .picker-context-menu") !== null) return;
-      dismiss();
+      if (event.target instanceof Element && event.target.closest(ignoreSelector) !== null) return;
+      close();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dismiss();
+      if (event.key === "Escape") close();
     };
     window.addEventListener("click", onClick);
     window.addEventListener("keydown", onKey);
@@ -183,20 +213,14 @@ function useOpenMenu() {
       window.removeEventListener("click", onClick);
       window.removeEventListener("keydown", onKey);
     };
-  }, [openMenuId]);
-
+  }, [openId, ignoreSelector, close]);
   return {
-    openMenuId,
-    openSpawnMenuId,
-    toggleMenu: (projectId: string) => {
-      setOpenMenuId((current) => (current === projectId ? null : projectId));
-      setOpenSpawnMenuId(null);
+    openId,
+    toggle: (id: string) => {
+      setOpenId((current) => (current === id ? null : id));
+      onDismiss?.(null);
     },
-    closeMenu: () => {
-      setOpenMenuId(null);
-      setOpenSpawnMenuId(null);
-    },
-    toggleSpawnMenu: (projectId: string) => setOpenSpawnMenuId((current) => (current === projectId ? null : projectId)),
+    close,
   };
 }
 
@@ -218,6 +242,8 @@ export function usePickerState(
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => seedCollapsed ?? loadCollapsedProjects());
   // Issue #167 + #331: the open ⋯ context menu and its spawn submenu.
   const menu = useOpenMenu();
+  // Issue #355 (B5): the rows' ⋯ context menus.
+  const rowMenu = useOpenRowMenu();
   // Issues #297/#300/#302 + #324: the input modal for takesInput kinds.
   const spawnInput = useSpawnInput();
   // Issue #172: the delete-confirmation interaction state (its own hook).
@@ -284,6 +310,7 @@ export function usePickerState(
     collapsedProjects,
     toggleCollapsed,
     ...menu,
+    ...rowMenu,
     spawnInput,
   };
 }

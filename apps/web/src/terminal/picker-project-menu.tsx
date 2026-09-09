@@ -28,8 +28,8 @@ export interface ProjectMenuCallbacks {
 
 /**
  * The project row's open ⋯ context menu (issue #167): Settings, the
- * spawn-agent SUBMENU (issue #331 — a "Spawn agent" entry expanding to the
- * built-in and custom kind groups from the live registry), and the
+ * spawn-agent SUBMENU (issue #331 — a "Spawn agent" entry whose kinds
+ * pop out as a flyout from the menu, issue #355), and the
  * local-only delete entry (issue #172). Pure rendering.
  */
 export function ProjectMenu(props: {
@@ -51,27 +51,31 @@ export function ProjectMenu(props: {
       >
         Settings
       </button>
-      {/* Issue #331: the spawn-agent submenu — closed by default, expanded
-          in place (inside the menu, so the outside-click dismiss still
-          targets the whole menu). */}
-      <button
-        type="button"
-        role="menuitem"
-        aria-haspopup="true"
-        aria-expanded={props.spawnSubmenuOpen}
-        title="Spawn an agent-kind session"
-        onClick={props.onToggleSpawnSubmenu}
-      >
-        Spawn agent ▸
-      </button>
-      {props.spawnSubmenuOpen && (
-        <SpawnAgentSubmenu
-          projectId={props.projectId}
-          agentKinds={props.agentKinds}
-          onSpawnAgent={props.onSpawnAgent}
-          onAskSpawnInput={props.onAskSpawnInput}
-        />
-      )}
+      {/* Issue #331 + #355 (B6): the spawn-agent submenu — closed by
+          default; when expanded it pops OUT of the menu as a flyout
+          anchored to its toggle (see .picker-submenu-anchor css). It stays
+          a DOM child of the menu, so the outside-click dismiss still
+          targets the whole menu. */}
+      <div className="picker-submenu-anchor">
+        <button
+          type="button"
+          role="menuitem"
+          aria-haspopup="true"
+          aria-expanded={props.spawnSubmenuOpen}
+          title="Spawn an agent-kind session"
+          onClick={props.onToggleSpawnSubmenu}
+        >
+          Spawn agent ▸
+        </button>
+        {props.spawnSubmenuOpen && (
+          <SpawnAgentSubmenu
+            projectId={props.projectId}
+            agentKinds={props.agentKinds}
+            onSpawnAgent={props.onSpawnAgent}
+            onAskSpawnInput={props.onAskSpawnInput}
+          />
+        )}
+      </div>
       {/* Issue #172: delete is local-only — the GitHub repo is kept; the
           confirmation modal states that explicitly. */}
       <button
@@ -128,7 +132,7 @@ function SpawnAgentSubmenu(props: {
     );
   };
   return (
-    <div className="picker-submenu" role="menu" aria-label="Spawn agent">
+    <div className="picker-context-menu picker-submenu" role="menu" aria-label="Spawn agent">
       <span className="picker-menu-label">Built-in</span>
       {builtIns.map(entry)}
       {custom.length > 0 && (
