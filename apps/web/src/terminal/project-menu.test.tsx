@@ -73,7 +73,10 @@ describe("Spawn agent menu section (docs/agent-kinds.md, #297/#300/#302)", () =>
     const html = renderRow(true);
     expect(html).toContain("Spawn agent");
     expect(html).toContain("role=\"group\"");
-    expect(html).toContain(">Investigator…</button>");
+    // Issue #309: no stray ellipsis — the label is a plain word (the "…"
+    // in the old "Investigator…" rendered as stray dots in the menu).
+    expect(html).toContain(">Investigator</button>");
+    expect(html).not.toContain("Investigator…");
     expect(html).toContain(">Devex audit</button>");
     expect(html).toContain(">KISS audit</button>");
   });

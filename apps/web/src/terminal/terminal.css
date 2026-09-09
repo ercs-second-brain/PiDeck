@@ -371,6 +371,19 @@
   border-left: 2px solid var(--border);
 }
 
+/* Issue #311: agent-kind rows carry the same row-action layout as worker
+   rows — session button + terminate affordance. */
+.picker-agent-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.picker-agent-row .picker-session {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Investigator question input (docs/agent-kinds.md, #297): the spawn modal's
    textarea, matching the modal card's typography. */
 .investigator-question {

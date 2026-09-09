@@ -43,7 +43,7 @@ import {
   WorkerRow,
   workerFor,
 } from "./picker-rows";
-import { DeleteProjectModal, InvestigatorPromptModal, TerminateWorkerModal } from "./picker-modals";
+import { ConfirmModals } from "./picker-confirms";
 import { AgentChildrenList, splitAgentSessions } from "./agent-nesting";
 import { GlobalAgentRow } from "./GlobalAgentRow";
 import { usePickerState } from "./use-picker-state";
@@ -60,11 +60,15 @@ type WorkerRowBag = {
   workers: Worker[];
   selectedSessionId: string | null;
   pendingTerminateWorkerId: string | null;
+  /** Agent-kind session whose terminate request is in flight (#311). */
+  pendingTerminateSessionId: string | null;
   now: number;
   nestedByParent: Map<string, Session[]>;
   onSelectSession: (sessionId: string) => void;
   onTerminateWorker?: (workerId: string) => Promise<void>;
   onAskTerminate: (sessionId: string) => void;
+  /** Present only when a terminate handler is wired (undefined hides the ✕). */
+  agentAskTerminate: ((sessionId: string) => void) | undefined;
 };
 
 /** One live/archived worker row, with its nested agent-kind spawns (if any) — module-level so ProjectSection stays within budget. */
@@ -83,7 +87,15 @@ function workerRowWithAgents(bag: WorkerRowBag, session: Session, archived: bool
       onTerminateWorker={bag.onTerminateWorker}
       onAskTerminate={bag.onAskTerminate}
     >
-      {!archived && <AgentChildrenList sessions={bag.nestedByParent.get(session.id)} selectedSessionId={bag.selectedSessionId} onSelectSession={bag.onSelectSession} />}
+      {!archived && (
+        <AgentChildrenList
+          sessions={bag.nestedByParent.get(session.id)}
+          selectedSessionId={bag.selectedSessionId}
+          pendingTerminateSessionId={bag.pendingTerminateSessionId}
+          onAskTerminate={bag.agentAskTerminate}
+          onSelectSession={bag.onSelectSession}
+        />
+      )}
     </WorkerRow>
   );
 }
@@ -111,6 +123,8 @@ function ProjectSection(props: {
   now: number;
   /** Worker id whose termination request is in flight (issue #64). */
   pendingTerminateWorkerId: string | null;
+  /** Agent-kind session whose termination request is in flight (issue #311). */
+  pendingTerminateSessionId: string | null;
   /** Whether this project's archived section is expanded (issue #64). */
   archivedOpen: boolean;
   /** Whether this project's children (workers, archive) are collapsed (issue #114). */
@@ -129,9 +143,10 @@ function ProjectSection(props: {
   onSpawnAgent: (projectId: string, kind: AgentKind) => void;
   /** Opens the investigator question modal (#297). */
   onAskInvestigator: (projectId: string) => void;
-  /** Terminates the worker after confirmation (issue #268: awaited by the modal). */
+  /** Terminate-after-confirm handlers (worker #268; agent-kind session #311). */
   onTerminateWorker?: (workerId: string) => Promise<void>;
-  /** Opens the terminate-confirmation modal on a worker row (issue #64/#116). */
+  onTerminateAgentSession?: (sessionId: string) => Promise<void>;
+  /** Opens the terminate-confirmation modal on a session row (issue #64/#116/#311). */
   onAskTerminate: (sessionId: string) => void;
 }) {
   const { project, sessions, workers } = props.entry;
@@ -146,13 +161,11 @@ function ProjectSection(props: {
   // Agent-kind sessions nest under their caller (#187 pattern) — see agent-nesting.ts.
   const { rootAgents, nestedByParent } = splitAgentSessions(sessions, orchestrator?.id);
   const bag: WorkerRowBag = {
-    workers,
-    selectedSessionId: props.selectedSessionId,
-    pendingTerminateWorkerId: props.pendingTerminateWorkerId,
-    now: props.now, nestedByParent,
-    onSelectSession: props.onSelectSession,
-    onTerminateWorker: props.onTerminateWorker,
-    onAskTerminate: props.onAskTerminate,
+    workers, selectedSessionId: props.selectedSessionId,
+    pendingTerminateWorkerId: props.pendingTerminateWorkerId, pendingTerminateSessionId: props.pendingTerminateSessionId,
+    now: props.now, nestedByParent, onSelectSession: props.onSelectSession,
+    onTerminateWorker: props.onTerminateWorker, onAskTerminate: props.onAskTerminate,
+    agentAskTerminate: props.onTerminateAgentSession !== undefined ? props.onAskTerminate : undefined,
   };
 
   return (
@@ -181,77 +194,14 @@ function ProjectSection(props: {
         <ul className="picker-list picker-workers">
           {activeWorkers.map((session) => workerRowWithAgents(bag, session, false))}
           {rootAgents.map((agent) => (
-            <AgentRow key={agent.id} session={agent} selectedSessionId={props.selectedSessionId} onSelectSession={props.onSelectSession} />
+            <AgentRow key={agent.id} session={agent} selectedSessionId={props.selectedSessionId} pending={props.pendingTerminateSessionId === agent.id} onAskTerminate={bag.agentAskTerminate} onSelectSession={props.onSelectSession} />
           ))}
         </ul>
       )}
       {!props.collapsed && archivedWorkers.length > 0 && (
-        <ArchivedSection
-          projectId={project.id}
-          count={archivedWorkers.length}
-          open={props.archivedOpen}
-          onToggle={props.onToggleArchived}
-          rows={archivedWorkers.map((session) => workerRowWithAgents(bag, session, true))}
-        />
+        <ArchivedSection projectId={project.id} count={archivedWorkers.length} open={props.archivedOpen} onToggle={props.onToggleArchived} rows={archivedWorkers.map((session) => workerRowWithAgents(bag, session, true))} />
       )}
     </section>
-  );
-}
-
-/**
- * The sidebar's confirmation modals (issues #116/#172): the terminate-worker
- * confirm and the delete-project confirm (whose body states the GitHub repo
- * is kept; a rejected delete — the 409 active-worker guard — shows inside
- * the modal). Extracted so SessionPicker stays a thin shell.
- */
-function ConfirmModals(props: {
-  state: ReturnType<typeof usePickerState>;
-  entries: ProjectEntry[];
-  /** Terminates the worker after confirmation (issue #268: awaited by the modal). */
-  onTerminateWorker?: (workerId: string) => Promise<void>;
-  /** Spawns agent-kind sessions (docs/agent-kinds.md, #297/#300/#302). */
-  onSpawnAgentSession?: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
-  onDeleteProject?: (projectId: string) => Promise<void>;
-}) {
-  const { state } = props;
-  const deletingName = props.entries.find((entry) => entry.project.id === state.deleteConfirm.confirmingId)?.project.name;
-  const investigatorName =
-    props.entries.find((entry) => entry.project.id === state.investigatorAsk.confirmingProjectId)?.project.name ??
-    state.investigatorAsk.confirmingProjectId;
-  return (
-    <>
-      {state.confirmingSession && props.onTerminateWorker && (
-        <TerminateWorkerModal
-          sessionName={state.confirmingSession.tmuxSession}
-          pending={state.pendingTerminate}
-          error={state.terminateError}
-          onConfirm={() => void state.confirmTerminate(props.onTerminateWorker!)}
-          onCancel={state.cancelTerminate}
-        />
-      )}
-      {state.deleteConfirm.confirmingId !== null && props.onDeleteProject && (
-        <DeleteProjectModal
-          projectName={deletingName ?? ""}
-          pending={state.deleteConfirm.pending}
-          error={state.deleteConfirm.error}
-          onConfirm={() => void state.deleteConfirm.confirm(props.onDeleteProject!)}
-          onCancel={state.deleteConfirm.cancel}
-        />
-      )}
-      {state.investigatorAsk.confirmingProjectId !== null && props.onSpawnAgentSession !== undefined && (
-        <InvestigatorPromptModal
-          projectName={investigatorName ?? ""}
-          pending={state.investigatorAsk.pending}
-          error={state.investigatorAsk.error}
-          onConfirm={(question) =>
-            void state.investigatorAsk.confirm(question, (projectId, question) =>
-              props.onSpawnAgentSession!(projectId, "investigator", question),
-            )
-          }
-          onCancel={state.investigatorAsk.cancel}
-        />
-      )}
-    </>
   );
 }
 
@@ -293,6 +243,12 @@ export interface SessionPickerProps {
    * Rejects so the investigator modal owns the error.
    */
   onSpawnAgentSession?: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
+  /**
+   * Terminates an agent-kind session (issue #311): the daemon kills the
+   * pane and removes the record; refreshes so the row disappears. Rejects
+   * so the terminate modal owns the error (#268 lifecycle).
+   */
+  onTerminateAgentSession?: (sessionId: string) => Promise<void>;
   /** Starts (or attaches to) the project's orchestrator — the chat-icon click (#173, #53). */
   onStartOrchestrator: (projectId: string) => void;
   /** Starts (or attaches to) the workspace-level global agent. */
@@ -316,6 +272,9 @@ export function SessionPicker(props: SessionPickerProps) {
   // kind plumbing not live yet) surfaces above the footer, like the
   // daemon-unreachable error.
   const [spawnError, setSpawnError] = useState<string | null>(null);
+  // Issue #311: in-flight ✕ overlay targets the confirming agent session.
+  const pendingAgentTerminateId =
+    state.pendingTerminate && state.confirmingSession?.agentKind !== undefined ? state.confirmingSessionId : null;
   const spawnAgent = (projectId: string, kind: AgentKind, question?: string) => {
     if (props.onSpawnAgentSession === undefined) return;
     setSpawnError(null);
@@ -340,21 +299,14 @@ export function SessionPicker(props: SessionPickerProps) {
       />
       {props.entries.map((entry) => (
         <ProjectSection
-          key={entry.project.id}
-          entry={entry}
-          selectedSessionId={props.selectedSessionId}
-          selectedProjectId={props.selectedProjectId ?? null}
-          startingProjectId={props.startingProjectId ?? null}
-          confirmingSessionId={state.confirmingSessionId}
-          openMenuProjectId={state.openMenuId}
-          now={now}
-          pendingTerminateWorkerId={props.terminatingWorkerId ?? null}
-          archivedOpen={state.archivedOpen.has(entry.project.id)}
-          onToggleArchived={state.toggleArchived}
-          collapsed={state.collapsedProjects.has(entry.project.id)}
-          onToggleCollapsed={state.toggleCollapsed}
-          onSelectSession={props.onSelectSession}
-          onSelectProject={props.onSelectProject}
+          key={entry.project.id} entry={entry}
+          selectedSessionId={props.selectedSessionId} selectedProjectId={props.selectedProjectId ?? null}
+          startingProjectId={props.startingProjectId ?? null} confirmingSessionId={state.confirmingSessionId}
+          openMenuProjectId={state.openMenuId} now={now}
+          pendingTerminateWorkerId={props.terminatingWorkerId ?? null} pendingTerminateSessionId={pendingAgentTerminateId}
+          archivedOpen={state.archivedOpen.has(entry.project.id)} onToggleArchived={state.toggleArchived}
+          collapsed={state.collapsedProjects.has(entry.project.id)} onToggleCollapsed={state.toggleCollapsed}
+          onSelectSession={props.onSelectSession} onSelectProject={props.onSelectProject}
           onOpenSettings={(projectId) => {
             state.closeMenu();
             props.onOpenSettings(projectId);
@@ -363,8 +315,7 @@ export function SessionPicker(props: SessionPickerProps) {
             state.closeMenu();
             state.deleteConfirm.ask(projectId);
           }}
-          onToggleMenu={state.toggleMenu}
-          onStartOrchestrator={props.onStartOrchestrator}
+          onToggleMenu={state.toggleMenu} onStartOrchestrator={props.onStartOrchestrator}
           onSpawnAgent={(projectId, kind) => {
             state.closeMenu();
             spawnAgent(projectId, kind);
@@ -374,11 +325,18 @@ export function SessionPicker(props: SessionPickerProps) {
             setSpawnError(null);
             state.investigatorAsk.ask(projectId);
           }}
-          onTerminateWorker={props.onTerminateWorker}
+          onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession}
           onAskTerminate={state.askTerminate}
         />
       ))}
-      <ConfirmModals state={state} entries={props.entries} onTerminateWorker={props.onTerminateWorker} onSpawnAgentSession={props.onSpawnAgentSession} onDeleteProject={props.onDeleteProject} />
+      <ConfirmModals
+        state={state}
+        entries={props.entries}
+        onTerminateWorker={props.onTerminateWorker}
+        onTerminateAgentSession={props.onTerminateAgentSession}
+        onSpawnAgentSession={props.onSpawnAgentSession}
+        onDeleteProject={props.onDeleteProject}
+      />
       {props.entries.length === 0 && !props.error && (
         <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — add one below to get started."}</p>
       )}

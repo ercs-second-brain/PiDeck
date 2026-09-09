@@ -15,6 +15,7 @@ import {
   ghAuthSchema,
   onboardingStateSchema,
   piAuthSchema,
+  sessionSchema,
   type EndpointName,
   type EndpointParams,
   type EndpointRequest,
@@ -22,6 +23,7 @@ import {
   type OnboardingState,
   type PiAuth,
   type RegisterProjectRequest,
+  type Session,
   type SpawnAgentRequest,
   type UpdateProjectRequest,
   type UpdateSettingsRequest,
@@ -220,6 +222,20 @@ export const terminateWorker = (workerId: string): Promise<EndpointResponse<"ter
  */
 export const apiSpawnAgent = (projectId: string, body: SpawnAgentRequest): Promise<EndpointResponse<"spawnProjectAgent">> =>
   request("spawnProjectAgent", { projectId }, body);
+
+/**
+ * Terminates an agent-kind session (issue #311): the daemon kills the pane
+ * and removes the session record (the existing `SessionManager.killSession`
+ * semantics — agent sessions keep no archived log; a delivered report stays
+ * where it was sent). `POST /api/sessions/:sessionId/terminate` is a
+ * shape-contracted route (like `/api/gh-auth`): the manager exists
+ * daemon-side, but the HTTP route is not in the `endpoints` map until its
+ * lane wires the handler — the map's registry requires one per endpoint.
+ */
+export function apiTerminateAgentSession(sessionId: string): Promise<Session> {
+  const path = `/api/sessions/${encodeURIComponent(sessionId)}/terminate`;
+  return sendAndParse(path, "POST", { headers: { accept: "application/json" } }, sessionSchema);
+}
 
 /**
  * Relaunches a dead session's tmux pane (issue #117): the daemon kills any
