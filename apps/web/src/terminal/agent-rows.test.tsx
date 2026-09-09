@@ -64,11 +64,12 @@ function renderPicker(entries: ProjectEntry[], overrides: Partial<Parameters<typ
 
 describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => {
   it("renders menu-spawned audit sessions at the project's child level with their kind badge", () => {
-    const html = renderPicker([entryWith([orchestrator, worker, devexAudit])]);
+    const html = renderPicker([entryWith([orchestrator, devexAudit])]);
     expect(html).toContain("role-agent");
+    // Sidebar label: the spawn's Session.name (its tmux name is fallback —
+    // and, per issue #316, the persona no longer double-renders as a ghost
+    // "worker" row that would carry the tmux name).
     expect(html).toContain(">devex-audit</span>");
-    // Sidebar label: the spawn's Session.name, with the tmux name as fallback.
-    expect(html).toContain("agentskiss-devex-audit");
     expect(html).toContain("picker-workers");
     expect(html).not.toContain("picker-agent-children");
   });
@@ -77,6 +78,24 @@ describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => 
     const unlabeled = makeSession({ id: "sess-agent-4", agentKind: "kiss-audit", parentSessionId: orchestrator.id, tmuxSession: "agentskiss-kiss-audit" });
     const html = renderPicker([entryWith([orchestrator, unlabeled])]);
     expect(html).toContain("agentskiss-kiss-audit");
+  });
+
+  // Issue #316: agent-kind sessions carry role "worker" in the registry —
+  // the worker-row filter must exclude them, or every persona spawn drew a
+  // ghost "worker" row alongside its agent row.
+  it("shows exactly one row per persona spawn — no ghost worker row (issue #316)", () => {
+    const html = renderPicker([entryWith([orchestrator, devexAudit])]);
+    expect(html).toContain(">devex-audit</span>");
+    expect(html).not.toContain("role-worker");
+    expect(html).not.toContain("picker-agent-children");
+  });
+
+  it("does not double-render worker-spawned personas as worker rows (issue #316)", () => {
+    const html = renderPicker([entryWith([orchestrator, worker, investigator])]);
+    expect(html).toContain("picker-agent-children");
+    // Exactly one worker row (the real worker) and one row for the persona.
+    expect(html.match(/role-worker/g)?.length).toBe(1);
+    expect(html.match(/agentskiss-investigate/g)?.length).toBe(1);
   });
 
   it("nests worker-spawned agent sessions under their caller's row (#187 child-group pattern)", () => {
@@ -99,6 +118,14 @@ describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => 
     const html = renderPicker([entryWith([orchestrator, devexAudit])], { selectedSessionId: devexAudit.id });
     expect(html).toContain("picker-session selected");
     expect(html).toContain("Attach the devex-audit session&#x27;s terminal");
+  });
+
+  // Issue #316: selection keys on the session id, and the persona renders
+  // only through its agent row — exactly one selected row, never the ghost
+  // pair the worker-filter double-render produced.
+  it("selects the persona row alone — no joint selection (issue #316)", () => {
+    const html = renderPicker([entryWith([orchestrator, devexAudit])], { selectedSessionId: devexAudit.id });
+    expect(html.match(/picker-session selected/g)?.length).toBe(1);
   });
 
   it("hides agent sessions with the project's collapsed children (issue #114)", () => {
