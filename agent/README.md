@@ -58,11 +58,11 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `pideck project get <id>` | `--json` | `GET /api/projects/:projectId` | Returns `Project` |
 | `pideck project ls` | `--json` | `GET /api/projects` | Returns `Project[]` |
 | `pideck kanban --project <id>` | `--json` | `GET /api/projects/:projectId/kanban` | Returns `KanbanBoard` |
-| `pideck sessions --project <id>` | `--json` | `GET /api/projects/:projectId/sessions` | Returns `Session[]` |
+| `pideck sessions --project <id>` | `--json` | `GET /api/projects/:projectId/sessions` | Returns `Session[]`; agent-kind sessions carry `agentKind` and `parentSessionId` (docs/agent-kinds.md) |
 | `pideck workers --project <id>` | `--json` | `GET /api/projects/:projectId/workers` | Returns `Worker[]` |
 | `pideck pulls --project <id>` | `--json` | `GET /api/projects/:projectId/pulls` | Returns `PullRequest[]` (incl. `ciStatus`, `reviewState`) |
 | `pideck diff --project <id> <pr>` | — | `GET /api/projects/:projectId/pulls/:prNumber/diff` | Returns `PullRequestDiff` |
-| `pideck spawn` | `--project <id>`, `--issue <number>`, `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`). The initial `--prompt` is gated on pi auth readiness (issue #56): with no ready provider the worker holds at `spawning` (statusMessage names the fix) and the prompt is queued and delivered automatically once auth is ready |
+| `pideck spawn` | `--project <id>`, (`--issue <number>` \| `--kind <agent-kind> [--question <q>]`), `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`). The initial `--prompt` is gated on pi auth readiness (issue #56): with no ready provider the worker holds at `spawning` (statusMessage names the fix) and the prompt is queued and delivered automatically once auth is ready. `--kind` spawns a preset-prompt agent-kind session (docs/agent-kinds.md): `investigator` requires `--question` and reports back to the calling session; `devex-audit`/`kiss-audit` report to the project orchestrator; agent kinds never take `--prompt`/`--issue` (the persona is the prompt) |
 | `pideck send` | `--session <id>`, `--message <text>` | `POST /api/sessions/:sessionId/send` | Delivers into the session's tmux pane (typed, then Enter) |
 | `pideck report-pr <pr>` | — | `POST /api/sessions/report-pr` | Worker session self-reports its PR (resolved from its tmux pane context); explicit report wins over the title/branch heuristic, which stays as fallback (issue #49) |
 

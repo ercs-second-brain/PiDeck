@@ -235,6 +235,37 @@ export const kanbanBoardSchema = z.object({
 export type KanbanBoard = z.infer<typeof kanbanBoardSchema>;
 
 // ---------------------------------------------------------------------------
+// Preset-prompt agent kinds (issues #297/#300/#302 — docs/agent-kinds.md)
+// ---------------------------------------------------------------------------
+
+/**
+ * Preset-prompt agent kinds: sessions spawned with a pre-baked persona
+ * prompt (`agent/prompts/<kind>.md`) and a fixed report route, instead of
+ * a bespoke code path per kind. Deliberately distinct from
+ * {@link workerKindSchema} (`implementer`/`reviewer`), which keeps its
+ * meaning for PR-ownership semantics: a spawn is either a worker
+ * (issue/PR-owned) or an agent-kind session (preset persona,
+ * report-routed).
+ */
+export const AGENT_KINDS = ["investigator", "devex-audit", "kiss-audit"] as const;
+export const agentKindSchema = z.enum(AGENT_KINDS);
+export type AgentKind = z.infer<typeof agentKindSchema>;
+
+/**
+ * Who receives an agent kind's final report (docs/agent-kinds.md §4).
+ * The delivery mechanism is always `pideck send --session <id>`: kinds
+ * with target `caller` deliver to `{{PARENT_SESSION_ID}}` (the calling
+ * session), kinds with `project-orchestrator` deliver to
+ * `{{ORCHESTRATOR_SESSION_ID}}`.
+ */
+export const AGENT_KIND_REPORT_TARGET = {
+  investigator: "caller",
+  "devex-audit": "project-orchestrator",
+  "kiss-audit": "project-orchestrator",
+} as const satisfies Record<AgentKind, "caller" | "project-orchestrator">;
+export type AgentKindReportTarget = (typeof AGENT_KIND_REPORT_TARGET)[AgentKind];
+
+// ---------------------------------------------------------------------------
 // Session (tmux-backed terminal sessions)
 // ---------------------------------------------------------------------------
 
@@ -248,6 +279,19 @@ export const sessionSchema = z.object({
   role: sessionRoleSchema,
   /** Name of the backing tmux session. */
   tmuxSession: z.string().min(1),
+  /**
+   * Preset-prompt agent kind (issues #297/#300/#302, docs/agent-kinds.md):
+   * set on agent-kind sessions (investigator / devex-audit / kiss-audit);
+   * absent on plain orchestrator/worker sessions. The kind fixes the
+   * persona and the report route — see {@link AGENT_KIND_REPORT_TARGET}.
+   */
+  agentKind: agentKindSchema.optional(),
+  /**
+   * Parent session id (parent-of-any-role linkage, docs/agent-kinds.md §3):
+   * an investigator's calling session, or the project orchestrator an
+   * audit session reports to. Absent on top-level sessions.
+   */
+  parentSessionId: idSchema.optional(),
   /**
    * Working directory the session's pane was launched in (project clone or
    * worktree path). Optional: producers that don't track it may omit it.
