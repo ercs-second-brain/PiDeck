@@ -270,6 +270,10 @@ export class OrchestratorBootstrap {
    */
   async ensureAgentKindSession(session: Session): Promise<Session | null> {
     if (session.agentKind === undefined) return null;
+    // Issue #357 B9: archived persona agents are history — never re-launch
+    // their persona into a pane (the startup sweep filters them already;
+    // this guards direct callers, e.g. a relaunch racing an archive).
+    if (session.archivedAt !== undefined) return null;
     const project = this.projects.get(session.projectId);
     if (project === undefined) return null;
     const kind = session.agentKind;

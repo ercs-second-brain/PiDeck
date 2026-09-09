@@ -116,6 +116,9 @@ export async function reconcileSessions(deps: ReconcileDeps, options: { resurrec
     // Issue #64: a terminated worker stays terminated — never resurrect
     // (or report lost) an archived worker session across restarts.
     if (isArchivedWorkerSession(deps, session)) continue;
+    // Issue #357 B9: same rule for archived persona agents — their record
+    // is kept for history (Session.archivedAt), never resurrected.
+    if (session.archivedAt !== undefined) continue;
     if (live.has(session.tmuxSession)) {
       result.alive.push(session);
       continue;

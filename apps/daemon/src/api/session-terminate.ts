@@ -14,16 +14,27 @@
  *   archived status, scrollback capture, and hub announce are identical no
  *   matter which path a caller takes; the registry records are kept for
  *   history, so the session shape survives;
- * - agent-kind sessions (never worker records) and other worker-less
- *   sessions route through the `SessionManager.killSession` path: pane
- *   killed, session record removed from the registry (the removed session
- *   is the response), any attached worker marked `stopped`. They keep no
- *   archived log — a delivered report stays where it was sent.
+ * - agent-kind sessions (persona agents, never worker records) are
+ *   **archived** (issue #357 B9): pane killed, scrollback captured, the
+ *   registry record kept with `Session.archivedAt` — the archived session
+ *   is the response. Deleting a parent persona agent archives its live
+ *   descendant persona agents with it (issue #357 B10);
+ * - other worker-less sessions route through the `SessionManager.
+ *   killSession` path: pane killed, session record removed from the
+ *   registry (the removed session is the response), any attached worker
+ *   marked `stopped`.
+ *
+ * `GET /api/sessions/:sessionId/log` serves an archived persona agent's
+ * captured log (issue #357 B9 — the worker-log route family's #104
+ * pattern): 404 for unknown sessions and for sessions that are not
+ * archived persona agents (a live persona agent has no archived log yet;
+ * a worker session's log is `/api/workers/:workerId/log`).
  */
 
-import type { Session } from "@pideck/shared";
+import { archivedAgentSessionLogSchema, type Session } from "@pideck/shared";
 
-import type { Router } from "./router.js";
+import { Router } from "./router.js";
+import { HttpError } from "./router.js";
 import { requireOr404, terminateWorkerPayload } from "./handlers.js";
 import type { DaemonServices } from "./context.js";
 
@@ -40,8 +51,32 @@ export function registerSessionTerminateRoute(router: Router, services: DaemonSe
       await terminateWorkerPayload(services, session.workerId);
       after = services.sessions.getSession(session.id);
     } else {
-      after = await services.sessions.killSession(session.id);
+      // Persona agents archive (issue #357 B9) instead of hard-deleting;
+      // every other worker-less session keeps the #317 kill semantics.
+      after = await services.sessions.archiveAgentSession(session.id);
     }
     return { body: after };
+  });
+
+  /** Archived persona-agent log (issue #357 B9): 404 unknown / not archived. */
+  router.add("GET", "/api/sessions/:sessionId/log", ({ params }) => {
+    const sessionId = params["sessionId"] as string;
+    const session = requireOr404(services.sessions.getSession(sessionId), `unknown session: ${sessionId}`);
+    if (session.agentKind === undefined || session.archivedAt === undefined) {
+      throw new HttpError(404, `session ${sessionId} has no archived log — persona agents log to the archive only after termination`);
+    }
+    const captured = services.sessions.archivedAgentScrollback(session.id);
+    return {
+      body: archivedAgentSessionLogSchema.parse({
+        sessionId: session.id,
+        projectId: session.projectId,
+        agentKind: session.agentKind,
+        name: session.name ?? null,
+        createdAt: session.createdAt,
+        archivedAt: session.archivedAt,
+        capturedAt: captured?.capturedAt ?? null,
+        scrollback: captured?.scrollback ?? "",
+      }),
+    };
   });
 }

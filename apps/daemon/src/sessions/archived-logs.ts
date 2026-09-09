@@ -1,9 +1,14 @@
 /**
- * Archived-worker scrollback persistence (issue #104): the tmux pane
- * scrollback captured at terminate time, keyed by worker id, persisted as a
- * single JSON file under the daemon state dir via {@link JsonStore} (issue
- * #72's unified persistence). Writes only happen when a worker is archived,
- * so one file (instead of per-worker files) stays trivially small.
+ * Archived scrollback persistence (issue #104): the tmux pane scrollback
+ * captured at terminate time, keyed by record id, persisted as a single
+ * JSON file under the daemon state dir via {@link JsonStore} (issue #72's
+ * unified persistence). Writes only happen at termination, so one file
+ * (instead of per-record files) stays trivially small.
+ *
+ * Keys are worker ids (worker terminations, issue #64) and — since issue
+ * #357 B9 — persona-agent session ids (`Session.archivedAt` terminates):
+ * the id spaces are disjoint (`worker-…` vs `sess-…`), so one store serves
+ * both archives.
  *
  * Kept separate from the session registry: scrollback blobs are the largest
  * payloads the daemon persists, and the registry is rewritten on every
@@ -13,7 +18,12 @@
 
 import { JsonStore } from "../json-store.js";
 
-/** One worker's captured pane bytes (bytes at termination). */
+/** How much scrollback to capture at termination (issue #104): the tmux
+ * server's default history limit, so a full pane history fits. Shared by
+ * the worker (#64) and persona-agent (#357 B9) archive paths. */
+export const ARCHIVED_SCROLLBACK_LINES = 2000;
+
+/** One archived pane's captured bytes (worker or persona-agent termination). */
 export interface ArchivedScrollback {
   /** ISO timestamp of the capture (termination time). */
   capturedAt: string;

@@ -212,6 +212,21 @@ export class SessionRegistry {
     return deleted;
   }
 
+  /**
+   * Marks a session archived (`Session.archivedAt`, issue #357 B9): the
+   * record is kept for history — the persona-agent archive semantics, the
+   * worker-status `archived` pattern applied to sessions. Archived
+   * sessions stay out of live listings ({@link SessionManager.listSessions})
+   * and are never resurrected by reconcile. Throws for an unknown id.
+   */
+  markSessionArchived(id: string, archivedAt: string): Session {
+    const session = this.sessions.get(id);
+    if (!session) throw new Error(`unknown session: ${id}`);
+    session.archivedAt = archivedAt;
+    this.save();
+    return session;
+  }
+
   // -- workers ---------------------------------------------------------------
 
   registerWorker(input: RegisterWorkerInput): Worker {

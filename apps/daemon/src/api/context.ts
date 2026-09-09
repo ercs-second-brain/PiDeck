@@ -215,8 +215,13 @@ function buildProjectTeardown(deps: {
       for (const session of projectSessions) {
         if (await tmux.hasSession(session.tmuxSession)) await tmux.killSession(session.tmuxSession);
       }
-      // Deleting means deleting: captured archived logs go with the records.
-      sessions.deleteArchivedLogs(registry.listWorkers({ projectId }).map((worker) => worker.id));
+      // Deleting means deleting: captured archived logs go with the records —
+      // the workers' and the archived persona agents' alike (issue #357 B9:
+      // persona-agent scrollback is keyed by session id in the same store).
+      sessions.deleteArchivedLogs([
+        ...registry.listWorkers({ projectId }).map((worker) => worker.id),
+        ...projectSessions.map((session) => session.id),
+      ]);
       for (const session of projectSessions) registry.deleteSession(session.id);
       for (const worker of registry.listWorkers({ projectId })) registry.deleteWorker(worker.id);
     },
