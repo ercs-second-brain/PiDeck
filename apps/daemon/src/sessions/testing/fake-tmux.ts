@@ -37,11 +37,6 @@ export interface FakePaneState {
    * tmux's server-wide default; direct state seeds may leave it unset.
    */
   extendedKeys?: "on" | "off" | "external";
-  /**
-   * Env injected via `new-session -e KEY=VAL` (the daemon's canonical
-   * runtime env, see `agent-env.ts`), as the initial pane inherits it.
-   */
-  env?: Record<string, string>;
 }
 
 export interface FakeTmuxRunnerOptions {
@@ -189,7 +184,6 @@ export class FakeTmuxRunner {
     this.sessions.set(parsed.name, {
       command: parsed.command,
       cwd: parsed.cwd,
-      env: Object.keys(parsed.env).length > 0 ? parsed.env : undefined,
       paneLines: this.initialPaneLines ? [...this.initialPaneLines] : [],
       cols: this.initialCols,
       rows: this.initialRows,
@@ -347,12 +341,10 @@ export class FakeTmuxRunner {
   private parseNewSession(cmdArgs: string[]): {
     name: string;
     cwd: string | undefined;
-    env: Record<string, string>;
     command: string[];
   } {
     let name: string | undefined;
     let cwd: string | undefined;
-    const env: Record<string, string> = {};
     const command: string[] = [];
     // tmux stops option parsing at the first non-option word; everything
     // after that is the (verbatim) command to run in the pane.
@@ -364,14 +356,6 @@ export class FakeTmuxRunner {
         continue;
       }
       if (arg === "-d") continue;
-      if (arg === "-e") {
-        // tmux -e takes KEY=VALUE (the daemon injects its runtime env).
-        const assignment = cmdArgs[++i] ?? "";
-        const eq = assignment.indexOf("=");
-        if (eq <= 0) return this.fail("new-session: invalid -e assignment", cmdArgs);
-        env[assignment.slice(0, eq)] = assignment.slice(eq + 1);
-        continue;
-      }
       if (arg === "-s") {
         name = cmdArgs[++i];
         continue;
@@ -383,7 +367,7 @@ export class FakeTmuxRunner {
       command.push(arg);
     }
     if (name === undefined) return this.fail("new-session: no name", []);
-    return { name, cwd, env, command };
+    return { name, cwd, command };
   }
 }
 

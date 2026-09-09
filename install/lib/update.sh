@@ -231,7 +231,7 @@ refresh_node_runtime() {
   _rn_ver=$("$_rn_cur" -v 2>/dev/null) || return 0 # vMAJ.MIN.PATCH
   # Two floors: the moving pin AND pi's Node floor (PD_NODE_MIN_VERSION,
   # install/lib/common.sh — pi's vendored undici decodes zstd responses with
-  # zlib.createZstdDecompress, which only exists on Node >= 22.15). The pin
+  # zlib.createZstdDecompress, which only exists on Node >= 22.19). The pin
   # alone is not enough on a real box whose installed lib still pins a
   # pre-floor Node: this refresh runs BEFORE refresh_installed_layer, so the
   # first apply would compare against the stale pin and skip a refresh the

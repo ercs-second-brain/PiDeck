@@ -11,17 +11,16 @@
  * one derivation (the install's) and the daemon injects what it runs on.
  *
  * The values are injected per-session by {@link Tmux.newSession} (see
- * `tmux.ts`): the guaranteed path is pane-side — the session command is
- * wrapped in a `sh -c` that exports these values before exec'ing the
- * payload (issue #253) — so the pane resolves the canonical runtime no
- * matter the tmux version or how stale the server's global environment
- * is. A pane otherwise inherits the tmux SERVER's global environment —
- * captured when that server first started — so on a long-lived user tmux
- * server every new session would keep running pi under a stale PATH (e.g.
- * the pre-update system Node) even after the daemon restarted on the
- * fresh runtime. On tmux >= 3.2 the same values are additionally passed
- * as `new-session -e` so the session's environment matches for panes and
- * windows opened later inside it.
+ * `tmux.ts`): the session command is wrapped in a `sh -c` that exports
+ * these values before exec'ing the payload (issue #253) — the ONE env
+ * mechanism, so the pane resolves the canonical runtime no matter the
+ * tmux version or how stale the server's global environment is. A pane
+ * otherwise inherits the tmux SERVER's global environment — captured
+ * when that server first started — so on a long-lived user tmux server
+ * every new session would keep running pi under a stale PATH (e.g. the
+ * pre-update system Node) even after the daemon restarted on the fresh
+ * runtime. (Issue #256 removed the redundant `new-session -e`
+ * belt-and-suspenders this wrapper made dead.)
  */
 
 /**

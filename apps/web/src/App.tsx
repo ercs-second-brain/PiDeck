@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link, Outlet, RouterProvider, createBrowserRouter, useParams, useNavigate, useLocation } from "react-router";
 import type { Project } from "@pideck/shared";
 import { UpdateBanner } from "./components/UpdateBanner";
-import { NodeVersionWarning } from "./components/NodeVersionWarning";
 import { NotificationBell } from "./components/NotificationCenter";
 import { AllProjectsBoard } from "./routes/AllProjectsBoard";
 import { BoardPage } from "./routes/BoardPage";
@@ -92,15 +91,11 @@ function AppHeader(props: { sidebarOpen: boolean; onToggleSidebar: () => void })
 }
 
 /** Issue #260 (B8): the update popup's live content — mounted through the
- *  sidebar's footer slot so it anchors above the settings entry. Both
- *  surfaces are quiet (render nothing) when there is nothing to report. */
+ *  sidebar's footer slot so it anchors above the settings entry. Quiet
+ *  (renders nothing) when there is nothing to report. #256: the node
+ *  too-old strip stays inside the update banner — one warning surface. */
 function UpdatePopup() {
-  return (
-    <>
-      <UpdateBanner />
-      <NodeVersionWarning />
-    </>
-  );
+  return <UpdateBanner />;
 }
 
 function Shell() {
