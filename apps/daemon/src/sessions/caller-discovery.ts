@@ -3,7 +3,7 @@
  * issues #297/#300/#302).
  *
  * Agent kinds are callable from any role — global agent, project
- * orchestrator, worker, review agent — and the investigator's whole
+ * orchestrator, worker, review agent — and the researcher's whole
  * contract is "the report returns to the calling session". The merged
  * `pideck spawn --kind` CLI carries no caller identity in its request
  * body, so the daemon resolves the caller from its environment: the CLI

@@ -12,7 +12,7 @@ webapp's "Prompts & skills" editor (sidebar, above Settings) backed by
 `AgentAssetsStore` (`apps/daemon/src/api/agent-assets.ts`):
 
 - **Prompt overrides** — one optional slot per persona (`global-agent`,
-  `orchestrator`, `worker`, `investigator`, `devex-audit`, `kiss-audit`). A
+  `orchestrator`, `worker`, `researcher`, `devex-audit`, `kiss-audit`). A
   stored override replaces this file's content as the boot-prompt template;
   `{{PLACEHOLDER}}` rendering works the same, and this file stays the
   fallback. For orchestrator/global-agent/kind personas the daemon applies
@@ -96,7 +96,7 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `pideck workers --project <id>` | `--json` | `GET /api/projects/:projectId/workers` | Returns `Worker[]` |
 | `pideck pulls --project <id>` | `--json` | `GET /api/projects/:projectId/pulls` | Returns `PullRequest[]` (incl. `ciStatus`, `reviewState`) |
 | `pideck diff --project <id> <pr>` | — | `GET /api/projects/:projectId/pulls/:prNumber/diff` | Returns `PullRequestDiff` |
-| `pideck spawn` | `--project <id>`, (`--issue <number>` \| `--kind <agent-kind> [--question <q>]`), `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`). The initial `--prompt` is gated on pi auth readiness (issue #56): with no ready provider the worker holds at `spawning` (statusMessage names the fix) and the prompt is queued and delivered automatically once auth is ready. `--kind` spawns a preset-prompt agent-kind session (docs/agent-kinds.md): `investigator` requires `--question` and reports back to the calling session; `devex-audit`/`kiss-audit` report to the project orchestrator; agent kinds never take `--prompt`/`--issue` (the persona is the prompt) |
+| `pideck spawn` | `--project <id>`, (`--issue <number>` \| `--kind <agent-kind> [--question <q>]`), `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`). The initial `--prompt` is gated on pi auth readiness (issue #56): with no ready provider the worker holds at `spawning` (statusMessage names the fix) and the prompt is queued and delivered automatically once auth is ready. `--kind` spawns a preset-prompt agent-kind session (docs/agent-kinds.md): `researcher` requires `--question` and reports back to the calling session; `devex-audit`/`kiss-audit` report to the project orchestrator; agent kinds never take `--prompt`/`--issue` (the persona is the prompt) |
 | `pideck send` | `--session <id>`, `--message <text>` | `POST /api/sessions/:sessionId/send` | Delivers into the session's tmux pane (typed, then Enter) |
 | `pideck report-pr <pr>` | — | `POST /api/sessions/report-pr` | Worker session self-reports its PR (resolved from its tmux pane context); explicit report wins over the title/branch heuristic, which stays as fallback (issue #49) |
 

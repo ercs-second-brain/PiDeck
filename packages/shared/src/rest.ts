@@ -446,15 +446,15 @@ export const endpoints = {
   /**
    * Spawn a preset-prompt agent-kind session (docs/agent-kinds.md, issues
    * #297/#300/#302): a pre-baked persona prompt (rendered from
-   * `agent/prompts/<kind>.md`) with a fixed report route — investigator
+   * `agent/prompts/<kind>.md`) with a fixed report route — researcher
    * reports back to the parent/calling session, the audit kinds to the
    * project orchestrator — and read-only enforcement (write tools excluded
    * from the pane). Backs the webapp's "Spawn agent" menu. Responds with
    * the session record immediately (agent-kind sessions are not workers):
-   * its id is the spawned session's registry id (the investigator persona
+   * its id is the spawned session's registry id (the researcher persona
    * delivers its report to the parent session via `pideck send`).
    * Worker-like kinds (audits) count toward the project's
-   * `workerConcurrency` cap (409 past it); investigator spawns are cheap
+   * `workerConcurrency` cap (409 past it); researcher spawns are cheap
    * and exempt.
    */
   spawnProjectAgent: { method: "POST", path: "/api/projects/:projectId/spawn-agent", params: z.object({ projectId: z.string().min(1) }), request: spawnAgentRequestSchema, response: sessionSchema },

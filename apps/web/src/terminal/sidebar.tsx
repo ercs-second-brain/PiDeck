@@ -54,10 +54,10 @@ export interface SidebarContextValue {
   deleteProject: (projectId: string) => Promise<void>;
   /**
    * Spawns a preset-prompt agent-kind session (docs/agent-kinds.md, issues
-   * #297/#300/#302) from the project row's ⋯ menu: investigator (carries
+   * #297/#300/#302) from the project row's ⋯ menu: researcher (carries
    * its question) or an audit kind (no input). Reloads so the new row
    * appears and navigates to the spawned session's terminal. Rejects so
-   * the investigator modal can own the error.
+   * the researcher modal can own the error.
    */
   spawnAgentSession: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
   /**

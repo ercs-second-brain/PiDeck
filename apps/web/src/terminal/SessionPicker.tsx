@@ -245,9 +245,9 @@ export interface SessionPickerProps {
   onStartOnboarding: () => void;
   /**
    * Spawns a preset-prompt agent-kind session (docs/agent-kinds.md, issues
-   * #297/#300/#302): the investigator carries its question, the audit
+   * #297/#300/#302): the researcher carries its question, the audit
    * kinds take none. Reloads and navigates to the new session's terminal.
-   * Rejects so the investigator modal owns the error.
+   * Rejects so the researcher modal owns the error.
    */
   onSpawnAgentSession?: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
   /**
@@ -368,7 +368,7 @@ export function SessionPicker(props: SessionPickerProps) {
             onAskSpawnInput={(projectId, kind) => {
               state.closeMenu();
               setSpawnError(null);
-              state.investigatorAsk.ask(projectId, kind);
+              state.researcherAsk.ask(projectId, kind);
             }}
             onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession}
             onAskTerminate={state.askTerminate}

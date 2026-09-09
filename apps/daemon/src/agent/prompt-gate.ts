@@ -23,7 +23,7 @@
  * unauthenticated worker as `running` (issue #56).
  *
  * Agent-kind sessions (docs/agent-kinds.md) share the same gate via
- * {@link queueSession}: their prompts (the investigator's question) are
+ * {@link queueSession}: their prompts (the researcher's question) are
  * queued until pi auth is ready and retried by the same loop — sessions
  * have no worker status, so a delivery failure drops the entry loudly
  * (the pane is gone; the question can never be answered).
@@ -42,7 +42,7 @@ interface PendingPrompt {
 }
 
 /** A queued prompt for an agent-kind session (docs/agent-kinds.md) — e.g. the
- * investigator's question — held until pi auth is ready (issue #56 parity).
+ * researcher's question — held until pi auth is ready (issue #56 parity).
  * Sessions have no worker status, so these retry until deliverable. */
 interface PendingSessionPrompt {
   sessionId: string;
@@ -109,7 +109,7 @@ export class PromptGate {
 
   /**
    * Queues an agent-kind session's prompt after an unauthenticated spawn
-   * (issue #56 parity for docs/agent-kinds.md spawns — the investigator's
+   * (issue #56 parity for docs/agent-kinds.md spawns — the researcher's
    * question is never typed into an agent that cannot run). Idempotent per
    * session; retried by the same poll loop until deliverable.
    */

@@ -36,8 +36,8 @@ const worker = makeSession({ id: "sess-worker-1", tmuxSession: "agentskiss-worke
 
 /** Menu-spawned audits: parent is the project orchestrator (by construction). */
 const devexAudit = makeSession({ id: "sess-agent-1", agentKind: "devex-audit", parentSessionId: orchestrator.id, tmuxSession: "agentskiss-devex-audit", name: "devex-audit" });
-/** Worker-spawned investigator: parent is the worker session. */
-const investigator = makeSession({ id: "sess-agent-2", agentKind: "investigator", parentSessionId: worker.id, tmuxSession: "agentskiss-investigate" });
+/** Worker-spawned researcher: parent is the worker session. */
+const researcher = makeSession({ id: "sess-agent-2", agentKind: "researcher", parentSessionId: worker.id, tmuxSession: "agentskiss-research" });
 
 function entryWith(sessions: Session[]): ProjectEntry {
   return { project, sessions, workers: [] };
@@ -91,18 +91,18 @@ describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => 
   });
 
   it("does not double-render worker-spawned personas as worker rows (issue #316)", () => {
-    const html = renderPicker([entryWith([orchestrator, worker, investigator])]);
+    const html = renderPicker([entryWith([orchestrator, worker, researcher])]);
     expect(html).toContain("picker-agent-children");
     // Exactly one worker row (the real worker) and one row for the persona.
     expect(html.match(/role-worker/g)?.length).toBe(1);
-    expect(html.match(/agentskiss-investigate/g)?.length).toBe(1);
+    expect(html.match(/agentskiss-research/g)?.length).toBe(1);
   });
 
   it("nests worker-spawned agent sessions under their caller's row (#187 child-group pattern)", () => {
-    const html = renderPicker([entryWith([orchestrator, worker, investigator])]);
+    const html = renderPicker([entryWith([orchestrator, worker, researcher])]);
     expect(html).toContain("picker-agent-children");
-    expect(html).toContain(">investigator</span>");
-    expect(html).toContain("agentskiss-investigate");
+    expect(html).toContain(">researcher</span>");
+    expect(html).toContain("agentskiss-research");
     // The nested group renders inside the caller's worker row.
     expect(html.indexOf("sess-worker-1")).toBeLessThan(html.indexOf("picker-agent-children"));
   });
@@ -129,7 +129,7 @@ describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => 
   });
 
   it("hides agent sessions with the project's collapsed children (issue #114)", () => {
-    const entry = entryWith([orchestrator, worker, investigator]);
+    const entry = entryWith([orchestrator, worker, researcher]);
     const html = renderToString(
       <SessionPicker
         entries={[entry]}
@@ -145,7 +145,7 @@ describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => 
         onStartOrchestrator={() => {}}
       />,
     );
-    expect(html).not.toContain("agentskiss-investigate");
+    expect(html).not.toContain("agentskiss-research");
   });
 });
 
@@ -158,7 +158,7 @@ describe("agent-row terminate affordance (issue #311, #268 modal pattern)", () =
   });
 
   it("renders the ✕ affordance on nested agent rows too (nested or not, per #311)", () => {
-    const html = renderPicker([entryWith([orchestrator, worker, investigator])], { onTerminateAgentSession: async () => {} });
+    const html = renderPicker([entryWith([orchestrator, worker, researcher])], { onTerminateAgentSession: async () => {} });
     expect(html).toContain("picker-agent-children");
     expect(html).toContain("picker-terminate");
   });

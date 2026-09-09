@@ -83,7 +83,7 @@ export interface DaemonServices {
   /**
    * Initial-prompt readiness gate (issue #56): holds prompts for spawns
    * made before pi auth is ready and delivers them once it is. Agent-kind
-   * sessions (docs/agent-kinds.md) queue their prompts (the investigator's
+   * sessions (docs/agent-kinds.md) queue their prompts (the researcher's
    * question) here too, via `queueSession`.
    */
   promptGate: PromptGate;
@@ -143,7 +143,7 @@ export interface DaemonContextOptions {
 /**
  * Builds the initial-prompt readiness gate (issue #56) over the session
  * manager and the pi auth probe: worker prompts and agent-kind session
- * prompts (the investigator's question, docs/agent-kinds.md) both queue
+ * prompts (the researcher's question, docs/agent-kinds.md) both queue
  * here until a provider is ready.
  */
 function buildPromptGate(sessions: SessionManager, piAuth: PiAuthProbe, options: DaemonContextOptions): PromptGate {

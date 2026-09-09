@@ -94,8 +94,8 @@ export function buildReviewAgentPrompt(pr: PullRequest, options: ReviewAgentProm
       `\`gh pr review ${pr.number} --repo ${options.repo} --approve --body "<summary>"\` or request changes with ` +
       `\`gh pr review ${pr.number} --repo ${options.repo} --request-changes --body "<summary>"\` ` +
       "plus inline comments via the gh api reviews endpoint (see the skill).",
-    "Do not push commits, do not open or close PRs. For codebase questions the diff alone cannot answer, spawn an investigator " +
-      `(read-only, grounded report) with \`pideck spawn --project ${options.projectId} --kind investigator --question "<question>" --name "<label>"\` and wait for its report before posting your review. ` +
+    "Do not push commits, do not open or close PRs. For codebase questions the diff alone cannot answer, spawn a researcher " +
+      `(read-only, grounded report) with \`pideck spawn --project ${options.projectId} --kind researcher --question "<question>" --name "<label>"\` and wait for its report before posting your review. ` +
       "When done, reply with a short review summary.",
   ];
   return parts.map(oneLine).join(" ");

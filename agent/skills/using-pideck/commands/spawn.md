@@ -32,5 +32,5 @@ pideck spawn --project pideck --issue 5 --name "phase1-prompts"
 
 ```bash
 # Spawn a freeform worker
-pideck spawn --project pideck --name "triage-flaky-ci" --prompt "Investigate the flaky kanban test and fix it."
+pideck spawn --project pideck --name "triage-flaky-ci" --prompt "Research the flaky kanban test and fix it."
 ```

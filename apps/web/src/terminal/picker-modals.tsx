@@ -1,7 +1,7 @@
 /**
  * The terminals sidebar's centered confirmation/prompt modals: the shared
  * shell, the terminate-worker confirm (issues #116/#268), the delete-project
- * confirm (issue #172), and the investigator-spawn question modal
+ * confirm (issue #172), and the researcher-spawn question modal
  * (docs/agent-kinds.md, issue #297). Extracted from picker-rows to keep each
  * module under its complexity budget; Escape is handled by the
  * interaction-state hook — the backdrop click dismisses unless a request is
@@ -13,7 +13,7 @@ import { AGENT_KIND_INFO, type AgentKind } from "@pideck/shared";
 
 /**
  * Shared shell for the sidebar's small centered confirmation modals
- * (worker terminate #116, project delete #172, investigator spawn #297):
+ * (worker terminate #116, project delete #172, researcher spawn #297):
  * dimmed backdrop, title, body, Cancel/confirm actions. Pure rendering.
  */
 function ConfirmModal(props: {
@@ -28,7 +28,7 @@ function ConfirmModal(props: {
   error?: string | null;
   /** The confirm request is in flight (controls disabling). */
   pending: boolean;
-  /** Extra confirm-disable condition beyond `pending` (investigator: empty question). */
+  /** Extra confirm-disable condition beyond `pending` (researcher: empty question). */
   confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -175,12 +175,12 @@ export function TerminateAgentSessionModal(props: {
 /**
  * The input-taking spawn modal (docs/agent-kinds.md, issue #297 + #324): a
  * small centered modal asking for the question the kind's report must
- * answer — for the kinds whose shared spec takesInput (the investigator
+ * answer — for the kinds whose shared spec takesInput (the researcher
  * today; the audits spawn directly from the menu). Confirm stays disabled
  * until a question is typed; failures surface inside the modal. The title,
  * labels, and confirm target derive from the kind's metadata.
  */
-export function InvestigatorPromptModal(props: {
+export function ResearcherPromptModal(props: {
   projectName: string;
   /** The kind whose spec takesInput — drives the copy and confirm target. */
   agentKind: AgentKind;
@@ -204,12 +204,12 @@ export function InvestigatorPromptModal(props: {
       body={
         <>
           <p>
-            A read-only investigator will investigate <code>{props.projectName}</code> and report its findings — with
+            A read-only researcher will research <code>{props.projectName}</code> and report its findings — with
             file-and-line citations — back to the session that spawned it.
           </p>
           <textarea
             className="modal-textarea"
-            placeholder="What should it investigate?"
+            placeholder="What should it research?"
             aria-label={`${info.menuLabel} question`}
             rows={3}
             value={question}

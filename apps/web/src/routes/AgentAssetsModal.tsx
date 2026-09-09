@@ -36,7 +36,7 @@ export const PERSONA_LABELS: Record<Persona, string> = {
   "global-agent": "Global agent",
   orchestrator: "Orchestrator",
   worker: "Worker",
-  investigator: "Investigator",
+  researcher: "Researcher",
   "devex-audit": "Devex audit",
   "kiss-audit": "KISS audit",
 };

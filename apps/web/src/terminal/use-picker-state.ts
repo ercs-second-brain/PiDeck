@@ -105,11 +105,11 @@ function useTerminateConfirm() {
  * Input-taking spawn interaction state (issues #297/#300/#302 + #324):
  * which project + kind is asking for its question (rendered as a small
  * centered modal by SessionPicker — one per kind whose shared spec
- * takesInput, the investigator today), in-flight/error flags, and the
+ * takesInput, the researcher today), in-flight/error flags, and the
  * async confirm runner — request goes out, failures surface inside the
  * modal, success closes it. Mirrors {@link useDeleteConfirm}.
  */
-function useInvestigatorAsk() {
+function useResearcherAsk() {
   const [confirming, setConfirming] = useState<{ projectId: string; kind: AgentKind } | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +170,7 @@ export function usePickerState(
   // Issue #167: which project's ⋯ context menu is open (one at a time).
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   // Issues #297/#300/#302 + #324: the question modal for takesInput kinds.
-  const investigatorAsk = useInvestigatorAsk();
+  const researcherAsk = useResearcherAsk();
   // Issue #172: the delete-confirmation interaction state (its own hook).
   const deleteConfirm = useDeleteConfirm();
 
@@ -256,6 +256,6 @@ export function usePickerState(
     openMenuId,
     toggleMenu: (projectId: string) => setOpenMenuId((current) => (current === projectId ? null : projectId)),
     closeMenu: () => setOpenMenuId(null),
-    investigatorAsk,
+    researcherAsk,
   };
 }

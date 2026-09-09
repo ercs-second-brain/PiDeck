@@ -42,7 +42,7 @@ describe("agent assets (issue #315)", () => {
     expect(agentAssetsSchema.parse(listed.json).prompts).toEqual([override]);
 
     // Unknown persona → 400 (contract path validation).
-    expect((await api("PUT", "/api/agent-assets/prompts/researcher", { content: "x" })).status).toBe(400);
+    expect((await api("PUT", "/api/agent-assets/prompts/historian", { content: "x" })).status).toBe(400);
 
     expect((await api("DELETE", savePath)).status).toBe(204);
     expect((await api("DELETE", savePath)).status).toBe(404);

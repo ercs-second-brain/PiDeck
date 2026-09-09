@@ -2,7 +2,7 @@
  * The terminals sidebar's confirmation-modal stack (issues #116/#172/#268
  * + #311): the terminate confirms (worker vs agent-kind — their copy and
  * confirm targets differ), the delete-project confirm, and the
- * investigator question modal. Extracted from SessionPicker to keep the
+ * researcher question modal. Extracted from SessionPicker to keep the
  * picker and each function within the complexity budgets; Escape and the
  * pending/error lifecycles live in the interaction-state hook
  * (use-picker-state.ts).
@@ -11,7 +11,7 @@
 import type { AgentKind } from "@pideck/shared";
 import {
   DeleteProjectModal,
-  InvestigatorPromptModal,
+  ResearcherPromptModal,
   TerminateAgentSessionModal,
   TerminateWorkerModal,
 } from "./picker-modals";
@@ -71,9 +71,9 @@ function TerminateConfirmModals(props: { state: PickerState; onTerminateWorker?:
 export function ConfirmModals(props: ConfirmModalsProps) {
   const { state } = props;
   const deletingName = props.entries.find((entry) => entry.project.id === state.deleteConfirm.confirmingId)?.project.name;
-  const investigatorName =
-    props.entries.find((entry) => entry.project.id === state.investigatorAsk.confirming?.projectId)?.project.name ??
-    state.investigatorAsk.confirming?.projectId;
+  const researcherName =
+    props.entries.find((entry) => entry.project.id === state.researcherAsk.confirming?.projectId)?.project.name ??
+    state.researcherAsk.confirming?.projectId;
   return (
     <>
       <TerminateConfirmModals state={state} onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession} />
@@ -86,18 +86,18 @@ export function ConfirmModals(props: ConfirmModalsProps) {
           onCancel={state.deleteConfirm.cancel}
         />
       )}
-      {state.investigatorAsk.confirming !== null && props.onSpawnAgentSession !== undefined && (
-        <InvestigatorPromptModal
-          projectName={investigatorName ?? ""}
-          agentKind={state.investigatorAsk.confirming.kind}
-          pending={state.investigatorAsk.pending}
-          error={state.investigatorAsk.error}
+      {state.researcherAsk.confirming !== null && props.onSpawnAgentSession !== undefined && (
+        <ResearcherPromptModal
+          projectName={researcherName ?? ""}
+          agentKind={state.researcherAsk.confirming.kind}
+          pending={state.researcherAsk.pending}
+          error={state.researcherAsk.error}
           onConfirm={(question) =>
-            void state.investigatorAsk.confirm(question, (projectId, kind, question) =>
+            void state.researcherAsk.confirm(question, (projectId, kind, question) =>
               props.onSpawnAgentSession!(projectId, kind, question),
             )
           }
-          onCancel={state.investigatorAsk.cancel}
+          onCancel={state.researcherAsk.cancel}
         />
       )}
     </>

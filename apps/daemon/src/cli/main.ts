@@ -16,7 +16,7 @@
  *   pideck report-pr <pr-number>   (worker panes only: self-identifies via tmux)
  *
  * Agent kinds (docs/agent-kinds.md): preset-persona, read-only sessions —
- * `investigator` (needs --question; report returns to the calling session)
+ * `researcher` (needs --question; report returns to the calling session)
  * and `devex-audit`/`kiss-audit` (report to the project orchestrator). The
  * persona is the prompt: agent kinds never take --prompt/--issue.
  *
@@ -55,7 +55,7 @@ Usage:
   pideck report-pr <pr-number>
 
 Agent kinds (preset persona, read-only; docs/agent-kinds.md):
-  investigator    --kind investigator --question "<q>"  (report → calling session)
+  researcher      --kind researcher --question "<q>"  (report → calling session)
   devex-audit     --kind devex-audit                    (report → project orchestrator)
   kiss-audit      --kind kiss-audit                     (report → project orchestrator)
 
@@ -224,7 +224,7 @@ async function cmdDiff(ctx: CommandContext): Promise<number> {
  * Validated agent kind for a `spawn --kind` invocation (docs/agent-kinds.md),
  * or `null` for a plain worker spawn. Kind rules: never `--issue`/`--prompt`
  * (the persona is the prompt); kinds whose shared spec takesInput take
- * `--question`, the others don't (the investigator-only rule, derived from
+ * `--question`, the others don't (the researcher-only rule, derived from
  * AGENT_KIND_INFO, issue #324).
  */
 function parseAgentKindSpawn(

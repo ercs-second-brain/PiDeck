@@ -15,7 +15,7 @@
  * | `{{PROJECT_PATH}}`      | local checkout path (the clone dir)    |
  * | `{{WORKSPACE_PATH}}`    | global-agent prompt only: the daemon state dir root |
  * | `{{ORCHESTRATOR_SESSION_ID}}` | agent-kind prompts (docs/agent-kinds.md): the project orchestrator session id — the audit kinds' report target |
- * | `{{PARENT_SESSION_ID}}` | agent-kind prompts (docs/agent-kinds.md): the calling session's id — the investigator's report target |
+ * | `{{PARENT_SESSION_ID}}` | agent-kind prompts (docs/agent-kinds.md): the calling session's id — the researcher's report target |
  *
  * The rendered prompt is written to a per-project file which the
  * orchestrator's pi session loads via `pi --append-system-prompt <file>`

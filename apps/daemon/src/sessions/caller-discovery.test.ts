@@ -22,7 +22,7 @@ function spawnTree(panePid: number, ppidOfPane: number): ProcessInfo[] {
     proc(panePid, ppidOfPane, ["sh", "-c", "export PATH=...; exec pi"]),
     proc(panePid + 1, panePid, ["node", ".../pi"]),
     proc(panePid + 2, panePid + 1, ["bash"]),
-    proc(panePid + 3, panePid + 2, ["node", "/home/me/.pideck/bin/pideck", "spawn", "--kind", "investigator"]),
+    proc(panePid + 3, panePid + 2, ["node", "/home/me/.pideck/bin/pideck", "spawn", "--kind", "researcher"]),
   ];
 }
 
@@ -54,7 +54,7 @@ describe("discoverCallerSession (docs/agent-kinds.md §3)", () => {
       panePids: async () => new Map([["pideck-proj-worker-1", 500]]),
       processes: async () => [
         ...spawnTree(500, 2),
-        proc(900, 1, ["node", "/home/me/.pideck/bin/pideck", "spawn", "--kind", "investigator"]), // bare shell
+        proc(900, 1, ["node", "/home/me/.pideck/bin/pideck", "spawn", "--kind", "researcher"]), // bare shell
       ],
     });
     // The in-pane spawn still resolves unambiguously; the bare one is ignored.

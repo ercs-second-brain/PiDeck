@@ -63,17 +63,17 @@ describe("OrchestratorBootstrap.ensureAgentKindSession (issue #310)", () => {
     expect(persona).not.toContain("{{ORCHESTRATOR_SESSION_ID}}");
   });
 
-  it("renders the investigator's parent lineage ({{PARENT_SESSION_ID}})", async () => {
+  it("renders the researcher's parent lineage ({{PARENT_SESSION_ID}})", async () => {
     const h = await harness();
-    const investigator = await h.daemon.services.sessions.spawnAgentKind(h.project.id, {
-      kind: "investigator",
+    const researcher = await h.daemon.services.sessions.spawnAgentKind(h.project.id, {
+      kind: "researcher",
       parentSessionId: "sess-caller-9",
     });
 
-    await h.bootstrap.ensureForSession(investigator);
+    await h.bootstrap.ensureForSession(researcher);
 
     const persona = readFileSync(
-      agentKindPromptFilePath(new ProjectLayout(h.daemon.stateDir), h.project.id, investigator.id),
+      agentKindPromptFilePath(new ProjectLayout(h.daemon.stateDir), h.project.id, researcher.id),
       "utf8",
     );
     expect(persona).toContain("pideck send --session sess-caller-9");
@@ -111,7 +111,7 @@ describe("OrchestratorBootstrap.ensureAgentKindSession (issue #310)", () => {
   it("heals every registered kind session in the startup sweep (ensureAll)", async () => {
     const h = await harness();
     await h.daemon.services.sessions.spawnAgentKind(h.project.id, { kind: "kiss-audit", parentSessionId: "p", name: "a1" });
-    await h.daemon.services.sessions.spawnAgentKind(h.project.id, { kind: "investigator", parentSessionId: "p", name: "i1" });
+    await h.daemon.services.sessions.spawnAgentKind(h.project.id, { kind: "researcher", parentSessionId: "p", name: "i1" });
 
     await h.bootstrap.ensureAll();
 

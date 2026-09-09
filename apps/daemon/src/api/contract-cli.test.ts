@@ -50,12 +50,12 @@ describe("CLI action routes", () => {
     expect((await api("POST", "/api/projects/sp-rp/spawn", { name: "worker-x" })).status).toBe(400);
 
     // freeform spawn (prompt only) → issueNumber 0 (documented freeform marker)
-    const freeform = await api("POST", "/api/projects/sp-rp/spawn", { name: "freeform", prompt: "Investigate flaky CI" });
+    const freeform = await api("POST", "/api/projects/sp-rp/spawn", { name: "freeform", prompt: "Research flaky CI" });
     expect(freeform.status).toBe(201);
     const freeformWorker = workerSchema.parse(freeform.json);
     expect(freeformWorker.issueNumber).toBe(0);
     // The prompt is persisted on the worker record (issue #120).
-    expect(freeformWorker.prompt).toBe("Investigate flaky CI");
+    expect(freeformWorker.prompt).toBe("Research flaky CI");
 
     // workers endpoint lists both, contract-valid: freeform (0) + issue-backed (5)
     const listed = await api("GET", formatPath("listProjectWorkers", { projectId: "sp-rp" }));
