@@ -42,23 +42,6 @@ describe("agentSessionEnv", () => {
 /** The canonical session env used by the injection tests below. */
 const ENV = { PATH: "/opt/pideck/node/bin:/usr/bin:/bin", PD_NODE: "/opt/pideck/node/bin/node" };
 
-/**
- * Runner simulating an old tmux server: `-e` is a usage error and the
- * session is not created; every other invocation reaches `fake`.
- */
-function oldTmuxRunner(fake: FakeTmuxRunner) {
-  return (args: string[]) =>
-    args.includes("-e")
-      ? Promise.reject(
-          new TmuxError("tmux new-session failed: invalid option -- e", {
-            args,
-            exitCode: 1,
-            stderr: "new-session: usage: new-session [-AdEPIPX] ...",
-          }),
-        )
-      : fake.run(args);
-}
-
 describe("tmux session env wrapper (stale tmux server env, issue #253)", () => {
   it("wraps the pane command so the pane itself starts with the canonical env", async () => {
     // The bug this pins: panes inherit the tmux SERVER's global environment
@@ -78,8 +61,8 @@ describe("tmux session env wrapper (stale tmux server env, issue #253)", () => {
     expect(script).toContain(`exec "$@"`);
     // The original payload survives verbatim after the wrapper's argv0 placeholder.
     expect(command?.slice(4)).toEqual(["pi"]);
-    // Belt-and-suspenders: -e also sets the session-level env on tmux >= 3.2.
-    expect(fake.invocations.find((inv) => inv.args[0] === "new-session")?.args).toContain("-e");
+    // The injection is pane-side only — the tmux server's global env is
+    // never mutated (no `setenv`; issue #256 removed the redundant `-e`).
     expect(fake.invocations.some((inv) => inv.args[0] === "setenv")).toBe(false);
   });
 
@@ -103,7 +86,6 @@ describe("tmux session env wrapper (stale tmux server env, issue #253)", () => {
     const tmux = new Tmux({ sendEnterDelayMs: 0, runner: (args) => fake.run(args) });
     await tmux.newSession("plain", { command: ["pi"] });
     expect(fake.sessions.get("plain")?.command).toEqual(["pi"]);
-    expect(fake.invocations.filter((inv) => inv.args[0] === "new-session").at(-1)?.args).not.toContain("-e");
   });
 
   it("wrapper quoting survives env values and commands containing spaces and quotes", async () => {
@@ -125,63 +107,22 @@ describe("tmux session env wrapper (stale tmux server env, issue #253)", () => {
     expect(stdout).toBe(`${weird.PATH}\n${weird.PD_NODE}\n`);
   });
 
-  it("on old tmux (no -e support) the pane still gets the canonical env via the wrapper", async () => {
-    // The regression from the field: on tmux < 3.2 the -e retry used to drop
-    // the env entirely and the pane silently inherited the stale server env.
-    // The wrapper is version-independent, so the retry keeps it.
-    const fake = new FakeTmuxRunner();
-    const tmux = new Tmux({
-      sendEnterDelayMs: 0,
-      defaultSessionEnv: ENV,
-      runner: oldTmuxRunner(fake),
-    });
-    await tmux.newSession("sess", { command: ["pi"] });
-    expect(await tmux.hasSession("sess")).toBe(true);
-    const command = fake.sessions.get("sess")?.command;
-    const script = command?.[2] ?? "";
-    expect(script).toContain(`export PATH=${ENV.PATH}`);
-    expect(script).toContain(`export PD_NODE=${ENV.PD_NODE}`);
-    expect(command?.slice(4)).toEqual(["pi"]);
-    // The old-tmux pane command is IDENTICAL to the modern-tmux one.
-    const modern = new FakeTmuxRunner();
-    const modernTmux = new Tmux({ sendEnterDelayMs: 0, defaultSessionEnv: ENV, runner: (args) => modern.run(args) });
-    await modernTmux.newSession("sess", { command: ["pi"] });
-    expect(command).toEqual(modern.sessions.get("sess")?.command);
-  });
-});
-
-describe("tmux new-session -e belt-and-suspenders (tmux >= 3.2)", () => {
-  it("injects the session env via -e and never mutates the server env", async () => {
-    // -e covers panes/windows opened LATER inside the session; the injection
-    // is part of the new-session invocation itself — NOT a global `setenv`
-    // (which would pollute the user's default tmux server) and NOT a
-    // post-creation `setenv -t` (which cannot reach the already-started
-    // initial pane process).
+  it("wraps the pane command identically regardless of tmux version (issue #256)", async () => {
+    // Regression pin from the field (#253): the pane env must never depend
+    // on a tmux version branch — the wrapper is the only mechanism (issue
+    // #256 removed the last one, the `new-session -e` belt-and-suspenders).
     const fake = new FakeTmuxRunner();
     const tmux = new Tmux({ sendEnterDelayMs: 0, defaultSessionEnv: ENV, runner: (args) => fake.run(args) });
-    await tmux.newSession("sess");
-    expect(fake.sessions.get("sess")?.env).toEqual(ENV);
-    expect(fake.invocations.find((inv) => inv.args[0] === "new-session")?.args).toContain("-e");
-    expect(fake.invocations.some((inv) => inv.args[0] === "setenv")).toBe(false);
-  });
-
-  it("retries without -e when tmux rejects it (tmux < 3.2)", async () => {
-    const fake = new FakeTmuxRunner();
-    const tmux = new Tmux({
-      sendEnterDelayMs: 0,
-      defaultSessionEnv: ENV,
-      runner: oldTmuxRunner(fake),
-    });
-    await tmux.newSession("sess");
-    expect(await tmux.hasSession("sess")).toBe(true);
-    expect(fake.sessions.get("sess")?.env).toBeUndefined();
+    await tmux.newSession("sess", { command: ["pi"] });
+    const command = fake.sessions.get("sess")?.command;
+    expect(command?.[0]).toBe("sh");
+    expect(command?.slice(4)).toEqual(["pi"]);
   });
 
   it("propagates real new-session failures even when env was requested", async () => {
     const fake = new FakeTmuxRunner();
     const tmux = new Tmux({ sendEnterDelayMs: 0, defaultSessionEnv: ENV, runner: (args) => fake.run(args) });
     await tmux.newSession("dup");
-    // A duplicate-name failure must not be swallowed by the -e fallback.
     await expect(tmux.newSession("dup")).rejects.toBeInstanceOf(TmuxError);
   });
 });
