@@ -25,7 +25,8 @@ import { HttpError } from "./router.js";
 import { requireOr404 } from "./handlers.js";
 import type { DaemonServices } from "./context.js";
 import { discoverCallerSession, tmuxPanePids } from "../sessions/caller-discovery.js";
-import { agentKindSpec } from "../sessions/agent-kinds.js";
+import { agentKindSpec, renderAgentKindTask } from "../sessions/agent-kinds.js";
+import { orchestratorPromptValues } from "../orchestrator/prompt.js";
 
 /** The spawn input both routes accept (validated by their schemas). */
 export interface SpawnAgentKindInput {
@@ -73,6 +74,27 @@ async function resolveParentSessionId(
     409,
     `cannot determine the calling session for the ${input.kind} spawn — agent kinds report to their caller; spawn from an agent pane (global agent, orchestrator, worker, or reviewer) or pass parentSessionId`,
   );
+}
+
+/**
+ * The spawn-path prompt delivery (issues #56/#318), shared by the
+ * researcher's question and the autonomous kinds' auto-task (issue #329):
+ * never type into an agent that cannot run (pi-auth gate, else queue on
+ * the prompt gate); even with auth ready the pane was just created — wait
+ * for pi to accept input, type the text exactly ONCE with one Enter, and
+ * confirm acceptance (bare-Enter nudges only; the text is never re-typed).
+ * A pane that never readies in time queues on the gate (deduped per
+ * session); a typed-but-unconfirmed draft stays visible in the composer
+ * and must NOT be queued (double delivery).
+ */
+async function deliverSpawnPrompt(services: DaemonServices, sessionId: string, text: string): Promise<void> {
+  const piAuth = await services.piAuth.payload();
+  if (piAuth.ready) {
+    const delivered = await services.sessions.deliverPromptWhenReady(sessionId, text);
+    if (!delivered.typed) services.promptGate.queueSession(sessionId, text);
+  } else {
+    services.promptGate.queueSession(sessionId, text);
+  }
 }
 
 /**
@@ -124,31 +146,26 @@ export async function handleAgentKindSpawn(services: DaemonServices, projectId: 
   // run — gate it on pi auth readiness like worker prompts. The shared
   // spec's takesInput (issue #324) decides whether the kind carries a
   // question at all (the schema enforces the same rule; the handler stays
-  // correct independently of it). Issue #318: even with auth ready, the
-  // pane was just created — wait for pi to accept input before typing, or
-  // the question lands in its startup window and the Enter is swallowed
-  // (typed-but-never-sent). A pane that never shows its input box in time
-  // queues on the gate (deduped per session; the gate's retries wait for
-  // readiness the same way).
-  // Issue #56 parity: never type the question into an agent that cannot
-  // run — gate it on pi auth readiness like worker prompts. The shared
-  // spec's takesInput (issue #324) decides whether the kind carries a
-  // question at all (the schema enforces the same rule; the handler stays
-  // correct independently of it). Issue #318: even with auth ready, the
-  // pane was just created — deliver through the readiness wait + submit
-  // confirmation (bare-Enter nudges only; the text is never re-typed).
-  // When the pane never readies in time, queue on the gate (deduped per
-  // session; retries wait for readiness); a typed-but-unconfirmed draft
-  // stays visible in the composer and must NOT be queued (double delivery).
+  // correct independently of it). The exact gating mechanics are
+  // {@link deliverSpawnPrompt}.
   const question = AGENT_KIND_INFO[input.kind].takesInput ? input.question : undefined;
-  if (question !== undefined) {
-    const piAuth = await services.piAuth.payload();
-    if (piAuth.ready) {
-      const delivered = await services.sessions.deliverPromptWhenReady(session.id, question);
-      if (!delivered.typed) services.promptGate.queueSession(session.id, question);
-    } else {
-      services.promptGate.queueSession(session.id, question);
-    }
-  }
+  if (question !== undefined) await deliverSpawnPrompt(services, session.id, question);
+
+  // Issue #329: autonomous kinds carry an auto-task in their kind spec —
+  // the work order that triggers the thing after the persona boot (the
+  // persona loaded the who; without this the agent sits idle). Rendered
+  // with the same context as the persona (project placeholders + the
+  // report-target session id, mirroring the bootstrap's rendering) and
+  // delivered through the identical gated path as the question — the #318
+  // readiness wait + submit confirmation makes the delivery exactly-once
+  // (no double-submit). Task-less kinds (researcher) type nothing here:
+  // they wait for their caller's question.
+  const task = renderAgentKindTask(spec, {
+    ...orchestratorPromptValues(project, session.cwd ?? ""),
+    ...(AGENT_KIND_REPORT_TARGET[input.kind] === "project-orchestrator"
+      ? { ORCHESTRATOR_SESSION_ID: session.parentSessionId ?? "" }
+      : { PARENT_SESSION_ID: session.parentSessionId ?? "" }),
+  });
+  if (task !== undefined) await deliverSpawnPrompt(services, session.id, task);
   return session;
 }

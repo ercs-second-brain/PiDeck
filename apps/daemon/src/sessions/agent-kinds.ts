@@ -24,6 +24,7 @@ import path from "node:path";
 
 import type { AgentKind } from "@pideck/shared";
 
+import { renderTemplate, type PromptPlaceholder } from "../orchestrator/prompt.js";
 import type { ProjectLayout } from "./layout.js";
 import { sanitizeTmuxSegment } from "./tmux-commands.js";
 
@@ -39,6 +40,20 @@ export interface AgentKindSpec {
   workerLike: boolean;
   /** When true the pane launches with the write tools excluded (no edit/write). */
   readOnly: boolean;
+  /**
+   * Auto-task typed into the pane right after the persona boot (issue
+   * #329): the persona is who the agent is, this is the work order that
+   * sets it in motion — autonomous kinds would otherwise sit idle in a
+   * freshly booted pane. Rendered with the persona's placeholder set
+   * (project + report target, {@link renderAgentKindTask}) and delivered
+   * through the same gated, exactly-once pane-typing path as the
+   * researcher's question (issue #318's readiness machinery).
+   *
+   * `undefined` = task-less by config: a reactive kind that waits for its
+   * caller's input (the researcher's question) — spawning it types
+   * nothing beyond the persona launch line.
+   */
+  taskTemplate?: string;
 }
 
 const AGENT_KIND_SPECS: Record<AgentKind, AgentKindSpec> = {
@@ -46,22 +61,48 @@ const AGENT_KIND_SPECS: Record<AgentKind, AgentKindSpec> = {
     personaFile: "researcher.md",
     workerLike: false,
     readOnly: true,
+    // Task-less by config (issue #329): the researcher is reactive — it
+    // waits for the question its caller types after the spawn.
   },
   "devex-audit": {
     personaFile: "devex-audit.md",
     workerLike: true,
     readOnly: true,
+    taskTemplate:
+      "Begin the devex audit of {{PROJECT_NAME}} now: mine the prior pi sessions for friction, time, and money " +
+      "sinks per your persona's methodology (credentials REDACTED; read-only), then deliver the " +
+      "full report to the project orchestrator with `pideck send --session {{ORCHESTRATOR_SESSION_ID}}`.",
   },
   "kiss-audit": {
     personaFile: "kiss-audit.md",
     workerLike: true,
     readOnly: true,
+    taskTemplate:
+      "Begin the KISS audit now: audit the project at {{PROJECT_PATH}} per your persona's " +
+      "methodology (read-only — findings, never fixes), then deliver the full report to the " +
+      "project orchestrator with `pideck send --session {{ORCHESTRATOR_SESSION_ID}}`.",
   },
 };
 
 /** Total lookup (the enum guarantees coverage); kept for readable call sites. */
 export function agentKindSpec(kind: AgentKind): AgentKindSpec {
   return AGENT_KIND_SPECS[kind];
+}
+
+/**
+ * Renders a kind's auto-task (issue #329) with the persona's placeholder
+ * set — `{{PROJECT_*}}` plus the report-target session id
+ * (`{{ORCHESTRATOR_SESSION_ID}}` or `{{PARENT_SESSION_ID}}`, mirroring the
+ * persona rendering in the bootstrap). `undefined` for task-less kinds:
+ * nothing is typed after the persona boot. Same `{{KEY}}` substitution as
+ * every prompt template (orchestrator/prompt.ts) — unknown keys are left
+ * verbatim so the templates and the callers evolve independently.
+ */
+export function renderAgentKindTask(
+  spec: AgentKindSpec,
+  values: Partial<Record<PromptPlaceholder, string>>,
+): string | undefined {
+  return spec.taskTemplate !== undefined ? renderTemplate(spec.taskTemplate, values) : undefined;
 }
 
 /**
