@@ -204,7 +204,9 @@ export function SpawnInputModal(props: {
   // Registry-v2 specs carry their own presentation fields — prefer them.
   const menuLabel = props.spec?.menuLabel ?? fallback.menuLabel;
   const readOnly = props.spec?.readOnly ?? true;
-  const isQuestion = props.spec?.name === "researcher" || props.spec === undefined;
+  // Question-vs-task wording follows the kind spec's trigger, not its name —
+  // any user-defined `waitForInput` kind asks a question (issue #351 F1).
+  const isQuestion = props.spec ? props.spec.trigger === "waitForInput" : false;
   return (
     <ConfirmModal
       ariaLabel={`Spawn ${props.agentKind}`}

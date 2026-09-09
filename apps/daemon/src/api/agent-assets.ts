@@ -17,6 +17,12 @@
  *   `agent-assets/prompts/<persona>.md` the same way for the worker persona,
  *   whose command is recorded rather than rebuilt at boot).
  *
+ * The shipped-default skills (issue #338's `SHIPPED_DEFAULT_SKILLS` table)
+ * are seeded into the skills list exactly once — at the first construction
+ * over a pre-seeding (version-1) state file, including a fresh store — so
+ * the shipped skills really are applied to the orchestrator out of the box
+ * while staying ordinary, user-owned entries afterwards (issue #351 F2).
+ *
  * Consumers of the launch-shaped view: `OrchestratorBootstrap`
  * (orchestrator / global-agent / agent-kind panes) and
  * `SessionManager.spawnWorker` (worker panes) — both via
@@ -29,6 +35,7 @@ import { z } from "zod";
 
 import {
   PERSONAS,
+  SHIPPED_DEFAULT_SKILLS,
   agentSkillSchema,
   personaSchema,
   promptOverrideSchema,
@@ -39,10 +46,12 @@ import {
 } from "@pideck/shared";
 
 import { atomicWrite, JsonStore } from "../json-store.js";
-import { findAgentPromptPath } from "../orchestrator/prompt.js";
+import { findAgentPath, findAgentPromptPath } from "../orchestrator/prompt.js";
 
 const persistedSchema = z.object({
-  version: z.literal(1),
+  // Version 1 = pre-seeding store; version 2 = the shipped-default skills
+  // (issue #338) have been seeded once — see {@link seedShippedDefaultSkills}.
+  version: z.union([z.literal(1), z.literal(2)]),
   // Partial record: at most one override per persona (zod 4's enum-keyed
   // `z.record` demands exhaustiveness; overrides are sparse by design).
   prompts: z.partialRecord(personaSchema, promptOverrideSchema),
@@ -125,6 +134,40 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
       },
       { version: 1, prompts: {} as Record<Persona, PromptOverride>, skills: [] },
     );
+    this.seedShippedDefaultSkills();
+  }
+
+  /**
+   * One-time seeding of the shipped-default skills (issue #338, wired by
+   * issue #351 F2): every {@link SHIPPED_DEFAULT_SKILLS} entry missing from
+   * the store is added applied to its default personas, with the shipped
+   * `agent/skills/<name>/SKILL.md` content deployed — the shipped skills
+   * really are applied to the orchestrator out of the box. Runs exactly
+   * once per state dir (the version 1 → 2 bump): afterwards the seeded
+   * entries are ordinary user-owned skills — editable, re-appliable,
+   * deletable (a delete sticks; nothing re-seeds).
+   */
+  private seedShippedDefaultSkills(): void {
+    if (this.current.version !== 1) return;
+    for (const shipped of SHIPPED_DEFAULT_SKILLS) {
+      if (this.current.skills.some((skill) => skill.id === shipped.name)) continue;
+      let content: string;
+      try {
+        content = readFileSync(findAgentPath(undefined, "skills", shipped.name, "SKILL.md"), "utf8");
+      } catch {
+        continue; // no shipped content available — skip the entry
+      }
+      const skill: AgentSkill = {
+        id: shipped.name,
+        content,
+        personas: [...shipped.defaultPersonas],
+        updatedAt: new Date().toISOString(),
+      };
+      this.current.skills.push(skill);
+      atomicWrite(this.skillFilePath(skill.id), skill.content);
+    }
+    this.current.version = 2;
+    this.persist();
   }
 
   /** The full asset state for the webapp, plus shipped default prompt text. */

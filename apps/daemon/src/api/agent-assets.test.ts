@@ -24,18 +24,6 @@ function makeStore(): AgentAssetsStore {
 }
 
 describe("AgentAssetsStore (issue #315)", () => {
-  it("starts empty and serves shipped prompt defaults", () => {
-    const store = makeStore();
-    const assets = store.list();
-    expect(assets.prompts).toEqual([]);
-    expect(assets.skills).toEqual([]);
-    // The daemon ships a default for every persona — resolved from the repo.
-    for (const persona of Object.keys(assets.defaults)) {
-      expect(assets.defaults[persona as keyof typeof assets.defaults].length).toBeGreaterThan(0);
-    }
-    expect(assets.defaults["orchestrator"]).toContain("{{PROJECT_ID}}");
-  });
-
   it("persists prompt overrides across reloads and deploys the file", () => {
     const store = makeStore();
     store.savePromptOverride("orchestrator", "You are {{PROJECT_ID}}'s custom orchestrator.");
@@ -55,18 +43,18 @@ describe("AgentAssetsStore (issue #315)", () => {
 
   it("upserts skills, deploys single files, and shapes persona launch args", () => {
     const store = makeStore();
-    store.saveSkill("prd", { content: "---\nname: prd\ndescription: PRD skill\n---\n", personas: ["orchestrator"] });
     store.saveSkill("tweak", { content: "---\nname: tweak\ndescription: Tweak\n---\n", personas: ["orchestrator", "worker"] });
 
     const expectedPrd = path.join(stateDir, "agent-assets", "skills", "prd.md");
-    expect(readFileSync(expectedPrd, "utf8")).toContain("PRD skill");
 
-    // Launch args: only the applied personas' panes get the skill, in store order.
+    // Launch args: the seeded shipped skills ride along, in store order.
+    expect(store.skillLaunchArgs("orchestrator")).toContain("--skill");
     expect(store.skillLaunchArgs("orchestrator")).toEqual([
-      "--skill",
-      expectedPrd,
-      "--skill",
-      path.join(stateDir, "agent-assets", "skills", "tweak.md"),
+      "--skill", path.join(stateDir, "agent-assets", "skills", "bash-triage.md"),
+      "--skill", path.join(stateDir, "agent-assets", "skills", "concept-brief.md"),
+      "--skill", expectedPrd,
+      "--skill", path.join(stateDir, "agent-assets", "skills", "spec-to-issues.md"),
+      "--skill", path.join(stateDir, "agent-assets", "skills", "tweak.md"),
     ]);
     expect(store.skillLaunchArgs("worker")).toEqual(["--skill", path.join(stateDir, "agent-assets", "skills", "tweak.md")]);
     expect(store.skillLaunchArgs("researcher")).toEqual([]);
@@ -95,12 +83,12 @@ describe("AgentAssetsStore (issue #315)", () => {
     expect(store.promptLaunchArgs("orchestrator")).toEqual([]);
   });
 
-  it("rejects corrupt state files by falling back to empty assets", () => {
+  it("rejects corrupt state files by falling back to shipped-default seeds", () => {
     stateDir = mkdtempSync(path.join(tmpdir(), "pideck-assets-"));
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(path.join(stateDir, "agent-assets.json"), "{not json");
     const store = new AgentAssetsStore(stateDir);
-    expect(store.list().skills).toEqual([]);
+    expect(store.list().skills.map((skill) => skill.id)).toEqual(["bash-triage", "concept-brief", "prd", "spec-to-issues"]);
     expect(store.promptOverride("orchestrator")).toBeUndefined();
   });
 
@@ -128,5 +116,52 @@ describe("AgentAssetsStore (issue #315)", () => {
     // The rewrite persists: the next save drops the legacy id from the file.
     store.saveSkill("extra", { content: "x", personas: [] });
     expect(readFileSync(path.join(stateDir, "agent-assets.json"), "utf8")).not.toContain("investigator");
+  });
+});
+
+describe("AgentAssetsStore: shipped-default skill seeding (issue #338, wired by #351 F2)", () => {
+  it("starts with the four shipped-default skills seeded and serves shipped prompt defaults", () => {
+    const store = makeStore();
+    const assets = store.list();
+    expect(assets.prompts).toEqual([]);
+    // The shipped-default skills, applied to the orchestrator, with the
+    // shipped SKILL.md content deployed.
+    expect(assets.skills.map((skill) => skill.id)).toEqual(["bash-triage", "concept-brief", "prd", "spec-to-issues"]);
+    for (const skill of assets.skills) {
+      expect(skill.personas).toEqual(["orchestrator"]);
+      expect(readFileSync(path.join(stateDir, "agent-assets", "skills", `${skill.id}.md`), "utf8")).toBe(skill.content);
+    }
+    expect(assets.skills[0]?.content).toContain("name: bash-triage"); // shipped SKILL.md content
+    // The daemon ships a default for every persona — resolved from the repo.
+    for (const persona of Object.keys(assets.defaults)) {
+      expect(assets.defaults[persona as keyof typeof assets.defaults].length).toBeGreaterThan(0);
+    }
+    expect(assets.defaults["orchestrator"]).toContain("{{PROJECT_ID}}");
+  });
+
+  it("seeds exactly once — a deleted shipped skill stays deleted (version 2)", () => {
+    const store = makeStore();
+    expect(store.deleteSkill("prd")).toBe(true);
+    // A fresh store over the same state dir re-seeds nothing.
+    const reloaded = new AgentAssetsStore(stateDir);
+    expect(reloaded.list().skills.map((skill) => skill.id)).toEqual(["bash-triage", "concept-brief", "spec-to-issues"]);
+  });
+
+  it("seeds only the missing shipped ids over a pre-seeding (version 1) state file", () => {
+    stateDir = mkdtempSync(path.join(tmpdir(), "pideck-assets-"));
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      path.join(stateDir, "agent-assets.json"),
+      JSON.stringify({
+        version: 1,
+        prompts: {},
+        skills: [{ id: "prd", content: "user's prd skill", personas: ["worker"], updatedAt: "2026-01-01T00:00:00.000Z" }],
+      }),
+    );
+    const store = new AgentAssetsStore(stateDir);
+    const skills = store.list().skills;
+    expect(skills.map((skill) => skill.id)).toEqual(["prd", "bash-triage", "concept-brief", "spec-to-issues"]);
+    // The user's own entry is untouched.
+    expect(skills[0]).toMatchObject({ content: "user's prd skill", personas: ["worker"] });
   });
 });

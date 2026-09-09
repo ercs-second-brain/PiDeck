@@ -25,7 +25,10 @@ describe("agent assets (issue #315)", () => {
     expect(got.status).toBe(200);
     const assets = agentAssetsSchema.parse(got.json);
     expect(assets.prompts).toEqual([]);
-    expect(assets.skills).toEqual([]);
+    // Issue #338/#351 F2: the shipped-default skills are seeded into the
+    // store — applied to the orchestrator, ordinary user-owned rows after.
+    expect(assets.skills.map((skill) => skill.id)).toEqual(["bash-triage", "concept-brief", "prd", "spec-to-issues"]);
+    for (const skill of assets.skills) expect(skill.personas).toEqual(["orchestrator"]);
     // Defaults come from the shipped agent/prompts files (repo walk-up).
     expect(assets.defaults["orchestrator"]).toContain("{{PROJECT_ID}}");
   });
@@ -60,7 +63,14 @@ describe("agent assets (issue #315)", () => {
     expect(skill).toMatchObject({ id: "prd", personas: ["orchestrator", "worker"] });
 
     const listed = await api("GET", endpoints.getAgentAssets.path);
-    expect(agentAssetsSchema.parse(listed.json).skills).toEqual([skill]);
+    // The PUT upserted the seeded "prd" entry in place; the other shipped
+    // seeds ride along.
+    expect(agentAssetsSchema.parse(listed.json).skills).toEqual([
+      expect.objectContaining({ id: "bash-triage" }),
+      expect.objectContaining({ id: "concept-brief" }),
+      skill,
+      expect.objectContaining({ id: "spec-to-issues" }),
+    ]);
 
     // Unapply + edit: a PUT with empty personas keeps the skill, applied nowhere.
     const updated = await api("PUT", skillPath, { content: "v2", personas: [] });

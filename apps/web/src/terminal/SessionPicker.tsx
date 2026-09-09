@@ -377,7 +377,7 @@ export function SessionPicker(props: SessionPickerProps) {
             onAskSpawnInput={(projectId, kind) => {
               state.closeMenu();
               setSpawnError(null);
-              state.researcherAsk.ask(projectId, kind);
+              state.spawnInput.ask(projectId, kind);
             }}
             onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession}
             onAskTerminate={state.askTerminate}
