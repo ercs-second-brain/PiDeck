@@ -23,6 +23,24 @@ const tmuxAvailable = await Tmux.isAvailable();
 
 const execFileP = promisify(execFile);
 
+/**
+ * Runs real `git` with a scrubbed environment: `git push` (the husky
+ * pre-push hook) exports GIT_DIR into hook processes, which would redirect
+ * every in-test git call at the development repo instead of the fixture.
+ */
+function gitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("GIT_")) delete env[key];
+  }
+  return env;
+}
+
+async function gitIn(args: string[], cwd?: string): Promise<string> {
+  const { stdout } = await execFileP("git", args, { ...(cwd === undefined ? {} : { cwd }), env: gitEnv() });
+  return stdout.trim();
+}
+
 let stateDir = "";
 let tmux: Tmux;
 let layout: ProjectLayout;
@@ -37,7 +55,7 @@ let manager: SessionManager;
 async function seedProjectRepo(projectId: string): Promise<void> {
   const originDir = path.join(stateDir, `fixtures/${projectId}-origin.git`);
   const cloneDir = layout.cloneDir(projectId);
-  const g = (args: string[], cwd?: string) => execFileP("git", args, cwd === undefined ? {} : { cwd });
+  const g = (args: string[], cwd?: string) => execFileP("git", args, { ...(cwd === undefined ? {} : { cwd }), env: gitEnv() });
   await g(["init", "--bare", "-b", "main", originDir]);
   await g(["clone", originDir, cloneDir]);
   await g(["-c", "user.email=t@pideck.test", "-c", "user.name=pideck-test", "commit", "--allow-empty", "-m", "seed"], cloneDir);
@@ -104,11 +122,10 @@ describe.skipIf(!tmuxAvailable)("SessionManager against a real tmux server", () 
     // The pane runs in the fresh per-worker worktree branched off origin's HEAD.
     expect(session.cwd).toContain(path.join("worktrees", "worker-"));
     const cwd0 = session.cwd as string;
-    const gitAt = (args: string[], cwd: string) => execFileP("git", args, { cwd }).then((r) => r.stdout.trim());
-    expect(await gitAt(["rev-parse", "--abbrev-ref", "HEAD"], cwd0)).toBe(`pideck/${path.basename(cwd0)}`);
+    expect(await gitIn(["rev-parse", "--abbrev-ref", "HEAD"], cwd0)).toBe(`pideck/${path.basename(cwd0)}`);
     // The worktree starts exactly at origin/main's current HEAD (issue #287).
-    expect(await gitAt(["rev-parse", "HEAD"], cwd0))
-      .toBe(await gitAt(["rev-parse", "origin/main"], layout.cloneDir("itproj")));
+    expect(await gitIn(["rev-parse", "HEAD"], cwd0))
+      .toBe(await gitIn(["rev-parse", "origin/main"], layout.cloneDir("itproj")));
     expect(await tmux.hasSession(session.tmuxSession)).toBe(true);
     expect(manager.listSessions("itproj").map((s) => s.tmuxSession)).toContain(
       session.tmuxSession,
