@@ -109,6 +109,10 @@ and queue on the prompt gate when the pane or pi auth is not ready
   the project orchestrator they report to (their parent is the orchestrator
   by construction when spawned from the ⋯ menu, and the spawning actor's
   session otherwise).
+- When no caller can be discovered (spawn from a project context — the web
+  ⋯ menu or a plain terminal — has no calling agent pane), the project's
+  orchestrator is the fallback parent for every kind, ensured first with
+  its persona (issue #328) — never a bare 409.
 - `pideck sessions` renders the kind label and the nesting for free once
   the registry linkage exists.
 
