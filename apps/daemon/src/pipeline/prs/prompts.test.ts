@@ -47,6 +47,20 @@ describe("PR prompts", () => {
     expect(prompt).toContain("Rename this variable please");
   });
 
+  it("ci fix prompt names the failing checks and the log command (issue #322)", () => {
+    const prompt = buildCiFixPrompt(PR, { attempt: 1, maxAttempts: 5, failingChecks: ["build", "unit tests"] });
+    expect(prompt).toContain("Failing checks: build, unit tests");
+    expect(prompt).toContain("gh run view --log-failed");
+    expect(prompt).toContain("fix the failures, commit, and push");
+  });
+
+  it("ci fix prompt degrades to inspect-first when no failing checks were resolved", () => {
+    const prompt = buildCiFixPrompt(PR, { attempt: 1, maxAttempts: 5 });
+    expect(prompt).not.toContain("Failing checks:");
+    expect(prompt).toContain("Identify the failing checks first");
+    expect(prompt).toContain("fix the failures, commit, and push");
+  });
+
   it("review comments prompt lists every comment with file and line", () => {
     const prompt = buildReviewCommentsPrompt(PR, [
       COMMENT,
@@ -63,6 +77,8 @@ describe("PR prompts", () => {
     const prompt = buildReviewAgentPrompt(PR, { projectId: "proj", repo: "o/r" });
     expect(prompt).not.toContain("\n");
     expect(prompt).toContain("review agent for PR #12");
+    expect(prompt).toContain("--kind investigator");
+    expect(prompt).toContain("wait for its report before posting your review");
     expect(prompt).toContain("gh pr diff 12 --repo o/r");
     expect(prompt).toContain("--approve");
     expect(prompt).toContain("--request-changes");
