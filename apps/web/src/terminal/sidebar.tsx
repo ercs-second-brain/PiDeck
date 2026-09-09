@@ -9,13 +9,14 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { GLOBAL_AGENT_PROJECT_ID, type Session, type Worker } from "@pideck/shared";
+import { GLOBAL_AGENT_PROJECT_ID, type AgentKind, type Session, type Worker } from "@pideck/shared";
 import { boardStore } from "../store/store";
 import {
   fetchProjects,
   fetchAllSessions,
   fetchWorkers,
   apiDeleteProject,
+  apiSpawnAgent,
   startOrchestrator as apiStartOrchestrator,
   startGlobalAgent as apiStartGlobalAgent,
   terminateWorker as apiTerminateWorker,
@@ -50,6 +51,14 @@ export interface SidebarContextValue {
   /** Deletes a project locally (issue #172): daemon teardown, GitHub repo kept.
    * Rejects so callers (the delete modal) can surface the daemon's error. */
   deleteProject: (projectId: string) => Promise<void>;
+  /**
+   * Spawns a preset-prompt agent-kind session (docs/agent-kinds.md, issues
+   * #297/#300/#302) from the project row's ⋯ menu: investigator (carries
+   * its question) or an audit kind (no input). Reloads so the new row
+   * appears and navigates to the spawned session's terminal. Rejects so
+   * the investigator modal can own the error.
+   */
+  spawnAgentSession: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
   /** Opens the project onboarding wizard (sidebar "+" / empty states). */
   openOnboarding: () => void;
 }
@@ -184,9 +193,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     [startSession],
   );
 
-  /** Terminates a worker (issue #64) and refreshes so the archive shows
-   * immediately. Deliberately rethrows — the confirming modal owns the
-   * error and its close-on-success lifecycle (issue #268). */
+  /** Terminates a worker (#64) and refreshes; rethrows for the modal (issue #268). */
   const terminateWorker = useCallback(
     async (workerId: string) => {
       await apiTerminateWorker(workerId);
@@ -195,8 +202,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     [reload],
   );
 
-  /** Deletes a project locally (issue #172) and refreshes so the row
-   * disappears. Deliberately rethrows — the confirming modal owns the error. */
+  /** Deletes a project locally (#172) and refreshes; rethrows for the modal. */
   const deleteProject = useCallback(
     async (projectId: string) => {
       await apiDeleteProject(projectId);
@@ -205,7 +211,18 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     [reload],
   );
 
-  return { entries, error, loaded, startingProjectId, globalAgent, startingGlobalAgent, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject };
+  // Spawns an agent-kind session (#297/#300/#302); rethrows — the
+  // investigator modal owns the error. Body = shared SpawnAgentRequest.
+  const spawnAgentSession = useCallback(
+    async (projectId: string, kind: AgentKind, question?: string) => {
+      const body = { kind, name: kind === "investigator" ? "investigate" : kind, ...(question !== undefined ? { question } : {}) };
+      const session = await apiSpawnAgent(projectId, body);
+      reload(); onStartOrchestratorNavigate(session.id); // refresh, then navigate to the new pane
+    },
+    [onStartOrchestratorNavigate, reload],
+  );
+
+  return { entries, error, loaded, startingProjectId, globalAgent, startingGlobalAgent, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject, spawnAgentSession };
 }
 
 /** Context through which the shell shares sidebar data with main-pane routes. */

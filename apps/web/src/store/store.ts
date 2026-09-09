@@ -108,6 +108,11 @@ function isTerminalEvent(event: { type: string }): event is TerminalServerEvent 
   return TERMINAL_EVENT_TYPES.has(event.type);
 }
 
+/** Every user-notification kind (merged PRs #111; agent audit reports #300/#302). */
+function isNotificationEvent(event: { type: string }): event is NotificationEvent {
+  return event.type === "notification.pr.merged" || event.type === "notification.agent.report";
+}
+
 // ---------------------------------------------------------------------------
 // Pure event reduction — exported for unit tests
 // ---------------------------------------------------------------------------
@@ -309,8 +314,10 @@ class LiveBoardStore implements BoardStore {
       return; // terminal events: the /ws bridge, not this store
     }
     // User notifications (issue #111) are not board state: they fan out to
-    // subscribers (the toast surface) and never touch AppState.
-    if (event.type === "notification.pr.merged") {
+    // subscribers (the toast surface) and never touch AppState. Every
+    // `notification.*` kind fans out (merged PRs #111; agent-kind audit
+    // reports #300/#302) — the union only grows.
+    if (isNotificationEvent(event)) {
       for (const listener of this.notificationListeners) listener(event);
       return;
     }

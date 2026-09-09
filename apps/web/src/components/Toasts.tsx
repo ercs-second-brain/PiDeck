@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { NotificationEvent, Project } from "@pideck/shared";
+import type { AgentKind, NotificationEvent, Project } from "@pideck/shared";
 import { apiGetSettings } from "../lib/api";
 import { boardStore, useAppState } from "../store/store";
 
@@ -22,26 +22,53 @@ export interface MergedPRToast {
   title: string;
 }
 
+/**
+ * One agent-report toast (docs/agent-kinds.md, issues #300/#302): an audit
+ * kind (devex-audit, kiss-audit) finished and delivered its report to the
+ * project orchestrator. Same ephemeral contract as the merged-PR toast.
+ */
+export interface AgentReportToast {
+  key: string;
+  projectId: string;
+  agentKind: AgentKind;
+  title: string;
+}
+
+/** Any toast the stack renders. */
+export type AppToast = MergedPRToast | AgentReportToast;
+
 /** Stable dedupe key for a merged-PR event/toast. */
 export function toastKey(projectId: string, prNumber: number): string {
   return `${projectId}#${prNumber}`;
 }
 
-/** Toast headline ("kisstest #42 merged"); project name when known. */
-export function toastText(projectName: string | undefined, toast: MergedPRToast): string {
-  return `${projectName ?? toast.projectId} #${toast.prNumber} merged`;
+/** Stable dedupe key for any notification event (toasts + the center record path). */
+function eventKey(event: NotificationEvent): string {
+  return event.type === "notification.pr.merged"
+    ? toastKey(event.projectId, event.prNumber)
+    : `agent:${event.projectId}:${event.sessionId}`;
+}
+
+/** Toast headline: "kisstest #42 merged" / "kisstest devex-audit report ready"; project name when known. */
+export function toastText(projectName: string | undefined, toast: MergedPRToast | AgentReportToast): string {
+  const project = projectName ?? toast.projectId;
+  return "prNumber" in toast ? `${project} #${toast.prNumber} merged` : `${project} ${toast.agentKind} report ready`;
 }
 
 /** Appends an event as a toast, deduped by key and bounded — pure. */
-export function appendToast(toasts: MergedPRToast[], event: NotificationEvent): MergedPRToast[] {
-  const key = toastKey(event.projectId, event.prNumber);
+export function appendToast(toasts: AppToast[], event: NotificationEvent): AppToast[] {
+  const key = eventKey(event);
   if (toasts.some((t) => t.key === key)) return toasts;
-  const next = [...toasts, { key, projectId: event.projectId, prNumber: event.prNumber, title: event.title }];
-  return next.slice(-MAX_TOASTS);
+  const base = { key, projectId: event.projectId, title: event.title };
+  const next =
+    event.type === "notification.pr.merged"
+      ? { ...base, prNumber: event.prNumber }
+      : { ...base, agentKind: event.agentKind };
+  return [...toasts, next].slice(-MAX_TOASTS);
 }
 
 export interface ToastStackProps {
-  toasts: MergedPRToast[];
+  toasts: AppToast[];
   projects: Project[];
   onDismiss: (key: string) => void;
 }
@@ -83,7 +110,7 @@ export function ToastStack({ toasts, projects, onDismiss }: ToastStackProps) {
  * fires a browser Notification.
  */
 export function Toasts() {
-  const [toasts, setToasts] = useState<MergedPRToast[]>([]);
+  const [toasts, setToasts] = useState<AppToast[]>([]);
   const { projects } = useAppState();
   /** Latest `browserMergeNotifications` setting; a ref so focus refreshes don't rerender. */
   const browserNotifyRef = useRef(false);
@@ -114,7 +141,7 @@ export function Toasts() {
   useEffect(() => {
     const pending = timers.current;
     return boardStore.onNotification((event) => {
-      const key = toastKey(event.projectId, event.prNumber);
+      const key = eventKey(event);
       setToasts((current) => appendToast(current, event));
       if (!pending.has(key)) {
         pending.set(
@@ -142,8 +169,10 @@ export function Toasts() {
 function maybeBrowserNotify(event: NotificationEvent, enabled: boolean): void {
   if (!enabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
   const project = boardStore.getState().projects.find((p) => p.id === event.projectId);
+  const name = project?.name ?? event.projectId;
+  const headline = event.type === "notification.pr.merged" ? `${name} #${event.prNumber} merged` : `${name} ${event.agentKind} report ready`;
   try {
-    new Notification(`${project?.name ?? event.projectId} #${event.prNumber} merged`, { body: event.title });
+    new Notification(headline, { body: event.title });
   } catch {
     // Some environments throw on construction despite the permission check.
   }

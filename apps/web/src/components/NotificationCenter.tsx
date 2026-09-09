@@ -6,7 +6,6 @@ import {
   notificationStore,
   type CenterNotification,
 } from "./notifications";
-import { toastText } from "./Toasts";
 
 /**
  * Notification center (issue #178): a header bell with an unread badge
@@ -24,9 +23,20 @@ export function notificationTime(iso: string, now = new Date()): string {
   return at.toLocaleString(undefined, sameDay ? { hour: "2-digit", minute: "2-digit" } : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Where a notification click-through lands: the PR's diff page. */
+/** Where a notification click-through lands: the PR's diff page (merged
+ *  PRs), or the orchestrator session that received an agent report —
+ *  the report lives there (issues #300/#302: the orchestrator triages). */
 export function notificationTarget(n: CenterNotification): string {
-  return `/projects/${n.projectId}/pulls/${n.prNumber}`;
+  return n.reportTargetSessionId !== undefined
+    ? `/terminal/${n.reportTargetSessionId}`
+    : `/projects/${n.projectId}/pulls/${n.prNumber}`;
+}
+
+/** Headline for a notification row: "<project> #42 merged" or
+ *  "<project> devex-audit report ready". */
+function notificationHeadline(projectName: string | undefined, n: CenterNotification): string {
+  const project = projectName ?? n.projectId;
+  return n.agentKind !== undefined ? `${project} ${n.agentKind} report ready` : `${project} #${n.prNumber} merged`;
 }
 
 // --- Notification permission (issue #180) ----------------------------------
@@ -116,7 +126,7 @@ export function NotificationList({ notifications, projects, onOpen, onClear }: N
         return (
           <li key={n.key} className={`notif-item${n.read ? "" : " unread"}`}>
             <button type="button" className="notif-open" onClick={() => onOpen(n)}>
-              <strong>{toastText(project?.name ?? project?.id, { key: n.key, projectId: n.projectId, prNumber: n.prNumber, title: n.title })}</strong>
+              <strong>{notificationHeadline(project?.name ?? project?.id, n)}</strong>
               <span className="notif-title">{n.title}</span>
               <span className="notif-time">{notificationTime(n.at)}</span>
             </button>

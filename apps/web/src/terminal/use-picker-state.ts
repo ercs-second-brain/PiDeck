@@ -101,6 +101,56 @@ function useTerminateConfirm() {
   return { pending, error, confirm };
 }
 
+/**
+ * Investigator-spawn interaction state (issues #297/#300/#302): which
+ * project is asking for the investigator's question (rendered as a small
+ * centered modal by SessionPicker), in-flight/error flags, and the async
+ * confirm runner — request goes out, failures surface inside the modal,
+ * success closes it. Mirrors {@link useDeleteConfirm}.
+ */
+function useInvestigatorAsk() {
+  const [confirmingProjectId, setConfirmingProjectId] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const confirm = async (
+    question: string,
+    onSpawn: (projectId: string, question: string) => Promise<void>,
+  ) => {
+    const projectId = confirmingProjectId;
+    if (projectId === null) return;
+    setPending(true);
+    setError(null);
+    try {
+      await onSpawn(projectId, question);
+      setConfirmingProjectId(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  // The modal dismisses on Escape (except while the spawn request is in flight).
+  useEffect(() => {
+    if (confirmingProjectId === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !pending) setConfirmingProjectId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmingProjectId, pending]);
+
+  return {
+    confirmingProjectId,
+    pending,
+    error,
+    ask: setConfirmingProjectId,
+    cancel: () => setConfirmingProjectId(null),
+    confirm,
+  };
+}
+
 export function usePickerState(
   entries: { project: { id: string }; sessions: Session[] }[],
   terminatingWorkerId: string | null,
@@ -108,10 +158,7 @@ export function usePickerState(
   seedArchivedOpen = false,
   seedCollapsed?: Set<string>,
 ) {
-  // Issue #64/#116: which worker is confirming its termination — the
-  // confirm renders as a small centered modal; Escape/Cancel dismisses
-  // (except while the terminate request is in flight). Issue #268: the
-  // lifecycle (pending/error/close) is owned here, not left to the caller.
+  // Issue #64/#116: which worker is confirming its termination (modal #268).
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const terminateConfirm = useTerminateConfirm();
   // Issue #64: which projects' "Archived" sections are expanded.
@@ -122,6 +169,8 @@ export function usePickerState(
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => seedCollapsed ?? loadCollapsedProjects());
   // Issue #167: which project's ⋯ context menu is open (one at a time).
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  // Issues #297/#300/#302: the investigator question modal.
+  const investigatorAsk = useInvestigatorAsk();
   // Issue #172: the delete-confirmation interaction state (its own hook).
   const deleteConfirm = useDeleteConfirm();
 
@@ -207,5 +256,6 @@ export function usePickerState(
     openMenuId,
     toggleMenu: (projectId: string) => setOpenMenuId((current) => (current === projectId ? null : projectId)),
     closeMenu: () => setOpenMenuId(null),
+    investigatorAsk,
   };
 }

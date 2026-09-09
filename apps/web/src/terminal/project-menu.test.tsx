@@ -11,7 +11,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import { makeProject } from "./test-fixtures";
-import { DeleteProjectModal, ProjectRow } from "./picker-rows";
+import { ProjectRow } from "./picker-rows";
+import { DeleteProjectModal, InvestigatorPromptModal } from "./picker-modals";
 
 const project = makeProject();
 
@@ -30,6 +31,8 @@ function renderRow(menuOpen: boolean): string {
       onToggleMenu={() => {}}
       onOpenSettings={() => {}}
       onDeleteProject={() => {}}
+      onSpawnAgent={() => {}}
+      onAskInvestigator={() => {}}
       onStartOrchestrator={() => {}}
       onSelectProject={() => {}}
     />,
@@ -62,6 +65,45 @@ describe("project row ⋯ context menu (issue #167)", () => {
     // orchestrator's pi terminal (the #53 affordance).
     expect(html).toContain("picker-project-chat");
     expect(html).toContain("Attach agentsKISS&#x27;s orchestrator terminal");
+  });
+});
+
+describe("Spawn agent menu section (docs/agent-kinds.md, #297/#300/#302)", () => {
+  it("offers the three agent kinds in the open menu", () => {
+    const html = renderRow(true);
+    expect(html).toContain("Spawn agent");
+    expect(html).toContain("role=\"group\"");
+    expect(html).toContain(">Investigator…</button>");
+    expect(html).toContain(">Devex audit</button>");
+    expect(html).toContain(">KISS audit</button>");
+  });
+
+  it("states each kind's behavior in its menu title", () => {
+    const html = renderRow(true);
+    expect(html).toContain("Spawn an investigator — it investigates one question against the codebase and reports back");
+    expect(html).toContain("Spawn a devex audit — mines prior sessions for friction, reports to the orchestrator");
+    expect(html).toContain("Spawn a KISS audit — complexity findings, reported to the orchestrator");
+  });
+
+  it("renders the investigator question modal with its confirm disabled while the question is empty", () => {
+    const html = renderToString(<InvestigatorPromptModal projectName={project.name} pending={false} onConfirm={() => {}} onCancel={() => {}} />);
+    expect(html).toContain("Spawn investigator?");
+    expect(html).toContain("<code>agentsKISS</code>");
+    expect(html).toContain("aria-label=\"Investigator question\"");
+    // Empty question in SSR: the confirm renders its label but stays disabled
+    // (typing enables it client-side — the input state is client-only).
+    expect(html).toContain(">Spawn</button>");
+    expect(html).toContain("disabled");
+  });
+
+  it("shows the in-flight and failure states inside the investigator modal", () => {
+    const pending = renderToString(<InvestigatorPromptModal projectName="p" pending onConfirm={() => {}} onCancel={() => {}} />);
+    expect(pending).toContain("Spawning…");
+    const failed = renderToString(
+      <InvestigatorPromptModal projectName="p" pending={false} error="agent sessions are not wired yet" onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(failed).toContain("terminate-modal-error");
+    expect(failed).toContain("agent sessions are not wired yet");
   });
 });
 

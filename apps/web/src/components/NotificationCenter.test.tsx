@@ -21,7 +21,10 @@ import { notificationTarget, NotificationList, notificationTime, PermissionReque
 
 const NOW = "2026-01-02T03:04:05.000Z";
 
-function mergedEvent(overrides: Partial<NotificationEvent> = {}): NotificationEvent {
+/** The merged-PR member of the notification union (the agent-report member has its own describe below). */
+type MergedEvent = Extract<NotificationEvent, { type: "notification.pr.merged" }>;
+
+function mergedEvent(overrides: Partial<MergedEvent> = {}): MergedEvent {
   return { type: "notification.pr.merged", at: NOW, projectId: "kisstest", prNumber: 42, title: "Fix the flaky test", ...overrides };
 }
 
@@ -121,6 +124,57 @@ describe("notificationTarget (issue #178)", () => {
     expect(notificationTarget({ key: "k", projectId: "kisstest", prNumber: 42, title: "t", at: NOW, read: false })).toBe(
       "/projects/kisstest/pulls/42",
     );
+  });
+
+  it("clicks agent reports through to the orchestrator session that received the report (#300/#302)", () => {
+    expect(
+      notificationTarget({
+        key: "agent:kisstest:sess-agent-1",
+        projectId: "kisstest",
+        agentKind: "kiss-audit",
+        sessionId: "sess-agent-1",
+        reportTargetSessionId: "sess-orch-1",
+        title: "t",
+        at: NOW,
+        read: false,
+      }),
+    ).toBe("/terminal/sess-orch-1");
+  });
+});
+
+describe("agent-report notifications (docs/agent-kinds.md, #300/#302)", () => {
+  function agentEvent(): NotificationEvent {
+    return { type: "notification.agent.report", at: NOW, projectId: "kisstest", agentKind: "devex-audit", sessionId: "sess-agent-1", reportTargetSessionId: "sess-orch-1", title: "Report ready for triage" };
+  }
+
+  it("prepends an agent event keyed by the reporting session", () => {
+    const list = appendNotification([], agentEvent());
+    expect(list).toEqual([
+      {
+        key: "agent:kisstest:sess-agent-1",
+        projectId: "kisstest",
+        agentKind: "devex-audit",
+        sessionId: "sess-agent-1",
+        reportTargetSessionId: "sess-orch-1",
+        title: "Report ready for triage",
+        at: NOW,
+        read: false,
+      },
+    ]);
+  });
+
+  it("dedupes re-emissions and keeps merged-PR keys separate", () => {
+    const once = appendNotification([], agentEvent());
+    expect(appendNotification(once, agentEvent())).toBe(once);
+    expect(appendNotification(once, mergedEvent())).toHaveLength(2);
+  });
+
+  it("renders '<project> devex-audit report ready' in the dropdown", () => {
+    const html = renderToString(
+      <NotificationList notifications={appendNotification([], agentEvent())} projects={[KISSTEST]} onOpen={() => {}} onClear={() => {}} />,
+    );
+    expect(html).toContain("kisstest devex-audit report ready");
+    expect(html).toContain("Report ready for triage");
   });
 });
 

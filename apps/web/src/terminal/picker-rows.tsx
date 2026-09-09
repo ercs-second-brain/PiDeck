@@ -9,7 +9,7 @@
  */
 
 import type { ReactNode } from "react";
-import type { Session, Worker } from "@pideck/shared";
+import type { AgentKind, Session, Worker } from "@pideck/shared";
 import { formatRunningDuration } from "../lib/format-timestamp";
 import { workerStatusClasses } from "../lib/worker-status";
 
@@ -37,129 +37,6 @@ export function TerminateWorkerButton(props: { pending: boolean; onAsk: () => vo
     <button type="button" className="picker-terminate" title="Terminate worker" disabled={props.pending} onClick={props.onAsk}>
       ✕
     </button>
-  );
-}
-
-/**
- * Shared shell for the sidebar's small centered confirmation modals
- * (worker terminate #116, project delete #172): dimmed backdrop, title,
- * body, Cancel/confirm actions; Escape is handled by the interaction-state
- * hook — the backdrop click dismisses unless a request is in flight.
- * Pure rendering.
- */
-function ConfirmModal(props: {
-  ariaLabel: string;
-  title: string;
-  body: ReactNode;
-  /** Labels the confirm button ("Terminate" / "Delete <project>"). */
-  confirmLabel: string;
-  /** Label while the request is in flight ("Terminating…"). */
-  pendingLabel: string;
-  /** Failure message from a rejected confirm, shown inside the modal. */
-  error?: string | null;
-  /** The confirm request is in flight (controls disabling). */
-  pending: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div
-      className="modal-overlay terminate-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={props.ariaLabel}
-      onClick={props.pending ? undefined : props.onCancel}
-    >
-      <div className="modal-card terminate-modal" onClick={(event) => event.stopPropagation()}>
-        <h3 className="terminate-modal-title">{props.title}</h3>
-        <div className="terminate-modal-body">{props.body}</div>
-        {props.error && <p className="terminate-modal-error">{props.error}</p>}
-        <div className="terminate-modal-actions">
-          <button type="button" className="terminate-modal-cancel" disabled={props.pending} onClick={props.onCancel}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="terminate-modal-confirm"
-            disabled={props.pending}
-            title={props.confirmLabel}
-            onClick={props.onConfirm}
-          >
-            {props.pending ? props.pendingLabel : props.confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The terminate-confirmation modal (issue #116): small, centered, over a
- * dimmed backdrop — "Terminate worker X?" with Cancel/Terminate. Pure
- * rendering on top of {@link ConfirmModal}.
- */
-export function TerminateWorkerModal(props: {
-  /** tmux session name of the worker about to be terminated. */
-  sessionName: string;
-  /** The terminate request is in flight (Terminate shows "Terminating…"). */
-  pending: boolean;
-  /** Failure from the daemon, shown inside the modal (issue #268). */
-  error?: string | null;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <ConfirmModal
-      ariaLabel="Terminate worker"
-      title="Terminate worker?"
-      body={
-        <p>
-          <code>{props.sessionName}</code> will be killed and archived — its pane and agent stop, its history stays
-          inspectable.
-        </p>
-      }
-      confirmLabel="Terminate"
-      pendingLabel="Terminating…"
-      error={props.error}
-      pending={props.pending}
-      onConfirm={props.onConfirm}
-      onCancel={props.onCancel}
-    />
-  );
-}
-
-/**
- * The delete-project confirmation modal (issue #172), same pattern as the
- * terminate modal (#116): states that the LOCAL project — terminals, state,
- * board data — is removed while the GitHub repo is NOT, and confirms with
- * an explicit "Delete {name}" button. Pure rendering.
- */
-export function DeleteProjectModal(props: {
-  projectName: string;
-  /** The delete request is in flight (confirm shows "Deleting…"). */
-  pending: boolean;
-  /** Failure from the daemon (e.g. 409 while workers drive a PR). */
-  error?: string | null;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <ConfirmModal
-      ariaLabel="Delete project"
-      title="Delete project?"
-      body={
-        <p>
-          <code>{props.projectName}</code> will be removed from PiDeck — its orchestrator and worker terminals, clones
-          and local state, and board data. <strong>The GitHub repository is not deleted.</strong>
-        </p>
-      }
-      confirmLabel={`Delete ${props.projectName}`}
-      pendingLabel="Deleting…"
-      pending={props.pending}
-      error={props.error}
-      onConfirm={props.onConfirm}
-      onCancel={props.onCancel}
-    />
   );
 }
 
@@ -202,6 +79,8 @@ export function WorkerRow(props: {
   pending: boolean;
   /** The ticking client clock for the running-time label (issue #182). */
   now?: number;
+  /** Agent-kind sessions spawned by this worker, nested under its row. */
+  children?: ReactNode;
   onSelectSession: (sessionId: string) => void;
   onTerminateWorker?: (workerId: string) => void;
   onAskTerminate: (sessionId: string) => void;
@@ -246,8 +125,54 @@ export function WorkerRow(props: {
       {props.onTerminateWorker && worker && (
         <TerminateWorkerButton pending={props.pending} onAsk={() => props.onAskTerminate(props.session.id)} />
       )}
+      {/* Agent-kind sessions spawned by this worker (investigator, docs/
+          agent-kinds.md) nest under their caller per the #187 child-group
+          pattern — SessionPicker passes them in as a nested list. */}
+      {props.children}
     </li>
   );
+}
+
+/**
+ * One preset-prompt agent-kind session row (docs/agent-kinds.md, issues
+ * #297/#300/#302): an attachable button with the kind as its badge (the
+ * persona — investigator, devex-audit, kiss-audit — is the identity, not a
+ * worker status). Rendered nested under the session that spawned it; shows
+ * the spawn's sidebar label (`Session.name`) with the tmux name as fallback.
+ */
+export function AgentRow(props: {
+  session: Session;
+  selectedSessionId: string | null;
+  onSelectSession: (sessionId: string) => void;
+}) {
+  return (
+    <li className="picker-agent-row">
+      <button
+        type="button"
+        className={`picker-session${props.session.id === props.selectedSessionId ? " selected" : ""}`}
+        title={`Attach the ${props.session.agentKind} session's terminal`}
+        onClick={() => props.onSelectSession(props.session.id)}
+      >
+        <span className="role-badge role-agent">{props.session.agentKind}</span>
+        <span className="picker-session-name">{props.session.name ?? props.session.tmuxSession}</span>
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Callbacks shared by the project row and its open ⋯ menu (issues
+ * #167/#172 + docs/agent-kinds.md, #297/#300/#302).
+ */
+interface ProjectMenuCallbacks {
+  /** Opens the project's settings page in the main pane (issue #167). */
+  onOpenSettings: (projectId: string) => void;
+  /** Opens the delete-confirmation modal (issue #172). */
+  onDeleteProject: (projectId: string) => void;
+  /** Spawns an audit agent-kind session directly (docs/agent-kinds.md, #300/#302). */
+  onSpawnAgent: (projectId: string, kind: AgentKind) => void;
+  /** Opens the investigator question modal (#297: it takes the question as input). */
+  onAskInvestigator: (projectId: string) => void;
 }
 
 /**
@@ -270,13 +195,9 @@ export function ProjectRow(props: {
   menuOpen: boolean;
   onToggleCollapsed: (projectId: string) => void;
   onToggleMenu: (projectId: string) => void;
-  /** Opens the project's settings page in the main pane (issue #167). */
-  onOpenSettings: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
   onSelectProject: (projectId: string) => void;
-  /** Opens the delete-confirmation modal (issue #172). */
-  onDeleteProject: (projectId: string) => void;
-}) {
+} & ProjectMenuCallbacks) {
   return (
     <div className="picker-project-row">
       {/* Issue #114: the chevron collapses/expands all of the project's
@@ -328,33 +249,83 @@ export function ProjectRow(props: {
         ⋯
       </button>
       {props.menuOpen && (
-        <div className="picker-context-menu" role="menu" aria-label={`${props.projectName} options`}>
-          <button
-            type="button"
-            role="menuitem"
-            title={`Open ${props.projectName}'s settings`}
-            onClick={() => props.onOpenSettings(props.projectId)}
-          >
-            Settings
-          </button>
-          {/* Issue #172: delete is local-only — the GitHub repo is kept;
-              the confirmation modal states that explicitly. */}
-          <button
-            type="button"
-            role="menuitem"
-            className="picker-menu-danger"
-            title={`Delete ${props.projectName} locally (the GitHub repo is kept)`}
-            onClick={() => props.onDeleteProject(props.projectId)}
-          >
-            Delete project…
-          </button>
-        </div>
+        <ProjectMenu
+          projectName={props.projectName}
+          projectId={props.projectId}
+          onOpenSettings={props.onOpenSettings}
+          onDeleteProject={props.onDeleteProject}
+          onSpawnAgent={props.onSpawnAgent}
+          onAskInvestigator={props.onAskInvestigator}
+        />
       )}
     </div>
   );
 }
 
-/** The per-project collapsed "Archived" section (issue #64). Pure rendering. */
+
+/**
+ * The project row's open ⋯ context menu (issue #167): Settings, the spawn
+ * agent section (docs/agent-kinds.md, issues #297/#300/#302 — preset-prompt,
+ * read-only sessions that report per their kind: the investigator answers a
+ * question for its caller; the audits deliver to the project orchestrator),
+ * and the local-only delete entry (issue #172). Pure rendering.
+ */
+function ProjectMenu(props: { projectName: string; projectId: string } & ProjectMenuCallbacks) {
+  return (
+    <div className="picker-context-menu" role="menu" aria-label={`${props.projectName} options`}>
+      <button
+        type="button"
+        role="menuitem"
+        title={`Open ${props.projectName}'s settings`}
+        onClick={() => props.onOpenSettings(props.projectId)}
+      >
+        Settings
+      </button>
+      <div className="picker-menu-section" role="group" aria-label="Spawn agent">
+        <span className="picker-menu-label">Spawn agent</span>
+        <button
+          type="button"
+          role="menuitem"
+          title="Spawn an investigator — it investigates one question against the codebase and reports back"
+          onClick={() => props.onAskInvestigator(props.projectId)}
+        >
+          Investigator…
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          title="Spawn a devex audit — mines prior sessions for friction, reports to the orchestrator"
+          onClick={() => props.onSpawnAgent(props.projectId, "devex-audit")}
+        >
+          Devex audit
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          title="Spawn a KISS audit — complexity findings, reported to the orchestrator"
+          onClick={() => props.onSpawnAgent(props.projectId, "kiss-audit")}
+        >
+          KISS audit
+        </button>
+      </div>
+      {/* Issue #172: delete is local-only — the GitHub repo is kept; the
+          confirmation modal states that explicitly. */}
+      <button
+        type="button"
+        role="menuitem"
+        className="picker-menu-danger"
+        title={`Delete ${props.projectName} locally (the GitHub repo is kept)`}
+        onClick={() => props.onDeleteProject(props.projectId)}
+      >
+        Delete project…
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The per-project collapsed "Archived" section (issue #64). Pure rendering.
+ */
 export function ArchivedSection(props: {
   projectId: string;
   count: number;

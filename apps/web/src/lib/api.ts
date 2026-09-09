@@ -22,6 +22,7 @@ import {
   type OnboardingState,
   type PiAuth,
   type RegisterProjectRequest,
+  type SpawnAgentRequest,
   type UpdateProjectRequest,
   type UpdateSettingsRequest,
 } from "@pideck/shared";
@@ -49,6 +50,28 @@ export class ApiError extends Error {
  */
 const inflightGets: InFlight<unknown> = new Map();
 
+/**
+ * Shared send+parse core for one daemon call: one fetch, `ApiError` with the
+ * daemon's `error` detail on !ok, zod-parse (204 → undefined) on success.
+ * Used by the endpoint-map {@link request} wrapper and directly by the
+ * non-endpoint-map daemon routes (e.g. the gh/pi-auth probes).
+ */
+async function sendAndParse<T>(path: string, method: string, init: RequestInit, response: z.ZodType): Promise<T> {
+  const res = await fetch(path, { ...init, method });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const payload = (await res.json()) as { error?: string };
+      if (typeof payload.error === "string") detail = payload.error;
+    } catch {
+      /* non-JSON error body — keep statusText */
+    }
+    throw new ApiError(res.status, method, path, detail);
+  }
+  if (res.status === 204) return undefined as T;
+  return response.parse(await res.json()) as T;
+}
+
 async function request<N extends EndpointName>(
   name: N,
   params: EndpointParams<N>,
@@ -58,28 +81,14 @@ async function request<N extends EndpointName>(
 ): Promise<EndpointResponse<N>> {
   const endpoint = endpoints[name];
   const path = formatPath(name, params) + (query === undefined ? "" : `?${query}`);
-  const send = async (): Promise<EndpointResponse<N>> => {
-    const response = await fetch(path, {
-      method: endpoint.method,
+  const send = async (): Promise<EndpointResponse<N>> =>
+    sendAndParse(path, endpoint.method, {
       headers:
         body === undefined
           ? { accept: "application/json" }
           : { accept: "application/json", "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (!response.ok) {
-      let detail = response.statusText;
-      try {
-        const payload = (await response.json()) as { error?: string };
-        if (typeof payload.error === "string") detail = payload.error;
-      } catch {
-        /* non-JSON error body — keep statusText */
-      }
-      throw new ApiError(response.status, endpoint.method, path, detail);
-    }
-    if (response.status === 204) return undefined as EndpointResponse<N>;
-    return (endpoint.response as z.ZodType).parse(await response.json()) as EndpointResponse<N>;
-  };
+    }, endpoint.response) as Promise<EndpointResponse<N>>;
   // Coalesce concurrent identical GETs (#88); writes always go out.
   if (endpoint.method !== "GET") return send();
   return shareInFlight(inflightGets as InFlight<EndpointResponse<N>>, path, send);
@@ -201,6 +210,16 @@ export const startGlobalAgent = (): Promise<EndpointResponse<"ensureGlobalAgent"
  */
 export const terminateWorker = (workerId: string): Promise<EndpointResponse<"terminateWorker">> =>
   request("terminateWorker", { workerId });
+
+/**
+ * Spawns a preset-prompt agent-kind session (docs/agent-kinds.md, issues
+ * #297/#300/#302): the investigator carries its `question`, the audit
+ * kinds take none. The `name` is the sidebar label (≤ 20 chars); the
+ * daemon resolves the parent session (the project orchestrator for
+ * menu spawns) and routes the report per the kind's registry spec.
+ */
+export const apiSpawnAgent = (projectId: string, body: SpawnAgentRequest): Promise<EndpointResponse<"spawnProjectAgent">> =>
+  request("spawnProjectAgent", { projectId }, body);
 
 /**
  * Relaunches a dead session's tmux pane (issue #117): the daemon kills any
