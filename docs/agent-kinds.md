@@ -154,10 +154,14 @@ caller-routed kind).
   back to the project orchestrator as parent when no caller is
   discoverable.
 
-`callerWaits` documents the caller-side semantics (the caller's flow
-waits for the report vs fire-and-forget); the plumbing contract is
-unchanged: the spawn response returns the session id immediately, and the
-persona delivers the report asynchronously.
+`callerWaits` is the caller-side completion contract (prompt-gate v2,
+issue #333): for a **caller-routed** kind with `callerWaits: true`, the
+spawn path delivers a notice into the calling pane — "your <label> agent
+is working; it will deliver its report to this session" — so the caller's
+flow waits instead of guessing (the notice rides the same pi-auth-gated
+path as every spawn prompt). An orchestrator-routed kind reports elsewhere,
+so `callerWaits` no-ops there. The spawn response still returns the session
+id immediately, and the persona delivers the report asynchronously.
 
 ## 7. Guardrails
 
@@ -192,9 +196,14 @@ persona delivers the report asynchronously.
   the create/update request schema is the form's validation contract
   (persona required, trigger ⇔ taskTemplate, kebab-case immutable ids,
   shipped kinds read-only with agent-assets overrides for persona edits).
-- **#333 — Prompt gate v2 (daemon)**: replaces the hardcoded kind lists
-  with the spec — `readOnly` → gated tool set, `trigger` → taskTemplate
-  delivery, `callerWaits` → caller completion semantics.
+- **#333 — Prompt gate v2 (daemon, merged with this registry)**: the gate
+  reads the spec, never a hardcoded kind list — `readOnly` → gated tool
+  set (`--exclude-tools edit,write`; read-write kinds get the full set),
+  `trigger` → taskTemplate delivery vs sitting ready, `callerWaits` →
+  the caller-completion notice above. The pure decisions live in
+  `apps/daemon/src/agent/prompt-gate.ts` (`planAgentKindSpawn`) and
+  `apps/daemon/src/sessions/agent-kinds.ts` (`agentKindExcludedTools`),
+  enumerated per config permutation in `agent/prompt-gate-v2.test.ts`.
 
 ## 10. Kind-id migration: `investigator` → `researcher` (issue #335)
 

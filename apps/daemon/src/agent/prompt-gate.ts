@@ -27,12 +27,76 @@
  * queued until pi auth is ready and retried by the same loop — sessions
  * have no worker status, so a delivery failure drops the entry loudly
  * (the pane is gone; the question can never be answered).
+ *
+ * Prompt-gate v2 (issue #333) adds the spec-driven spawn decisions on top:
+ * {@link planAgentKindSpawn} maps a kind spec to its post-boot delivery
+ * (auto → taskTemplate, waitForInput → caller input or ready-idle) plus
+ * the callerWaits completion notice, and the launch command's tool gating
+ * reads the spec's `readOnly` flag — no hardcoded kind lists anywhere.
  */
 
-import type { Worker } from "@pideck/shared";
+import type { AgentKindSpec, Worker } from "@pideck/shared";
 
 /** Worker statuses after which a queued prompt is meaningless. */
 const TERMINAL_STATUSES = new Set(["done", "failed", "stopped", "archived"]);
+
+/**
+ * What a spawn of an agent-kind session delivers into the fresh pane after
+ * the persona boot (prompt-gate v2, issue #333): the kind spec decides —
+ * everything here reads the registry's spec, never a hardcoded kind list.
+ *
+ * - `auto` kinds get their `taskTemplate` (the #329 hook — the agent starts
+ *   working unprompted; a caller input is not part of the contract and is
+ *   rejected before the spawn by the route's 409 guard);
+ * - `waitForInput` kinds sit ready (`none`) until the caller supplies input
+ *   with the spawn — then the input is the delivery;
+ */
+type AgentKindSpawnDelivery =
+  | { /** `waitForInput` without input — the pane sits ready for the caller. */
+      kind: "none" }
+  | { /** The caller's input for a `waitForInput` kind, typed after the boot. */
+      kind: "caller-input"; text: string }
+  | { /** The kind's `taskTemplate` for an `auto` kind (rendered by the spawn path). */
+      kind: "task"; text: string };
+
+/** The spec-driven spawn plan: pane delivery plus caller-completion notice. */
+export interface AgentKindSpawnPlan {
+  delivery: AgentKindSpawnDelivery;
+  /**
+   * Whether the calling pane should be told to expect the report (spec v2
+   * `callerWaits`): only caller-routed kinds can expose completion to their
+   * caller — an orchestrator-routed kind reports elsewhere, so there is
+   * nothing for the caller to wait for.
+   */
+  notifyCaller: boolean;
+}
+
+/**
+ * Plans a spawn's post-boot behavior from the kind spec (issue #333). Pure
+ * and total over the config permutation (readOnly × trigger × callerWaits)
+ * — the launch command consumes `readOnly` separately via
+ * `agentKindExcludedTools`.
+ */
+export function planAgentKindSpawn(spec: AgentKindSpec, question: string | undefined): AgentKindSpawnPlan {
+  const delivery: AgentKindSpawnDelivery =
+    spec.trigger === "auto"
+      ? spec.taskTemplate !== undefined
+        ? { kind: "task", text: spec.taskTemplate }
+        : { kind: "none" }
+      : question !== undefined
+        ? { kind: "caller-input", text: question }
+        : { kind: "none" };
+  return { delivery, notifyCaller: spec.callerWaits && spec.reportTarget === "caller" };
+}
+
+/**
+ * The notice typed into a callerWaits kind's calling pane (issue #333): the
+ * caller learns a report is coming to THIS session, so its flow can wait
+ * instead of guessing — completion is exposed to the caller per the spec.
+ */
+export function callerWaitsNotice(spec: Pick<AgentKindSpec, "label">, name: string): string {
+  return `[pideck] your ${spec.label} agent "${name}" is working; it will deliver its report to this session via pideck send — no polling needed.`;
+}
 
 interface PendingPrompt {
   workerId: string;

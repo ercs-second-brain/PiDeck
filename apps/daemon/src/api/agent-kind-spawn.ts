@@ -26,11 +26,12 @@
  *   `workerConcurrency` cap alongside workers; cheap spawns are exempt.
  */
 
-import { ACTIVE_WORKER_STATUSES, GLOBAL_AGENT_PROJECT_ID, type Session, type Worker } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES, GLOBAL_AGENT_PROJECT_ID, type AgentKindSpec, type Project, type Session, type Worker } from "@pideck/shared";
 
 import { HttpError } from "./router.js";
 import { requireOr404 } from "./handlers.js";
 import type { DaemonServices } from "./context.js";
+import { callerWaitsNotice, planAgentKindSpawn } from "../agent/prompt-gate.js";
 import { discoverCallerSession, tmuxPanePids } from "../sessions/caller-discovery.js";
 import { renderAgentKindTask } from "../sessions/agent-kinds.js";
 import { orchestratorPromptValues } from "../orchestrator/prompt.js";
@@ -181,25 +182,54 @@ export async function handleAgentKindSpawn(services: DaemonServices, projectId: 
   // lineage + report target) and types the pi launch line — idempotently.
   await services.orchestratorBootstrap.ensureForSession(session);
 
-  // Issue #56 parity: never type the input into an agent that cannot
-  // run — gate it on pi auth readiness like worker prompts. The exact
-  // gating mechanics are {@link deliverSpawnPrompt}.
-  if (input.question !== undefined) await deliverSpawnPrompt(services, session.id, input.question);
-
-  // Issue #329: auto kinds carry a taskTemplate in their kind spec —
-  // the work order that triggers the thing after the persona boot (the
-  // persona loaded the who; without this the agent sits idle). Rendered
-  // with the same context as the persona (project placeholders + the
-  // report-target session id, mirroring the bootstrap's rendering) and
-  // delivered through the identical gated path — the #318 readiness wait +
-  // submit confirmation makes the delivery exactly-once (no double-submit).
-  // waitForInput kinds type nothing here: they wait for their caller.
-  const task = renderAgentKindTask(spec, {
-    ...orchestratorPromptValues(project, session.cwd ?? ""),
-    ...(spec.reportTarget === "orchestrator"
-      ? { ORCHESTRATOR_SESSION_ID: session.parentSessionId ?? "" }
-      : { PARENT_SESSION_ID: session.parentSessionId ?? "" }),
-  });
-  if (task !== undefined) await deliverSpawnPrompt(services, session.id, task);
+  // Prompt-gate v2 (issue #333): the kind spec plans the post-boot behavior
+  // — an auto kind's taskTemplate, a waitForInput kind's caller input, or
+  // nothing (the pane sits ready) — and a callerWaits kind exposes
+  // completion to its calling pane. All of it rides the #56/#318 gated
+  // path ({@link deliverSpawnPlan}): never typed into an agent that cannot
+  // run, queued on the gate otherwise, exactly-once submit.
+  const plan = planAgentKindSpawn(spec, input.question);
+  await deliverPlan(services, spec, plan, project, session, caller, input.name);
   return session;
+}
+
+/**
+ * Executes a spawn's spec-planned deliveries (issue #333): the pane
+ * delivery (taskTemplate / caller input / none) plus the caller-waits
+ * notice to the calling pane. Every delivery rides the gated path —
+ * never typed into an agent that cannot run, queued on the gate otherwise,
+ * and exactly-once (the #318 readiness wait + submit confirmation).
+ */
+async function deliverPlan(
+  services: DaemonServices,
+  spec: AgentKindSpec,
+  plan: ReturnType<typeof planAgentKindSpawn>,
+  project: Project,
+  session: Session,
+  caller: Session | undefined,
+  name: string,
+): Promise<void> {
+  if (plan.delivery.kind === "caller-input") {
+    await deliverSpawnPrompt(services, session.id, plan.delivery.text);
+  } else if (plan.delivery.kind === "task") {
+    // The taskTemplate renders with the same context as the persona
+    // (project placeholders + the report-target session id, mirroring the
+    // bootstrap's rendering); the #318 readiness wait + submit confirmation
+    // make the delivery exactly-once (no double-submit).
+    const task = renderAgentKindTask(spec, {
+      ...orchestratorPromptValues(project, session.cwd ?? ""),
+      ...(spec.reportTarget === "orchestrator"
+        ? { ORCHESTRATOR_SESSION_ID: session.parentSessionId ?? "" }
+        : { PARENT_SESSION_ID: session.parentSessionId ?? "" }),
+    });
+    if (task !== undefined) await deliverSpawnPrompt(services, session.id, task);
+  }
+
+  // callerWaits (spec v2, issue #333): the calling pane is told a report is
+  // coming to THIS session, so its flow waits instead of guessing. Only
+  // caller-routed kinds can do this (an orchestrator-routed kind reports
+  // elsewhere — the planner already returns false for those).
+  if (plan.notifyCaller && caller !== undefined) {
+    await deliverSpawnPrompt(services, caller.id, callerWaitsNotice(spec, name));
+  }
 }

@@ -286,7 +286,7 @@ export class OrchestratorBootstrap {
           agentKindLaunchCommand({
             sessionId,
             promptFile,
-            readOnly: spec.readOnly,
+            spec,
             skillArgs: this.agentAssets?.skillLaunchArgs(kind) ?? [],
           }),
         ),
