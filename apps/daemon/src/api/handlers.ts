@@ -166,9 +166,11 @@ function workerFilesChangedPayload(services: DaemonServices, workerId: string) {
 /**
  * Terminate handler (issue #64): kills the tmux session, marks the worker
  * `archived`, and announces the new status on the hub so open sidebars
- * update live.
+ * update live. Shared with the session-id terminate route
+ * (session-terminate.ts, issue #317) so a worker reached through either
+ * path gets identical archived semantics.
  */
-async function terminateWorkerPayload(services: DaemonServices, workerId: string) {
+export async function terminateWorkerPayload(services: DaemonServices, workerId: string) {
   const worker = await services.sessions.archiveWorker(workerId);
   const parsed = workerSchema.parse(requireOr404(worker, `unknown worker: ${workerId}`));
   services.hub.broadcast({

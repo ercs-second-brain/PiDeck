@@ -151,7 +151,12 @@ function ProjectSection(props: {
 }) {
   const { project, sessions, workers } = props.entry;
   const orchestrator = sessions.find((session) => session.role === "orchestrator");
-  const workerSessions = sessions.filter((session) => session.role === "worker");
+  // Issue #316: agent-kind sessions carry role "worker" (they are sessions,
+  // never worker records) — they render only through the agent-row grouping
+  // below (splitAgentSessions). Including them here drew a ghost "worker"
+  // row per persona, and since selection keys on the shared session id, both
+  // rows highlighted together.
+  const workerSessions = sessions.filter((session) => session.role === "worker" && session.agentKind === undefined);
   // Issue #64: terminated workers move to the collapsed archived section;
   // only live workers render under the project row.
   const activeWorkers = workerSessions.filter((session) => workerFor(session, workers)?.status !== "archived");

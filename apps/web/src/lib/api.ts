@@ -228,9 +228,12 @@ export const apiSpawnAgent = (projectId: string, body: SpawnAgentRequest): Promi
  * and removes the session record (the existing `SessionManager.killSession`
  * semantics — agent sessions keep no archived log; a delivered report stays
  * where it was sent). `POST /api/sessions/:sessionId/terminate` is a
- * shape-contracted route (like `/api/gh-auth`): the manager exists
- * daemon-side, but the HTTP route is not in the `endpoints` map until its
- * lane wires the handler — the map's registry requires one per endpoint.
+ * shape-contracted route (like `/api/gh-auth`, issue #317): the daemon
+ * mounts it outside the `endpoints` map (`session-terminate.ts`), and the
+ * webapp parses the body with `sessionSchema`. Worker-backed session ids
+ * route through the #64 archive path; agent-kind sessions go through the
+ * `SessionManager.killSession` path (pane + registry entry removed, no
+ * archived log).
  */
 export function apiTerminateAgentSession(sessionId: string): Promise<Session> {
   const path = `/api/sessions/${encodeURIComponent(sessionId)}/terminate`;
