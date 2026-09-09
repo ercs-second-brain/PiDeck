@@ -15,7 +15,8 @@ const persistedSchema = settingsSchema.extend({ version: z.literal(1) });
 
 const DEFAULT_SETTINGS: Settings = {
   autoAgentUsername: null,
-  defaultWorkerConcurrency: 1,
+  // Issue #280: new projects default to a 3-worker concurrency cap (was 1).
+  defaultWorkerConcurrency: 3,
   terminateOnMerge: true,
   autoFixCi: true,
   autoFixReviewComments: true,
