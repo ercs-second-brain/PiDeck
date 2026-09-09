@@ -274,8 +274,8 @@ export type AgentKind = z.infer<typeof agentKindSchema>;
  * prompt, so a spawn carries the kind, a sidebar label, and — for
  * researchers — the question to research. `parentSessionId` is the
  * explicit parent-of-any-role; when omitted the daemon resolves the
- * calling pane and falls back to the project orchestrator for
- * orchestrator-routed kinds.
+ * calling pane and falls back to the project's orchestrator — the
+ * caller-of-record for project-context spawns (issue #328).
  */
 export const spawnAgentRequestSchema = z.object({
   kind: agentKindSchema,
@@ -283,7 +283,7 @@ export const spawnAgentRequestSchema = z.object({
   name: z.string().min(1).max(20),
   /** Question typed into the pane after launch (researcher input). */
   question: z.string().min(1).optional(),
-  /** Parent session of any role (docs/agent-kinds.md §3); resolved from the spawn context when omitted. */
+/** Parent session of any role (docs/agent-kinds.md §3); resolved from the spawn context when omitted — the calling pane when one exists, else the project's orchestrator (issue #328). */
   parentSessionId: idSchema.optional(),
 });
 export type SpawnAgentRequest = z.infer<typeof spawnAgentRequestSchema>;

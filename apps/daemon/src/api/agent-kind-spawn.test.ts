@@ -4,7 +4,7 @@
  * merged in #306) and the contract endpoint
  * `POST /api/projects/:projectId/spawn-agent` (the webapp menu path).
  * Covers parent-of-any-role resolution (explicit → discovered caller →
- * orchestrator fallback for audits; caller-routed kinds reject), persona
+ * project-orchestrator fallback for every kind, issue #328), persona
  * rendering, read-only enforcement, issue #56 question gating, and the
  * worker-concurrency cap for worker-like kinds.
  */
@@ -115,16 +115,24 @@ describe("agent-kind spawn: parent-of-any-role resolution", () => {
     }
   });
 
-  it("rejects a caller-routed spawn whose caller cannot be resolved (never guesses a parent)", async () => {
+  it("falls back to the project orchestrator when no caller is resolvable (issue #328)", async () => {
     const { api, daemon } = server;
     const { services } = daemon;
     const projectId = await registerProject("inv3");
     const original = services.callerProcesses;
     services.callerProcesses = async () => [];
     try {
+      // A project-context spawn (the web ⋯ menu, a plain terminal) has no
+      // calling agent pane: the project's orchestrator is the fallback
+      // parent — ensured first with its persona, never a bare 409.
       const res = await api("POST", `/api/projects/${projectId}/spawn`, { kind: "researcher", name: "inv" });
-      expect(res.status).toBe(409);
-      expect((res.json as { error: string }).error).toContain("calling session");
+      expect(res.status).toBe(201);
+      const session = sessionSchema.parse(res.json);
+      const orchestrator = services.sessions.listSessions(projectId).find((s) => s.role === "orchestrator");
+      expect(orchestrator).toBeDefined();
+      expect(session.parentSessionId).toBe(orchestrator!.id);
+      // The fallback parent is a real persona pane, not a bare shell.
+      expect(daemon.tmux.sessions.get(orchestrator!.tmuxSession)?.paneLines[0] ?? "").toContain("pi --append-system-prompt");
     } finally {
       services.callerProcesses = original;
     }

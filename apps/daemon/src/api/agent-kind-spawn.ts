@@ -9,9 +9,11 @@
  * - parent-of-any-role resolution (§3): an explicit `parentSessionId` wins;
  *   otherwise the calling pane is discovered from the live spawn process
  *   (the caller may be a global-agent, orchestrator, worker, or reviewer
- *   session); otherwise audit kinds fall back to the project orchestrator
- *   they report to, while caller-routed kinds (researcher) reject — a
- *   guessed parent would misroute the report;
+ *   session); otherwise the project's orchestrator is the fallback parent
+ *   for every kind (issue #328) — project-context spawns (the web ⋯ menu,
+ *   a CLI run from a terminal) have no calling agent pane, and the
+ *   orchestrator is their caller-of-record, ensured first via the
+ *   bootstrap — never a bare 409;
  * - issue #56 parity: the researcher's question is typed into the pane
  *   only when pi auth is ready, else queued on the prompt gate;
  * - concurrency (§5): worker-like kinds (audits) count toward the project's
@@ -38,10 +40,11 @@ export interface SpawnAgentKindInput {
 
 /**
  * Resolves the parent session id (docs/agent-kinds.md §3): explicit → the
- * calling pane (discovery) → the project orchestrator for
- * orchestrator-routed kinds. Caller-routed kinds without a resolvable
- * parent reject: the researcher's report MUST reach its caller, and a
- * guessed parent would silently misroute it.
+ * calling pane (discovery) → the project's orchestrator (issue #328). The
+ * orchestrator fallback is unconditional: a spawn from a project context
+ * (the web ⋯ menu, a plain terminal) has no calling agent pane to
+ * discover, and the project orchestrator is the caller-of-record there —
+ * reports and sidebar nesting land on a live session instead of a 409.
  */
 async function resolveParentSessionId(
   services: DaemonServices,
@@ -63,17 +66,11 @@ async function resolveParentSessionId(
     const session = services.registry.getSessionByTmuxName(caller);
     if (session !== undefined) return session.id;
   }
-  if (AGENT_KIND_REPORT_TARGET[input.kind] === "project-orchestrator") {
-    // Via the bootstrap: the report target is ensured WITH its persona
-    // (idempotent), not as a bare shell.
-    return (await services.orchestratorBootstrap.ensureForProject(
-      requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`),
-    )).id;
-  }
-  throw new HttpError(
-    409,
-    `cannot determine the calling session for the ${input.kind} spawn — agent kinds report to their caller; spawn from an agent pane (global agent, orchestrator, worker, or reviewer) or pass parentSessionId`,
-  );
+  // Via the bootstrap: the fallback parent is ensured WITH its persona
+  // (idempotent), not as a bare shell.
+  return (await services.orchestratorBootstrap.ensureForProject(
+    requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`),
+  )).id;
 }
 
 /**
