@@ -348,6 +348,10 @@ export class SessionManager {
       try {
         const scrollback = await this.tmux.capturePane(session.tmuxSession, {
           lines: ARCHIVED_SCROLLBACK_LINES,
+          // Issue #362: join hard-wrapped rows into logical lines so the
+          // archived log reflows at the viewing pane's width instead of
+          // wrapping mid-word at the capture-time pane width.
+          joinWrapped: true,
         });
         this.archivedLogs.save(worker.id, { capturedAt: new Date().toISOString(), scrollback });
       } catch (err) {
