@@ -14,7 +14,13 @@ import { useOnboardingGates } from "./routes/use-onboarding-gates";
 import { TerminalPage } from "./terminal/TerminalPage";
 import { SessionPicker } from "./terminal/SessionPicker";
 import { SidebarContext, useSidebarData } from "./terminal/sidebar";
-import { loadSidebarOpen, saveSidebarOpen, SIDEBAR_DRAWER_QUERY } from "./lib/sidebar-open";
+import {
+  isMobileViewport,
+  loadSidebarOpen,
+  saveSidebarOpen,
+  shouldAutoCloseSidebar,
+  SIDEBAR_DRAWER_QUERY,
+} from "./lib/sidebar-open";
 
 /**
  * The whole app is one page (issue #62): the terminals page. The app header
@@ -47,6 +53,9 @@ import { loadSidebarOpen, saveSidebarOpen, SIDEBAR_DRAWER_QUERY } from "./lib/si
  * `RouterProvider`. The hamburger (issue #326) toggles the sidebar's single
  * open/closed state: the drawer slides in on mobile, the sidebar slides off
  * and back on desktop — persisted in localStorage (`pideck.sidebar.open`).
+ * Issue #354: the hamburger is mobile-only; on desktop the toggle is a
+ * small icon at the top right of the sidebar itself, and the collapse is
+ * manual-only — the user's open/closed choice is never overridden.
  */
 const router = createBrowserRouter([
   {
@@ -111,24 +120,38 @@ function UpdatePopup() {
 }
 
 /**
- * Issue #326: one hamburger-toggled visibility state for every viewport —
+ * Issue #326: one toggle-controlled visibility state for every viewport —
  * the mobile drawer (issue #93) on ≤768px, a slide-off collapse on desktop
  * — persisted in localStorage so it survives reloads. When the viewport
  * crosses into the mobile breakpoint the drawer closes (a desktop-open
  * state must not cover the main pane as a drawer).
+ *
+ * Issue #354: the close() side effect is mobile-only (see
+ * {@link shouldAutoCloseSidebar}). On desktop, navigation or opening a
+ * settings modal never collapses the sidebar — the user's choice persists;
+ * only the toggle itself (sidebar icon on desktop, hamburger on mobile)
+ * and the breakpoint crossing change it.
  */
 function useSidebarOpen(): [boolean, () => void, () => void] {
   const [open, setOpen] = useState(loadSidebarOpen);
+  const [mobile, setMobile] = useState(isMobileViewport);
   useEffect(() => saveSidebarOpen(open), [open]);
   useEffect(() => {
     const drawer = window.matchMedia(SIDEBAR_DRAWER_QUERY);
     const onChange = (e: MediaQueryListEvent): void => {
+      setMobile(e.matches);
       if (e.matches) setOpen(false);
     };
     drawer.addEventListener("change", onChange);
     return () => drawer.removeEventListener("change", onChange);
   }, []);
-  return [open, () => setOpen((o) => !o), () => setOpen(false)];
+  return [
+    open,
+    () => setOpen((o) => !o),
+    () => {
+      if (shouldAutoCloseSidebar(mobile)) setOpen(false);
+    },
+  ];
 }
 
 function Shell() {
@@ -155,10 +178,7 @@ function Shell() {
   const onboarding = useOnboardingGates({ loaded, error, entryCount: entries.length });
   const [sidebarOpen, toggleSidebar, closeSidebar] = useSidebarOpen();
   const settings = useSettingsModal();
-  const navigateFromSidebar = (to: string) => {
-    closeSidebar();
-    navigate(to);
-  };
+  const navigateFromSidebar = (to: string) => { closeSidebar(); navigate(to); };
   /** Opens a settings-kind modal over the current view (#264, #315). */
   const openSettings = (kind: "global" | "agent-assets") => { closeSidebar(); settings.open({ kind }); };
 
@@ -168,8 +188,8 @@ function Shell() {
     startingProjectId,
     globalAgent, startingGlobalAgent,
     reload,
-    startOrchestrator: (projectId: string) => startOrchestrator(projectId),
-    startGlobalAgent: () => startGlobalAgent(),
+    startOrchestrator,
+    startGlobalAgent,
     terminateWorker,
     deleteProject, spawnAgentSession, terminateAgentSession, agentKinds,
     openOnboarding: onboarding.openProject,
@@ -190,6 +210,8 @@ function Shell() {
             entries={entries}
             error={error}
             loading={!loaded}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={toggleSidebar}
             selectedSessionId={sessionId ?? null}
             selectedProjectId={projectId ?? null}
             allProjectsSelected={pathname === "/"}

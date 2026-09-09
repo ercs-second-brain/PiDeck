@@ -1,9 +1,12 @@
 /**
  * Sidebar visibility persistence for the app shell (issue #326): the
- * hamburger toggles the sidebar — a drawer on mobile (≤768px, existing #93
+ * the toggle controls the sidebar — a drawer on mobile (≤768px, existing #93
  * behavior), a slide-off/slide-back collapse on desktop — and the state
  * persists in localStorage so it survives reloads. Default is open on
  * desktop, closed on mobile (the drawer starts shut).
+ *
+ * Issue #354: the collapse is manual-only on desktop. Auto-closing is a
+ * mobile-drawer behavior (see {@link shouldAutoCloseSidebar}).
  *
  * Storage access is injected and optional so the shell still renders (and
  * unit-tests render) in non-browser environments: failures to read or write
@@ -28,9 +31,28 @@ function storage(): StorageLike | undefined {
 
 /** The viewport default: open on desktop, closed (drawer shut) on mobile. */
 function defaultSidebarOpen(): boolean {
-  return typeof window === "undefined" || typeof window.matchMedia !== "function"
-    ? true
-    : !window.matchMedia(SIDEBAR_DRAWER_QUERY).matches;
+  return !isMobileViewport();
+}
+
+/** True when the current viewport is at or below the mobile drawer breakpoint. */
+export function isMobileViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(SIDEBAR_DRAWER_QUERY).matches
+  );
+}
+
+/**
+ * Issue #354: whether a side effect (navigation, opening a settings modal)
+ * may auto-close the sidebar. On the mobile drawer it must — a drawer left
+ * open would cover the new main-pane view. On desktop the user's choice is
+ * respected: if they opened the sidebar it stays open, if they closed it it
+ * stays closed — only the sidebar's own toggle (or the breakpoint crossing
+ * into mobile) changes it.
+ */
+export function shouldAutoCloseSidebar(mobileViewport: boolean): boolean {
+  return mobileViewport;
 }
 
 /** Reads the persisted sidebar-open state; tolerant of junk/absent storage. */

@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { loadSidebarOpen, saveSidebarOpen } from "./sidebar-open";
+import { isMobileViewport, loadSidebarOpen, saveSidebarOpen, shouldAutoCloseSidebar } from "./sidebar-open";
 
 function memoryStore(initial: Record<string, string> = {}): Pick<Storage, "getItem" | "setItem"> {
   const map = new Map(Object.entries(initial));
@@ -35,5 +35,17 @@ describe("sidebar open persistence (issue #326)", () => {
   it("treats missing storage as the default, and saving as a no-op", () => {
     expect(loadSidebarOpen(undefined)).toBe(true);
     expect(() => saveSidebarOpen(false, undefined)).not.toThrow();
+  });
+});
+
+describe("sidebar auto-close rule (issue #354)", () => {
+  it("auto-closes only on the mobile drawer breakpoint", () => {
+    expect(shouldAutoCloseSidebar(true)).toBe(true);
+    expect(shouldAutoCloseSidebar(false)).toBe(false);
+  });
+
+  it("reports desktop (non-mobile) when window/matchMedia are unavailable", () => {
+    // Node test environment: no window — the sidebar must not behave as a drawer.
+    expect(isMobileViewport()).toBe(false);
   });
 });

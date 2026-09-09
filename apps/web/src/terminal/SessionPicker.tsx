@@ -274,6 +274,17 @@ export interface SessionPickerProps {
   /** Issue #260 (B8): compact update popup rendered inside the footer,
    * anchored above the settings entry. Quiet when up to date / loading. */
   updateSlot?: ReactNode;
+  /**
+   * Issue #354: current sidebar visibility, driving the inline toggle's
+   * chevron direction and aria state. Optional so pure tests can omit it.
+   */
+  sidebarOpen?: boolean;
+  /**
+   * Issue #354: toggles the sidebar. When provided, the sidebar renders its
+   * own small toggle icon at its top right (desktop collapse control — the
+   * header hamburger stays mobile-only; the CSS hides this bar there).
+   */
+  onToggleSidebar?: () => void;
 }
 
 /**
@@ -308,6 +319,29 @@ function PickerFooter(props: { updateSlot?: ReactNode; onOpenAgentAssets?: () =>
   );
 }
 
+/**
+ * Issue #354: the desktop collapse toggle — a slim bar at the sidebar's top
+ * with a small icon at its right edge (pointing left while open, right while
+ * collapsed). Mobile keeps the header hamburger; the CSS hides this bar on
+ * the drawer breakpoint.
+ */
+function SidebarToggleBar(props: { open: boolean; onToggle: () => void }) {
+  return (
+    <div className="picker-topbar">
+      <button
+        type="button"
+        className="sidebar-toggle"
+        aria-label={props.open ? "Collapse the sidebar" : "Expand the sidebar"}
+        aria-expanded={props.open}
+        title="Toggle the sidebar"
+        onClick={props.onToggle}
+      >
+        {props.open ? "‹" : "›"}
+      </button>
+    </div>
+  );
+}
+
 /** Sidebar: project name opens the board, chat icon the orchestrator (#173), workers nested beneath. */
 export function SessionPicker(props: SessionPickerProps) {
   const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
@@ -330,6 +364,7 @@ export function SessionPicker(props: SessionPickerProps) {
 
   return (
     <aside className="session-picker">
+      {props.onToggleSidebar !== undefined && <SidebarToggleBar open={props.sidebarOpen === true} onToggle={props.onToggleSidebar} />}
       {/* Issue #327: the project list scrolls inside its own region — the
           footer lives outside the scroll container, so its full-width
           buttons span the sidebar's whole visible width (a scrollbar inside
