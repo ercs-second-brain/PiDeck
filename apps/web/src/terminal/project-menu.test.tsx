@@ -10,13 +10,37 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
+import { SHIPPED_AGENT_KINDS, type AgentKindSpec } from "@pideck/shared";
 import { makeProject } from "./test-fixtures";
 import { ProjectRow } from "./picker-rows";
-import { DeleteProjectModal, ResearcherPromptModal } from "./picker-modals";
+import { DeleteProjectModal, SpawnInputModal } from "./picker-modals";
 
 const project = makeProject();
 
-function renderRow(menuOpen: boolean): string {
+/** A user-defined kind (registry v2) exercising the submenu's custom group. */
+const customKind: AgentKindSpec = {
+  name: "deps-audit",
+  label: "deps-audit",
+  menuLabel: "Deps audit",
+  description: "Spawn a deps audit — flags risky dependency drift for the orchestrator",
+  spawnableBy: ["orchestrator"],
+  callerWaits: false,
+  readOnly: true,
+  trigger: "waitForInput",
+  reportTarget: "orchestrator",
+  workerLike: false,
+};
+
+/** A kind reserved to worker callers — the project menu must not list it. */
+const workerOnlyKind: AgentKindSpec = {
+  ...customKind,
+  name: "pair-helper",
+  menuLabel: "Pair helper",
+  description: "Spawn a pair helper",
+  spawnableBy: ["worker"],
+};
+
+function renderRow(menuOpen: boolean, opts: { spawnSubmenuOpen?: boolean; agentKinds?: readonly AgentKindSpec[] } = {}): string {
   return renderToString(
     <ProjectRow
       projectName={project.name}
@@ -27,8 +51,11 @@ function renderRow(menuOpen: boolean): string {
       starting={false}
       collapsed={false}
       menuOpen={menuOpen}
+      spawnSubmenuOpen={opts.spawnSubmenuOpen ?? false}
+      agentKinds={opts.agentKinds ?? SHIPPED_AGENT_KINDS}
       onToggleCollapsed={() => {}}
       onToggleMenu={() => {}}
+      onToggleSpawnSubmenu={() => {}}
       onOpenSettings={() => {}}
       onDeleteProject={() => {}}
       onSpawnAgent={() => {}}
@@ -68,13 +95,22 @@ describe("project row ⋯ context menu (issue #167)", () => {
   });
 });
 
-describe("Spawn agent menu section (docs/agent-kinds.md, #297/#300/#302)", () => {
-  it("offers the three agent kinds in the open menu", () => {
+describe("Spawn agent submenu (docs/agent-kinds.md §8, issues #324/#330/#331)", () => {
+  it("offers a closed Spawn agent submenu toggle in the open ⋯ menu", () => {
     const html = renderRow(true);
-    expect(html).toContain("Spawn agent");
-    expect(html).toContain("role=\"group\"");
-    // Issue #309: no stray ellipsis — the label is a plain word (the "…"
-    // in the old "Researcher…" rendered as stray dots in the menu).
+    expect(html).toContain("Spawn agent ▸");
+    expect(html).toContain("aria-haspopup=\"true\"");
+    expect(html).toContain("aria-expanded=\"false\"");
+    // Closed by default — no kind entries render until it is expanded.
+    expect(html).not.toContain(">Researcher</button>");
+  });
+
+  it("expands to the built-in kinds (no custom group when the registry has none)", () => {
+    const html = renderRow(true, { spawnSubmenuOpen: true });
+    expect(html).toContain("role=\"menu\"");
+    expect(html).toContain(">Built-in</span>");
+    expect(html).not.toContain(">Custom</span>");
+    // Issue #309: no stray ellipsis — the label is a plain word.
     expect(html).toContain(">Researcher</button>");
     expect(html).not.toContain("Researcher…");
     expect(html).toContain(">Devex audit</button>");
@@ -82,40 +118,72 @@ describe("Spawn agent menu section (docs/agent-kinds.md, #297/#300/#302)", () =>
   });
 
   it("states each kind's behavior in its menu title", () => {
-    const html = renderRow(true);
+    const html = renderRow(true, { spawnSubmenuOpen: true });
     expect(html).toContain("Spawn a researcher — it researches one question against the codebase and reports back");
     expect(html).toContain("Spawn a devex audit — mines prior sessions for friction, reports to the orchestrator");
     expect(html).toContain("Spawn a KISS audit — complexity findings, reported to the orchestrator");
   });
 
-  it("renders the researcher question modal with its confirm disabled while the question is empty", () => {
+  it("groups user-defined kinds from the live registry under Custom (issue #330/#331)", () => {
+    const html = renderRow(true, { spawnSubmenuOpen: true, agentKinds: [...SHIPPED_AGENT_KINDS, customKind] });
+    expect(html).toContain(">Custom</span>");
+    expect(html).toContain(">Deps audit</button>");
+    // The custom kind's own behavior summary is its title.
+    expect(html).toContain("Spawn a deps audit — flags risky dependency drift for the orchestrator");
+  });
+
+  it("hides kinds the project context may not spawn (spawnableBy honored)", () => {
+    const html = renderRow(true, { spawnSubmenuOpen: true, agentKinds: [...SHIPPED_AGENT_KINDS, customKind, workerOnlyKind] });
+    // The worker-only kind has no orchestrator role — not listed here (the
+    // daemon remains the enforcement point, docs/agent-kinds.md §5).
+    expect(html).not.toContain(">Pair helper</button>");
+    expect(html).toContain(">Custom</span>"); // customKind is still listed
+    expect(html).toContain(">Deps audit</button>");
+  });
+
+  it("renders the input modal for a waitForInput kind with its confirm disabled while empty", () => {
     const html = renderToString(
-      <ResearcherPromptModal projectName={project.name} agentKind="researcher" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+      <SpawnInputModal projectName={project.name} agentKind="researcher" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(html).toContain("Spawn Researcher?");
     expect(html).toContain("<code>agentsKISS</code>");
     expect(html).toContain("aria-label=\"Researcher question\"");
-    // Empty question in SSR: the confirm renders its label but stays disabled
+    // Empty input in SSR: the confirm renders its label but stays disabled
     // (typing enables it client-side — the input state is client-only).
     expect(html).toContain(">Spawn</button>");
     expect(html).toContain("disabled");
   });
 
-  it("derives the modal copy from the kind's shared metadata (issue #324)", () => {
+  it("derives the modal labels from the kind's shared metadata (issue #324)", () => {
     const html = renderToString(
-      <ResearcherPromptModal projectName={project.name} agentKind="researcher" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+      <SpawnInputModal projectName={project.name} agentKind="researcher" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(html).toContain("aria-label=\"Spawn researcher\"");
     expect(html).toContain("aria-label=\"Researcher question\"");
   });
 
-  it("shows the in-flight and failure states inside the researcher modal", () => {
+  it("adapts the modal copy to a custom waitForInput kind's spec (issue #331)", () => {
+    const html = renderToString(
+      <SpawnInputModal projectName={project.name} agentKind={customKind.name} spec={customKind} pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(html).toContain("Spawn Deps audit?");
+    expect(html).toContain("aria-label=\"Deps audit task\"");
+    expect(html).toContain("Describe the task…");
+  });
+
+  it("drops the read-only claim for a spec that allows writes", () => {
+    const writable: AgentKindSpec = { ...customKind, name: "fixer", readOnly: false, trigger: "waitForInput", spawnableBy: ["orchestrator"] };
+    expect(renderToString(<SpawnInputModal projectName="p" agentKind={writable.name} spec={writable} pending={false} onConfirm={() => {}} onCancel={() => {}} />)).not.toContain("read-only");
+    expect(renderToString(<SpawnInputModal projectName="p" agentKind={customKind.name} spec={customKind} pending={false} onConfirm={() => {}} onCancel={() => {}} />)).toContain("read-only");
+  });
+
+  it("shows the in-flight and failure states inside the input modal", () => {
     const pending = renderToString(
-      <ResearcherPromptModal projectName="p" agentKind="researcher" pending onConfirm={() => {}} onCancel={() => {}} />,
+      <SpawnInputModal projectName="p" agentKind="researcher" pending onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(pending).toContain("Spawning…");
     const failed = renderToString(
-      <ResearcherPromptModal projectName="p" agentKind="researcher" pending={false} error="agent sessions are not wired yet" onConfirm={() => {}} onCancel={() => {}} />,
+      <SpawnInputModal projectName="p" agentKind="researcher" pending={false} error="agent sessions are not wired yet" onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(failed).toContain("terminate-modal-error");
     expect(failed).toContain("agent sessions are not wired yet");

@@ -8,10 +8,10 @@
  * (use-picker-state.ts).
  */
 
-import type { AgentKind } from "@pideck/shared";
+import type { AgentKind, AgentKindSpec } from "@pideck/shared";
 import {
   DeleteProjectModal,
-  ResearcherPromptModal,
+  SpawnInputModal,
   TerminateAgentSessionModal,
   TerminateWorkerModal,
 } from "./picker-modals";
@@ -31,6 +31,11 @@ export interface ConfirmModalsProps {
   /** Spawns agent-kind sessions (docs/agent-kinds.md, #297/#300/#302). */
   onSpawnAgentSession?: (projectId: string, kind: AgentKind, question?: string) => Promise<void>;
   onDeleteProject?: (projectId: string) => Promise<void>;
+  /**
+   * The live kind registry (issue #330): resolves the confirming kind's
+   * spec so the input modal's copy follows it (read-only claim, #331).
+   */
+  agentKinds?: readonly AgentKindSpec[];
 }
 
 /**
@@ -87,9 +92,10 @@ export function ConfirmModals(props: ConfirmModalsProps) {
         />
       )}
       {state.researcherAsk.confirming !== null && props.onSpawnAgentSession !== undefined && (
-        <ResearcherPromptModal
+        <SpawnInputModal
           projectName={researcherName ?? ""}
           agentKind={state.researcherAsk.confirming.kind}
+          spec={props.agentKinds?.find((kind) => kind.name === state.researcherAsk.confirming?.kind)}
           pending={state.researcherAsk.pending}
           error={state.researcherAsk.error}
           onConfirm={(question) =>

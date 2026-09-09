@@ -151,6 +151,55 @@ function useResearcherAsk() {
   };
 }
 
+/**
+ * The ⋯ context menu's open state (issue #167) plus its spawn-agent
+ * submenu's (issue #331): one open menu at a time; the submenu resets with
+ * the parent menu (Escape, outside click, re-toggle) so a reopened menu
+ * always starts closed. Hook-free logic aside, this is plain React state —
+ * extracted to keep {@link usePickerState} under its complexity budget.
+ */
+function useOpenMenu() {
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [openSpawnMenuId, setOpenSpawnMenuId] = useState<string | null>(null);
+
+  // Issue #167: an open ⋯ context menu closes on Escape or on any click
+  // outside the menu and its toggle (the toggle's own click re-toggles).
+  useEffect(() => {
+    if (openMenuId === null) return;
+    const dismiss = () => {
+      setOpenMenuId(null);
+      setOpenSpawnMenuId(null);
+    };
+    const onClick = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest(".picker-project-menu, .picker-context-menu") !== null) return;
+      dismiss();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismiss();
+    };
+    window.addEventListener("click", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [openMenuId]);
+
+  return {
+    openMenuId,
+    openSpawnMenuId,
+    toggleMenu: (projectId: string) => {
+      setOpenMenuId((current) => (current === projectId ? null : projectId));
+      setOpenSpawnMenuId(null);
+    },
+    closeMenu: () => {
+      setOpenMenuId(null);
+      setOpenSpawnMenuId(null);
+    },
+    toggleSpawnMenu: (projectId: string) => setOpenSpawnMenuId((current) => (current === projectId ? null : projectId)),
+  };
+}
+
 export function usePickerState(
   entries: { project: { id: string }; sessions: Session[] }[],
   terminatingWorkerId: string | null,
@@ -167,8 +216,8 @@ export function usePickerState(
   );
   // Issue #114: collapsed projects persist across reloads (default expanded).
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => seedCollapsed ?? loadCollapsedProjects());
-  // Issue #167: which project's ⋯ context menu is open (one at a time).
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  // Issue #167 + #331: the open ⋯ context menu and its spawn submenu.
+  const menu = useOpenMenu();
   // Issues #297/#300/#302 + #324: the question modal for takesInput kinds.
   const researcherAsk = useResearcherAsk();
   // Issue #172: the delete-confirmation interaction state (its own hook).
@@ -214,25 +263,6 @@ export function usePickerState(
     return () => window.removeEventListener("keydown", onKey);
   }, [deleteConfirm]);
 
-  // Issue #167: an open ⋯ context menu closes on Escape or on any click
-  // outside the menu and its toggle (the toggle's own click re-toggles).
-  useEffect(() => {
-    if (openMenuId === null) return;
-    const onClick = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest(".picker-project-menu, .picker-context-menu") !== null) return;
-      setOpenMenuId(null);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenMenuId(null);
-    };
-    window.addEventListener("click", onClick);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("click", onClick);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [openMenuId]);
-
   const confirmTerminate = (onTerminateWorker: (workerId: string) => Promise<void>) =>
     terminateConfirm.confirm(confirmingSession?.workerId ?? null, onTerminateWorker, () => setConfirmingSessionId(null));
   // #311: agent sessions have no worker record — the confirm target is the session id.
@@ -253,9 +283,7 @@ export function usePickerState(
     toggleArchived,
     collapsedProjects,
     toggleCollapsed,
-    openMenuId,
-    toggleMenu: (projectId: string) => setOpenMenuId((current) => (current === projectId ? null : projectId)),
-    closeMenu: () => setOpenMenuId(null),
+    ...menu,
     researcherAsk,
   };
 }

@@ -34,7 +34,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import type { AgentKind, Project, Session, Worker } from "@pideck/shared";
+import { SHIPPED_AGENT_KINDS, type AgentKind, type AgentKindSpec, type Project, type Session, type Worker } from "@pideck/shared";
 import {
   AddProjectRow,
   AgentRow,
@@ -141,8 +141,12 @@ function ProjectSection(props: {
   onStartOrchestrator: (projectId: string) => void;
   /** Spawns an audit agent-kind session (docs/agent-kinds.md, #300/#302). */
   onSpawnAgent: (projectId: string, kind: AgentKind) => void;
-  /** Opens the question modal for a kind whose shared spec takesInput (#297, #324). */
+  /** Opens the input modal for a waitForInput kind (#297, #324, #331). */
   onAskSpawnInput: (projectId: string, kind: AgentKind) => void;
+  /** The ⋯ menu's spawn-agent submenu state + registry (issues #330/#331). */
+  spawnSubmenuOpen: boolean;
+  onToggleSpawnSubmenu: (projectId: string) => void;
+  agentKinds: readonly AgentKindSpec[];
   /** Terminate-after-confirm handlers (worker #268; agent-kind session #311). */
   onTerminateWorker?: (workerId: string) => Promise<void>;
   onTerminateAgentSession?: (sessionId: string) => Promise<void>;
@@ -182,18 +186,14 @@ function ProjectSection(props: {
         boardSelected={project.id === props.selectedProjectId}
         chatSelected={orchestrator !== undefined && orchestrator.id === props.selectedSessionId}
         starting={starting}
-        collapsed={props.collapsed}
-        menuOpen={props.openMenuProjectId === project.id}
-        onToggleCollapsed={props.onToggleCollapsed}
-        onToggleMenu={props.onToggleMenu}
-        onStartOrchestrator={props.onStartOrchestrator}
-        onSelectProject={props.onSelectProject}
+        collapsed={props.collapsed} menuOpen={props.openMenuProjectId === project.id}
+        onToggleCollapsed={props.onToggleCollapsed} onToggleMenu={props.onToggleMenu}
+        onStartOrchestrator={props.onStartOrchestrator} onSelectProject={props.onSelectProject}
         onOpenSettings={props.onOpenSettings}
-        onDeleteProject={(projectId) => {
-          props.onAskDeleteProject(projectId);
-        }}
-        onSpawnAgent={props.onSpawnAgent}
-        onAskSpawnInput={props.onAskSpawnInput}
+        onDeleteProject={(projectId) => props.onAskDeleteProject(projectId)}
+        onSpawnAgent={props.onSpawnAgent} onAskSpawnInput={props.onAskSpawnInput}
+        spawnSubmenuOpen={props.spawnSubmenuOpen} onToggleSpawnSubmenu={props.onToggleSpawnSubmenu}
+        agentKinds={props.agentKinds}
       />
       {!props.collapsed && (activeWorkers.length > 0 || rootAgents.length > 0) && (
         <ul className="picker-list picker-workers">
@@ -224,6 +224,12 @@ export interface SessionPickerProps {
   startingGlobalAgent?: boolean;
   /** Worker id whose termination is in flight (confirm button pending state). */
   terminatingWorkerId?: string | null;
+  /**
+   * The live agent-kind registry (issue #330): shipped + user-defined kinds,
+   * feeding the spawn-agent submenu (issue #331). Defaults to the shipped
+   * kinds when absent (tests, and a sidebar that hasn't fetched yet).
+   */
+  agentKinds?: readonly AgentKindSpec[];
   /** Initial expanded state of the per-project archived sections (tests/UX). */
   defaultArchivedOpen?: boolean;
   /** Seeds the collapsed-project set (tests; live state comes from localStorage, issue #114). */
@@ -348,6 +354,8 @@ export function SessionPicker(props: SessionPickerProps) {
             selectedSessionId={props.selectedSessionId} selectedProjectId={props.selectedProjectId ?? null}
             startingProjectId={props.startingProjectId ?? null} confirmingSessionId={state.confirmingSessionId}
             openMenuProjectId={state.openMenuId} now={now}
+            spawnSubmenuOpen={state.openSpawnMenuId === entry.project.id}
+            agentKinds={props.agentKinds ?? SHIPPED_AGENT_KINDS}
             pendingTerminateWorkerId={props.terminatingWorkerId ?? null} pendingTerminateSessionId={pendingAgentTerminateId}
             archivedOpen={state.archivedOpen.has(entry.project.id)} onToggleArchived={state.toggleArchived}
             collapsed={state.collapsedProjects.has(entry.project.id)} onToggleCollapsed={state.toggleCollapsed}
@@ -361,6 +369,7 @@ export function SessionPicker(props: SessionPickerProps) {
               state.deleteConfirm.ask(projectId);
             }}
             onToggleMenu={state.toggleMenu} onStartOrchestrator={props.onStartOrchestrator}
+            onToggleSpawnSubmenu={state.toggleSpawnMenu}
             onSpawnAgent={(projectId, kind) => {
               state.closeMenu();
               spawnAgent(projectId, kind);
@@ -377,6 +386,7 @@ export function SessionPicker(props: SessionPickerProps) {
         <ConfirmModals
           state={state}
           entries={props.entries}
+          agentKinds={props.agentKinds ?? SHIPPED_AGENT_KINDS}
           onTerminateWorker={props.onTerminateWorker}
           onTerminateAgentSession={props.onTerminateAgentSession}
           onSpawnAgentSession={props.onSpawnAgentSession}

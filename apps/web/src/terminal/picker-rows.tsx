@@ -9,7 +9,8 @@
  */
 
 import type { ReactNode } from "react";
-import { AGENT_KINDS, agentKindInfo, type AgentKind, type Session, type Worker } from "@pideck/shared";
+import type { AgentKindSpec, Session, Worker } from "@pideck/shared";
+import { ProjectMenu, type ProjectMenuCallbacks } from "./picker-project-menu";
 import { formatRunningDuration } from "../lib/format-timestamp";
 import { workerStatusClasses } from "../lib/worker-status";
 
@@ -169,23 +170,6 @@ export function AgentRow(props: {
 }
 
 /**
- * Callbacks shared by the project row and its open ⋯ menu (issues
- * #167/#172 + docs/agent-kinds.md, #297/#300/#302 + #324): the spawn-agent
- * entries render from the shared AGENT_KIND_INFO metadata — kinds whose
- * spec takesInput open the question modal, the rest spawn directly.
- */
-interface ProjectMenuCallbacks {
-  /** Opens the project's settings page in the main pane (issue #167). */
-  onOpenSettings: (projectId: string) => void;
-  /** Opens the delete-confirmation modal (issue #172). */
-  onDeleteProject: (projectId: string) => void;
-  /** Spawns an input-free agent kind directly (docs/agent-kinds.md, #300/#302). */
-  onSpawnAgent: (projectId: string, kind: AgentKind) => void;
-  /** Opens the question modal for a kind whose spec takesInput (#297 + #324). */
-  onAskSpawnInput: (projectId: string, kind: AgentKind) => void;
-}
-
-/**
  * The project row (issue #108 + #114 + #167 + #173): collapse chevron, the
  * project NAME as the kanban entry, the chat icon as the orchestrator entry
  * (starting it when absent), and the ⋯ context menu. Pure rendering.
@@ -203,8 +187,13 @@ export function ProjectRow(props: {
   collapsed: boolean;
   /** The project's ⋯ context menu is open (issue #167). */
   menuOpen: boolean;
+  /** The ⋯ menu's spawn-agent submenu is expanded (issue #331). */
+  spawnSubmenuOpen: boolean;
+  /** The kind registry the submenu renders from (issue #330; shipped fallback). */
+  agentKinds: readonly AgentKindSpec[];
   onToggleCollapsed: (projectId: string) => void;
   onToggleMenu: (projectId: string) => void;
+  onToggleSpawnSubmenu: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
   onSelectProject: (projectId: string) => void;
 } & ProjectMenuCallbacks) {
@@ -246,8 +235,8 @@ export function ProjectRow(props: {
       </button>
       {/* Issue #167: the ⋯ context menu. Settings opens the project's
           settings page in the main pane; kanban stays the row's name click
-          (#173), so it is not duplicated here. The spawn-agent entries are
-          data-driven from the shared kind metadata (issue #324). */}
+          (#173), so it is not duplicated here. The spawn-agent submenu
+          (#331) renders from the live kind registry (issue #330). */}
       <button
         type="button"
         className="picker-project-menu"
@@ -263,68 +252,15 @@ export function ProjectRow(props: {
         <ProjectMenu
           projectName={props.projectName}
           projectId={props.projectId}
+          agentKinds={props.agentKinds}
+          spawnSubmenuOpen={props.spawnSubmenuOpen}
+          onToggleSpawnSubmenu={() => props.onToggleSpawnSubmenu(props.projectId)}
           onOpenSettings={props.onOpenSettings}
           onDeleteProject={props.onDeleteProject}
           onSpawnAgent={props.onSpawnAgent}
           onAskSpawnInput={props.onAskSpawnInput}
         />
       )}
-    </div>
-  );
-}
-
-
-/**
- * The project row's open ⋯ context menu (issue #167): Settings, the spawn
- * agent section (docs/agent-kinds.md, issues #297/#300/#302 — rendered
- * from the shared AGENT_KIND_INFO metadata per issue #324: preset-prompt,
- * read-only sessions that report per their kind; takesInput kinds open the
- * question modal, the rest spawn directly), and the local-only delete
- * entry (issue #172). Pure rendering.
- */
-function ProjectMenu(props: { projectName: string; projectId: string } & ProjectMenuCallbacks) {
-  return (
-    <div className="picker-context-menu" role="menu" aria-label={`${props.projectName} options`}>
-      <button
-        type="button"
-        role="menuitem"
-        title={`Open ${props.projectName}'s settings`}
-        onClick={() => props.onOpenSettings(props.projectId)}
-      >
-        Settings
-      </button>
-      <div className="picker-menu-section" role="group" aria-label="Spawn agent">
-        <span className="picker-menu-label">Spawn agent</span>
-        {AGENT_KINDS.map((kind) => {
-          const info = agentKindInfo(kind);
-          return (
-            <button
-              key={kind}
-              type="button"
-              role="menuitem"
-              title={info.description}
-              onClick={() =>
-                info.takesInput
-                  ? props.onAskSpawnInput(props.projectId, kind)
-                  : props.onSpawnAgent(props.projectId, kind)
-              }
-            >
-              {info.menuLabel}
-            </button>
-          );
-        })}
-      </div>
-      {/* Issue #172: delete is local-only — the GitHub repo is kept; the
-          confirmation modal states that explicitly. */}
-      <button
-        type="button"
-        role="menuitem"
-        className="picker-menu-danger"
-        title={`Delete ${props.projectName} locally (the GitHub repo is kept)`}
-        onClick={() => props.onDeleteProject(props.projectId)}
-      >
-        Delete project…
-      </button>
     </div>
   );
 }

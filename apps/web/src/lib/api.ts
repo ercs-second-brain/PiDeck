@@ -228,6 +228,14 @@ export const apiSpawnAgent = (projectId: string, body: SpawnAgentRequest): Promi
   request("spawnProjectAgent", { projectId }, body);
 
 /**
+ * The live agent-kind registry (issue #330): shipped + user-defined kinds
+ * as spec-v2 data. The spawn-agent submenu (issue #331) renders its entries
+ * from this — not the shipped-only `AGENT_KINDS` constant — so newly
+ * registered kinds appear without a webapp deploy.
+ */
+export const apiListAgentKinds = (): Promise<EndpointResponse<"listAgentKinds">> => request("listAgentKinds", {});
+
+/**
  * Terminates an agent-kind session (issue #311): the daemon kills the pane
  * and removes the session record (the existing `SessionManager.killSession`
  * semantics — agent sessions keep no archived log; a delivered report stays
