@@ -57,7 +57,11 @@ export async function spawnReviewAgent(projectId: string, request: ReviewSpawnRe
       deps.promptGate.queue(worker, request.prompt);
       return worker;
     }
-    await deps.sessions.sendKeys(worker.sessionId, request.prompt, { enter: true });
+    // Issue #318: wait for pi to accept input before typing (the pane was
+    // just created; typing inside pi's startup window swallows the submit
+    // Enter). Readiness wait + submit confirmation — bare-Enter nudges
+    // only, never a re-typed text.
+    await deps.sessions.deliverPromptWhenReady(worker.sessionId, request.prompt);
     deps.sessions.updateWorkerStatus(worker.id, "running", "review agent running; prompt delivered");
     return worker;
   } catch (err) {

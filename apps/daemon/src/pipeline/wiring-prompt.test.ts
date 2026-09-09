@@ -63,6 +63,15 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 5; i++) await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
+/** Polls (real timers) until `condition` holds — bounded, for background deliveries. */
+async function waitForCondition(condition: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error("waitForCondition: timed out");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 let active: TestDaemon | undefined;
 afterEach(() => {
   active?.services.automation.stop();
@@ -73,7 +82,9 @@ describe("issue-assigned auto-spawn delivers the issue prompt (issue #266)", () 
   it("types the issue context into the worker pane and records it on the worker", async () => {
     const daemon = await registeredDaemon();
     active = daemon;
-    const sendKeys = vi.spyOn(daemon.services.sessions, "sendKeys").mockResolvedValue(undefined);
+    // Issue #318: call-through spy — the confirm step reads the pane for
+    // submit evidence, so the typed text must actually land in the fake pane.
+    const sendKeys = vi.spyOn(daemon.services.sessions, "sendKeys");
 
     daemon.services.automation.handleWatcherEvent(PROJECT, {
       type: "issue.assigned",
@@ -91,10 +102,11 @@ describe("issue-assigned auto-spawn delivers the issue prompt (issue #266)", () 
     expect(workers[0]?.prompt).toContain("Issue-assigned worker idles");
     expect(sendKeys).toHaveBeenCalledWith(workers[0]?.sessionId, expect.stringContaining("#266"), { enter: true });
     // Delivery runs in the background after the spawn resolves; settle it,
-    // then re-read for the truthful post-delivery status message.
-    await flush();
-    expect(daemon.services.registry.getWorker(workers[0]?.id ?? "")?.statusMessage).toBe(
-      "agent running; initial prompt delivered",
+    // then re-read for the truthful post-delivery status message. Issue
+    // #318: delivery ends with a bounded submit-confirmation poll (real
+    // timers), so wait for the flip instead of assuming fixed flush counts.
+    await waitForCondition(() =>
+      daemon.services.registry.getWorker(workers[0]?.id ?? "")?.statusMessage === "agent running; initial prompt delivered",
     );
   });
 
