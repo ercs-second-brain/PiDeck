@@ -41,6 +41,7 @@ import {
   AgentRow,
   ArchivedSection,
   ProjectRow,
+  SidebarToggleBar,
   WorkerRow,
   workerFor,
 } from "./picker-rows";
@@ -327,29 +328,6 @@ function PickerFooter(props: { updateSlot?: ReactNode; onOpenAgentAssets?: () =>
   );
 }
 
-/**
- * Issue #354: the desktop collapse toggle — a slim bar at the sidebar's top
- * with a small icon at its right edge (pointing left while open, right while
- * collapsed). Mobile keeps the header hamburger; the CSS hides this bar on
- * the drawer breakpoint.
- */
-function SidebarToggleBar(props: { open: boolean; onToggle: () => void }) {
-  return (
-    <div className="picker-topbar">
-      <button
-        type="button"
-        className="sidebar-toggle"
-        aria-label={props.open ? "Collapse the sidebar" : "Expand the sidebar"}
-        aria-expanded={props.open}
-        title="Toggle the sidebar"
-        onClick={props.onToggle}
-      >
-        {props.open ? "‹" : "›"}
-      </button>
-    </div>
-  );
-}
-
 /** Sidebar: project name opens the board, chat icon the orchestrator (#173), workers nested beneath. */
 export function SessionPicker(props: SessionPickerProps) {
   const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
@@ -412,8 +390,7 @@ export function SessionPicker(props: SessionPickerProps) {
               state.deleteConfirm.ask(projectId);
             }}
             onToggleMenu={state.toggleMenu} onStartOrchestrator={props.onStartOrchestrator}
-            onToggleSpawnSubmenu={state.toggleSpawnMenu}
-            onSpawnAgent={(projectId, kind) => {
+            onToggleSpawnSubmenu={state.toggleSpawnMenu} onSpawnAgent={(projectId, kind) => {
               state.closeMenu();
               spawnAgent(projectId, kind);
             }}
