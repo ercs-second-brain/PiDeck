@@ -19,6 +19,7 @@ import { OrchestratorBootstrap } from "../orchestrator/bootstrap.js";
 import { procSnapshot, type ProcessInfo } from "../sessions/caller-discovery.js";
 import { ProjectLayout, defaultStateDir } from "../sessions/layout.js";
 import { agentSessionEnv } from "../sessions/agent-env.js";
+import { waitForPaneInputReady } from "../sessions/pane-ready.js";
 import { SessionManager } from "../sessions/manager.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { Tmux } from "../sessions/tmux.js";
@@ -138,6 +139,13 @@ export interface DaemonContextOptions {
   piAuthTtlMs?: number;
   /** Override the process-table snapshot used for agent-kind caller discovery (tests). */
   callerProcesses?: () => Promise<ProcessInfo[]>;
+  /**
+   * Pane-input readiness probe for spawn-path prompt delivery (issue #318):
+   * whether a tmux session's pane is accepting agent input. Default: the
+   * real pi input-box probe with a bounded wait (pane-ready.ts). Tests
+   * inject a constant so hermetic fake panes count as ready.
+   */
+  paneReady?: (tmuxSession: string) => Promise<boolean>;
 }
 
 /**
@@ -148,11 +156,23 @@ export interface DaemonContextOptions {
  */
 function buildPromptGate(sessions: SessionManager, piAuth: PiAuthProbe, options: DaemonContextOptions): PromptGate {
   return new PromptGate({
-    sendKeys: (sessionId, keys, sendOptions) => sessions.sendKeys(sessionId, keys, sendOptions),
+    // Issue #318: gate deliveries wait for pi to accept input before
+    // typing — a queued prompt delivered into a still-booting pane loses
+    // its submit Enter exactly like the direct spawn path did.
+    sendKeys: (sessionId, keys, sendOptions) => sessions.sendKeysAfterReady(sessionId, keys, sendOptions),
     getWorker: (workerId) => sessions.getWorker(workerId),
     updateWorkerStatus: (workerId, status, statusMessage) => sessions.updateWorkerStatus(workerId, status, statusMessage),
     isReady: async () => (await piAuth.payload()).ready,
     ...(options.promptGatePollIntervalMs !== undefined ? { pollIntervalMs: options.promptGatePollIntervalMs } : {}),
+  });
+}
+
+/** Builds the pi auth probe from context options (issue #57 probes). */
+function buildPiAuthProbe(options: DaemonContextOptions): PiAuthProbe {
+  return new PiAuthProbe({
+    ...(options.piRunner !== undefined ? { run: options.piRunner } : {}),
+    ...(options.piReady !== undefined ? { readyOverride: options.piReady } : {}),
+    ...(options.piAuthTtlMs !== undefined ? { ttlMs: options.piAuthTtlMs } : {}),
   });
 }
 
@@ -222,7 +242,8 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // Per-persona user assets (issue #315) — built before the session manager
   // and bootstrap so both launch paths shape panes from the same store.
   const agentAssets = new AgentAssetsStore(stateDir);
-  const sessions = new SessionManager({ tmux, registry, layout, personaAssets: agentAssets, ...(options.git !== undefined ? { git: options.git } : {}) });
+  // Issue #318: pane-input readiness probe (overridable by tests).
+  const sessions = new SessionManager({ tmux, registry, layout, personaAssets: agentAssets, paneReady: options.paneReady ?? ((name: string) => waitForPaneInputReady(tmux, name)), ...(options.git !== undefined ? { git: options.git } : {}) });
 
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
   const projectStore = new ProjectStore(stateDir);
@@ -263,11 +284,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // pi auth readiness (issue #57) + worker/agent-kind initial-prompt gate
   // (issue #56, docs/agent-kinds.md): the gate polls through the same probe
   // so queued prompts deliver when ready.
-  const piAuth = new PiAuthProbe({
-    ...(options.piRunner !== undefined ? { run: options.piRunner } : {}),
-    ...(options.piReady !== undefined ? { readyOverride: options.piReady } : {}),
-    ...(options.piAuthTtlMs !== undefined ? { ttlMs: options.piAuthTtlMs } : {}),
-  });
+  const piAuth = buildPiAuthProbe(options);
   const promptGate = buildPromptGate(sessions, piAuth, options);
   // Warm the pi version memo (issue #223) at boot, fire-and-forget: the
   // installed pi only changes through an apply (which restarts the daemon),

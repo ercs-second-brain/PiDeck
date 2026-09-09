@@ -120,7 +120,11 @@ export class SessionManagerSpawner implements WorkerSpawner {
         this.options.promptGate.queue(worker, prompt);
         return;
       }
-      await this.sessions.sendKeys(worker.sessionId, prompt, { enter: true });
+      // Issue #318: wait for pi to accept input first — the pane was just
+      // created, and typing inside pi's startup window swallows the submit
+      // Enter (typed-but-never-sent). Submit confirmation re-sends bare
+      // Enters only, never the text.
+      await this.sessions.deliverPromptWhenReady(worker.sessionId, prompt);
       this.sessions.updateWorkerStatus(worker.id, "running", "agent running; initial prompt delivered");
     } catch (err) {
       (this.options.onError ?? ((e: unknown) => console.error("[pideck/pipeline] issue-spawn prompt delivery failed:", e)))(err);

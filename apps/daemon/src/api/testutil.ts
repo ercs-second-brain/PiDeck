@@ -179,6 +179,11 @@ export function testDaemon(
       ? { piRunner: fakePiRunner }
       : {}),
     promptGatePollIntervalMs: 0,
+    // Issue #318 seam: hermetic fake panes count as ready — prompt-delivery
+    // assertions keep their old single-send semantics. Tests exercising the
+    // real readiness probe pass their own `paneReady` (or use the real-tmux
+    // integration tests).
+    paneReady: async () => true,
     ...contextOptions,
   });
   return { services, stateDir, tmux, cloned };

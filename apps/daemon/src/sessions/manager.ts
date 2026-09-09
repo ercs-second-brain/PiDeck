@@ -30,6 +30,7 @@ import { spawnAgentKindSession, type AgentKindSpawnRequest } from "./agent-kind-
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
 import { isArchivedWorkerSession, isTerminalWorkerStatus, launchPath, reconcileSessions, type ReconcileDeps, type ReconcileResult } from "./reconcile.js";
+import { confirmPaneSubmitted, waitForPaneInputReady } from "./pane-ready.js";
 import { Tmux } from "./tmux.js";
 import { DEFAULT_WORKER_COMMAND, nextTmuxSessionName, serializeCommand } from "./tmux-commands.js";
 
@@ -88,6 +89,8 @@ export class SessionManager {
   private readonly archivedLogs: ArchivedLogStore;
   private readonly git: GitRunner;
   private readonly personaAssets: PersonaLaunchAssets | undefined;
+  /** Pane-input readiness probe (issue #318) — see the constructor dep. */
+  private readonly paneReady: (tmuxSession: string) => Promise<boolean>;
   /** Collaborators for the extracted reconcile machinery (reconcile.ts). */
   private readonly deps: ReconcileDeps;
 
@@ -105,12 +108,19 @@ export class SessionManager {
      * and applied skills (`--skill <file>`). Absent (default): plain `pi`.
      */
     personaAssets?: PersonaLaunchAssets;
+    /**
+     * Pane-input readiness probe for {@link deliverPromptWhenReady} (issue #318);
+     * defaults to the real pi input-box probe (pane-ready.ts). Tests inject
+     * a constant so hermetic fake panes count as ready.
+     */
+    paneReady?: (tmuxSession: string) => Promise<boolean>;
   }) {
     this.tmux = deps.tmux;
     this.registry = deps.registry;
     this.layout = deps.layout;
     this.git = deps.git ?? defaultGitRunner;
     this.personaAssets = deps.personaAssets;
+    this.paneReady = deps.paneReady ?? ((name) => waitForPaneInputReady(deps.tmux, name));
     this.deps = { tmux: deps.tmux, registry: deps.registry, layout: deps.layout };
     this.archivedLogs = deps.archivedLogs ?? new ArchivedLogStore(deps.layout.archivedLogsFilePath());
   }
@@ -425,6 +435,47 @@ export class SessionManager {
   async sendKeys(sessionId: string, keys: string, options: { enter?: boolean } = {}): Promise<void> {
     const session = this.requireSession(sessionId);
     await this.tmux.sendKeys(session.tmuxSession, keys, options);
+  }
+
+  /**
+   * Types text into the session's pane after the pane is accepting input
+   * (issue #318) — the prompt-gate's delivery path: bounded readiness
+   * wait, fail-open single send (one text + one Enter, as always). NO
+   * submit confirmation: gate retries can target an already-interactive
+   * pane where a bare-Enter nudge could answer a permission dialog.
+   */
+  async sendKeysAfterReady(sessionId: string, keys: string, options: { enter?: boolean } = {}): Promise<void> {
+    const session = this.requireSession(sessionId);
+    await this.paneReady(session.tmuxSession);
+    await this.sendKeys(sessionId, keys, options);
+  }
+
+  /**
+   * Delivers a prompt into a freshly created pane (issue #318): spawn
+   * paths typed the initial prompt immediately after launch, inside pi's
+   * startup window where the TUI holds stdin and swallows the submit
+   * Enter — the message sat unsubmitted in the composer or vanished.
+   *
+   * Three bounded steps (the agent-orchestrator pattern, pane-scraped
+   * since this daemon has no pi lifecycle hooks): wait for the pane to
+   * accept input, type the text exactly ONCE with one Enter, then confirm
+   * acceptance — re-sending bare Enters only (never the text, so a double
+   * delivery is impossible) while the draft still sits unsubmitted.
+   *
+   * Fresh panes only: an interacted-with pane may show a permission
+   * dialog, and a confirmation Enter would answer it — follow-up sends to
+   * running sessions use {@link sendKeys}. Returns `typed` (the pane was
+   * ready, the text was sent) and `accepted` (submit confirmed); callers
+   * queue on the prompt gate only when `typed` is false — a typed-but-
+   * unconfirmed draft must never be queued (it would double-deliver).
+   */
+  async deliverPromptWhenReady(sessionId: string, text: string): Promise<{ typed: boolean; accepted: boolean }> {
+    const session = this.requireSession(sessionId);
+    const typed = await this.paneReady(session.tmuxSession);
+    if (!typed) return { typed: false, accepted: false };
+    await this.sendKeys(sessionId, text, { enter: true });
+    const accepted = await confirmPaneSubmitted(this.tmux, session.tmuxSession, text);
+    return { typed: true, accepted };
   }
 
   /**

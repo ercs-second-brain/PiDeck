@@ -61,8 +61,20 @@ export async function spawnWorker(
     // the worker at `spawning` with the precise fix in `statusMessage`.
     services.promptGate.queue(worker, input.prompt);
   } else if (input.prompt !== undefined) {
-    await services.sessions.sendKeys(worker.sessionId, input.prompt, { enter: true });
-    services.sessions.updateWorkerStatus(worker.id, "running", "agent running; initial prompt delivered");
+    // Issue #56 parity: never type the prompt into an agent that cannot run.
+    // Issue #318: even with auth ready, the pane was just created — deliver
+    // through the readiness wait + submit confirmation (bare-Enter nudges
+    // only; the text is never re-typed). On timeout the prompt is queued on
+    // the gate instead; a typed-but-unconfirmed draft stays visible in the
+    // composer and must NOT be queued (double delivery).
+    const delivered = await services.sessions.deliverPromptWhenReady(worker.sessionId, input.prompt);
+    if (delivered.typed) {
+      services.sessions.updateWorkerStatus(worker.id, "running", delivered.accepted
+        ? "agent running; initial prompt delivered"
+        : "agent running; initial prompt typed (submit unconfirmed)");
+    } else {
+      services.promptGate.queue(worker, input.prompt);
+    }
   }
   const workerParsed = workerSchema.parse(services.sessions.getWorker(worker.id) ?? worker);
   services.hub.broadcast({ type: "worker.spawned", at: services.now().toISOString(), worker: workerParsed });
