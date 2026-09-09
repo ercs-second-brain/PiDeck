@@ -272,3 +272,45 @@ describe("SessionManager lifecycle passthroughs (kill/capture/resize/failed laun
     expect(manager.getWorker(worker.id)?.status).toBe("awaiting_ci");
   });
 });
+
+describe("sendKeysWhenReady (issue #318 — pi startup-input race)", () => {
+  const BORDER = "─".repeat(80);
+
+  it("waits for pi to accept input, then sends exactly once with one Enter", async () => {
+    const { manager, fake } = makeManager();
+    const { session } = await manager.spawnWorker("proj", { issueNumber: 4 });
+
+    // The pane boots into pi after a short window (the #318 race window):
+    // typing before readiness loses the message. Boot borders at 60ms.
+    setTimeout(() => {
+      fake.sessions.get(session.tmuxSession)?.paneLines.push(BORDER);
+    }, 60);
+
+    expect(await manager.sendKeysWhenReady(session.id, "fix the bug", { enter: true })).toBe(true);
+
+    // Exactly one message payload and one Enter reached the pane.
+    const bytes = fake.sentBytes(session.tmuxSession).toString("utf8");
+    expect(bytes).toBe("fix the bug");
+    const enters = fake.invocations.filter(
+      (inv) =>
+        inv.args[0] === "send-keys" &&
+        inv.args.includes("Enter") &&
+        inv.args.includes("-t") &&
+        inv.args[inv.args.indexOf("-t") + 1] === session.tmuxSession,
+    );
+    expect(enters).toHaveLength(1);
+  });
+
+  it("fails open after the injected probe reports not-ready (pane still receives the text)", async () => {
+    const never = async () => false;
+    const fake = new FakeTmuxRunner();
+    const tmux = new Tmux({ runner: (args) => fake.run(args) });
+    const layout = new ProjectLayout(stateDir);
+    const registry = new SessionRegistry(layout.sessionsFilePath());
+    const manager = new SessionManager({ tmux, registry, layout, git: new FakeGitRunner().asRunner(), paneReady: never });
+    const { session } = await manager.spawnWorker("proj", { issueNumber: 4 });
+
+    expect(await manager.sendKeysWhenReady(session.id, "ship it", { enter: true })).toBe(false);
+    expect(fake.sentBytes(session.tmuxSession).toString("utf8")).toBe("ship it");
+  });
+});

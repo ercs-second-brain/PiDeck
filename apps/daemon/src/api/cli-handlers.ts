@@ -61,12 +61,35 @@ export async function spawnWorker(
     // the worker at `spawning` with the precise fix in `statusMessage`.
     services.promptGate.queue(worker, input.prompt);
   } else if (input.prompt !== undefined) {
-    await services.sessions.sendKeys(worker.sessionId, input.prompt, { enter: true });
-    services.sessions.updateWorkerStatus(worker.id, "running", "agent running; initial prompt delivered");
+    // Issue #318: the pane was just created — wait for pi to accept input
+    // before typing, or the prompt lands in its startup window and the
+    // Enter is swallowed (typed-but-never-sent). On timeout the prompt is
+    // queued on the gate instead (fail-open below the wait is wrong here:
+    // a timed-out fresh pane is exactly the swallowed-prompt case).
+    const delivered = await tryDeliverPrompt(services, worker.sessionId, input.prompt);
+    if (delivered) {
+      services.sessions.updateWorkerStatus(worker.id, "running", "agent running; initial prompt delivered");
+    } else {
+      services.promptGate.queue(worker, input.prompt);
+    }
   }
   const workerParsed = workerSchema.parse(services.sessions.getWorker(worker.id) ?? worker);
   services.hub.broadcast({ type: "worker.spawned", at: services.now().toISOString(), worker: workerParsed });
   return workerParsed;
+}
+
+/**
+ * One bounded prompt-delivery attempt for a freshly created pane (issue
+ * #318): waits for pi to accept input, then sends ONCE with the explicit
+ * Enter. `false` = the pane never became ready in time (caller queues on
+ * the prompt gate — the same fail-truthful path issue #56 built).
+ */
+async function tryDeliverPrompt(services: DaemonServices, sessionId: string, prompt: string): Promise<boolean> {
+  const session = services.sessions.listSessions().find((s) => s.id === sessionId);
+  if (session === undefined) return false;
+  if (!(await services.paneReady(session.tmuxSession))) return false;
+  await services.sessions.sendKeys(sessionId, prompt, { enter: true });
+  return true;
 }
 
 /**

@@ -55,7 +55,9 @@ afterAll(async () => {
 });
 
 describe("agent-kind launch on a real tmux server (docs/agent-kinds.md, issue #310)", () => {
-  it("spawns a bare pane, types the persona launch line, delivers the question, and relaunch-heals", async () => {
+  // Real-tmux + real-pi tests: pi's cold start and the readiness wait put
+  // these well past vitest's 5s default on CI runners — explicit budget.
+  it("spawns a bare pane, types the persona launch line, delivers the question, and relaunch-heals", { timeout: 60_000 }, async () => {
     if (!tmuxAvailable) return;
     await services.projects.register({ mode: "clone", repoUrl: "https://github.com/ak/it1" });
     const project = "ak-it1";
@@ -96,4 +98,61 @@ describe("agent-kind launch on a real tmux server (docs/agent-kinds.md, issue #3
     );
     expect(personaAfter).toContain("pideck send --session");
   });
+
+  it("delivers the question INSIDE pi on the menu spawn path (issue #318)", { timeout: 60_000 }, async () => {
+    if (!tmuxAvailable) return;
+    await services.projects.register({ mode: "clone", repoUrl: "https://github.com/ak/it2" });
+    const project = "ak-it2";
+    const { handleAgentKindSpawn } = await import("../api/agent-kind-spawn.js");
+    const question = "Reply with the single word: ready.";
+    const session = await handleAgentKindSpawn(services, project, {
+      kind: "investigator",
+      name: "inv",
+      question,
+      parentSessionId: (await services.sessions.ensureOrchestrator(project)).id,
+    });
+    if (session === undefined) throw new Error("spawn returned no session");
+
+    // The pane booted pi WITH the persona: the launch line is in the pane
+    // bytes (scrollback) and pi reports the rendered persona file as its
+    // [Context] — the #318 end-to-end property on the live path. Match on
+    // the newline-flattened capture: an 80-col pane wraps the long launch
+    // line mid-token, and the wrap only inserts newlines, not characters.
+    const deadline = Date.now() + 30_000;
+    let pane = "";
+    const flat = () => pane.replace(/\n/g, "");
+    while (Date.now() < deadline) {
+      pane = await tmux.capturePane(session.tmuxSession, { lines: 500 });
+      if (flat().includes("--append-system-prompt") && flat().includes("[Context]")) break;
+      await sleep(200);
+    }
+    expect(flat()).toContain(`PD_SESSION_ID=${session.id}`);
+    expect(flat()).toContain("--append-system-prompt");
+    expect(flat()).toContain(`agent-prompt-${session.id}`);
+    expect(flat()).toContain("[Context]");
+
+    // The question was SUBMITTED inside pi — it appears in the transcript
+    // and the input box between the bottom borders no longer holds it (the
+    // pre-fix race left it typed-but-never-sent in a fresh pane).
+    while (Date.now() < deadline) {
+      pane = await tmux.capturePane(session.tmuxSession, { lines: 500 });
+      if (flat().includes(question) && !inputArea(pane).replace(/\n/g, "").includes(question)) break;
+      await sleep(200);
+    }
+    expect(flat()).toContain(question);
+    expect(inputArea(pane).replace(/\n/g, "")).not.toContain(question);
+  });
 });
+
+/** The pi input box: whatever sits between the last two border lines. */
+function inputArea(pane: string): string {
+  const lines = pane.split("\n");
+  const borders: number[] = [];
+  lines.forEach((line, i) => {
+    if (/─{10,}/.test(line)) borders.push(i);
+  });
+  if (borders.length < 2) return pane;
+  const top = borders[borders.length - 2]!;
+  const bottom = borders[borders.length - 1]!;
+  return lines.slice(top + 1, bottom).join("\n");
+}

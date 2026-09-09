@@ -19,7 +19,7 @@
  *   cheap and exempt.
  */
 
-import { ACTIVE_WORKER_STATUSES, AGENT_KIND_REPORT_TARGET, type AgentKind, type Session } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES, AGENT_KIND_INFO, AGENT_KIND_REPORT_TARGET, type AgentKind, type Session } from "@pideck/shared";
 
 import { HttpError } from "./router.js";
 import { requireOr404 } from "./handlers.js";
@@ -76,6 +76,18 @@ async function resolveParentSessionId(
 }
 
 /**
+ * One bounded question-delivery attempt for the freshly spawned pane
+ * (issue #318): waits for pi's input box, then sends ONCE with the
+ * explicit Enter. `false` = the pane never became ready in time (caller
+ * queues on the prompt gate instead — never a swallowed question).
+ */
+async function tryDeliverQuestion(services: DaemonServices, session: Session, question: string): Promise<boolean> {
+  if (!(await services.paneReady(session.tmuxSession))) return false;
+  await services.sessions.sendKeys(session.id, question, { enter: true });
+  return true;
+}
+
+/**
  * Spawns one agent-kind session (the handler behind both
  * `POST /api/projects/:projectId/spawn` with `kind` and the contract
  * endpoint `POST /api/projects/:projectId/spawn-agent`). Renamed in
@@ -121,14 +133,23 @@ export async function handleAgentKindSpawn(services: DaemonServices, projectId: 
   await services.orchestratorBootstrap.ensureForSession(session);
 
   // Issue #56 parity: never type the question into an agent that cannot
-  // run — gate it on pi auth readiness like worker prompts (the question
-  // reaches only kinds whose spec takesInput — schemas enforce that).
-  if (input.question !== undefined) {
+  // run — gate it on pi auth readiness like worker prompts. The shared
+  // spec's takesInput (issue #324) decides whether the kind carries a
+  // question at all (the schema enforces the same rule; the handler stays
+  // correct independently of it). Issue #318: even with auth ready, the
+  // pane was just created — wait for pi to accept input before typing, or
+  // the question lands in its startup window and the Enter is swallowed
+  // (typed-but-never-sent). A pane that never shows its input box in time
+  // queues on the gate (deduped per session; the gate's retries wait for
+  // readiness the same way).
+  const question = AGENT_KIND_INFO[input.kind].takesInput ? input.question : undefined;
+  if (question !== undefined) {
     const piAuth = await services.piAuth.payload();
     if (piAuth.ready) {
-      await services.sessions.sendKeys(session.id, input.question, { enter: true });
+      const delivered = await tryDeliverQuestion(services, session, question);
+      if (!delivered) services.promptGate.queueSession(session.id, question);
     } else {
-      services.promptGate.queueSession(session.id, input.question);
+      services.promptGate.queueSession(session.id, question);
     }
   }
   return session;

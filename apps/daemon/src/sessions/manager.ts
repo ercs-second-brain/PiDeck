@@ -29,6 +29,7 @@ import { spawnAgentKindSession, type AgentKindSpawnRequest } from "./agent-kind-
 import type { SessionRegistry, SessionRole } from "./registry.js";
 import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
 import { isArchivedWorkerSession, isTerminalWorkerStatus, launchPath, reconcileSessions, type ReconcileDeps, type ReconcileResult } from "./reconcile.js";
+import { waitForPaneInputReady } from "./pane-ready.js";
 import { Tmux } from "./tmux.js";
 import { DEFAULT_WORKER_COMMAND, nextTmuxSessionName, serializeCommand } from "./tmux-commands.js";
 
@@ -86,6 +87,8 @@ export class SessionManager {
   private readonly layout: ProjectLayout;
   private readonly archivedLogs: ArchivedLogStore;
   private readonly git: GitRunner;
+  /** Pane-input readiness probe (issue #318) — see the constructor dep. */
+  private readonly paneReady: (tmuxSession: string) => Promise<boolean>;
   /** Collaborators for the extracted reconcile machinery (reconcile.ts). */
   private readonly deps: ReconcileDeps;
 
@@ -97,11 +100,18 @@ export class SessionManager {
     archivedLogs?: ArchivedLogStore;
     /** Git runner for worker workspace preparation (issue #287); defaults to the real git binary. */
     git?: GitRunner;
+    /**
+     * Pane-input readiness probe for {@link sendKeysWhenReady} (issue #318);
+     * defaults to the real pi input-box probe (pane-ready.ts). Tests inject
+     * a constant so hermetic fake panes count as ready.
+     */
+    paneReady?: (tmuxSession: string) => Promise<boolean>;
   }) {
     this.tmux = deps.tmux;
     this.registry = deps.registry;
     this.layout = deps.layout;
     this.git = deps.git ?? defaultGitRunner;
+    this.paneReady = deps.paneReady ?? ((name) => waitForPaneInputReady(deps.tmux, name));
     this.deps = { tmux: deps.tmux, registry: deps.registry, layout: deps.layout };
     this.archivedLogs = deps.archivedLogs ?? new ArchivedLogStore(deps.layout.archivedLogsFilePath());
   }
@@ -400,6 +410,25 @@ export class SessionManager {
   async sendKeys(sessionId: string, keys: string, options: { enter?: boolean } = {}): Promise<void> {
     const session = this.requireSession(sessionId);
     await this.tmux.sendKeys(session.tmuxSession, keys, options);
+  }
+
+  /**
+   * Types text into the session's pane only after pi is accepting input
+   * (issue #318): spawn paths typed the initial prompt into a fresh pane
+   * immediately after launch, inside pi's startup window where the TUI
+   * drops stdin — the message sat unsubmitted or vanished. Waits (bounded)
+   * for the pane's input box, then performs exactly ONE send + one Enter
+   * (the same single submission {@link sendKeys} always made); fail-open
+   * after the timeout so a pane that never shows the marker (plain shell)
+   * still receives the text. Returns whether the pane was ready before the
+   * send (`false` = timed out; the send happened anyway — callers needing
+   * strict ready-or-queue use {@link waitForPaneInputReady} directly).
+   */
+  async sendKeysWhenReady(sessionId: string, keys: string, options: { enter?: boolean } = {}): Promise<boolean> {
+    const session = this.requireSession(sessionId);
+    const ready = await this.paneReady(session.tmuxSession);
+    await this.sendKeys(sessionId, keys, options);
+    return ready;
   }
 
   /**

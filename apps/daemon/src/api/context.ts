@@ -18,6 +18,7 @@ import { OrchestratorBootstrap } from "../orchestrator/bootstrap.js";
 import { procSnapshot, type ProcessInfo } from "../sessions/caller-discovery.js";
 import { ProjectLayout, defaultStateDir } from "../sessions/layout.js";
 import { agentSessionEnv } from "../sessions/agent-env.js";
+import { waitForPaneInputReady } from "../sessions/pane-ready.js";
 import { SessionManager } from "../sessions/manager.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { Tmux } from "../sessions/tmux.js";
@@ -48,6 +49,8 @@ export interface DaemonServices {
    * and after each project registration (issue #166).
    */
   orchestratorBootstrap: OrchestratorBootstrap;
+  /** Pane-input readiness probe (issue #318) — see DaemonContextOptions. */
+  paneReady: (tmuxSession: string) => Promise<boolean>;
   hub: WsHub;
   /** Shared tmux runner (the terminal bridge streams through the same one). */
   tmux: Tmux;
@@ -130,6 +133,13 @@ export interface DaemonContextOptions {
   piAuthTtlMs?: number;
   /** Override the process-table snapshot used for agent-kind caller discovery (tests). */
   callerProcesses?: () => Promise<ProcessInfo[]>;
+  /**
+   * Pane-input readiness probe for spawn-path prompt delivery (issue #318):
+   * whether a tmux session's pane is accepting agent input. Default: the
+   * real pi input-box probe with a bounded wait (pane-ready.ts). Tests
+   * inject a constant so hermetic fake panes count as ready.
+   */
+  paneReady?: (tmuxSession: string) => Promise<boolean>;
 }
 
 /**
@@ -138,9 +148,16 @@ export interface DaemonContextOptions {
  * prompts (the investigator's question, docs/agent-kinds.md) both queue
  * here until a provider is ready.
  */
-function buildPromptGate(sessions: SessionManager, piAuth: PiAuthProbe, options: DaemonContextOptions): PromptGate {
+function buildPromptGate(sessions: SessionManager, paneReady: (tmuxSession: string) => Promise<boolean>, piAuth: PiAuthProbe, options: DaemonContextOptions): PromptGate {
   return new PromptGate({
-    sendKeys: (sessionId, keys, sendOptions) => sessions.sendKeys(sessionId, keys, sendOptions),
+    sendKeys: async (sessionId, keys, sendOptions) => {
+      // Issue #318: gate deliveries wait for pi to accept input before
+      // typing — a queued prompt delivered into a still-booting pane loses
+      // its submit Enter exactly like the direct spawn path did.
+      const session = sessions.listSessions().find((s) => s.id === sessionId);
+      if (session !== undefined) await paneReady(session.tmuxSession);
+      await sessions.sendKeys(sessionId, keys, sendOptions);
+    },
     getWorker: (workerId) => sessions.getWorker(workerId),
     updateWorkerStatus: (workerId, status, statusMessage) => sessions.updateWorkerStatus(workerId, status, statusMessage),
     isReady: async () => (await piAuth.payload()).ready,
@@ -211,7 +228,8 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // Sessions get the daemon's resolved runtime env (agent-env.ts), never the
   // tmux server's stale global environment.
   const tmux = options.tmux ?? new Tmux({ defaultSessionEnv: agentSessionEnv() });
-  const sessions = new SessionManager({ tmux, registry, layout, ...(options.git !== undefined ? { git: options.git } : {}) });
+  const paneReady = options.paneReady ?? ((name: string) => waitForPaneInputReady(tmux, name));
+  const sessions = new SessionManager({ tmux, registry, layout, paneReady, ...(options.git !== undefined ? { git: options.git } : {}) });
 
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
   const projectStore = new ProjectStore(stateDir);
@@ -257,7 +275,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     ...(options.piReady !== undefined ? { readyOverride: options.piReady } : {}),
     ...(options.piAuthTtlMs !== undefined ? { ttlMs: options.piAuthTtlMs } : {}),
   });
-  const promptGate = buildPromptGate(sessions, piAuth, options);
+  const promptGate = buildPromptGate(sessions, paneReady, piAuth, options);
   // Warm the pi version memo (issue #223) at boot, fire-and-forget: the
   // installed pi only changes through an apply (which restarts the daemon),
   // so the memo never needs refreshing — and the first /api/status poll must
@@ -294,6 +312,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     pullListing,
     sessions,
     orchestratorBootstrap,
+    paneReady,
     hub,
     tmux,
     gh,
