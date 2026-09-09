@@ -45,18 +45,34 @@ code {
 /* --- App shell ----------------------------------------------------------- */
 
 .app-header {
+  position: relative;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   padding: 14px 24px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-raised);
 }
 
+/* Issue #278 (B22): the brand — the #265 icon mark left of the product
+   name — is centered in the header regardless of the hamburger/bell
+   widths: absolutely positioned at the header's midpoint. */
 .brand {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.3px;
+}
+
+.brand-logo {
+  flex: none;
+  width: 22px;
+  height: 22px;
 }
 
 .brand-accent {
