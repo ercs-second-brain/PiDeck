@@ -199,15 +199,16 @@ export function NotificationBell() {
       >
         {/* Issue #281 (B25): monochrome outline bell (stroke = currentColor)
             instead of the loud colored emoji — integrates with the dark
-            theme and takes the hover accent. */}
+            theme and takes the hover accent. Issue #325: 16px — the 18px
+            glyph read too prominent in the tighter header. */}
         <svg
           className="notif-bell-icon"
           viewBox="0 0 24 24"
-          width="18"
-          height="18"
+          width="16"
+          height="16"
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.8"
+          strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
           aria-hidden="true"

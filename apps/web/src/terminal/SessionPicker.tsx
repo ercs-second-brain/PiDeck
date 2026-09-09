@@ -324,66 +324,73 @@ export function SessionPicker(props: SessionPickerProps) {
 
   return (
     <aside className="session-picker">
-      {/* Issue #259: the Workspace row (renamed global-agent entry) — name
-          opens the all-projects board, chat attaches/starts the workspace
-          agent; disabled until at least one project exists (B3). */}
-      <GlobalAgentRow
-        session={props.globalAgent ?? null}
-        selected={props.globalAgent?.id === props.selectedSessionId}
-        boardSelected={props.allProjectsSelected === true}
-        disabled={props.entries.length === 0}
-        starting={props.startingGlobalAgent === true}
-        onSelectBoard={props.onSelectAllProjects}
-        onStart={() => props.onStartGlobalAgent?.()}
-      />
-      {props.entries.map((entry) => (
-        <ProjectSection
-          key={entry.project.id} entry={entry}
-          selectedSessionId={props.selectedSessionId} selectedProjectId={props.selectedProjectId ?? null}
-          startingProjectId={props.startingProjectId ?? null} confirmingSessionId={state.confirmingSessionId}
-          openMenuProjectId={state.openMenuId} now={now}
-          pendingTerminateWorkerId={props.terminatingWorkerId ?? null} pendingTerminateSessionId={pendingAgentTerminateId}
-          archivedOpen={state.archivedOpen.has(entry.project.id)} onToggleArchived={state.toggleArchived}
-          collapsed={state.collapsedProjects.has(entry.project.id)} onToggleCollapsed={state.toggleCollapsed}
-          onSelectSession={props.onSelectSession} onSelectProject={props.onSelectProject}
-          onOpenSettings={(projectId) => {
-            state.closeMenu();
-            props.onOpenSettings(projectId);
-          }}
-          onAskDeleteProject={(projectId) => {
-            state.closeMenu();
-            state.deleteConfirm.ask(projectId);
-          }}
-          onToggleMenu={state.toggleMenu} onStartOrchestrator={props.onStartOrchestrator}
-          onSpawnAgent={(projectId, kind) => {
-            state.closeMenu();
-            spawnAgent(projectId, kind);
-          }}
-          onAskSpawnInput={(projectId, kind) => {
-            state.closeMenu();
-            setSpawnError(null);
-            state.investigatorAsk.ask(projectId, kind);
-          }}
-          onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession}
-          onAskTerminate={state.askTerminate}
+      {/* Issue #327: the project list scrolls inside its own region — the
+          footer lives outside the scroll container, so its full-width
+          buttons span the sidebar's whole visible width (a scrollbar inside
+          the old all-scrolling sidebar shifted the footer — and the
+          settings button — left of the sidebar's visual center). */}
+      <div className="picker-scroll">
+        {/* Issue #259: the Workspace row (renamed global-agent entry) — name
+            opens the all-projects board, chat attaches/starts the workspace
+            agent; disabled until at least one project exists (B3). */}
+        <GlobalAgentRow
+          session={props.globalAgent ?? null}
+          selected={props.globalAgent?.id === props.selectedSessionId}
+          boardSelected={props.allProjectsSelected === true}
+          disabled={props.entries.length === 0}
+          starting={props.startingGlobalAgent === true}
+          onSelectBoard={props.onSelectAllProjects}
+          onStart={() => props.onStartGlobalAgent?.()}
         />
-      ))}
-      <ConfirmModals
-        state={state}
-        entries={props.entries}
-        onTerminateWorker={props.onTerminateWorker}
-        onTerminateAgentSession={props.onTerminateAgentSession}
-        onSpawnAgentSession={props.onSpawnAgentSession}
-        onDeleteProject={props.onDeleteProject}
-      />
-      {props.entries.length === 0 && !props.error && (
-        <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — add one below to get started."}</p>
-      )}
-      {props.error && <p className="picker-error">Daemon unreachable: {props.error}</p>}
-      {spawnError && <p className="picker-error">Spawn failed: {spawnError}</p>}
-      {/* Issue #259 (B7): the add-project affordance as the sidebar's
-          bottom row, styled like a project row (the former header "+"). */}
-      <AddProjectRow onStartOnboarding={props.onStartOnboarding} />
+        {props.entries.map((entry) => (
+          <ProjectSection
+            key={entry.project.id} entry={entry}
+            selectedSessionId={props.selectedSessionId} selectedProjectId={props.selectedProjectId ?? null}
+            startingProjectId={props.startingProjectId ?? null} confirmingSessionId={state.confirmingSessionId}
+            openMenuProjectId={state.openMenuId} now={now}
+            pendingTerminateWorkerId={props.terminatingWorkerId ?? null} pendingTerminateSessionId={pendingAgentTerminateId}
+            archivedOpen={state.archivedOpen.has(entry.project.id)} onToggleArchived={state.toggleArchived}
+            collapsed={state.collapsedProjects.has(entry.project.id)} onToggleCollapsed={state.toggleCollapsed}
+            onSelectSession={props.onSelectSession} onSelectProject={props.onSelectProject}
+            onOpenSettings={(projectId) => {
+              state.closeMenu();
+              props.onOpenSettings(projectId);
+            }}
+            onAskDeleteProject={(projectId) => {
+              state.closeMenu();
+              state.deleteConfirm.ask(projectId);
+            }}
+            onToggleMenu={state.toggleMenu} onStartOrchestrator={props.onStartOrchestrator}
+            onSpawnAgent={(projectId, kind) => {
+              state.closeMenu();
+              spawnAgent(projectId, kind);
+            }}
+            onAskSpawnInput={(projectId, kind) => {
+              state.closeMenu();
+              setSpawnError(null);
+              state.investigatorAsk.ask(projectId, kind);
+            }}
+            onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession}
+            onAskTerminate={state.askTerminate}
+          />
+        ))}
+        <ConfirmModals
+          state={state}
+          entries={props.entries}
+          onTerminateWorker={props.onTerminateWorker}
+          onTerminateAgentSession={props.onTerminateAgentSession}
+          onSpawnAgentSession={props.onSpawnAgentSession}
+          onDeleteProject={props.onDeleteProject}
+        />
+        {props.entries.length === 0 && !props.error && (
+          <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — add one below to get started."}</p>
+        )}
+        {props.error && <p className="picker-error">Daemon unreachable: {props.error}</p>}
+        {spawnError && <p className="picker-error">Spawn failed: {spawnError}</p>}
+        {/* Issue #259 (B7): the add-project affordance as the sidebar's
+            bottom row, styled like a project row (the former header "+"). */}
+        <AddProjectRow onStartOnboarding={props.onStartOnboarding} />
+      </div>
       <PickerFooter updateSlot={props.updateSlot} onOpenAgentAssets={props.onOpenAgentAssets} onOpenGlobalSettings={props.onOpenGlobalSettings} />
     </aside>
   );
