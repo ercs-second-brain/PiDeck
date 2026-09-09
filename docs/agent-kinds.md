@@ -13,11 +13,11 @@ plumbing (spawn/registration/sidebar/CLI) on top of it after #290 merges.
 
 ## The three kinds
 
-| Kind | Purpose | Read-only | Report route | Spawn surface |
-|---|---|---|---|---|
-| `researcher` | Take a question, return an accurate report grounded in codebase facts (files + lines cited) | yes | back to the **calling session** (any role); the caller waits | any agent, via spawn |
-| `devex-audit` | Mine prior pi sessions for friction / time / money sinks; count, summarize, rank fixes (credentials REDACTED) | yes | the **project orchestrator** | project ⋯ context menu, CLI |
-| `kiss-audit` | KISS methodology audit — 7 dimensions + repo extras, evidence-backed findings, TOP-5, net line delta | yes | the **project orchestrator** | project ⋯ context menu, CLI |
+| Kind | Purpose | Read-only | Report route | Auto-task | Spawn surface |
+|---|---|---|---|---|---|
+| `researcher` | Take a question, return an accurate report grounded in codebase facts (files + lines cited) | yes | back to the **calling session** (any role); the caller waits | none — task-less by config; waits for the caller's question | any agent, via spawn |
+| `devex-audit` | Mine prior pi sessions for friction / time / money sinks; count, summarize, rank fixes (credentials REDACTED) | yes | the **project orchestrator** | yes — audit begins on spawn | project ⋯ context menu, CLI |
+| `kiss-audit` | KISS methodology audit — 7 dimensions + repo extras, evidence-backed findings, TOP-5, net line delta | yes | the **project orchestrator** | yes — audit begins on spawn | project ⋯ context menu, CLI |
 
 All three are read-only by design: findings and reports, never edits,
 commits, or PRs.
@@ -40,6 +40,8 @@ commits, or PRs.
     workerLike: boolean;
     /** Whether the pane launches with the write tools excluded. */
     readOnly: boolean;
+    /** Auto-task typed after the persona boot (issue #329); absent = task-less. */
+    taskTemplate?: string;
   }
 
   const AGENT_KINDS: Record<AgentKind, AgentKindSpec> = { ... };
@@ -68,6 +70,33 @@ rendering as the existing personas (see
 The persona file owns everything role-specific: methodology, report
 format, redaction rules, read-only constraints. The spawn path owns
 everything mechanical: which file, which parent, which report target.
+
+## 2b. The auto-task: persona = who, task = what (issue #329)
+
+The persona prompt makes the agent who it is; a **task message** triggers
+the work. Without one, an autonomous kind boots into a fresh pane and
+sits idle forever — the persona loaded, nothing started (bug #329,
+bash finding B47).
+
+Each kind spec therefore carries an optional `taskTemplate` — the work
+order typed into the pane right after the persona boot:
+
+- **Autonomous kinds** (`kiss-audit`, `devex-audit`) have a taskTemplate:
+  "begin the audit now, per your persona's methodology, then deliver the
+  report to `<report target>`" — the agent starts working unprompted.
+- **Reactive kinds** (`researcher`) are task-less by config: no
+  `taskTemplate`, nothing typed after the boot — they wait for the
+  question their caller delivers with the spawn.
+
+The template renders with the same `{{PLACEHOLDER}}` set as the persona:
+the project placeholders (`{{PROJECT_PATH}}` et al.) plus the report
+target session id (`{{ORCHESTRATOR_SESSION_ID}}` for orchestrator-routed
+kinds, `{{PARENT_SESSION_ID}}` for caller-routed ones). Delivery rides
+the same idempotent path as every spawn-path prompt (issue #318): wait
+for pi's input box, type the text exactly once, confirm the submit with
+bare-Enter nudges only (never re-typing the text — no double-submit),
+and queue on the prompt gate when the pane or pi auth is not ready
+(issue #56 parity).
 
 ## 3. Parent-of-any-role linkage
 
