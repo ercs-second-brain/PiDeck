@@ -59,7 +59,12 @@ const router = createBrowserRouter([
   },
 ]);
 
-/** App header: sidebar toggle + brand (needs `<Link>`, so it renders inside the router). */
+/**
+ * App header: sidebar toggle + centered brand (needs `<Link>`, so it renders
+ * inside the router). Issue #278 (B22): the brand — the #265 icon mark to
+ * the left of the product name — is centered in the header regardless of
+ * the hamburger/bell widths.
+ */
 function AppHeader(props: { sidebarOpen: boolean; onToggleSidebar: () => void }) {
   return (
     <header className="app-header">
@@ -73,7 +78,11 @@ function AppHeader(props: { sidebarOpen: boolean; onToggleSidebar: () => void })
         ☰
       </button>
       <Link to="/" className="brand">
-        Pi<span className="brand-accent">Deck</span>
+        {/* The icon mark (#265) — the same asset as the favicon/PWA icon. */}
+        <img src="/icon.svg" alt="" className="brand-logo" />
+        <span className="brand-name">
+          Pi<span className="brand-accent">Deck</span>
+        </span>
       </Link>
       <div className="header-actions">
         <NotificationBell />
