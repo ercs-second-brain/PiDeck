@@ -102,13 +102,18 @@ code {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
-  color: var(--text);
-  font-size: 17px;
+  /* Issue #281 (B25): quiet monochrome glyph — subtle until hovered. */
+  color: var(--text-dim);
   cursor: pointer;
 }
 
 .notif-bell:hover {
   border-color: var(--accent);
+  color: var(--text);
+}
+
+.notif-bell-icon {
+  display: block;
 }
 
 .notif-badge {
