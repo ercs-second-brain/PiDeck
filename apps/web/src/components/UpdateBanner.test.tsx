@@ -58,6 +58,9 @@ function view(overrides: Partial<UpdateBannerViewProps> = {}): string {
 describe("UpdateBannerView — update available (idle)", () => {
   it("renders the new short SHA and an enabled update button when all agents are idle", () => {
     const html = view();
+    // Issue #260: the strips live in a compact popup wrapper (anchored
+    // above the sidebar's settings entry by the footer CSS).
+    expect(html).toContain("update-popup");
     expect(html).toContain("update-banner");
     expect(html).toContain("b".repeat(7));
     expect(html).toContain("ercs-second-brain/agentsKISS@main");
@@ -86,7 +89,9 @@ describe("UpdateBannerView — update available (idle)", () => {
   });
 
   it("renders nothing when the install is up to date", () => {
-    expect(view({ status: status({ localSha: "b".repeat(40), updateAvailable: false }) })).not.toContain("update-banner");
+    const html = view({ status: status({ localSha: "b".repeat(40), updateAvailable: false }) });
+    expect(html).not.toContain("update-banner");
+    expect(html).not.toContain("update-popup");
   });
 
   it("renders the check error honestly instead of going quiet (issue #221)", () => {
@@ -121,7 +126,10 @@ describe("UpdateBannerView — update available (idle)", () => {
   });
 
   it("renders nothing while the status is loading", () => {
-    expect(view({ status: null })).not.toContain("update-banner");
+    const html = view({ status: null });
+    expect(html).not.toContain("update-banner");
+    // No empty popup shell when quiet (issue #260).
+    expect(html).not.toContain("update-popup");
   });
 });
 

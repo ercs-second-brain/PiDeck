@@ -33,7 +33,7 @@
  * view pieces live in {@link ./picker-rows.tsx}.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Project, Session, Worker } from "@pideck/shared";
 import {
   AddProjectRow,
@@ -248,6 +248,9 @@ export interface SessionPickerProps {
    * kept. Rejecting (e.g. 409 while workers drive a PR) surfaces in the modal. */
   onDeleteProject?: (projectId: string) => Promise<void>;
   onTerminateWorker?: (workerId: string) => void;
+  /** Issue #260 (B8): compact update popup rendered inside the footer,
+   * anchored above the settings entry. Quiet when up to date / loading. */
+  updateSlot?: ReactNode;
 }
 
 /** Sidebar: project name opens the board, chat icon the orchestrator (#173), workers nested beneath. */
@@ -313,6 +316,9 @@ export function SessionPicker(props: SessionPickerProps) {
           bottom when the list is short. Renders even with no projects or a
           daemon error, so global settings are always one click away. */}
       <div className="picker-footer">
+        {/* Issue #260 (B8): the update popup anchors above the settings
+            entry — the sticky footer is its containing block. */}
+        {props.updateSlot}
         <button
           type="button"
           className="picker-footer-settings"

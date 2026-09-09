@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { UpdateStatusResponse } from "@pideck/shared";
 import { apiApplyUpdate, errorMessage } from "../lib/api";
 import {
@@ -9,8 +9,11 @@ import {
 import { UpdateApplyModal } from "./UpdateApplyModal";
 
 /**
- * Self-update banner (issues #55, #76, #82, #89): polls the daemon's update
- * status and, when a newer upstream revision exists, offers click-to-update.
+ * Self-update popup (issues #55, #76, #82, #89, #260): polls the daemon's
+ * update status and, when a newer upstream revision exists, offers
+ * click-to-update. Issue #260 (B8): the surface is a compact popup anchored
+ * on the sidebar above the settings entry (rendered through the picker's
+ * footer slot), not a full-width banner.
  *
  * - Polling is cheap for gh: the daemon serves a cached check (~5 min
  *   re-check, apps/daemon/src/api/update.ts), and the banner forces a fresh
@@ -323,9 +326,12 @@ function UpdateAvailableStrip({
 }
 
 /**
- * Pure view for the banner states — kept separate so tests exercise the
+ * Pure view for the popup states — kept separate so tests exercise the
  * rendering without React effects/fetch. Active-apply and completion
- * states render through {@link UpdateApplyModal} (issue #113).
+ * states render through {@link UpdateApplyModal} (issue #113). Every other
+ * state is a compact popup (issue #260): the strips stack inside an
+ * `.update-popup` wrapper anchored above the sidebar's settings entry;
+ * quiet when up to date / loading (`null` — no empty popup shell).
  */
 export function UpdateBannerView({
   status,
@@ -346,48 +352,59 @@ export function UpdateBannerView({
     return <UpdateApplyModal updating={reloading ? null : updating} reloading={reloading} />;
   }
 
+  let content: ReactNode;
   // Idle page lost the daemon (e.g. a CLI update restarted it): say so, the
   // reconnect poll picks the daemon's return up and offers the reload below.
   if (reconnecting) {
-    return (
+    content = (
       <div className="update-banner updating" role="status">
         Connection to the daemon was lost — waiting for it to come back&hellip;
       </div>
     );
+  } else if (reloadSha !== null) {
+    // CLI-path completion: a build with a different SHA is live; reload into
+    // it on click (auto-navigating mid-work — e.g. an attached terminal — is
+    // rude).
+    content = <ReloadStrip sha={reloadSha} onReload={onReload} />;
+  } else {
+    // Issue #221: a genuinely running apply (CLI-initiated, or the daemon
+    // rebooted mid-apply under this page) must be visible — the daemon only
+    // serves live, non-terminal stages here, so show the real stage instead
+    // of pretending all is quiet. Banner-initiated applies render through the
+    // modal above; this strip covers every other observer.
+    const progress = activeApplyProgress(status);
+    // Issue #221: a failed check must be visible, not silent — before this,
+    // an error state (stale apply progress, broken source checkout, gh PATH
+    // failure) rendered NO surface at all and looked exactly like "up to
+    // date".
+    if (progress !== null) {
+      content = <ActiveApplyStrip stage={progress.stage} />;
+    } else if (status?.error != null) {
+      content = <CheckErrorStrip error={status.error} />;
+    } else {
+      // Idle-page popup: node-too-old warning plus the update offer. Called
+      // directly (not as a component) so a quiet state yields `null` — no
+      // empty popup shell.
+      content = idleStrips({ status, error, onApply });
+    }
   }
-
-  // CLI-path completion: a build with a different SHA is live; reload into it
-  // on click (auto-navigating mid-work — e.g. an attached terminal — is rude).
-  if (reloadSha !== null) return <ReloadStrip sha={reloadSha} onReload={onReload} />;
-
-  // Issue #221: a genuinely running apply (CLI-initiated, or the daemon
-  // rebooted mid-apply under this page) must be visible — the daemon only
-  // serves live, non-terminal stages here, so show the real stage instead of
-  // pretending all is quiet. Banner-initiated applies render through the
-  // modal above; this strip covers every other observer.
-  const progress = activeApplyProgress(status);
-  if (progress !== null) return <ActiveApplyStrip stage={progress.stage} />;
-
-  // Issue #221: a failed check must be visible, not silent — before this,
-  // an error state (stale apply progress, broken source checkout, gh PATH
-  // failure) rendered NO banner at all and looked exactly like "up to date".
-  if (status?.error != null) return <CheckErrorStrip error={status.error} />;
-
-  // Idle-page strips: node-too-old warning plus the update offer.
-  return <IdleStrips status={status} error={error} onApply={onApply} />;
+  if (content === null) return null;
+  return <div className="update-popup">{content}</div>;
 }
 
 /**
  * The idle-page tail strips: the node-too-old alert (issue #202 class — a
  * daemon whose node cannot run pi gets a loud warning, on its own or stacked
- * above an update offer) and the update-available strip. Quiet (`null`) when
- * up to date / loading.
+ * above an update offer; the single warning surface, #236) and the
+ * update-available strip. Quiet (`null`) when up to date / loading.
+ * Plain render function (no hooks) — the caller needs the `null` value to
+ * suppress the popup wrapper, which a component element cannot express.
  */
-function IdleStrips(props: {
+function idleStrips(props: {
   status: UpdateStatusResponse | null;
   error: string | null;
   onApply: () => void;
-}) {
+}): ReactNode {
   const { status, error, onApply } = props;
   if (status === null) return null;
   const nodeStrip = status.nodeTooOld ? (
