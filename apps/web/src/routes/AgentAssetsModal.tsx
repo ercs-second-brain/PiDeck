@@ -24,7 +24,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { PERSONAS, agentSkillIdSchema, type AgentAssets, type AgentSkill, type Persona } from "@pideck/shared";
+import { PERSONAS, agentKindInfo, agentSkillIdSchema, type AgentAssets, type AgentSkill, type Persona } from "@pideck/shared";
 
 import { AgentKindsSection } from "./AgentKindsSection";
 import { EditorActions } from "./AssetEditorActions";
@@ -38,14 +38,19 @@ import {
   errorMessage,
 } from "../lib/api";
 
-/** Human labels for the persona rows and skill-application checkboxes. */
+/**
+ * Human labels for the persona rows and skill-application checkboxes: the
+ * three platform personas stay hardcoded; the kind personas derive from the
+ * kind registry's presentation metadata (issue #351 F3 — no duplicated
+ * labels to drift).
+ */
 export const PERSONA_LABELS: Record<Persona, string> = {
   "global-agent": "Global agent",
   orchestrator: "Orchestrator",
   worker: "Worker",
-  researcher: "Researcher",
-  "devex-audit": "Devex audit",
-  "kiss-audit": "KISS audit",
+  researcher: agentKindInfo("researcher").menuLabel,
+  "devex-audit": agentKindInfo("devex-audit").menuLabel,
+  "kiss-audit": agentKindInfo("kiss-audit").menuLabel,
 };
 
 /**

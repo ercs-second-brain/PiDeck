@@ -94,27 +94,35 @@ export function renderGlobalAgentPrompt(template: string, workspacePath: string)
 }
 
 /**
- * Resolves the source path of an orchestration prompt template (default:
- * `orchestrator.md`; the global agent uses `global-agent.md`): an explicit
- * argument wins, then `PD_AGENT_DIR` (set by service units when the
- * checkout lives outside the default location), then a walk up from this
- * module toward the repo root looking for
- * `agent/prompts/<filename>` (works from both `src/` and `dist/`).
+ * Resolves the source path of a shipped `agent/` asset: an explicit full
+ * path wins, then `PD_AGENT_DIR` (set by service units when the checkout
+ * lives outside the default location) joined with `relative`, then a walk
+ * up from this module toward the repo root looking for
+ * `agent/<relative>` (works from both `src/` and `dist/`).
  */
-export function findAgentPromptPath(explicit?: string, filename = "orchestrator.md"): string {
+export function findAgentPath(explicit: string | undefined, ...relative: string[]): string {
   if (explicit !== undefined && explicit.length > 0) return explicit;
   const envDir = process.env["PD_AGENT_DIR"];
   if (envDir !== undefined && envDir.length > 0) {
-    return path.join(envDir, "prompts", filename);
+    return path.join(envDir, ...relative);
   }
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 8; depth++) {
-    const candidate = path.join(dir, "agent", "prompts", filename);
+    const candidate = path.join(dir, "agent", ...relative);
     if (existsSync(candidate)) return candidate;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   // Last resort: the repo root relative to the current working directory.
-  return path.join(process.cwd(), "agent", "prompts", filename);
+  return path.join(process.cwd(), "agent", ...relative);
+}
+
+/**
+ * Resolves the source path of an orchestration prompt template (default:
+ * `orchestrator.md`; the global agent uses `global-agent.md`) — the
+ * {@link findAgentPath} walk for `agent/prompts/<filename>`.
+ */
+export function findAgentPromptPath(explicit?: string, filename = "orchestrator.md"): string {
+  return findAgentPath(explicit, "prompts", filename);
 }

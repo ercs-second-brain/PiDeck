@@ -103,26 +103,26 @@ function useTerminateConfirm() {
 
 /**
  * Input-taking spawn interaction state (issues #297/#300/#302 + #324):
- * which project + kind is asking for its question (rendered as a small
+ * which project + kind is asking for its input (rendered as a small
  * centered modal by SessionPicker — one per kind whose shared spec
- * takesInput, the researcher today), in-flight/error flags, and the
- * async confirm runner — request goes out, failures surface inside the
- * modal, success closes it. Mirrors {@link useDeleteConfirm}.
+ * takesInput), in-flight/error flags, and the async confirm runner —
+ * request goes out, failures surface inside the modal, success closes it.
+ * Mirrors {@link useDeleteConfirm}.
  */
-function useResearcherAsk() {
+function useSpawnInput() {
   const [confirming, setConfirming] = useState<{ projectId: string; kind: AgentKind } | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const confirm = async (
-    question: string,
-    onSpawn: (projectId: string, kind: AgentKind, question: string) => Promise<void>,
+    input: string,
+    onSpawn: (projectId: string, kind: AgentKind, input: string) => Promise<void>,
   ) => {
     if (confirming === null) return;
     setPending(true);
     setError(null);
     try {
-      await onSpawn(confirming.projectId, confirming.kind, question);
+      await onSpawn(confirming.projectId, confirming.kind, input);
       setConfirming(null);
     } catch (err) {
       setError(errorMessage(err));
@@ -218,8 +218,8 @@ export function usePickerState(
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => seedCollapsed ?? loadCollapsedProjects());
   // Issue #167 + #331: the open ⋯ context menu and its spawn submenu.
   const menu = useOpenMenu();
-  // Issues #297/#300/#302 + #324: the question modal for takesInput kinds.
-  const researcherAsk = useResearcherAsk();
+  // Issues #297/#300/#302 + #324: the input modal for takesInput kinds.
+  const spawnInput = useSpawnInput();
   // Issue #172: the delete-confirmation interaction state (its own hook).
   const deleteConfirm = useDeleteConfirm();
 
@@ -284,6 +284,6 @@ export function usePickerState(
     collapsedProjects,
     toggleCollapsed,
     ...menu,
-    researcherAsk,
+    spawnInput,
   };
 }

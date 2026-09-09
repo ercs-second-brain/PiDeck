@@ -83,11 +83,8 @@ export class Router {
       sendJson(res, 404, { error: `no route for ${req.method} ${url.pathname}` });
       return;
     }
-    let body: unknown;
     try {
-      if (req.method !== "GET" && req.method !== "HEAD") {
-        body = await readJsonBody(req);
-      }
+      const body = req.method === "GET" || req.method === "HEAD" ? undefined : await readJsonBody(req);
       const result = await found.handler({
         req,
         res,
@@ -103,26 +100,41 @@ export class Router {
       }
       sendJson(res, result.status ?? 200, result.body);
     } catch (err) {
-      if (res.headersSent) {
-        res.end();
-        return;
-      }
-      if (err instanceof ZodError) {
-        // Contract request-body validation failure → client error.
-        sendJson(res, 400, { error: `invalid request: ${err.message}` });
-        return;
-      }
-      const status =
-        err instanceof HttpError
-          ? err.statusCode
-          : typeof (err as { statusCode?: unknown }).statusCode === "number"
-            ? (err as { statusCode: number }).statusCode
-            : 500;
-      const message = err instanceof Error ? err.message : String(err);
-      if (status >= 500) console.error(`[api] ${req.method} ${url.pathname} failed:`, err);
-      sendJson(res, status, { error: message });
+      sendDispatchError(req, res, url.pathname, err);
     }
   }
+}
+
+/**
+ * The dispatch error path (issue #351 F5, extracted from `dispatch`): a
+ * half-written response is just closed; contract-validation failures
+ * (`ZodError`) are client errors; everything else carries its numeric
+ * `statusCode` ({@link HttpError} or any error shaped like one) or 500,
+ * logged when server-side.
+ */
+function sendDispatchError(req: IncomingMessage, res: ServerResponse, pathname: string, err: unknown): void {
+  if (res.headersSent) {
+    res.end();
+    return;
+  }
+  if (err instanceof ZodError) {
+    // Contract request-body validation failure → client error.
+    sendJson(res, 400, { error: `invalid request: ${err.message}` });
+    return;
+  }
+  const status = errorStatus(err);
+  const message = err instanceof Error ? err.message : String(err);
+  if (status >= 500) console.error(`[api] ${req.method} ${pathname} failed:`, err);
+  sendJson(res, status, { error: message });
+}
+
+/** The HTTP status for a thrown error: an explicit numeric `statusCode` (e.g. `HttpError`) wins, else 500. */
+function errorStatus(err: unknown): number {
+  return err instanceof HttpError
+    ? err.statusCode
+    : typeof (err as { statusCode?: unknown }).statusCode === "number"
+      ? (err as { statusCode: number }).statusCode
+      : 500;
 }
 
 /** Error carrying an HTTP status code (rendered as `{ error }` JSON). */

@@ -15,6 +15,9 @@ import { makeProject } from "./test-fixtures";
 import { ProjectRow } from "./picker-rows";
 import { DeleteProjectModal, SpawnInputModal } from "./picker-modals";
 
+/** The shipped researcher spec (issue #351 F1: question wording follows the spec's trigger). */
+const researcherSpec = SHIPPED_AGENT_KINDS.find((kind) => kind.name === "researcher");
+
 const project = makeProject();
 
 /** A user-defined kind (registry v2) exercising the submenu's custom group. */
@@ -143,7 +146,7 @@ describe("Spawn agent submenu (docs/agent-kinds.md §8, issues #324/#330/#331)",
 
   it("renders the input modal for a waitForInput kind with its confirm disabled while empty", () => {
     const html = renderToString(
-      <SpawnInputModal projectName={project.name} agentKind="researcher" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+      <SpawnInputModal projectName={project.name} agentKind="researcher" spec={researcherSpec} pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(html).toContain("Spawn Researcher?");
     expect(html).toContain("<code>agentsKISS</code>");
@@ -156,19 +159,26 @@ describe("Spawn agent submenu (docs/agent-kinds.md §8, issues #324/#330/#331)",
 
   it("derives the modal labels from the kind's shared metadata (issue #324)", () => {
     const html = renderToString(
-      <SpawnInputModal projectName={project.name} agentKind="researcher" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+      <SpawnInputModal projectName={project.name} agentKind="researcher" spec={researcherSpec} pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(html).toContain("aria-label=\"Spawn researcher\"");
     expect(html).toContain("aria-label=\"Researcher question\"");
   });
 
-  it("adapts the modal copy to a custom waitForInput kind's spec (issue #331)", () => {
+  it("derives question vs task wording from the spec's trigger, not the kind name (issue #351 F1)", () => {
+    // A user-defined waitForInput kind asks a question — same as the researcher.
     const html = renderToString(
       <SpawnInputModal projectName={project.name} agentKind={customKind.name} spec={customKind} pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(html).toContain("Spawn Deps audit?");
-    expect(html).toContain("aria-label=\"Deps audit task\"");
-    expect(html).toContain("Describe the task…");
+    expect(html).toContain("aria-label=\"Deps audit question\"");
+    expect(html).toContain("What should it research?");
+    // An unresolvable spec (registry unfetched) falls back to task wording.
+    const unknown = renderToString(
+      <SpawnInputModal projectName="p" agentKind="mystery" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(unknown).toContain("aria-label=\"mystery task\"");
+    expect(unknown).toContain("Describe the task…");
   });
 
   it("drops the read-only claim for a spec that allows writes", () => {

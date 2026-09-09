@@ -352,12 +352,13 @@ export type ShippedDefaultSkill = z.infer<typeof shippedDefaultSkillSchema>;
 
 /**
  * The shipped integration-level workflow skills (issue #338): PiDeck-owned
- * `agent/skills/<name>/` entries that are orchestrator defaults — applied
- * to the orchestrator persona out of the box. Seed data for #315's
- * agent-assets surface: it reads this table as the shipped-default
- * baseline, and every entry stays per-persona configurable there
- * (turn-off-able, re-appliable to other {@link Persona}s) — nothing is
- * hardcoded always-on. The skills' content is user-editable asset text.
+ * `agent/skills/<name>/` entries that are orchestrator defaults — seeded
+ * into the agent-assets store applied to the orchestrator persona out of
+ * the box (once per state dir; afterwards ordinary, user-owned,
+ * per-persona configurable entries — turn-off-able, re-appliable to other
+ * {@link Persona}s, deletable — nothing is hardcoded always-on; issue
+ * #351 F2 wired the store to this table). The skills' content is
+ * user-editable asset text.
  */
 export const SHIPPED_DEFAULT_SKILLS = [
   { name: "bash-triage", defaultPersonas: ["orchestrator"] },
