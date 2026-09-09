@@ -49,6 +49,36 @@ import { spawnReviewAgent as spawnReviewAgentImpl } from "./prs/review-spawn.js"
 export { watcherOptionsFromEnv };
 export { CATCH_UP_BATCH_SIZE } from "./catchup.js";
 
+/**
+ * The issue-spawn pipeline's spawner: `SessionManager`-backed spawns,
+ * announced on the hub (manual spawns announce via the spawn endpoint; the
+ * pipeline bypasses it), with the issue context prompt (issue #266) gated
+ * on pi readiness like manual spawns and review-agent spawns (issue #56).
+ */
+function hubAnnouncedSpawner(
+  options: GithubAutomationOptions,
+  bridge: KanbanBridge,
+  now: () => Date,
+  onError: (err: unknown, where: string) => void,
+): WorkerSpawner {
+  const base = new SessionManagerSpawner(options.sessions, {
+    ...(options.piReady !== undefined ? { piReady: options.piReady } : {}),
+    ...(options.promptGate !== undefined ? { promptGate: options.promptGate } : {}),
+    onError: (err) => onError(err, "issue-spawn-prompt"),
+  });
+  return {
+    spawnWorker: async (projectId, issueNumber, prompt) => {
+      const spawned = await base.spawnWorker(projectId, issueNumber, prompt);
+      bridge.broadcast(
+        { type: "worker.spawned", at: now().toISOString(), worker: workerSchema.parse(spawned.worker) },
+        `spawn:${projectId}`,
+      );
+      return spawned;
+    },
+    listActiveWorkerIssueNumbers: (projectId) => base.listActiveWorkerIssueNumbers(projectId),
+  };
+}
+
 export interface GithubAutomationOptions {
   projects: ProjectService;
   sessions: SessionManager;
@@ -114,20 +144,7 @@ export class GithubAutomation {
       onError: this.onError,
     });
 
-    const base = new SessionManagerSpawner(options.sessions);
-    // Auto-spawns also announce the worker on the hub (manual spawns do so
-    // via the spawn endpoint; the pipeline bypasses it).
-    this.spawner = {
-      spawnWorker: async (projectId, issueNumber) => {
-        const spawned = await base.spawnWorker(projectId, issueNumber);
-        this.bridge.broadcast(
-          { type: "worker.spawned", at: this.now().toISOString(), worker: workerSchema.parse(spawned.worker) },
-          `spawn:${projectId}`,
-        );
-        return spawned;
-      },
-      listActiveWorkerIssueNumbers: (projectId) => base.listActiveWorkerIssueNumbers(projectId),
-    };
+    this.spawner = hubAnnouncedSpawner(options, this.bridge, this.now, this.onError);
 
     this.sessionControl = {
       listWorkers: (filter) => options.sessions.listWorkers(filter),

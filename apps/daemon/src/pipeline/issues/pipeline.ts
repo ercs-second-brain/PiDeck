@@ -21,7 +21,9 @@
  *    The default {@link QueueingScheduler} honors the project's
  *    `settings.workerConcurrency` cap: at most N workers per project, extras
  *    queueing FIFO as slots free; projects without a cap spawn immediately
- *    (default unbounded, #14).
+ *    (default unbounded, #14). The spawn carries the issue context as the
+ *    worker's initial prompt (issue #266) — a spawned worker never boots
+ *    empty and idles.
  * 5. **Kanban** — on a successful spawn a shared-contract
  *    `kanban.card.moved` event (backlog → in_progress, full card attached)
  *    is emitted on {@link IssueSpawnPipeline.kanbanEvents} for the API
@@ -36,6 +38,7 @@ import { issueCardId, type GithubWatcherEvent, type Issue, type IssueBlocker, ty
 import type { GhClient } from "../../github/gh.js";
 import { GhBlockerResolver } from "./blockers.js";
 import { Emitter } from "./emitter.js";
+import { buildIssueSpawnPrompt } from "./prompts.js";
 import {
   type BlockerResolver,
   type ProjectSource,
@@ -145,7 +148,11 @@ export class IssueSpawnPipeline {
       const active = await this.spawner.listActiveWorkerIssueNumbers(registered.project.id);
       if (active.has(issue.number)) return;
 
-      const spawned = await this.spawner.spawnWorker(registered.project.id, issue.number);
+      const spawned = await this.spawner.spawnWorker(
+        registered.project.id,
+        issue.number,
+        buildIssueSpawnPrompt(issue),
+      );
       this.emitCardMoved(registered.project.id, issue, spawned.worker.id);
     } catch (err) {
       this.accepted.delete(key);

@@ -326,9 +326,9 @@ export const workerSchema = z.object({
   parentWorkerId: idSchema.nullable().optional(),
   /**
    * Initial prompt typed into the worker's pane at spawn (issue #120): the
-   * `pideck spawn --issue/--prompt` input, or a review agent's review
-   * prompt. Optional for backward compatibility: absent for pre-#120
-   * records and auto-spawned workers (which are typed no prompt at spawn).
+   * `pideck spawn --issue/--prompt` input, an issue-spawn pipeline's issue
+   * context (issue #266), or a review agent's review prompt. Optional for
+   * backward compatibility: absent for pre-#120 records.
    */
   prompt: z.string().min(1).optional(),
   /**
