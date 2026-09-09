@@ -16,7 +16,7 @@ import { nodeStatus } from "./node-version.js";
 import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";
 import { requireOr404 } from "./handlers.js";
-import { spawnAgentKindSession } from "./agent-kind-spawn.js";
+import { handleAgentKindSpawn } from "./agent-kind-spawn.js";
 import { projectSpawnSchema, sessionReportPrSchema, sessionSendSchema } from "./cli-routes.js";
 
 /**
@@ -158,7 +158,7 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
       // Session — agent-kind sessions are not workers); anything else is a
       // worker spawn (the response is a Worker).
       if (input.kind !== undefined) {
-        return spawnAgentKindSession(services, projectId, { ...input, kind: input.kind }).then((session) => ({
+        return handleAgentKindSpawn(services, projectId, { ...input, kind: input.kind }).then((session) => ({
           status: 201,
           body: session,
         }));

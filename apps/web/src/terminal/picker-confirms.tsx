@@ -72,8 +72,8 @@ export function ConfirmModals(props: ConfirmModalsProps) {
   const { state } = props;
   const deletingName = props.entries.find((entry) => entry.project.id === state.deleteConfirm.confirmingId)?.project.name;
   const investigatorName =
-    props.entries.find((entry) => entry.project.id === state.investigatorAsk.confirmingProjectId)?.project.name ??
-    state.investigatorAsk.confirmingProjectId;
+    props.entries.find((entry) => entry.project.id === state.investigatorAsk.confirming?.projectId)?.project.name ??
+    state.investigatorAsk.confirming?.projectId;
   return (
     <>
       <TerminateConfirmModals state={state} onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession} />
@@ -86,14 +86,15 @@ export function ConfirmModals(props: ConfirmModalsProps) {
           onCancel={state.deleteConfirm.cancel}
         />
       )}
-      {state.investigatorAsk.confirmingProjectId !== null && props.onSpawnAgentSession !== undefined && (
+      {state.investigatorAsk.confirming !== null && props.onSpawnAgentSession !== undefined && (
         <InvestigatorPromptModal
           projectName={investigatorName ?? ""}
+          agentKind={state.investigatorAsk.confirming.kind}
           pending={state.investigatorAsk.pending}
           error={state.investigatorAsk.error}
           onConfirm={(question) =>
-            void state.investigatorAsk.confirm(question, (projectId, question) =>
-              props.onSpawnAgentSession!(projectId, "investigator", question),
+            void state.investigatorAsk.confirm(question, (projectId, kind, question) =>
+              props.onSpawnAgentSession!(projectId, kind, question),
             )
           }
           onCancel={state.investigatorAsk.cancel}

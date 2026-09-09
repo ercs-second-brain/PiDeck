@@ -61,8 +61,8 @@ describe("agent-kind launch on a real tmux server (docs/agent-kinds.md, issue #3
     const project = "ak-it1";
 
     // Menu-shaped spawn: the kind session + ensured orchestrator.
-    const { spawnAgentKindSession } = await import("../api/agent-kind-spawn.js");
-    const session = await spawnAgentKindSession(services, project, {
+    const { handleAgentKindSpawn } = await import("../api/agent-kind-spawn.js");
+    const session = await handleAgentKindSpawn(services, project, {
       kind: "investigator",
       name: "inv",
       question,

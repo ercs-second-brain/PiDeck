@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "react";
-import type { Session } from "@pideck/shared";
+import type { AgentKind, Session } from "@pideck/shared";
 import { errorMessage } from "../lib/api";
 import { loadCollapsedProjects, saveCollapsedProjects } from "../lib/sidebar-collapse";
 
@@ -102,28 +102,28 @@ function useTerminateConfirm() {
 }
 
 /**
- * Investigator-spawn interaction state (issues #297/#300/#302): which
- * project is asking for the investigator's question (rendered as a small
- * centered modal by SessionPicker), in-flight/error flags, and the async
- * confirm runner — request goes out, failures surface inside the modal,
- * success closes it. Mirrors {@link useDeleteConfirm}.
+ * Input-taking spawn interaction state (issues #297/#300/#302 + #324):
+ * which project + kind is asking for its question (rendered as a small
+ * centered modal by SessionPicker — one per kind whose shared spec
+ * takesInput, the investigator today), in-flight/error flags, and the
+ * async confirm runner — request goes out, failures surface inside the
+ * modal, success closes it. Mirrors {@link useDeleteConfirm}.
  */
 function useInvestigatorAsk() {
-  const [confirmingProjectId, setConfirmingProjectId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<{ projectId: string; kind: AgentKind } | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const confirm = async (
     question: string,
-    onSpawn: (projectId: string, question: string) => Promise<void>,
+    onSpawn: (projectId: string, kind: AgentKind, question: string) => Promise<void>,
   ) => {
-    const projectId = confirmingProjectId;
-    if (projectId === null) return;
+    if (confirming === null) return;
     setPending(true);
     setError(null);
     try {
-      await onSpawn(projectId, question);
-      setConfirmingProjectId(null);
+      await onSpawn(confirming.projectId, confirming.kind, question);
+      setConfirming(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -133,20 +133,20 @@ function useInvestigatorAsk() {
 
   // The modal dismisses on Escape (except while the spawn request is in flight).
   useEffect(() => {
-    if (confirmingProjectId === null) return;
+    if (confirming === null) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !pending) setConfirmingProjectId(null);
+      if (event.key === "Escape" && !pending) setConfirming(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [confirmingProjectId, pending]);
+  }, [confirming, pending]);
 
   return {
-    confirmingProjectId,
+    confirming,
     pending,
     error,
-    ask: setConfirmingProjectId,
-    cancel: () => setConfirmingProjectId(null),
+    ask: (projectId: string, kind: AgentKind) => setConfirming({ projectId, kind }),
+    cancel: () => setConfirming(null),
     confirm,
   };
 }
@@ -169,7 +169,7 @@ export function usePickerState(
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => seedCollapsed ?? loadCollapsedProjects());
   // Issue #167: which project's ⋯ context menu is open (one at a time).
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  // Issues #297/#300/#302: the investigator question modal.
+  // Issues #297/#300/#302 + #324: the question modal for takesInput kinds.
   const investigatorAsk = useInvestigatorAsk();
   // Issue #172: the delete-confirmation interaction state (its own hook).
   const deleteConfirm = useDeleteConfirm();

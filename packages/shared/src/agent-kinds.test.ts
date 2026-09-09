@@ -1,73 +1,33 @@
 /**
- * Agent-kind contract tests (docs/agent-kinds.md, issues #297/#300/#302):
- * the kind enum + fixed report routes, agent-kind session fields, and the
- * spawn-agent endpoint shape — split from index.test.ts (kiss max-lines
- * budget).
+ * Contract test for the agent-kind presentation metadata (issue #324,
+ * deep audit #295 findings 2-5): the shared AGENT_KIND_INFO table the web
+ * ⋯-menu, the sidebar naming, and the input rules render from — adding a
+ * kind touches this table + a persona file, nothing else
+ * (docs/agent-kinds.md). Lives in its own file to keep index.test.ts
+ * within its max-lines budget.
  */
 
-import { describe, expect, expectTypeOf, it } from "vitest";
-import {
-  AGENT_KIND_REPORT_TARGET,
-  agentKindSchema,
-  endpoints,
-  formatPath,
-  sessionSchema,
-  spawnAgentRequestSchema,
-  type EndpointRequest,
-  type EndpointResponse,
-  type Session,
-  type SpawnAgentRequest,
-} from "./index.js";
+import { describe, expect, it } from "vitest";
+import { AGENT_KIND_INFO, AGENT_KIND_REPORT_TARGET, AGENT_KINDS, type AgentKind } from "./index.js";
 
-const NOW = "2025-06-01T12:00:00.000Z";
-
-describe("domain: agent kinds (preset-prompt sessions, docs/agent-kinds.md)", () => {
-  it("contracts the three kinds and their fixed report routes", () => {
-    for (const kind of ["investigator", "devex-audit", "kiss-audit"] as const) {
-      expect(agentKindSchema.safeParse(kind).success).toBe(true);
+describe("AGENT_KIND_INFO (issue #324)", () => {
+  it("carries complete metadata for every kind", () => {
+    // Keyed by the enum — a missing kind is a type error; every kind has
+    // label/menu text/description/input rule plus a report target.
+    const kinds: readonly AgentKind[] = AGENT_KINDS;
+    for (const kind of kinds) {
+      const info = AGENT_KIND_INFO[kind];
+      expect(info.label.length).toBeGreaterThan(0);
+      expect(info.menuLabel.length).toBeGreaterThan(0);
+      expect(info.description.length).toBeGreaterThan(0);
+      expect(typeof info.takesInput).toBe("boolean");
+      expect(AGENT_KIND_REPORT_TARGET[kind]).toMatch(/^(caller|project-orchestrator)$/);
     }
-    expect(agentKindSchema.safeParse("researcher").success).toBe(false);
-    // Investigator reports to the caller; audits report to the orchestrator.
-    expect(AGENT_KIND_REPORT_TARGET).toEqual({
-      investigator: "caller",
-      "devex-audit": "project-orchestrator",
-      "kiss-audit": "project-orchestrator",
-    });
   });
 
-  it("parses agent-kind sessions with kind, parent lineage, and sidebar name", () => {
-    const kindSession = sessionSchema.parse({
-      id: "s3",
-      projectId: "p",
-      role: "worker",
-      tmuxSession: "pideck-p-worker-3",
-      agentKind: "investigator",
-      parentSessionId: "s1",
-      name: "inv",
-      workerId: null,
-      createdAt: NOW,
-    });
-    expect(kindSession.agentKind).toBe("investigator");
-    expect(kindSession.parentSessionId).toBe("s1");
-    expect(kindSession.name).toBe("inv");
-    expect(kindSession.workerId).toBeNull();
-    // Unknown kinds are rejected; absent fields still parse (pre-#297 sessions).
-    expect(sessionSchema.safeParse({ ...kindSession, agentKind: "researcher" }).success).toBe(false);
-    expect(sessionSchema.safeParse({ ...kindSession, name: "x".repeat(21) }).success).toBe(false);
-    expect(sessionSchema.parse({ ...kindSession, agentKind: undefined, parentSessionId: undefined, name: undefined }).agentKind).toBeUndefined();
-  });
-
-  it("contracts the spawn-agent request and endpoint (issues #297/#300/#302)", () => {
-    const request = spawnAgentRequestSchema.parse({ kind: "kiss-audit", name: "audit" });
-    expect(request.question).toBeUndefined();
-    expect(spawnAgentRequestSchema.safeParse({ kind: "researcher", name: "x" }).success).toBe(false);
-    expect(spawnAgentRequestSchema.safeParse({ kind: "kiss-audit", name: "x".repeat(21) }).success).toBe(false);
-
-    const endpoint = endpoints.spawnProjectAgent;
-    expect(endpoint.method).toBe("POST");
-    expect(endpoint.path).toBe("/api/projects/:projectId/spawn-agent");
-    expect(formatPath("spawnProjectAgent", { projectId: "p" })).toBe("/api/projects/p/spawn-agent");
-    expectTypeOf<EndpointRequest<"spawnProjectAgent">>().toEqualTypeOf<SpawnAgentRequest>();
-    expectTypeOf<EndpointResponse<"spawnProjectAgent">>().toEqualTypeOf<Session>();
+  it("marks the investigator as the one kind that takes input", () => {
+    expect(AGENT_KIND_INFO.investigator.takesInput).toBe(true);
+    expect(AGENT_KIND_INFO["devex-audit"].takesInput).toBe(false);
+    expect(AGENT_KIND_INFO["kiss-audit"].takesInput).toBe(false);
   });
 });

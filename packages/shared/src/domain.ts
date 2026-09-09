@@ -284,6 +284,49 @@ export const AGENT_KIND_REPORT_TARGET = {
 } as const satisfies Record<AgentKind, "caller" | "project-orchestrator">;
 export type AgentKindReportTarget = (typeof AGENT_KIND_REPORT_TARGET)[AgentKind];
 
+/**
+ * Per-kind presentation metadata (issue #324, deep audit #295 findings
+ * 2-5): the shared source the web ⋯-menu buttons, the sidebar naming, and
+ * the input rules render from. This makes docs/agent-kinds.md's "adding a
+ * kind = registry row + persona file" claim true for the web too — no
+ * per-kind edits outside this table. The enum guarantees coverage.
+ */
+export interface AgentKindInfo {
+  /** Sidebar label — the spawn's default `--name` (the web renders "◇ <label>"). */
+  label: string;
+  /** The ⋯-menu button's display text ("Investigator"). */
+  menuLabel: string;
+  /** One-line behavior summary (the ⋯-menu buttons' title). */
+  description: string;
+  /**
+   * Whether the kind takes free-text input (the investigator's question):
+   * drives the web input modal, the CLI `--question` rules, and the spawn
+   * schema's question refine.
+   */
+  takesInput: boolean;
+}
+
+export const AGENT_KIND_INFO: Record<AgentKind, AgentKindInfo> = {
+  investigator: {
+    label: "investigate",
+    menuLabel: "Investigator",
+    description: "Spawn an investigator — it investigates one question against the codebase and reports back",
+    takesInput: true,
+  },
+  "devex-audit": {
+    label: "devex-audit",
+    menuLabel: "Devex audit",
+    description: "Spawn a devex audit — mines prior sessions for friction, reports to the orchestrator",
+    takesInput: false,
+  },
+  "kiss-audit": {
+    label: "kiss-audit",
+    menuLabel: "KISS audit",
+    description: "Spawn a KISS audit — complexity findings, reported to the orchestrator",
+    takesInput: false,
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Session (tmux-backed terminal sessions)
 // ---------------------------------------------------------------------------

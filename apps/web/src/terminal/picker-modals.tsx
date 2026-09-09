@@ -9,7 +9,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import type { AgentKind } from "@pideck/shared";
+import { AGENT_KIND_INFO, type AgentKind } from "@pideck/shared";
 
 /**
  * Shared shell for the sidebar's small centered confirmation modals
@@ -173,14 +173,17 @@ export function TerminateAgentSessionModal(props: {
 }
 
 /**
- * The investigator-spawn modal (docs/agent-kinds.md, issue #297): a small
- * centered modal asking for the question the investigator's report must
- * answer — the one agent kind that takes user input (the audits spawn
- * directly from the menu). Confirm stays disabled until a question is
- * typed; failures surface inside the modal.
+ * The input-taking spawn modal (docs/agent-kinds.md, issue #297 + #324): a
+ * small centered modal asking for the question the kind's report must
+ * answer — for the kinds whose shared spec takesInput (the investigator
+ * today; the audits spawn directly from the menu). Confirm stays disabled
+ * until a question is typed; failures surface inside the modal. The title,
+ * labels, and confirm target derive from the kind's metadata.
  */
 export function InvestigatorPromptModal(props: {
   projectName: string;
+  /** The kind whose spec takesInput — drives the copy and confirm target. */
+  agentKind: AgentKind;
   /** The spawn request is in flight (confirm shows "Spawning…"). */
   pending: boolean;
   /** Failure from the daemon, shown inside the modal. */
@@ -190,10 +193,11 @@ export function InvestigatorPromptModal(props: {
 }) {
   const [question, setQuestion] = useState("");
   const ready = question.trim().length > 0;
+  const info = AGENT_KIND_INFO[props.agentKind];
   return (
     <ConfirmModal
-      ariaLabel="Spawn investigator"
-      title="Spawn investigator?"
+      ariaLabel={`Spawn ${props.agentKind}`}
+      title={`Spawn ${info.menuLabel}?`}
       confirmDisabled={!ready}
       confirmLabel="Spawn"
       pendingLabel="Spawning…"
@@ -206,7 +210,7 @@ export function InvestigatorPromptModal(props: {
           <textarea
             className="investigator-question"
             placeholder="What should it investigate?"
-            aria-label="Investigator question"
+            aria-label={`${info.menuLabel} question`}
             rows={3}
             value={question}
             disabled={props.pending}

@@ -11,11 +11,13 @@
  * file, and one row here — nothing else.
  *
  * All kinds are read-only by design (findings and reports, never edits/
- * commits/PRs). What differs per kind below: the persona file, the sidebar
- * label, whether the spawn occupies a worker-like workspace — a fresh
- * per-session worktree branched off origin's default branch (issue #287),
- * and therefore counts against the project's worker-concurrency cap — and
- * whether the pane is enforced read-only (write tools excluded).
+ * commits/PRs). What differs per kind below: the persona file, whether the
+ * spawn occupies a worker-like workspace — a fresh per-session worktree
+ * branched off origin's default branch (issue #287), and therefore counts
+ * against the project's worker-concurrency cap — and whether the pane is
+ * enforced read-only (write tools excluded). Presentation metadata (sidebar
+ * label, ⋯-menu text, input rules) lives in the shared `AGENT_KIND_INFO`
+ * (issue #324) — one row per kind across daemon and web.
  */
 
 import path from "node:path";
@@ -28,8 +30,6 @@ import { sanitizeTmuxSegment } from "./tmux-commands.js";
 export interface AgentKindSpec {
   /** Persona template file under `agent/prompts/`, rendered like worker prompts. */
   personaFile: string;
-  /** Sidebar label prefix (short, e.g. "investigate" — the web renders "◇ investigate"). */
-  label: string;
   /**
    * Worker-like spawns occupy a real workspace — a fresh per-session
    * worktree (issue #287) — and count against the project's
@@ -44,19 +44,16 @@ export interface AgentKindSpec {
 const AGENT_KIND_SPECS: Record<AgentKind, AgentKindSpec> = {
   investigator: {
     personaFile: "investigator.md",
-    label: "investigate",
     workerLike: false,
     readOnly: true,
   },
   "devex-audit": {
     personaFile: "devex-audit.md",
-    label: "devex-audit",
     workerLike: true,
     readOnly: true,
   },
   "kiss-audit": {
     personaFile: "kiss-audit.md",
-    label: "kiss-audit",
     workerLike: true,
     readOnly: true,
   },

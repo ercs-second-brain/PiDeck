@@ -8,7 +8,7 @@
  */
 
 import { z } from "zod";
-import { agentKindSchema, idSchema, refNumberSchema } from "@pideck/shared";
+import { AGENT_KIND_INFO, agentKindSchema, idSchema, refNumberSchema } from "@pideck/shared";
 
 /**
  * `POST /api/projects/:projectId/spawn` — spawn a worker in a project, or
@@ -40,9 +40,12 @@ export const projectSpawnSchema = z
     (input) => input.kind === undefined || (input.issueNumber === undefined && input.prompt === undefined),
     { message: "--issue/--prompt cannot be combined with --kind (agent kinds are not issue-owned; the persona is the prompt)" },
   )
-  .refine((input) => input.question === undefined || input.kind === "investigator", {
-    message: "--question is investigator-only (audit kinds take no input)",
-  });
+  .refine(
+    // Issue #324: the investigator-only rule, derived from the shared kind
+    // spec — a question is valid exactly when the kind takesInput.
+    (input) => input.question === undefined || (input.kind !== undefined && AGENT_KIND_INFO[input.kind].takesInput),
+    { message: "--question requires a kind whose spec takes input (audit kinds take none)" },
+  );
 
 /** `POST /api/sessions/:sessionId/send` — deliver a message into a tmux pane. */
 export const sessionSendSchema = z.object({

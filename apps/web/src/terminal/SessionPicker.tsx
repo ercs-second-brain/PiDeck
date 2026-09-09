@@ -141,8 +141,8 @@ function ProjectSection(props: {
   onStartOrchestrator: (projectId: string) => void;
   /** Spawns an audit agent-kind session (docs/agent-kinds.md, #300/#302). */
   onSpawnAgent: (projectId: string, kind: AgentKind) => void;
-  /** Opens the investigator question modal (#297). */
-  onAskInvestigator: (projectId: string) => void;
+  /** Opens the question modal for a kind whose shared spec takesInput (#297, #324). */
+  onAskSpawnInput: (projectId: string, kind: AgentKind) => void;
   /** Terminate-after-confirm handlers (worker #268; agent-kind session #311). */
   onTerminateWorker?: (workerId: string) => Promise<void>;
   onTerminateAgentSession?: (sessionId: string) => Promise<void>;
@@ -193,7 +193,7 @@ function ProjectSection(props: {
           props.onAskDeleteProject(projectId);
         }}
         onSpawnAgent={props.onSpawnAgent}
-        onAskInvestigator={props.onAskInvestigator}
+        onAskSpawnInput={props.onAskSpawnInput}
       />
       {!props.collapsed && (activeWorkers.length > 0 || rootAgents.length > 0) && (
         <ul className="picker-list picker-workers">
@@ -325,10 +325,10 @@ export function SessionPicker(props: SessionPickerProps) {
             state.closeMenu();
             spawnAgent(projectId, kind);
           }}
-          onAskInvestigator={(projectId) => {
+          onAskSpawnInput={(projectId, kind) => {
             state.closeMenu();
             setSpawnError(null);
-            state.investigatorAsk.ask(projectId);
+            state.investigatorAsk.ask(projectId, kind);
           }}
           onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession}
           onAskTerminate={state.askTerminate}
