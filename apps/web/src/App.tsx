@@ -81,8 +81,14 @@ function AppHeader(props: { sidebarOpen: boolean; onToggleSidebar: () => void })
       <Link to="/" className="brand">
         {/* The icon mark (#265) — the same asset as the favicon/PWA icon. */}
         <img src="/icon.svg" alt="" className="brand-logo" />
-        <span className="brand-name">
-          Pi<span className="brand-accent">Deck</span>
+        <span className="brand-copy">
+          <span className="brand-name">
+            Pi<span className="brand-accent">Deck</span>
+          </span>
+          {/* Issue #298 (B29): the tagline as a tiny dim subtext under the
+              brand — the old side-by-side tagline crowded the header (#231);
+              this one reads as brand lockup, not header chrome. */}
+          <span className="brand-tagline">let 'em cook</span>
         </span>
       </Link>
       <div className="header-actions">

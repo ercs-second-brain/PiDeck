@@ -127,6 +127,22 @@ code {
   color: var(--accent);
 }
 
+/* Issue #298 (B29): the tagline sits under the brand as a two-row lockup —
+   dim + tiny per the DESIGN.md scale, so it reads as subtext, not the
+   crowded side-by-side tagline #231 removed. */
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.brand-tagline {
+  font-size: var(--fs-2xs);
+  font-weight: 400;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+}
+
 /* --- Notification center (issue #178) -------------------------------------- */
 
 /* The bell sits top-right of the header; the dropdown hangs below it. The
