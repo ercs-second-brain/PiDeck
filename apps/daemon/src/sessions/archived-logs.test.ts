@@ -70,4 +70,18 @@ describe("terminate captures scrollback (issue #104)", () => {
     expect(manager.archivedScrollback(worker.id)).toBeUndefined();
     expect(manager.getWorker(worker.id)?.status).toBe("archived");
   });
+
+  it("captures the archive scrollback with -J so logs reflow at the viewing width (issue #362)", async () => {
+    const { manager, fake } = makeManager();
+    const { session, worker } = await manager.spawnWorker("proj", { issueNumber: 13 });
+
+    await manager.archiveWorker(worker.id);
+
+    // Without -J the capture bakes the capture-time pane width into the
+    // text, so a wide-captured log hard-wraps mid-word in a narrow viewer.
+    const capture = fake.invocations.find(
+      (inv) => inv.args[0] === "capture-pane" && inv.args.includes(session.tmuxSession),
+    );
+    expect(capture?.args).toContain("-J");
+  });
 });

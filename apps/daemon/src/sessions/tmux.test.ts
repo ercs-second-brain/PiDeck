@@ -83,10 +83,23 @@ describe("Tmux against a fake server", () => {
   });
 
   it("captures pane contents", async () => {
-    const { tmux } = makeTmux({ initialPaneLines: ["hello", "from", "pane"] });
+    const { tmux, fake } = makeTmux({ initialPaneLines: ["hello", "from", "pane"] });
     await tmux.newSession("sess");
     expect(await tmux.capturePane("sess")).toBe("hello\nfrom\npane");
+    // Default capture keeps hard-wrapped rows as-is: no -J flag.
+    expect(
+      fake.invocations.find((inv) => inv.args[0] === "capture-pane")?.args.includes("-J"),
+    ).toBe(false);
     await expect(tmux.capturePane("missing")).rejects.toBeInstanceOf(TmuxError);
+  });
+
+  it("passes -J when joinWrapped is set (issue #362)", async () => {
+    const { tmux, fake } = makeTmux({ initialPaneLines: ["hello", "from", "pane"] });
+    await tmux.newSession("sess");
+    expect(await tmux.capturePane("sess", { joinWrapped: true })).toBe("hello\nfrom\npane");
+    expect(
+      fake.invocations.find((inv) => inv.args[0] === "capture-pane")?.args,
+    ).toEqual(["capture-pane", "-p", "-J", "-t", "sess", "-S", "-500"]);
   });
 
   it("resizes the session window", async () => {

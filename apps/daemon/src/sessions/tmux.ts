@@ -159,6 +159,13 @@ export interface CapturePaneOptions {
    * instead of O(history + N). Takes precedence over `lines`.
    */
   lastLines?: number;
+  /**
+   * Join hard-wrapped pane rows back into logical lines (tmux `-J`, issue
+   * #362): a capture without it bakes the capture-time pane width into the
+   * text, so a log captured in a wide pane wraps mid-word in any narrower
+   * viewer. Joined logical lines let the client soft-wrap at its own width.
+   */
+  joinWrapped?: boolean;
 }
 
 /**
@@ -292,6 +299,7 @@ export class Tmux {
     const { stdout } = await this.run([
       "capture-pane",
       "-p",
+      ...(options.joinWrapped === true ? ["-J"] : []),
       "-t",
       name,
       "-S",
