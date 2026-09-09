@@ -208,13 +208,19 @@ describe("agent-kind spawn: read-only enforcement + gating", () => {
       expect(res.status).toBe(201);
       const session = sessionSchema.parse(res.json);
       expect(daemon.tmux.sentBytes(session.tmuxSession).toString("utf8")).not.toContain("held question");
-      expect(daemon.services.promptGate.sessionSize).toBe(1);
+      // Two queued prompts: the researcher's question AND the caller-waits
+      // notice to the calling pane (issue #333 — the researcher is a
+      // callerWaits kind, so the caller is told a report is coming).
+      expect(daemon.services.promptGate.sessionSize).toBe(2);
 
-      // When auth becomes ready, the queued question is delivered.
+      // When auth becomes ready, both queued prompts are delivered.
       authReady = true;
       await daemon.services.promptGate.deliverPending();
       expect(daemon.services.promptGate.sessionSize).toBe(0);
       expect(daemon.tmux.sentBytes(session.tmuxSession).toString("utf8")).toContain("held question");
+      expect(daemon.tmux.sentBytes(parent.tmuxSession).toString("utf8")).toContain(
+        'your research agent "inv" is working',
+      );
     } finally {
       await gated.close();
     }
