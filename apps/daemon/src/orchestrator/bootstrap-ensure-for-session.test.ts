@@ -58,7 +58,7 @@ describe("OrchestratorBootstrap.ensureForSession (issue #290)", () => {
     // correct persona file (orchestrator-prompt.md) and its session id.
     expect(relaunched?.id).toBe(session.id);
     const line = h.daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "";
-    expect(line).toContain("pi --append-system-prompt");
+    expect(line).toContain("pi --no-skills --append-system-prompt");
     expect(line).toContain("orchestrator-prompt.md");
     expect(line).toContain(`PD_SESSION_ID=${shQuote(session.id)}`);
   });
@@ -69,7 +69,7 @@ describe("OrchestratorBootstrap.ensureForSession (issue #290)", () => {
 
     expect((await h.bootstrap.ensureForSession(session))?.id).toBe(session.id);
     const line = h.daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "";
-    expect(line).toContain("pi --append-system-prompt");
+    expect(line).toContain("pi --no-skills --append-system-prompt");
     expect(line).toContain("global-agent-prompt.md");
     expect(line).toContain(`PD_SESSION_ID=${shQuote(session.id)}`);
   });

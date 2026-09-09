@@ -12,7 +12,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ProjectLayout } from "./layout.js";
 import { SessionManager } from "./manager.js";
-import { DEFAULT_WORKER_COMMAND, resurrectionCommand } from "./manager.js";
+import { deserializeCommand, resurrectionCommand } from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { FakeGitRunner } from "./testing/fake-git.js";
@@ -79,7 +79,10 @@ describe("SessionManager.relaunchSession (issue #117)", () => {
 
     expect(relaunched.id).toBe(session.id);
     const pane = fake.sessions.get(session.tmuxSession);
-    expect(pane?.command).toEqual(resurrectionCommand(DEFAULT_WORKER_COMMAND));
+    // Relaunch re-runs the recorded spawn command verbatim (issue #27) —
+    // the default command's shaping (discovery off + shipped skills, issue
+    // #356) included.
+    expect(pane?.command).toEqual(resurrectionCommand(deserializeCommand(session.command ?? "")));
     const kills = fake.invocations.filter((inv) => inv.args[0] === "kill-session");
     expect(kills).toHaveLength(1);
   });

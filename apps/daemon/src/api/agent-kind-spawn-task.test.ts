@@ -103,7 +103,7 @@ describe("agent-kind spawn: auto-task delivery (issue #329)", () => {
     // No question given and no auto-task in the spec: the pane carries the
     // launch line only — the reactive kind waits for its caller.
     const bytes = daemon.tmux.sentBytes(session.tmuxSession).toString("utf8");
-    expect(bytes).toContain("pi --append-system-prompt");
+    expect(bytes).toContain("pi --no-skills --append-system-prompt");
     expect(bytes).not.toContain("Begin the");
     expect(enterCount(daemon, session.tmuxSession)).toBe(1);
     expect(daemon.services.promptGate.sessionSize).toBe(0);

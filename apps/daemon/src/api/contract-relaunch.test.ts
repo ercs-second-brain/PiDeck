@@ -53,7 +53,7 @@ describe("relaunchSession relaunches the orchestrator persona (issue #290)", () 
     // The pane is not a bare shell: pi relaunched with the orchestrator
     // persona file and its session id — identical to a fresh boot.
     const line = paneLaunchLine(orchestrator?.tmuxSession ?? "");
-    expect(line).toContain("pi --append-system-prompt");
+    expect(line).toContain("pi --no-skills --append-system-prompt");
     expect(line).toContain("orchestrator-prompt.md");
     expect(line).toContain(`PD_SESSION_ID=${orchestrator?.id}`);
   });
@@ -68,7 +68,7 @@ describe("relaunchSession relaunches the orchestrator persona (issue #290)", () 
     expect(relaunch.status).toBe(200);
 
     const line = paneLaunchLine(globalAgent.tmuxSession);
-    expect(line).toContain("pi --append-system-prompt");
+    expect(line).toContain("pi --no-skills --append-system-prompt");
     expect(line).toContain("global-agent-prompt.md");
     expect(line).toContain(`PD_SESSION_ID=${globalAgent.id}`);
   });

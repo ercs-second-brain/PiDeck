@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ProjectLayout } from "./layout.js";
 import { SessionManager } from "./manager.js";
 import {
+  DEFAULT_WORKER_COMMAND,
   RESURRECT_WORKER_COMMAND,
   deserializeCommand,
   parseTmuxSessionName,
@@ -12,6 +13,7 @@ import {
   sanitizeTmuxSegment,
   serializeCommand,
 } from "./manager.js";
+import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { FakeGitRunner } from "./testing/fake-git.js";
@@ -90,7 +92,7 @@ describe("command serialization (issue #27)", () => {
     expect(guarded[2]).toContain("command -v bash >/dev/null 2>&1 && exec bash -c 'sleep 300'");
     expect(guarded[2]).toContain('|| exec "${SHELL:-/bin/sh}"');
     // The default worker command produces the established legacy constant.
-    expect(resurrectionCommand(["pi"])).toEqual(RESURRECT_WORKER_COMMAND);
+    expect(resurrectionCommand(DEFAULT_WORKER_COMMAND)).toEqual(RESURRECT_WORKER_COMMAND);
   });
 });
 
@@ -137,7 +139,7 @@ describe("SessionManager with a fake tmux server", () => {
     expect(pane?.cwd).toBe(session.cwd);
     // Issue #287: the default workspace is a per-worker worktree, not the clone.
     expect(session.cwd).toContain(path.join("worktrees", "worker-"));
-    expect(pane?.command).toEqual(["pi"]);
+    expect(pane?.command).toEqual([...DEFAULT_WORKER_COMMAND, ...shippedGlobalSkillArgs()]);
   });
 
   it("honors cwd and command overrides and picks the next free name", async () => {

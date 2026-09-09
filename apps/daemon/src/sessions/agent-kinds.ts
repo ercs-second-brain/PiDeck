@@ -96,8 +96,12 @@ export function agentKindExcludedTools(spec: Pick<AgentKindSpec, "readOnly">): r
  * environment (agent/README.md: every agent session gets `PD_SESSION_ID`);
  * the kind spec's `readOnly` flag gates the tool set (issue #333); user
  * skills applied to the kind's persona (issue #315) are surfaced via
- * `--skill <file>`. Recorded verbatim on the session, so relaunch/
- * reconcile re-run the identical command (issues #27/#117).
+ * `--skill <file>`. Discovery is off (`--no-skills`, issue #356): the
+ * per-persona assignment is the single source of truth for store skills,
+ * so pi's global skill locations (e.g. the installer's `~/.pi/agent/skills/`
+ * symlinks) must not leak other personas' skills into the pane. Recorded
+ * verbatim on the session, so relaunch/reconcile re-run the identical
+ * command (issues #27/#117).
  */
 export function agentKindLaunchCommand(options: {
   sessionId: string;
@@ -112,6 +116,7 @@ export function agentKindLaunchCommand(options: {
     "env",
     `PD_SESSION_ID=${options.sessionId}`,
     "pi",
+    "--no-skills",
     "--append-system-prompt",
     options.promptFile,
     ...(options.skillArgs ?? []),
