@@ -259,6 +259,30 @@ async function registerAndBootstrap(services: DaemonServices, body: unknown): Pr
   return project;
 }
 
+/**
+ * Per-persona agent-asset handlers (issue #315): the webapp's asset editor.
+ * Extracted so `contractHandlers` stays within its line budget.
+ */
+function agentAssetHandlers(services: DaemonServices): Pick<EndpointRegistry, "getAgentAssets" | "savePromptOverride" | "deletePromptOverride" | "saveAgentSkill" | "deleteAgentSkill"> {
+  return {
+    getAgentAssets: () => services.agentAssets.list(),
+    savePromptOverride: ({ params, body }) => services.agentAssets.savePromptOverride(params.persona, body.content),
+    deletePromptOverride: ({ params }) => {
+      if (!services.agentAssets.deletePromptOverride(params.persona)) {
+        throw new HttpError(404, `no prompt override stored for persona "${params.persona}"`);
+      }
+      return undefined;
+    },
+    saveAgentSkill: ({ params, body }) => services.agentAssets.saveSkill(params.skillId, body),
+    deleteAgentSkill: ({ params }) => {
+      if (!services.agentAssets.deleteSkill(params.skillId)) {
+        throw new HttpError(404, `unknown skill: "${params.skillId}"`);
+      }
+      return undefined;
+    },
+  };
+}
+
 /** Builds the handler registry for every entry of the shared endpoint map. */
 export function contractHandlers(services: DaemonServices): EndpointRegistry {
   return {
@@ -271,8 +295,7 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
 
     updateProject: ({ params, body }) => services.projects.update(params.projectId, updateProjectRequestSchema.parse(body)),
 
-    /** Issue #172: full local teardown (watching, sessions, files, records,
-     * board cache, registration) — the ordering + guards live in ProjectService.delete. */
+    /** Issue #172: full local teardown — ordering + guards live in ProjectService.delete. */
     deleteProject: async ({ params }) => {
       await services.projects.delete(params.projectId);
       return undefined;
@@ -350,6 +373,8 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
     listAccessibleRepos: () => listAccessibleRepos(services.gh("https://github.com/list")),
 
     updateSettings: ({ body }) => services.settings.update(updateSettingsRequestSchema.parse(body)),
+
+    ...agentAssetHandlers(services),
 
     // Self-update (issues #55, #76, #82): the check result plus the live
     // active-worker count — the webapp disables its update button on the

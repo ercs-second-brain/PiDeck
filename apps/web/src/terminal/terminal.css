@@ -384,9 +384,9 @@
   min-width: 0;
 }
 
-/* Investigator question input (docs/agent-kinds.md, #297): the spawn modal's
-   textarea, matching the modal card's typography. */
-.investigator-question {
+/* Shared modal textarea chrome (#297 investigator question, #315 asset
+   editor): the modal card's typography for free-text editing. */
+.modal-textarea {
   width: 100%;
   margin-top: 8px;
   padding: 8px 10px;
@@ -399,7 +399,7 @@
   resize: vertical;
 }
 
-.investigator-question:focus {
+.modal-textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -557,7 +557,8 @@
   background: var(--bg-raised);
 }
 
-.picker-footer-settings {
+.picker-footer-settings,
+.picker-footer-agent-assets {
   display: flex;
   align-items: center;
   /* Issue #279 (B23): center the gear + label within the sidebar slot
@@ -574,7 +575,8 @@
   cursor: pointer;
 }
 
-.picker-footer-settings:hover {
+.picker-footer-settings:hover,
+.picker-footer-agent-assets:hover {
   background: var(--bg-hover);
   color: var(--text);
 }

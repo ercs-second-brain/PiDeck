@@ -16,12 +16,16 @@ import {
   onboardingStateSchema,
   piAuthSchema,
   sessionSchema,
+  type AgentAssets,
+  type AgentSkill,
   type EndpointName,
   type EndpointParams,
   type EndpointRequest,
   type EndpointResponse,
   type OnboardingState,
+  type Persona,
   type PiAuth,
+  type PromptOverride,
   type RegisterProjectRequest,
   type Session,
   type SpawnAgentRequest,
@@ -254,6 +258,28 @@ export const relaunchSession = (sessionId: string): Promise<EndpointResponse<"re
  */
 export const fetchArchivedWorkerLog = (workerId: string): Promise<EndpointResponse<"getArchivedWorkerLog">> =>
   request("getArchivedWorkerLog", { workerId });
+
+// --- Per-persona agent assets (issue #315) -------------------------------------
+
+export const apiGetAgentAssets = (): Promise<EndpointResponse<"getAgentAssets">> => request("getAgentAssets", {});
+
+export const apiSavePromptOverride = (
+  persona: Persona,
+  content: string,
+): Promise<EndpointResponse<"savePromptOverride">> => request("savePromptOverride", { persona }, { content });
+
+export const apiDeletePromptOverride = (persona: Persona): Promise<EndpointResponse<"deletePromptOverride">> =>
+  request("deletePromptOverride", { persona });
+
+export const apiSaveAgentSkill = (
+  skillId: string,
+  body: { content: string; personas: Persona[] },
+): Promise<EndpointResponse<"saveAgentSkill">> => request("saveAgentSkill", { skillId }, body);
+
+export const apiDeleteAgentSkill = (skillId: string): Promise<EndpointResponse<"deleteAgentSkill">> =>
+  request("deleteAgentSkill", { skillId });
+
+export type { AgentAssets, AgentSkill, Persona, PromptOverride };
 
 // --- gh auth probe (onboarding wizard step 2) --------------------------------
 //

@@ -64,19 +64,17 @@ afterAll(async () => {
 });
 
 describe("contract endpoint coverage", () => {
+  /** Path params for one endpoint under test (numeric for `:prNumber`). */
+  const PARAM_KEYS = ["prNumber", "workerId", "sessionId", "persona", "skillId", "projectId"] as const;
+  const paramsFor = (path: string): Record<string, string | number> =>
+    Object.fromEntries(
+      PARAM_KEYS.filter((k) => path.includes(`:${k}`)).map((k) => [k, k === "prNumber" ? 1 : "x"]),
+    );
+
   it("routes every endpoint in the shared endpoint map", () => {
     const { router } = createDaemonServer({ services: daemon.services, webDist: null });
     for (const [name, endpoint] of Object.entries(endpoints)) {
-      const params = endpoint.path.includes(":prNumber")
-        ? { projectId: "x", prNumber: 1 }
-        : endpoint.path.includes(":workerId")
-          ? { workerId: "x" }
-          : endpoint.path.includes(":sessionId")
-            ? { sessionId: "x" }
-            : endpoint.path.includes(":projectId")
-              ? { projectId: "x" }
-              : {};
-      const path = formatPath(name as EndpointName, params as never);
+      const path = formatPath(name as EndpointName, paramsFor(endpoint.path) as never);
       expect(router.find(endpoint.method, path), `${endpoint.method} ${endpoint.path}`).toBeDefined();
     }
   });

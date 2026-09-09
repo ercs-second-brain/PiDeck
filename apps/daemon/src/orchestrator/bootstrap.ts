@@ -31,8 +31,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { AGENT_KIND_REPORT_TARGET, GLOBAL_AGENT_PROJECT_ID, type Project, type Session } from "@pideck/shared";
+import { AGENT_KIND_REPORT_TARGET, GLOBAL_AGENT_PROJECT_ID, type Persona, type Project, type Session } from "@pideck/shared";
 import type { ProjectService } from "../api/projects.js";
+import type { PersonaLaunchAssets } from "../api/agent-assets.js";
 import { atomicWrite } from "../json-store.js";
 import { agentKindLaunchCommand, agentKindPromptFilePath, agentKindSpec } from "../sessions/agent-kinds.js";
 import { ProjectLayout } from "../sessions/layout.js";
@@ -57,18 +58,20 @@ const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
 const AGENT_PANE_COMMANDS = new Set(["pi", "node"]);
 
 /**
- * Builds the shell line typed into a fresh orchestrator pane: run pi with
- * the rendered prompt appended to its system prompt and its own session id
+ * Builds the shell line typed into a fresh orchestrator-pane persona: run pi
+ * with the rendered prompt appended to its system prompt, its own session id
  * in the environment (agent/README.md: every agent session gets
- * `PD_SESSION_ID`).
+ * `PD_SESSION_ID`), and the user skills applied to the persona (issue #315)
+ * surfaced via `--skill <file>`.
  */
-export function orchestratorLaunchCommand(options: { sessionId: string; promptFile: string }): string {
+export function orchestratorLaunchCommand(options: { sessionId: string; promptFile: string; skillArgs?: string[] }): string {
   return [
     "env",
     `PD_SESSION_ID=${shQuote(options.sessionId)}`,
     "pi",
     "--append-system-prompt",
     shQuote(options.promptFile),
+    ...(options.skillArgs ?? []),
   ].join(" ");
 }
 
@@ -81,6 +84,12 @@ export interface OrchestratorBootstrapDeps {
   promptPath?: string;
   /** Source path of the global-agent prompt template. Default: auto-discovered. */
   globalPromptPath?: string;
+  /**
+   * Per-persona user assets (issue #315): prompt overrides take precedence
+   * over the shipped templates; applied skills ride the launch lines as
+   * `--skill <file>`. Absent (default): shipped defaults, no shaping.
+   */
+  agentAssets?: PersonaLaunchAssets;
   /**
    * Whether the orchestrator pane is already running the agent. Default:
    * tmux `#{pane_current_command}` probe (errors treated as "not running").
@@ -117,6 +126,7 @@ export class OrchestratorBootstrap {
   private readonly projects: ProjectService;
   private readonly promptPath: string;
   private readonly globalPromptPath: string;
+  private readonly agentAssets: PersonaLaunchAssets | undefined;
   private readonly isAgentRunning: (tmuxSession: string) => Promise<boolean>;
   private readonly onError: (err: unknown, projectId: string) => void;
 
@@ -127,6 +137,7 @@ export class OrchestratorBootstrap {
     this.projects = deps.projects;
     this.promptPath = findAgentPromptPath(deps.promptPath);
     this.globalPromptPath = findAgentPromptPath(deps.globalPromptPath, "global-agent.md");
+    this.agentAssets = deps.agentAssets;
     this.isAgentRunning = deps.isAgentRunning ?? ((name) => paneCommandProbe(this.tmux, name));
     this.onError = deps.onError ?? ((err, projectId) => {
       console.error(`[daemon] orchestrator bootstrap failed for project "${projectId}":`, err);
@@ -135,7 +146,9 @@ export class OrchestratorBootstrap {
 
   /**
    * Ensures the project's orchestrator session exists and is running the
-   * orchestrator persona. Returns the orchestrator session.
+   * orchestrator persona. Returns the orchestrator session. The user's
+   * prompt override (issue #315), when stored, replaces the shipped
+   * template; applied skills ride the launch line via `--skill`.
    */
   async ensureForProject(project: Project): Promise<Session> {
     // One orchestrator tmux session + registry record per project (listed
@@ -143,7 +156,8 @@ export class OrchestratorBootstrap {
     // rendered per project (issue #12) into the project's state dir.
     return this.ensureAgentPane(
       () => this.sessions.ensureOrchestrator(project.id),
-      this.writePromptFile(project),
+      this.writePromptFile(project, "orchestrator"),
+      this.personaLaunchLine("orchestrator"),
     );
   }
 
@@ -156,29 +170,44 @@ export class OrchestratorBootstrap {
    * running the agent.
    */
   async ensureGlobalAgent(): Promise<Session> {
+    const template = this.agentAssets?.promptOverride("global-agent") ?? readFileSync(this.globalPromptPath, "utf8");
     const promptFile = this.layout.globalAgentPromptFilePath();
-    atomicWrite(promptFile, renderGlobalAgentPrompt(readFileSync(this.globalPromptPath, "utf8"), this.layout.root));
-    return this.ensureAgentPane(() => this.sessions.ensureGlobalAgent(), promptFile);
+    atomicWrite(promptFile, renderGlobalAgentPrompt(template, this.layout.root));
+    return this.ensureAgentPane(() => this.sessions.ensureGlobalAgent(), promptFile, this.personaLaunchLine("global-agent"));
   }
 
   /**
    * Shared ensure tail: with the persona prompt file already written, make
    * sure the session exists and type the pi launch command into the pane —
    * only when the pane is not already running the agent (idempotence).
-   * `launchLine` defaults to the orchestrator launch command; agent-kind
-   * sessions pass their kind-specific line (persona file, write-tool
-   * exclusions).
+   * `launchLine` (session id + prompt file → shell line) lets each persona
+   * shape its own pi command (agent-kind file/tool/skill args, issue #315
+   * skill args); it defaults to the orchestrator launch command.
    */
-  private async ensureAgentPane(ensure: () => Promise<Session>, promptFile: string, launchLine?: string): Promise<Session> {
+  private async ensureAgentPane(ensure: () => Promise<Session>, promptFile: string, launchLine?: (sessionId: string, promptFile: string) => string): Promise<Session> {
     const session = await ensure();
     if (!(await this.isAgentRunning(session.tmuxSession))) {
       await this.tmux.sendKeys(
         session.tmuxSession,
-        launchLine ?? orchestratorLaunchCommand({ sessionId: session.id, promptFile }),
+        launchLine?.(session.id, promptFile) ?? orchestratorLaunchCommand({ sessionId: session.id, promptFile }),
         { enter: true },
       );
     }
     return session;
+  }
+
+  /**
+   * The orchestrator-pane launch line for one persona (orchestrator or
+   * global agent): pi with the rendered prompt file plus the persona's
+   * applied user skills (issue #315).
+   */
+  private personaLaunchLine(persona: Persona): (sessionId: string, promptFile: string) => string {
+    return (sessionId, promptFile) =>
+      orchestratorLaunchCommand({
+        sessionId,
+        promptFile,
+        skillArgs: this.agentAssets?.skillLaunchArgs(persona) ?? [],
+      });
   }
 
   /**
@@ -207,37 +236,48 @@ export class OrchestratorBootstrap {
   /**
    * Puts pi back into an agent-kind session's bare-shell pane
    * (docs/agent-kinds.md, issue #310): renders the kind persona
-   * (`agent/prompts/<kind>.md`) with the project placeholders, the
-   * recorded parent lineage (`{{PARENT_SESSION_ID}}`), and the live
-   * project orchestrator for orchestrator-routed kinds
-   * (`{{ORCHESTRATOR_SESSION_ID}}`), writes it next to the project state,
-   * and types the launch line (`env PD_SESSION_ID=… pi
-   * --append-system-prompt <file>` — write tools excluded for read-only
-   * kinds) into the pane — only when the pane is not already running the
-   * agent (the same idempotence probe as orchestrator panes). Returns
-   * `null` for sessions whose project is unknown.
+   * (`agent/prompts/<kind>.md` — or the persona's user override, issue #315)
+   * with the project placeholders, the recorded parent lineage
+   * (`{{PARENT_SESSION_ID}}`), and the live project orchestrator for
+   * orchestrator-routed kinds (`{{ORCHESTRATOR_SESSION_ID}}`), writes it next
+   * to the project state, and types the launch line (`env PD_SESSION_ID=… pi
+   * --append-system-prompt <file>` — the persona's applied user skills via
+   * `--skill`, write tools excluded for read-only kinds) into the pane —
+   * only when the pane is not already running the agent (the same
+   * idempotence probe as orchestrator panes). Returns `null` for sessions
+   * whose project is unknown.
    */
   async ensureAgentKindSession(session: Session): Promise<Session | null> {
     if (session.agentKind === undefined) return null;
     const project = this.projects.get(session.projectId);
     if (project === undefined) return null;
-    const spec = agentKindSpec(session.agentKind);
+    const kind = session.agentKind;
+    const spec = agentKindSpec(kind);
     const orchestrator =
       AGENT_KIND_REPORT_TARGET[session.agentKind] === "project-orchestrator"
         ? (await this.sessions.ensureOrchestrator(session.projectId)).id
         : (session.parentSessionId ?? "");
-    const template = readFileSync(findAgentPromptPath(undefined, spec.personaFile), "utf8");
+    const template =
+      this.agentAssets?.promptOverride(kind) ?? readFileSync(findAgentPromptPath(undefined, spec.personaFile), "utf8");
     const content = renderTemplate(template, {
       ...orchestratorPromptValues(project, session.cwd ?? this.layout.cloneDir(session.projectId)),
       PARENT_SESSION_ID: session.parentSessionId ?? "",
-      ...(AGENT_KIND_REPORT_TARGET[session.agentKind] === "project-orchestrator" ? { ORCHESTRATOR_SESSION_ID: orchestrator } : {}),
+      ...(AGENT_KIND_REPORT_TARGET[kind] === "project-orchestrator" ? { ORCHESTRATOR_SESSION_ID: orchestrator } : {}),
     });
     const promptFile = agentKindPromptFilePath(this.layout, session.projectId, session.id);
     atomicWrite(promptFile, content);
     return this.ensureAgentPane(
       async () => session,
       promptFile,
-      serializeCommand(agentKindLaunchCommand({ sessionId: session.id, promptFile, readOnly: spec.readOnly })),
+      (sessionId, promptFile) =>
+        serializeCommand(
+          agentKindLaunchCommand({
+            sessionId,
+            promptFile,
+            readOnly: spec.readOnly,
+            skillArgs: this.agentAssets?.skillLaunchArgs(kind) ?? [],
+          }),
+        ),
     );
   }
 
@@ -274,9 +314,13 @@ export class OrchestratorBootstrap {
     return sessions;
   }
 
-  /** Renders + writes the per-project prompt file; returns its path. */
-  private writePromptFile(project: Project): string {
-    const template = readFileSync(this.promptPath, "utf8");
+  /**
+   * Renders + writes the per-project prompt file for one persona; the
+   * persona's stored override (issue #315) replaces the shipped template.
+   * Returns its path.
+   */
+  private writePromptFile(project: Project, persona: Persona): string {
+    const template = this.agentAssets?.promptOverride(persona) ?? readFileSync(this.promptPath, "utf8");
     const content = renderOrchestratorPrompt(template, project, this.layout.cloneDir(project.id));
     const file = path.join(this.layout.projectDir(project.id), ORCHESTRATOR_PROMPT_FILENAME);
     atomicWrite(file, content);

@@ -208,7 +208,7 @@ export function InvestigatorPromptModal(props: {
             file-and-line citations — back to the session that spawned it.
           </p>
           <textarea
-            className="investigator-question"
+            className="modal-textarea"
             placeholder="What should it investigate?"
             aria-label={`${info.menuLabel} question`}
             rows={3}

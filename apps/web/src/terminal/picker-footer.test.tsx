@@ -45,6 +45,15 @@ describe("picker footer (global settings, issue #176)", () => {
     expect(renderPicker({ error: "connection refused" })).toContain("picker-footer-settings");
   });
 
+  it("sits the agent-assets entry above settings in the footer (issue #315)", () => {
+    const html = renderPicker();
+    expect(html).toContain("picker-footer-agent-assets");
+    expect(html).toContain("Agent assets — per-persona prompts &amp; skills");
+    // Ordering inside the footer: agent assets first, settings last.
+    expect(html.indexOf("picker-footer-agent-assets")).toBeGreaterThan(html.indexOf("picker-footer"));
+    expect(html.indexOf("picker-footer-agent-assets")).toBeLessThan(html.indexOf("picker-footer-settings"));
+  });
+
   it("anchors the update popup inside the footer, above the settings entry (issue #260)", () => {
     const html = renderToString(
       <SessionPicker
