@@ -1,11 +1,17 @@
 /**
  * Agent-kind spawn route handler (docs/agent-kinds.md, issues
- * #297/#300/#302) — the api-layer half of the mechanism; the tmux/registry
+ * #297/#300/#302/#330) — the api-layer half of the mechanism; the tmux/registry
  * mechanics live in `sessions/agent-kind-spawn.ts`, the persona launch in
  * `orchestrator/bootstrap.ts` (the #290 pattern — bare-shell pane + one
  * idempotent typing step shared by spawn, relaunch, and the startup sweep).
  *
  * Owns the request-shaped decisions:
+ * - kind resolution (registry v2, issue #330): the spec comes from the
+ *   daemon's {@link AgentKindRegistry} (user kinds first, then shipped) —
+ *   unknown kinds 404, nothing is hardcoded;
+ * - spawnableBy enforcement (spec v2): a resolvable agent caller (explicit
+ *   parent or discovered pane) must be a role the kind lists; user-driven
+ *   spawns (web ⋯ menu, CLI) have no agent caller and are unrestricted;
  * - parent-of-any-role resolution (§3): an explicit `parentSessionId` wins;
  *   otherwise the calling pane is discovered from the live spawn process
  *   (the caller may be a global-agent, orchestrator, worker, or reviewer
@@ -14,28 +20,39 @@
  *   a CLI run from a terminal) have no calling agent pane, and the
  *   orchestrator is their caller-of-record, ensured first via the
  *   bootstrap — never a bare 409;
- * - issue #56 parity: the researcher's question is typed into the pane
+ * - issue #56 parity: a waitForInput kind's input is typed into the pane
  *   only when pi auth is ready, else queued on the prompt gate;
- * - concurrency (§5): worker-like kinds (audits) count toward the project's
- *   `workerConcurrency` cap alongside workers; researcher spawns are
- *   cheap and exempt.
+ * - concurrency (§5): worker-like kinds count toward the project's
+ *   `workerConcurrency` cap alongside workers; cheap spawns are exempt.
  */
 
-import { ACTIVE_WORKER_STATUSES, AGENT_KIND_INFO, AGENT_KIND_REPORT_TARGET, type AgentKind, type Session } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES, GLOBAL_AGENT_PROJECT_ID, type Session, type Worker } from "@pideck/shared";
 
 import { HttpError } from "./router.js";
 import { requireOr404 } from "./handlers.js";
 import type { DaemonServices } from "./context.js";
 import { discoverCallerSession, tmuxPanePids } from "../sessions/caller-discovery.js";
-import { agentKindSpec, renderAgentKindTask } from "../sessions/agent-kinds.js";
+import { renderAgentKindTask } from "../sessions/agent-kinds.js";
 import { orchestratorPromptValues } from "../orchestrator/prompt.js";
 
 /** The spawn input both routes accept (validated by their schemas). */
 export interface SpawnAgentKindInput {
-  kind: AgentKind;
+  kind: string;
   name: string;
   question?: string;
   parentSessionId?: string;
+}
+
+/** The caller role a session contributes to spawnableBy checks (spec v2). */
+function sessionSpawnableRole(session: Session, getWorker: (id: string) => Worker | undefined): string {
+  if (session.role === "orchestrator") {
+    return session.projectId === GLOBAL_AGENT_PROJECT_ID ? "global" : "orchestrator";
+  }
+  if (session.workerId !== null) {
+    const worker = getWorker(session.workerId);
+    if (worker?.kind === "reviewer") return "reviewer";
+  }
+  return "worker";
 }
 
 /**
@@ -46,36 +63,39 @@ export interface SpawnAgentKindInput {
  * discover, and the project orchestrator is the caller-of-record there —
  * reports and sidebar nesting land on a live session instead of a 409.
  */
-async function resolveParentSessionId(
+async function resolveParent(
   services: DaemonServices,
   projectId: string,
   input: SpawnAgentKindInput,
-): Promise<string> {
+): Promise<{ parentSessionId: string; caller?: Session }> {
+  // The calling session, when explicit or discovered (spawnableBy checks).
   if (input.parentSessionId !== undefined) {
     const session = requireOr404(
       services.sessions.getSession(input.parentSessionId),
       `unknown parent session: ${input.parentSessionId}`,
     );
-    return session.id;
+    return { parentSessionId: session.id, caller: session };
   }
-  const caller = await discoverCallerSession({
+  const callerTmux = await discoverCallerSession({
     panePids: () => tmuxPanePids(services.tmux),
     processes: services.callerProcesses,
   });
-  if (caller !== undefined) {
-    const session = services.registry.getSessionByTmuxName(caller);
-    if (session !== undefined) return session.id;
+  if (callerTmux !== undefined) {
+    const session = services.registry.getSessionByTmuxName(callerTmux);
+    if (session !== undefined) return { parentSessionId: session.id, caller: session };
   }
   // Via the bootstrap: the fallback parent is ensured WITH its persona
   // (idempotent), not as a bare shell.
-  return (await services.orchestratorBootstrap.ensureForProject(
-    requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`),
-  )).id;
+  return {
+    parentSessionId: (await services.orchestratorBootstrap.ensureForProject(
+      requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`),
+    )).id,
+  };
 }
 
 /**
- * The spawn-path prompt delivery (issues #56/#318), shared by the
- * researcher's question and the autonomous kinds' auto-task (issue #329):
+ * The spawn-path prompt delivery (issues #56/#318), shared by a
+ * waitForInput kind's input and the auto kinds' taskTemplate (issue #329):
  * never type into an agent that cannot run (pi-auth gate, else queue on
  * the prompt gate); even with auth ready the pane was just created — wait
  * for pi to accept input, type the text exactly ONCE with one Enter, and
@@ -106,10 +126,18 @@ async function deliverSpawnPrompt(services: DaemonServices, sessionId: string, t
  */
 export async function handleAgentKindSpawn(services: DaemonServices, projectId: string, input: SpawnAgentKindInput): Promise<Session> {
   const project = requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
-  const spec = agentKindSpec(input.kind);
+  // Registry v2 (issue #330): the kind spec resolves from the live registry.
+  const spec = requireOr404(services.agentKinds.get(input.kind), `unknown agent kind: ${input.kind}`);
+
+  // The trigger decides whether the kind carries caller input at all —
+  // reject before anything is spawned (the CLI enforces the same rule;
+  // the handler stays correct independently of it).
+  if (input.question !== undefined && spec.trigger !== "waitForInput") {
+    throw new HttpError(409, `--question is not an input of kind "${input.kind}" (trigger: ${spec.trigger}; it takes no input)`);
+  }
 
   // Worker-concurrency cap applies to worker-like kinds (docs/agent-kinds.md
-  // §5): they occupy a real workspace like workers; researcher spawns are
+  // §5): they occupy a real workspace like workers; cheap spawns are
   // exempt. Counted alongside the project's active workers.
   if (spec.workerLike) {
     const cap = project.settings.workerConcurrency;
@@ -117,19 +145,33 @@ export async function handleAgentKindSpawn(services: DaemonServices, projectId: 
       const activeWorkers = services.sessions
         .listWorkers({ projectId })
         .filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status)).length;
-      const liveAudits = services.sessions
+      const liveKindSessions = services.sessions
         .listSessions(projectId)
-        .filter((session) => session.agentKind !== undefined && agentKindSpec(session.agentKind).workerLike).length;
-      if (activeWorkers + liveAudits >= cap) {
+        .filter((session) => session.agentKind !== undefined && services.agentKinds.get(session.agentKind)?.workerLike === true).length;
+      if (activeWorkers + liveKindSessions >= cap) {
         throw new HttpError(
           409,
-          `worker concurrency cap reached for project "${projectId}" (${activeWorkers + liveAudits}/${cap} active)`,
+          `worker concurrency cap reached for project "${projectId}" (${activeWorkers + liveKindSessions}/${cap} active)`,
         );
       }
     }
   }
 
-  const parentSessionId = await resolveParentSessionId(services, projectId, input);
+  const { parentSessionId, caller } = await resolveParent(services, projectId, input);
+
+  // spawnableBy (spec v2, issue #330): an identified agent caller must be a
+  // role the kind lists. A session with no caller is a user-driven spawn
+  // (web menu / CLI) — unrestricted.
+  if (caller !== undefined) {
+    const role = sessionSpawnableRole(caller, (id) => services.registry.getWorker(id));
+    if (!spec.spawnableBy.includes(role as never)) {
+      throw new HttpError(
+        403,
+        `kind "${input.kind}" cannot be spawned by ${role} sessions (spawnableBy: ${spec.spawnableBy.join(", ")})`,
+      );
+    }
+  }
+
   const session = await services.sessions.spawnAgentKind(projectId, {
     kind: input.kind,
     parentSessionId,
@@ -139,27 +181,22 @@ export async function handleAgentKindSpawn(services: DaemonServices, projectId: 
   // lineage + report target) and types the pi launch line — idempotently.
   await services.orchestratorBootstrap.ensureForSession(session);
 
-  // Issue #56 parity: never type the question into an agent that cannot
-  // run — gate it on pi auth readiness like worker prompts. The shared
-  // spec's takesInput (issue #324) decides whether the kind carries a
-  // question at all (the schema enforces the same rule; the handler stays
-  // correct independently of it). The exact gating mechanics are
-  // {@link deliverSpawnPrompt}.
-  const question = AGENT_KIND_INFO[input.kind].takesInput ? input.question : undefined;
-  if (question !== undefined) await deliverSpawnPrompt(services, session.id, question);
+  // Issue #56 parity: never type the input into an agent that cannot
+  // run — gate it on pi auth readiness like worker prompts. The exact
+  // gating mechanics are {@link deliverSpawnPrompt}.
+  if (input.question !== undefined) await deliverSpawnPrompt(services, session.id, input.question);
 
-  // Issue #329: autonomous kinds carry an auto-task in their kind spec —
+  // Issue #329: auto kinds carry a taskTemplate in their kind spec —
   // the work order that triggers the thing after the persona boot (the
   // persona loaded the who; without this the agent sits idle). Rendered
   // with the same context as the persona (project placeholders + the
   // report-target session id, mirroring the bootstrap's rendering) and
-  // delivered through the identical gated path as the question — the #318
-  // readiness wait + submit confirmation makes the delivery exactly-once
-  // (no double-submit). Task-less kinds (researcher) type nothing here:
-  // they wait for their caller's question.
+  // delivered through the identical gated path — the #318 readiness wait +
+  // submit confirmation makes the delivery exactly-once (no double-submit).
+  // waitForInput kinds type nothing here: they wait for their caller.
   const task = renderAgentKindTask(spec, {
     ...orchestratorPromptValues(project, session.cwd ?? ""),
-    ...(AGENT_KIND_REPORT_TARGET[input.kind] === "project-orchestrator"
+    ...(spec.reportTarget === "orchestrator"
       ? { ORCHESTRATOR_SESSION_ID: session.parentSessionId ?? "" }
       : { PARENT_SESSION_ID: session.parentSessionId ?? "" }),
   });

@@ -65,7 +65,7 @@ afterAll(async () => {
 
 describe("contract endpoint coverage", () => {
   /** Path params for one endpoint under test (numeric for `:prNumber`). */
-  const PARAM_KEYS = ["prNumber", "workerId", "sessionId", "persona", "skillId", "projectId"] as const;
+  const PARAM_KEYS = ["prNumber", "workerId", "sessionId", "persona", "skillId", "projectId", "kind"] as const;
   const paramsFor = (path: string): Record<string, string | number> =>
     Object.fromEntries(
       PARAM_KEYS.filter((k) => path.includes(`:${k}`)).map((k) => [k, k === "prNumber" ? 1 : "x"]),

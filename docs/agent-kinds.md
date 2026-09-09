@@ -1,104 +1,121 @@
-# Preset-prompt agent kinds (issues #297, #300, #302)
+# Agent-kind registry v2 (issues #297, #300, #302, #330)
 
 A generic mechanism for spawning PiDeck agents with a **pre-baked persona
-prompt** and a **fixed report route** — instead of three bespoke code paths
-(researcher, devex-audit, kiss-audit), one kind registry drives all of
-them. Adding a fourth kind later is an enum entry, a persona file, a
-registry row, and one `AGENT_KIND_INFO` metadata row (issue #324: labels,
-⋯-menu text, and input rules are data-driven from shared — daemon and web
-alike). Nothing else; type-checking catches misses.
+prompt** and a **fixed report route** — one kind registry drives all of
+them. Registry v2 (issue #330) opens the registry: the three built-ins
+(researcher, devex-audit, kiss-audit) ship **as spec-v2 data** inside
+`@pideck/shared`, and users define their own kinds at runtime through the
+daemon's CRUD API, persisted under the daemon state dir (update-safe —
+never in the PiDeck checkout). Nothing in the spawn/relaunch/reconcile/
+ensure paths mentions a hardcoded kind name anymore.
 
-This doc is the scaffold contract: the implementing worker builds the
-plumbing (spawn/registration/sidebar/CLI) on top of it after #290 merges.
+## 1. The spec-v2 schema (the downstream contract)
 
-## The three kinds
+Defined in `packages/shared/src/domain.ts`; this table is the contract
+every consumer reads. Fields marked **user-settable** are writable via
+the CRUD API; the rest are derived or fixed.
 
-| Kind | Purpose | Read-only | Report route | Auto-task | Spawn surface |
-|---|---|---|---|---|---|
-| `researcher` | Take a question, return an accurate report grounded in codebase facts (files + lines cited) | yes | back to the **calling session** (any role); the caller waits | none — task-less by config; waits for the caller's question | any agent, via spawn |
-| `devex-audit` | Mine prior pi sessions for friction / time / money sinks; count, summarize, rank fixes (credentials REDACTED) | yes | the **project orchestrator** | yes — audit begins on spawn | project ⋯ context menu, CLI |
-| `kiss-audit` | KISS methodology audit — 7 dimensions + repo extras, evidence-backed findings, TOP-5, net line delta | yes | the **project orchestrator** | yes — audit begins on spawn | project ⋯ context menu, CLI |
+```ts
+{
+  name: string;          // kebab-case slug, 1–64 chars (agentKindIdSchema); immutable id
+  label: string;         // 1–20 chars — sidebar/picker display name
+  persona?: string;      // persona template content (see §3); REQUIRED for user kinds
+  spawnableBy: Role[];   // which caller roles may spawn this kind (see §5); min 1
+  callerWaits: boolean;  // caller semantics (see §6)
+  readOnly: boolean;     // pane launches with write tools excluded (see §7)
+  trigger: "auto" | "waitForInput";  // auto ⇔ taskTemplate present (schema-refined)
+  taskTemplate?: string; // the work order typed after the persona boot (§6)
+  reportTarget: "caller" | "orchestrator";  // the report route (§6)
+  workerLike: boolean;   // occupies a worker-like workspace (concurrency-capped)
+}
+```
 
-All three are read-only by design: findings and reports, never edits,
-commits, or PRs.
+- `spawnableBy` roles: `"global"` | `"orchestrator"` | `"worker"` | `"reviewer"` —
+  mapped from the *calling session's* role (§5).
+- The schema-refined invariants (`agentKindSpecSchema`): `trigger: "auto"`
+  requires a `taskTemplate`; `trigger: "waitForInput"` requires none. The
+  create/update request schema additionally requires persona content
+  (user kinds have no shipped-default file to fall back to).
+- The kind id namespace is open (`AgentKind = string`) — sessions persist
+  `agentKind` as the slug; the old closed enum is gone. Legacy persisted
+  `investigator` ids are migrated to `researcher` on load (§8).
 
-## 1. Kind registration
+## 2. Shipped kinds as data; the registry
 
-- `packages/shared`: new `agentKindSchema = z.enum(["researcher", "devex-audit", "kiss-audit"])`.
-  This is the agent-kind contract; it is distinct from the existing
-  `workerKindSchema` (`implementer`/`reviewer`), which keeps its meaning
-  for PR ownership semantics. A spawn is either a worker (issue/PR-owned)
-  or an agent-kind session (preset persona, report-routed).
-- `apps/daemon/src/sessions/agent-kinds.ts` (new): the **kind registry** —
-  the single table the spawn path reads:
+The three built-ins are data in `packages/shared/src/domain.ts`
+(`SHIPPED_AGENT_KINDS`) — PiDeck dogfoods its own registry. Their persona
+templates still ship as files under `agent/prompts/` (the spec's `persona`
+field is omitted for them; see §3), and their specs are immutable
+(§7). All three currently declare `spawnableBy` with all four roles
+(back-compat with the pre-registry spawn surfaces).
 
-  ```ts
-  interface AgentKindSpec {
-    /** Persona template file under agent/prompts/, rendered like worker prompts. */
-    personaFile: string;
-    /** Whether the spawn occupies a worker-like workspace (concurrency-capped). */
-    workerLike: boolean;
-    /** Whether the pane launches with the write tools excluded. */
-    readOnly: boolean;
-    /** Auto-task typed after the persona boot (issue #329); absent = task-less. */
-    taskTemplate?: string;
-  }
+Resolution lives in `apps/daemon/src/sessions/agent-kinds.ts`
+(`AgentKindRegistry`): **user kinds first, then shipped** — a user kind
+may shadow nothing shipped (the CRUD layer rejects name collisions), so
+the ordering is about lookup cost, not precedence. `AGENT_KINDS`,
+`AGENT_KIND_INFO`, and `agentKindInfo(kind)` in `@pideck/shared` remain
+the presentation layer: shipped kinds contribute their rows, unknown/user
+ids get a synthesized fallback (label = id, restrictive defaults) so the
+web never crashes on a kind it hasn't seen.
 
-  const AGENT_KINDS: Record<AgentKind, AgentKindSpec> = { ... };
-  ```
+Persistence (`apps/daemon/src/sessions/agent-kind-store.ts`): user kinds
+live in `<stateDir>/agent-kinds.json` (`{version: 1, kinds: [...]}`) —
+user-owned, update-safe (the same rule as the agent-assets store, issue
+#315). The loader validates entry-at-a-time: a persisted spec that no
+longer matches the schema is dropped with a logged warning, not a boot
+failure (forward compatibility, mirroring the session registry).
 
-  The report route (`AGENT_KIND_REPORT_TARGET`) and the presentation
-  metadata (sidebar label, ⋯-menu text, `takesInput` input rules —
-  `AGENT_KIND_INFO`, issue #324) live beside the enum in `packages/shared`,
-  so daemon and web render from one source.
+## 3. Personas
 
-  Adding a kind = enum entry + persona file + registry row + one
-  `AGENT_KIND_INFO` row. Nothing else.
+Persona content precedence (resolved per spawn — a relaunch re-renders
+from the current sources):
 
-## 2. Persona files
+1. the kind's agent-assets prompt override (issue #315 — user edits of a
+   **shipped** kind's persona),
+2. the spec's own `persona` content (**user** kinds),
+3. the shipped-default file `agent/prompts/<kind>.md`.
 
-One file per kind: `agent/prompts/<kind>.md`, same `{{PLACEHOLDER}}`
-rendering as the existing personas (see
-`apps/daemon/src/orchestrator/prompt.ts`):
+Rendering uses the same `{{PLACEHOLDER}}` machinery as worker prompts
+(`apps/daemon/src/orchestrator/prompt.ts`):
 
 | Placeholder | Availability |
 |---|---|
 | `{{PROJECT_ID}}`, `{{PROJECT_NAME}}`, `{{PROJECT_REPO_URL}}`, `{{PROJECT_DEFAULT_BRANCH}}`, `{{PROJECT_PATH}}` | all project-scoped personas |
-| `{{ORCHESTRATOR_SESSION_ID}}` | kinds with `reportTarget: "project-orchestrator"` |
-| `{{PARENT_SESSION_ID}}` | kinds with `reportTarget: "caller"` — **new**; the spawn path must stamp the calling session's registry id |
+| `{{ORCHESTRATOR_SESSION_ID}}` | kinds with `reportTarget: "orchestrator"` |
+| `{{PARENT_SESSION_ID}}` | kinds with `reportTarget: "caller"` — the calling session's registry id |
 
-The persona file owns everything role-specific: methodology, report
-format, redaction rules, read-only constraints. The spawn path owns
-everything mechanical: which file, which parent, which report target.
+## 4. The CRUD API
 
-## 2b. The auto-task: persona = who, task = what (issue #329)
+`apps/daemon/src/api/agent-kinds.ts`, four endpoints (shared contract in
+`packages/shared/src/rest.ts`):
 
-The persona prompt makes the agent who it is; a **task message** triggers
-the work. Without one, an autonomous kind boots into a fresh pane and
-sits idle forever — the persona loaded, nothing started (bug #329,
-bash finding B47).
+| Endpoint | Semantics |
+|---|---|
+| `GET /api/agent-kinds` | shipped kinds (in shipped order) then user kinds |
+| `POST /api/agent-kinds` | create; 409 on a shipped-name collision or duplicate id |
+| `PUT /api/agent-kinds/:kind` | update a user kind; 409 shipped (immutable — edit its persona via agent-assets instead), 404 unknown, 400 when the body's `name` doesn't match the URL kind (ids are immutable) |
+| `DELETE /api/agent-kinds/:kind` | delete a user kind; 409 shipped, 404 unknown, 409 when live sessions of the kind exist |
 
-Each kind spec therefore carries an optional `taskTemplate` — the work
-order typed into the pane right after the persona boot:
+## 5. spawnableBy: the caller-role mapping
 
-- **Autonomous kinds** (`kiss-audit`, `devex-audit`) have a taskTemplate:
-  "begin the audit now, per your persona's methodology, then deliver the
-  report to `<report target>`" — the agent starts working unprompted.
-- **Reactive kinds** (`researcher`) are task-less by config: no
-  `taskTemplate`, nothing typed after the boot — they wait for the
-  question their caller delivers with the spawn.
+A resolvable **agent caller** (explicit `parentSessionId`, or a discovered
+calling pane) must be a role the kind lists (`sessionSpawnableRole` in
+`apps/daemon/src/api/agent-kind-spawn.ts`); violations are 403. The
+mapping from the calling session to a role:
 
-The template renders with the same `{{PLACEHOLDER}}` set as the persona:
-the project placeholders (`{{PROJECT_PATH}}` et al.) plus the report
-target session id (`{{ORCHESTRATOR_SESSION_ID}}` for orchestrator-routed
-kinds, `{{PARENT_SESSION_ID}}` for caller-routed ones). Delivery rides
-the same idempotent path as every spawn-path prompt (issue #318): wait
-for pi's input box, type the text exactly once, confirm the submit with
-bare-Enter nudges only (never re-typing the text — no double-submit),
-and queue on the prompt gate when the pane or pi auth is not ready
-(issue #56 parity).
+| Calling session | Role |
+|---|---|
+| orchestrator of the global-agent project | `global` |
+| project orchestrator | `orchestrator` |
+| worker session whose worker record is `kind: "reviewer"` | `reviewer` |
+| any other worker session | `worker` |
 
-## 3. Parent-of-any-role linkage
+User-driven spawns (the web ⋯ menu, the CLI) have no agent caller and are
+**unrestricted** — `spawnableBy` is an agent-to-agent guardrail, not a
+user permission. The web's spawn menu (#331) filters its entries by
+`spawnableBy` as a convenience, but the daemon is the enforcement point.
+
+### Parent-of-any-role linkage
 
 - Spawn options already carry `parentWorkerId` (review agents, #107).
   Generalize the semantics to **parent of any role**: the parent may be a
@@ -109,55 +126,83 @@ and queue on the prompt gate when the pane or pi auth is not ready
   the project orchestrator they report to (their parent is the orchestrator
   by construction when spawned from the ⋯ menu, and the spawning actor's
   session otherwise).
-- When no caller can be discovered (spawn from a project context — the web
-  ⋯ menu or a plain terminal — has no calling agent pane), the project's
-  orchestrator is the fallback parent for every kind, ensured first with
-  its persona (issue #328) — never a bare 409.
+- When no caller can be discovered (a spawn from a project context — the
+  web ⋯ menu or a plain terminal — has no calling agent pane), the
+  project's orchestrator is the fallback parent for every kind, ensured
+  first with its persona (issue #328) — never a bare 409.
 - `pideck sessions` renders the kind label and the nesting for free once
   the registry linkage exists.
 
-## 4. Report routing
+## 6. Trigger, task, and report routing
 
-- `reportTarget: "caller"` (researcher): the spawn API resolves
-  **synchronously-or-blocking** semantics for the caller — the calling
-  agent's flow waits for the report. Plumbing: the spawn response returns
-  the researcher's session id immediately (so the caller can poll or be
-  notified), and the researcher persona's contract is to deliver the
-  report with `pideck send --session {{PARENT_SESSION_ID}}`. The caller's
-  persona guidance: do not act on assumptions while waiting; treat the
-  report as the answer.
-- `reportTarget: "project-orchestrator"` (audits): the persona's final
-  action is `pideck send --session {{ORCHESTRATOR_SESSION_ID}}` with the
-  full report. The orchestrator decides what becomes issues/tasks
-  (bug-bash-style triage is its normal workflow); the user is not the
-  direct recipient. No auto-triage automation.
+The auto-task mechanism (issue #329) is spec-driven: `trigger: "auto"`
+kinds get their `taskTemplate` typed into the pane right after the
+persona boot; `waitForInput` kinds sit ready for the caller's `question`.
+The static spawn schema no longer hardcodes which kinds take a question —
+the daemon resolves the spec and answers 409 on a trigger violation
+(a question for an auto kind; a missing question for a `waitForInput`
+caller-routed kind).
 
-## 5. Spawn surfaces
+`reportTarget` decides the persona's delivery route:
 
-- CLI parity: `pideck spawn --project <id> --kind researcher --name "<label>"`
-  (freeform agent kinds never require `--prompt`; the persona is the
-  prompt). `pideck sessions` / `workers` show the kind.
-- Sidebar ⋯ menu (web): a "Spawn agent" section listing the project-scoped
-  kinds (`devex-audit`, `kiss-audit`). Researcher is agent-facing and has
-  no menu entry.
-- Worker-concurrency settings apply to audit kinds (they are worker-like:
-  real workspace, own session); researcher sessions are cheap and
-  exempt.
+- `"caller"`: deliver with `pideck send --session {{PARENT_SESSION_ID}}`;
+  the spawn resolves the calling session when one is identifiable, and
+  falls back to the project orchestrator otherwise (issue #328 — never a
+  bare 409).
+- `"orchestrator"`: deliver with
+  `pideck send --session {{ORCHESTRATOR_SESSION_ID}}`; the spawn falls
+  back to the project orchestrator as parent when no caller is
+  discoverable.
 
-## 6. Sequencing / out of scope
+`callerWaits` documents the caller-side semantics (the caller's flow
+waits for the report vs fire-and-forget); the plumbing contract is
+unchanged: the spawn response returns the session id immediately, and the
+persona delivers the report asynchronously.
 
-- Plumbing lands after #290 (bootstrap/handlers lane) merges; sidebar UI
-  coordinates with the #294 sweep.
-- Out of scope here: write capabilities for any kind; general-purpose
-  subagent abstraction beyond the kind registry; auto-triage.
+## 7. Guardrails
 
-## 7. Kind-id migration: `investigator` → `researcher` (issue #335)
+- **Shipped kinds are immutable and undeletable** (409 on PUT/DELETE).
+  Their personas are user-editable via the agent-assets prompt overrides
+  (issue #315) instead.
+- **No deleting kinds with live sessions** (409; terminate first). The
+  sessions keep working — a deleted kind only stops future spawns.
+- **Edits affect future spawns only** — and relaunched panes, like every
+  persona asset (the launch paths re-render from the current spec).
+  A running pane's conversation is never touched.
+
+## 8. Spawn surfaces
+
+- CLI parity: `pideck spawn --project <id> --kind <any-registry-id> --name "<label>"`.
+  The CLI validates the kind against the live registry (user kinds
+  included), plus the trigger rules and the report-target delivery hint.
+  `pideck sessions` / `workers` show the kind.
+- Sidebar ⋯ menu (web, issue #331): a "Spawn agent" submenu listing
+  built-ins and user kinds, filtered by `spawnableBy` (§5).
+- Worker-concurrency settings apply to `workerLike` kinds (real
+  workspace, own session); non-worker-like kinds are cheap and exempt.
+
+## 9. Downstream consumers of the schema
+
+- **#331 — Spawn-agent submenu (web)**: reads `GET /api/agent-kinds` (or
+  the shared `SHIPPED_AGENT_KINDS` + fetched user kinds), groups built-ins
+  vs custom, filters by `spawnableBy`, and uses `trigger` to decide
+  prompt-vs-immediate spawn. Must treat unknown kind ids defensively —
+  `agentKindInfo(kind)` never throws.
+- **#332 — Persona editor v2 (web)**: the CRUD API above is its backend;
+  the create/update request schema is the form's validation contract
+  (persona required, trigger ⇔ taskTemplate, kebab-case immutable ids,
+  shipped kinds read-only with agent-assets overrides for persona edits).
+- **#333 — Prompt gate v2 (daemon)**: replaces the hardcoded kind lists
+  with the spec — `readOnly` → gated tool set, `trigger` → taskTemplate
+  delivery, `callerWaits` → caller completion semantics.
+
+## 10. Kind-id migration: `investigator` → `researcher` (issue #335)
 
 The researcher kind was shipped as `investigator` (label `investigate`,
 persona file `agent/prompts/investigator.md`). Issue #335 renamed the kind
 id, the sidebar label, and the persona file everywhere — schema, registry,
-docs, UI strings, CLI, tests — with no alias in the enum (a permanent alias
-would keep the legacy vocabulary alive in every switch).
+docs, UI strings, CLI, tests — with no alias in the registry (a permanent
+alias would keep the legacy vocabulary alive in every switch).
 
 **Session compatibility.** Persisted state references the kind id in two
 places, and a naive rename would make the loader drop that state:

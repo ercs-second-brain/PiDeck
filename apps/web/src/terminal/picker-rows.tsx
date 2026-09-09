@@ -9,7 +9,7 @@
  */
 
 import type { ReactNode } from "react";
-import { AGENT_KIND_INFO, AGENT_KINDS, type AgentKind, type Session, type Worker } from "@pideck/shared";
+import { AGENT_KINDS, agentKindInfo, type AgentKind, type Session, type Worker } from "@pideck/shared";
 import { formatRunningDuration } from "../lib/format-timestamp";
 import { workerStatusClasses } from "../lib/worker-status";
 
@@ -295,21 +295,24 @@ function ProjectMenu(props: { projectName: string; projectId: string } & Project
       </button>
       <div className="picker-menu-section" role="group" aria-label="Spawn agent">
         <span className="picker-menu-label">Spawn agent</span>
-        {AGENT_KINDS.map((kind) => (
-          <button
-            key={kind}
-            type="button"
-            role="menuitem"
-            title={AGENT_KIND_INFO[kind].description}
-            onClick={() =>
-              AGENT_KIND_INFO[kind].takesInput
-                ? props.onAskSpawnInput(props.projectId, kind)
-                : props.onSpawnAgent(props.projectId, kind)
-            }
-          >
-            {AGENT_KIND_INFO[kind].menuLabel}
-          </button>
-        ))}
+        {AGENT_KINDS.map((kind) => {
+          const info = agentKindInfo(kind);
+          return (
+            <button
+              key={kind}
+              type="button"
+              role="menuitem"
+              title={info.description}
+              onClick={() =>
+                info.takesInput
+                  ? props.onAskSpawnInput(props.projectId, kind)
+                  : props.onSpawnAgent(props.projectId, kind)
+              }
+            >
+              {info.menuLabel}
+            </button>
+          );
+        })}
       </div>
       {/* Issue #172: delete is local-only — the GitHub repo is kept; the
           confirmation modal states that explicitly. */}

@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { createServer, type Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AGENT_KIND_REPORT_TARGET, AGENT_KINDS, type Session } from "@pideck/shared";
+import { SHIPPED_AGENT_KINDS, type Session, type AgentKindSpec } from "@pideck/shared";
 
 import { DaemonClient } from "./client.js";
 import { run } from "./main.js";
@@ -50,48 +50,95 @@ function kindSession(kind: string, overrides: Partial<Session> = {}): Session {
 }
 
 describe("pideck spawn --kind (CLI validation)", () => {
-  /** Client that must never be reached by the validation cases below. */
-  const unreachable = new DaemonClient("http://127.0.0.1:1");
+  /**
+   * Stub daemon serving the kind registry (registry v2, issue #330 — the
+   * CLI validates against the daemon's kinds, shipped + user-defined) and
+   * rejecting any spawn POST (the validation cases must fail client-side).
+   */
+  let server: Server;
+  let base: string;
 
-  it("rejects an unknown kind, listing the valid kinds", async () => {
-    await expect(
-      run(["spawn", "--project", "p1", "--kind", "historian", "--name", "x"], unreachable),
-    ).rejects.toThrow(/unknown agent kind "historian".*researcher, devex-audit, kiss-audit/s);
+  beforeEach(async () => {
+    /** A user-defined kind proves validation reads the daemon registry, not shared's shipped table. */
+    const kinds: AgentKindSpec[] = [
+      ...SHIPPED_AGENT_KINDS,
+      {
+        name: "historian",
+        label: "history",
+        persona: "You are a project historian.",
+        spawnableBy: ["orchestrator"],
+        callerWaits: false,
+        readOnly: true,
+        trigger: "auto",
+        taskTemplate: "Write the history of {{PROJECT_NAME}}.",
+        reportTarget: "caller",
+        workerLike: false,
+      },
+    ];
+    server = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (req.method === "GET" && url.pathname === "/api/agent-kinds") {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ kinds }));
+        return;
+      }
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: "validation must not reach the spawn endpoint" }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const addr = server.address();
+    base = `http://127.0.0.1:${typeof addr === "object" && addr !== null ? addr.port : 0}`;
   });
 
-  it("requires --question for researchers (the question is their input)", async () => {
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it("rejects an unknown kind, listing the daemon registry's kinds", async () => {
     await expect(
-      run(["spawn", "--project", "p1", "--kind", "researcher", "--name", "x"], unreachable),
+      run(["spawn", "--project", "p1", "--kind", "oracle", "--name", "x"], new DaemonClient(base)),
+    ).rejects.toThrow(/unknown agent kind "oracle".*researcher, devex-audit, kiss-audit, historian/s);
+  });
+
+  it("requires --question for waitForInput kinds (their input)", async () => {
+    await expect(
+      run(["spawn", "--project", "p1", "--kind", "researcher", "--name", "x"], new DaemonClient(base)),
     ).rejects.toThrow(/researcher needs --question/);
   });
 
-  it("rejects --question for audit kinds (they take no input — the rule derives from the shared takesInput spec, #324)", async () => {
+  it("rejects --question for auto kinds (they take no input — the rule derives from the spec's trigger, #330)", async () => {
     await expect(
       run(
         ["spawn", "--project", "p1", "--kind", "devex-audit", "--name", "x", "--question", "why?"],
-        unreachable,
+        new DaemonClient(base),
       ),
     ).rejects.toThrow(/--question is not an input of kind "devex-audit"/);
+    await expect(
+      run(
+        ["spawn", "--project", "p1", "--kind", "historian", "--name", "x", "--question", "why?"],
+        new DaemonClient(base),
+      ),
+    ).rejects.toThrow(/--question is not an input of kind "historian"/);
   });
 
   it("rejects --issue and --prompt alongside --kind (agent kinds are not issue-owned; the persona is the prompt)", async () => {
     await expect(
       run(
         ["spawn", "--project", "p1", "--kind", "researcher", "--question", "q", "--issue", "5", "--name", "x"],
-        unreachable,
+        new DaemonClient(base),
       ),
     ).rejects.toThrow(/--issue cannot be combined with --kind/);
     await expect(
       run(
         ["spawn", "--project", "p1", "--kind", "kiss-audit", "--prompt", "do it", "--name", "x"],
-        unreachable,
+        new DaemonClient(base),
       ),
     ).rejects.toThrow(/--prompt cannot be combined with --kind/);
   });
 
   it("rejects --question on a plain worker spawn", async () => {
     await expect(
-      run(["spawn", "--project", "p1", "--question", "q", "--name", "x", "--prompt", "task"], unreachable),
+      run(["spawn", "--project", "p1", "--question", "q", "--name", "x", "--prompt", "task"], new DaemonClient(base)),
     ).rejects.toThrow(/--question is an agent-kind flag/);
   });
 });
@@ -103,10 +150,15 @@ describe("pideck spawn --kind (daemon contract, stub daemon)", () => {
   /** When true, the stub answers kind spawns with a worker record (contract-drift probe). */
   let driftReply = false;
 
-  beforeEach(async () => {
+    beforeEach(async () => {
     driftReply = false;
     server = createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
+      if (req.method === "GET" && url.pathname === "/api/agent-kinds") {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ kinds: SHIPPED_AGENT_KINDS }));
+        return;
+      }
       if (req.method === "POST" && url.pathname === "/api/projects/p1/spawn") {
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => chunks.push(c));
@@ -154,7 +206,7 @@ describe("pideck spawn --kind (daemon contract, stub daemon)", () => {
       await run(["spawn", "--project", "p1", "--kind", kind, "--name", "audit"], client);
       expect(lastSpawnBody).toEqual({ name: "audit", kind });
     }
-    expect(Object.keys(AGENT_KIND_REPORT_TARGET)).toEqual([...AGENT_KINDS]);
+    expect(SHIPPED_AGENT_KINDS).toHaveLength(3);
   });
 
   it("fails loudly when the daemon answers a kind spawn with a worker record (contract drift)", async () => {
@@ -228,34 +280,34 @@ describe("pideck sessions (kind + parent rendering)", () => {
 describe("report routing per kind (persona ↔ shared contract)", () => {
   /**
    * The delivery mechanism for every kind is `pideck send --session <id>`;
-   * the persona decides the recipient via a placeholder. The shared
-   * AGENT_KIND_REPORT_TARGET map is the contract — each persona must
-   * deliver to the placeholder its kind's target names, and to no other.
+   * the persona decides the recipient via a placeholder. The shipped
+   * specs' reportTarget is the contract — each persona must deliver to
+   * the placeholder its kind's target names, and to no other.
    */
   const TARGET_PLACEHOLDER = {
     caller: "{{PARENT_SESSION_ID}}",
-    "project-orchestrator": "{{ORCHESTRATOR_SESSION_ID}}",
+    orchestrator: "{{ORCHESTRATOR_SESSION_ID}}",
   } as const;
 
   it("each persona's delivery line routes to its kind's report target", async () => {
-    for (const kind of AGENT_KINDS) {
-      const persona = await readFile(personaPath(kind), "utf8");
-      const placeholder = TARGET_PLACEHOLDER[AGENT_KIND_REPORT_TARGET[kind]];
-      expect(persona, `${kind} must deliver via pideck send to ${placeholder}`).toMatch(
+    for (const kind of SHIPPED_AGENT_KINDS) {
+      const persona = await readFile(personaPath(kind.name), "utf8");
+      const placeholder = TARGET_PLACEHOLDER[kind.reportTarget];
+      expect(persona, `${kind.name} must deliver via pideck send to ${placeholder}`).toMatch(
         new RegExp(`pideck send --session ${placeholder.replace(/[{}]/g, "\\$&")}`),
       );
       const other = Object.values(TARGET_PLACEHOLDER).filter((p) => p !== placeholder);
       for (const wrong of other) {
-        expect(persona, `${kind} must not route to ${wrong}`).not.toContain(wrong);
+        expect(persona, `${kind.name} must not route to ${wrong}`).not.toContain(wrong);
       }
     }
   });
 
   it("every kind's persona is read-only (findings and reports, never edits/PRs)", async () => {
-    for (const kind of AGENT_KINDS) {
-      const persona = await readFile(personaPath(kind), "utf8");
-      expect(persona, `${kind} must declare read-only`).toMatch(/read-only/i);
-      expect(persona, `${kind} must forbid PRs`).toMatch(/no PRs|never open PRs|never commits|no commits/i);
+    for (const kind of SHIPPED_AGENT_KINDS) {
+      const persona = await readFile(personaPath(kind.name), "utf8");
+      expect(persona, `${kind.name} must declare read-only`).toMatch(/read-only/i);
+      expect(persona, `${kind.name} must forbid PRs`).toMatch(/no PRs|never open PRs|never commits|no commits/i);
     }
   });
 });

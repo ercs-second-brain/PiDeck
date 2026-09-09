@@ -31,11 +31,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { AGENT_KIND_REPORT_TARGET, GLOBAL_AGENT_PROJECT_ID, type Persona, type Project, type Session } from "@pideck/shared";
+import { GLOBAL_AGENT_PROJECT_ID, type AgentKindSpec, type Persona, type Project, type Session } from "@pideck/shared";
 import type { ProjectService } from "../api/projects.js";
 import type { PersonaLaunchAssets } from "../api/agent-assets.js";
 import { atomicWrite } from "../json-store.js";
-import { agentKindLaunchCommand, agentKindPromptFilePath, agentKindSpec } from "../sessions/agent-kinds.js";
+import { agentKindLaunchCommand, agentKindPromptFilePath, AgentKindRegistry } from "../sessions/agent-kinds.js";
 import { ProjectLayout } from "../sessions/layout.js";
 import { serializeCommand, shQuote, type SessionManager } from "../sessions/manager.js";
 import type { Tmux } from "../sessions/tmux.js";
@@ -91,6 +91,12 @@ export interface OrchestratorBootstrapDeps {
    */
   agentAssets?: PersonaLaunchAssets;
   /**
+   * Agent-kind registry (v2, issue #330): kind specs for
+   * `ensureAgentKindSession` resolve from here. Absent (default): the
+   * shipped built-ins only — user kinds need the store-backed registry.
+   */
+  agentKinds?: AgentKindRegistry;
+  /**
    * Whether the orchestrator pane is already running the agent. Default:
    * tmux `#{pane_current_command}` probe (errors treated as "not running").
    */
@@ -127,6 +133,7 @@ export class OrchestratorBootstrap {
   private readonly promptPath: string;
   private readonly globalPromptPath: string;
   private readonly agentAssets: PersonaLaunchAssets | undefined;
+  private readonly agentKinds: AgentKindRegistry;
   private readonly isAgentRunning: (tmuxSession: string) => Promise<boolean>;
   private readonly onError: (err: unknown, projectId: string) => void;
 
@@ -138,6 +145,7 @@ export class OrchestratorBootstrap {
     this.promptPath = findAgentPromptPath(deps.promptPath);
     this.globalPromptPath = findAgentPromptPath(deps.globalPromptPath, "global-agent.md");
     this.agentAssets = deps.agentAssets;
+    this.agentKinds = deps.agentKinds ?? new AgentKindRegistry();
     this.isAgentRunning = deps.isAgentRunning ?? ((name) => paneCommandProbe(this.tmux, name));
     this.onError = deps.onError ?? ((err, projectId) => {
       console.error(`[daemon] orchestrator bootstrap failed for project "${projectId}":`, err);
@@ -252,17 +260,21 @@ export class OrchestratorBootstrap {
     const project = this.projects.get(session.projectId);
     if (project === undefined) return null;
     const kind = session.agentKind;
-    const spec = agentKindSpec(kind);
+    const spec: AgentKindSpec | undefined = this.agentKinds.get(kind);
+    if (spec === undefined) throw new Error(`unknown agent kind: ${kind}`);
     const orchestrator =
-      AGENT_KIND_REPORT_TARGET[session.agentKind] === "project-orchestrator"
+      spec.reportTarget === "orchestrator"
         ? (await this.sessions.ensureOrchestrator(session.projectId)).id
         : (session.parentSessionId ?? "");
+    // Persona content precedence (issue #330): the kind's agent-assets
+    // override (issue #315, shipped kinds) → the spec's own content (user
+    // kinds) → the shipped-default file `agent/prompts/<kind>.md`.
     const template =
-      this.agentAssets?.promptOverride(kind) ?? readFileSync(findAgentPromptPath(undefined, spec.personaFile), "utf8");
+      this.agentAssets?.promptOverride(kind) ?? spec.persona ?? readFileSync(findAgentPromptPath(undefined, `${kind}.md`), "utf8");
     const content = renderTemplate(template, {
       ...orchestratorPromptValues(project, session.cwd ?? this.layout.cloneDir(session.projectId)),
       PARENT_SESSION_ID: session.parentSessionId ?? "",
-      ...(AGENT_KIND_REPORT_TARGET[kind] === "project-orchestrator" ? { ORCHESTRATOR_SESSION_ID: orchestrator } : {}),
+      ...(spec.reportTarget === "orchestrator" ? { ORCHESTRATOR_SESSION_ID: orchestrator } : {}),
     });
     const promptFile = agentKindPromptFilePath(this.layout, session.projectId, session.id);
     atomicWrite(promptFile, content);

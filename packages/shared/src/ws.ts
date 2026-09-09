@@ -14,7 +14,7 @@
 
 import { z } from "zod";
 import {
-  agentKindSchema,
+  agentKindIdSchema,
   isoDateTimeSchema,
   issueSchema,
   kanbanCardSchema,
@@ -187,7 +187,7 @@ export const notificationEventSchema = z.discriminatedUnion("type", [
     at: isoDateTimeSchema,
     projectId: projectIdField,
     /** Which kind completed (audit kinds only). */
-    agentKind: agentKindSchema,
+    agentKind: agentKindIdSchema,
     /** The agent-kind session that ran. */
     sessionId: sessionIdField,
     /** Session the report was delivered to (the project orchestrator). */

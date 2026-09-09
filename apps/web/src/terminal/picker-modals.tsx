@@ -9,7 +9,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { AGENT_KIND_INFO, type AgentKind } from "@pideck/shared";
+import { agentKindInfo, type AgentKind } from "@pideck/shared";
 
 /**
  * Shared shell for the sidebar's small centered confirmation modals
@@ -193,7 +193,7 @@ export function ResearcherPromptModal(props: {
 }) {
   const [question, setQuestion] = useState("");
   const ready = question.trim().length > 0;
-  const info = AGENT_KIND_INFO[props.agentKind];
+  const info = agentKindInfo(props.agentKind);
   return (
     <ConfirmModal
       ariaLabel={`Spawn ${props.agentKind}`}
