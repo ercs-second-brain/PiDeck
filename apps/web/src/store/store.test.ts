@@ -201,6 +201,28 @@ describe("applyKanbanEvent: workers", () => {
   });
 });
 
+describe("boardStore.onWorkerEvent (issue #269)", () => {
+  const worker = workerSchema.parse({
+    id: "w-evt", projectId: PROJECT_ID, sessionId: "s-evt", issueNumber: 0, prNumber: null,
+    status: "running", statusMessage: null,
+    startedAt: "2026-01-02T00:00:00.000Z", updatedAt: "2026-01-02T00:00:00.000Z",
+  });
+
+  it("notifies subscribers for worker lifecycle events, even reducer no-ops", () => {
+    const seen: KanbanUpdateEvent[] = [];
+    const unsubscribe = boardStore.onWorkerEvent((event) => seen.push(event));
+    boardStore.apply({ type: "worker.spawned", at: "2026-01-03T00:00:00.000Z", worker });
+    // A reducer no-op (unknown worker) still notifies — the sidebar decides.
+    boardStore.apply({ type: "worker.status.changed", at: "2026-01-04T00:00:00.000Z", projectId: PROJECT_ID, workerId: "w-unknown", status: "done" });
+    expect(seen.map((event) => event.type)).toEqual(["worker.spawned", "worker.status.changed"]);
+    // Unsubscribed listeners go quiet; non-worker events never notify.
+    unsubscribe();
+    boardStore.apply({ type: "worker.spawned", at: "2026-01-03T00:00:00.000Z", worker });
+    boardStore.apply({ type: "kanban.card.moved", at: "2026-01-03T00:00:00.000Z", projectId: PROJECT_ID, cardId: "issue-1", from: "backlog", to: "in_progress", card: card("issue-1", "in_progress", 1) });
+    expect(seen.map((event) => event.type)).toEqual(["worker.spawned", "worker.status.changed"]);
+  });
+});
+
 describe("reconnect backoff", () => {
   it("doubles from 500ms and caps at 8s", () => {
     expect(backoffDelayMs(1)).toBe(500);

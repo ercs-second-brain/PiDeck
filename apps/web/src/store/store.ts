@@ -70,7 +70,21 @@ export interface BoardStore {
   refresh(): Promise<void>;
   /** Seeds a just-registered project (issue #203): visible immediately, board load kicked. */
   upsertProject(project: Project): void;
+  /** Subscribes to worker lifecycle events (issue #269) — the push-driven
+   *  counterpart to the sidebar's slow REST poll; returns the unsubscribe
+   *  function. */
+  onWorkerEvent(listener: (event: WorkerLifecycleEvent) => void): () => void;
 }
+
+/**
+ * Worker lifecycle events pushed over the socket (issue #269): the sidebar
+ * subscribes to these so spawned workers (and status changes) show up
+ * promptly instead of waiting for its next REST poll tick.
+ */
+type WorkerLifecycleEvent = Extract<
+  KanbanUpdateEvent,
+  { type: "worker.spawned" | "worker.status.changed" }
+>;
 
 const INITIAL_STATE: AppState = {
   connection: "connecting",
@@ -170,6 +184,8 @@ class LiveBoardStore implements BoardStore {
   private pollTimer: number | undefined;
   /** Notification-event subscribers (#111; the Toasts surface). */
   private readonly notificationListeners = new Set<(event: NotificationEvent) => void>();
+  /** Worker lifecycle-event subscribers (issue #269; the sidebar). */
+  private readonly workerEventListeners = new Set<(event: WorkerLifecycleEvent) => void>();
   private stopped = false;
 
   start(): void {
@@ -316,10 +332,25 @@ class LiveBoardStore implements BoardStore {
   /** Applies one kanban update event (exposed for tests). */
   apply(event: KanbanUpdateEvent): void {
     const next = applyKanbanEvent(this.state, event);
-    if (next === this.state) return;
-    this.state = next;
-    if (event.type === "project.updated") void this.loadProject(event.project.id).catch(() => {});
-    this.emit();
+    if (next !== this.state) {
+      this.state = next;
+      if (event.type === "project.updated") void this.loadProject(event.project.id).catch(() => {});
+      this.emit();
+    }
+    // Worker lifecycle events always notify (issue #269) — even when the
+    // reducer was a no-op (unknown worker), the sidebar decides what a
+    // refresh is worth.
+    if (event.type === "worker.spawned" || event.type === "worker.status.changed") {
+      for (const listener of this.workerEventListeners) listener(event);
+    }
+  }
+
+  /** Subscribes to worker lifecycle events (issue #269); returns unsubscribe. */
+  onWorkerEvent(listener: (event: WorkerLifecycleEvent) => void): () => void {
+    this.workerEventListeners.add(listener);
+    return () => {
+      this.workerEventListeners.delete(listener);
+    };
   }
 }
 
