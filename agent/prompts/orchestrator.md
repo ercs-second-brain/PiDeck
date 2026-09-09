@@ -37,6 +37,7 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 - `pideck sessions`, `pideck workers`, `pideck pulls`, and `pideck kanban` all accept `--json` for machine-readable output.
 - Creating issues: use the `create-issue` skill (GitHub `gh` CLI). Never hand-roll raw API calls for issue creation.
 - CI and review lookups: use the `ci-status` and `review-comments` skills.
+- Spec and triage workflows: use the `bash-triage`, `concept-brief`, `prd`, and `spec-to-issues` skills (shipped orchestrator defaults) for capturing findings or ideas, filing them as issues, and running the worker batch.
 
 ## Coordination Workflow
 

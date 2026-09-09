@@ -405,6 +405,34 @@ export const saveAgentSkillRequestSchema = z.object({
 export type SaveAgentSkillRequest = z.infer<typeof saveAgentSkillRequestSchema>;
 
 // ---------------------------------------------------------------------------
+// Shipped integration-level skills (issue #338 — shipped-default seed data)
+// ---------------------------------------------------------------------------
+
+export const shippedDefaultSkillSchema = z.object({
+  /** Skill id — the `agent/skills/<name>/` directory (the pi skill `name`). */
+  name: agentSkillIdSchema,
+  /** Personas the skill ships applied to out of the box. */
+  defaultPersonas: z.array(personaSchema).min(1),
+});
+export type ShippedDefaultSkill = z.infer<typeof shippedDefaultSkillSchema>;
+
+/**
+ * The shipped integration-level workflow skills (issue #338): PiDeck-owned
+ * `agent/skills/<name>/` entries that are orchestrator defaults — applied
+ * to the orchestrator persona out of the box. Seed data for #315's
+ * agent-assets surface: it reads this table as the shipped-default
+ * baseline, and every entry stays per-persona configurable there
+ * (turn-off-able, re-appliable to other {@link Persona}s) — nothing is
+ * hardcoded always-on. The skills' content is user-editable asset text.
+ */
+export const SHIPPED_DEFAULT_SKILLS = [
+  { name: "bash-triage", defaultPersonas: ["orchestrator"] },
+  { name: "concept-brief", defaultPersonas: ["orchestrator"] },
+  { name: "prd", defaultPersonas: ["orchestrator"] },
+  { name: "spec-to-issues", defaultPersonas: ["orchestrator"] },
+] as const satisfies readonly ShippedDefaultSkill[];
+
+// ---------------------------------------------------------------------------
 // Session (tmux-backed terminal sessions)
 // ---------------------------------------------------------------------------
 
