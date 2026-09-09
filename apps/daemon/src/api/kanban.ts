@@ -88,6 +88,8 @@ export function deriveBoard(
       column: issueColumn(issue, worker),
       workerId: worker?.id ?? null,
       updatedAt: issue.updatedAt,
+      // Issue #261: issues are linkable; no diff counts exist for issues.
+      url: issue.url,
     });
   }
   for (const pr of pullRequests) {
@@ -100,6 +102,11 @@ export function deriveBoard(
       column: pullRequestColumn(pr),
       workerId: null,
       updatedAt: pr.updatedAt,
+      // Issue #261: linkability + diff counts where the data exists.
+      url: pr.url,
+      ...(pr.additions !== undefined && pr.deletions !== undefined
+        ? { additions: pr.additions, deletions: pr.deletions }
+        : {}),
     });
   }
 

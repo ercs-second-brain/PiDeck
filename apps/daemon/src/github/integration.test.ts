@@ -65,6 +65,8 @@ const GRAPHQL_PULL = {
   baseRefName: "main",
   headRefOid: "abc123",
   reviewDecision: "APPROVED",
+  additions: 12,
+  deletions: 4,
   commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
 };
 
@@ -256,6 +258,9 @@ describe("integration: github flows end-to-end over a fake gh runner (hermetic)"
       author: "fixture-bob",
       url: "https://github.com/fixture-owner/fixture-repo/pull/201",
       updatedAt: "2026-09-06T13:00:00Z",
+      // GRAPHQL_PULL carries diff totals (issue #261).
+      additions: 12,
+      deletions: 4,
     });
     // Unchanged snapshot: no events, still exactly one call per poll.
     expect(await watcher.pollOnce()).toEqual([]);

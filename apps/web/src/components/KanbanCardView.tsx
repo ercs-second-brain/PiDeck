@@ -25,6 +25,10 @@ const REVIEW_LABELS = {
  * worker badge (when a worker drives the card) links to the per-worker
  * files-changed view (issue #126) — its PR files, or its branch diff vs the
  * default branch while work is still mid-flight.
+ *
+ * Issue #261: the card links to the GitHub issue/PR when the board payload
+ * carries its URL, and PR cards show +/- diff totals when the board payload
+ * resolved them.
  */
 export function KanbanCardView({ card, pr }: { card: KanbanCard; pr?: PullRequest }) {
   return (
@@ -35,13 +39,36 @@ export function KanbanCardView({ card, pr }: { card: KanbanCard; pr?: PullReques
         </span>
         <span className="card-number">#{card.number}</span>
       </div>
-      <div className="card-title">{card.title}</div>
+      {card.url === undefined ? (
+        <div className="card-title">{card.title}</div>
+      ) : (
+        <a className="card-title card-title-link" href={card.url} target="_blank" rel="noreferrer">
+          {card.title}
+        </a>
+      )}
       <div className="card-meta">
         {card.kind === "issue" ? <IssueBadges card={card} /> : <PrBadges card={card} pr={pr} />}
+        <DiffStat card={card} />
         {card.workerId !== null && <WorkerFilesLink projectId={card.projectId} workerId={card.workerId} />}
         <span className="card-time">{formatTimestamp(card.updatedAt)}</span>
       </div>
     </article>
+  );
+}
+
+/**
+ * +N/−M diff totals for PR cards (issue #261): rendered only when the board
+ * payload resolved both counts (issues have no diff, and event-derived PR
+ * cards may not carry the totals until the next board fetch).
+ */
+function DiffStat({ card }: { card: KanbanCard }) {
+  if (card.kind !== "pull_request") return null;
+  if (card.additions === undefined || card.deletions === undefined) return null;
+  return (
+    <span className="card-diffstat" title="Lines added / deleted">
+      <span className="diffstat-additions">+{card.additions}</span>
+      <span className="diffstat-deletions">−{card.deletions}</span>
+    </span>
   );
 }
 

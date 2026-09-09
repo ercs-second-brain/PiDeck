@@ -24,6 +24,9 @@ function pr(number: number, title = `PR ${number}`): PullRequest {
     headBranch: "feature",
     baseBranch: "main",
     author: "eric",
+    // Issue #261: diff totals ride along with the batched listing.
+    additions: 12,
+    deletions: 4,
     url: `https://github.com/o/r/pull/${number}`,
     updatedAt: "2026-09-06T12:00:00Z",
   };
@@ -63,6 +66,8 @@ function harness(ttlMs = 30_000): Harness {
       baseRefName: "main",
       headRefOid: "abc123",
       reviewDecision: null,
+      additions: 12,
+      deletions: 4,
       commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
     }));
     return { stdout: JSON.stringify({ data: { repository: { pullRequests: { nodes } } } }), stderr: "" };
