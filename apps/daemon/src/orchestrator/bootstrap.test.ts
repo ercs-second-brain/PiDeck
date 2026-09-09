@@ -20,9 +20,11 @@ import { testDaemon, type TestDaemon } from "../api/testutil.js";
 import { DaemonClient } from "../cli/client.js";
 import { run } from "../cli/main.js";
 import { ProjectLayout } from "../sessions/layout.js";
+import { DEFAULT_WORKER_COMMAND } from "../sessions/tmux-commands.js";
 import { Tmux, type TmuxRunner } from "../sessions/tmux.js";
 
 import { OrchestratorBootstrap, orchestratorLaunchCommand, paneCommandProbe } from "./bootstrap.js";
+import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 import { shQuote } from "../sessions/manager.js";
 
 /** Prompt template fixture carrying the documented placeholders (#12). */
@@ -93,11 +95,13 @@ describe("OrchestratorBootstrap.ensureForProject", () => {
     expect(rendered).toContain(`Path: ${path.join(h.daemon.stateDir, "projects", h.project.id, "clone")}`);
     expect(rendered).not.toMatch(/\{\{[A-Z0-9_]+\}\}/);
 
-    // pi launched in the pane with the rendered prompt + its session id.
+    // pi launched in the pane with the rendered prompt + its session id,
+    // skill discovery off + the shipped integration skills (issue #356).
     const pane = h.daemon.tmux.sessions.get(session.tmuxSession);
     expect(pane?.paneLines).toEqual([
-      orchestratorLaunchCommand({ sessionId: session.id, promptFile: h.promptFile }),
+      orchestratorLaunchCommand({ sessionId: session.id, promptFile: h.promptFile, skillArgs: shippedGlobalSkillArgs() }),
     ]);
+    expect(pane?.paneLines[0]).toContain("--no-skills");
     expect(pane?.paneLines[0]).toContain("--append-system-prompt");
     expect(pane?.paneLines[0]).toContain(`PD_SESSION_ID=${shQuote(session.id)}`);
     expect(pane?.paneLines[0]).toContain("pi");
@@ -197,8 +201,10 @@ describe("OrchestratorBootstrap.ensureGlobalAgent", () => {
     expect(rendered).not.toMatch(/\{\{[A-Z0-9_]+\}\}/);
 
     const pane = h.daemon.tmux.sessions.get(session.tmuxSession);
-    expect(pane?.paneLines).toEqual([orchestratorLaunchCommand({ sessionId: session.id, promptFile })]);
-    expect(pane?.paneLines[0]).toContain("pi --append-system-prompt");
+    expect(pane?.paneLines).toEqual([
+      orchestratorLaunchCommand({ sessionId: session.id, promptFile, skillArgs: shippedGlobalSkillArgs() }),
+    ]);
+    expect(pane?.paneLines[0]).toContain("pi --no-skills --append-system-prompt");
   });
 
   it("is idempotent: one global agent across repeated runs", async () => {
@@ -299,7 +305,9 @@ describe("end-to-end: chat-requested spawn reaches the daemon spawn path", () =>
 
     const workerSessions = [...h.daemon.tmux.sessions.entries()].filter(([name]) => name.endsWith("-worker-1"));
     expect(workerSessions).toHaveLength(1);
-    expect(workerSessions[0]?.[1].command).toEqual(["pi"]);
+    // Default worker command (issue #356): discovery off + shipped
+    // integration skills; no per-persona shaping without stored assets.
+    expect(workerSessions[0]?.[1].command).toEqual([...DEFAULT_WORKER_COMMAND, ...shippedGlobalSkillArgs()]);
 
     // 5. The orchestrator session itself is untouched: still exactly one,
     //    and the worker is a separate session in the same project.
@@ -329,7 +337,7 @@ describe("webapp project registration (issue #166)", () => {
       const pane = daemon.tmux.sessions.get(orchestrator?.tmuxSession ?? "");
       expect(pane?.paneLines).toHaveLength(1);
       expect(pane?.paneLines[0]).toContain("PD_SESSION_ID=");
-      expect(pane?.paneLines[0]).toContain("pi --append-system-prompt");
+      expect(pane?.paneLines[0]).toContain("pi --no-skills --append-system-prompt");
     } finally {
       await close();
     }

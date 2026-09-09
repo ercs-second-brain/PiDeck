@@ -137,6 +137,9 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
       sendRef.current = null;
       connectionRef.current = null;
       observer.disconnect();
+      // Cancel a pending trailing fit so teardown never fits a disposed
+      // terminal (the fit controller coalesces resize bursts, issue #353).
+      fitNow.dispose();
       batcher.close();
       connection.detach();
       term.dispose();

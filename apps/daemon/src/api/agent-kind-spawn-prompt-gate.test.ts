@@ -55,7 +55,7 @@ describe("agent-kind spawn: prompt-gate v2 on the route (issue #333)", () => {
     expect(res.status).toBe(201);
     const session = sessionSchema.parse(res.json);
     const launchLine = daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "";
-    expect(launchLine).toContain("pi --append-system-prompt");
+    expect(launchLine).toContain("pi --no-skills --append-system-prompt");
     expect(launchLine).not.toContain("--exclude-tools");
   });
 
@@ -105,6 +105,6 @@ describe("agent-kind spawn: prompt-gate v2 on the route (issue #333)", () => {
     const bytes = daemon.tmux.sentBytes(session.tmuxSession).toString("utf8");
     // Only the launch line — the pane waits for its caller's input.
     expect(bytes.split("\n").filter((line) => line.trim().length > 0)).toHaveLength(1);
-    expect(bytes).toContain("pi --append-system-prompt");
+    expect(bytes).toContain("pi --no-skills --append-system-prompt");
   });
 });

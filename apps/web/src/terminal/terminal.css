@@ -55,13 +55,57 @@
   transition: width 0.2s ease, visibility 0.2s;
 }
 
-/* Issue #326: desktop collapse — closed state. Scoped to the desktop
-   breakpoint so the ≤768px drawer (transform-based) is untouched. */
+/* Issue #354: the sidebar's own collapse toggle (desktop). A slim bar at
+   the top of the sidebar with the icon at its right edge; hidden on the
+   mobile drawer breakpoint, where the header hamburger remains. */
+.picker-topbar {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 10px 0;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sidebar-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Issue #326: desktop collapse — closed state. Issue #354: the closed
+   state is a slim rail that keeps the toggle visible (pointing right) —
+   with the hamburger gone on desktop, this rail is the way back. Scoped
+   to the desktop breakpoint so the ≤768px drawer (transform-based) is
+   untouched. */
 @media (min-width: 769px) {
   .app:not(.sidebar-open) .session-picker {
-    width: 0;
-    border-right: none;
-    visibility: hidden;
+    width: 36px;
+  }
+
+  /* The rail holds only the toggle: hide the list and footer outright
+     (they are overflow-clipped anyway) so nothing half-shows. */
+  .app:not(.sidebar-open) .picker-scroll,
+  .app:not(.sidebar-open) .picker-footer {
+    display: none;
+  }
+
+  .app:not(.sidebar-open) .picker-topbar {
+    justify-content: center;
+    padding: 4px;
   }
 }
 
@@ -765,13 +809,28 @@
   height: 100%;
 }
 
-/* Issue #299: continuous ANSI background blocks. xterm computes cell
-   heights as a fractional CSS px on non-integer device pixel ratios, and
-   the DOM renderer's per-cell boxes (inline-block, height: 100%) can snap
-   a device pixel short of their row box — leaving hairline gaps between
-   lines with background colors (striped runs). Overfill each cell box
-   slightly: the row's own overflow: hidden clips the surplus, so colored
-   runs connect vertically without changing the cell geometry. */
+/* Issues #299/#353: continuous ANSI background blocks. The DOM renderer
+   draws each row as a fixed-height div whose inline-block spans carry the
+   background color; on non-integer device pixel ratios the span's painted
+   box can snap a device pixel short of the row's bottom edge, leaving a
+   hairline of terminal background between consecutive colored rows
+   (striped runs). Two rules close the gap:
+   1. Overfill each span box slightly (height: 100% + 1px) so its background
+      extends past its row's bottom edge — any sub-pixel rounding gap between
+      consecutive colored rows is painted over by the upper row's own color.
+   2. Un-clip the row boxes. xterm sets overflow: hidden INLINE on every row
+      div (DomRenderer._updateDimensions, "Make sure rows don't overflow onto
+      following row"), which clips away exactly the overfill above — the
+      original #299 rule alone never painted past the row and the gaps
+      remained. !important overrides the inline style. Spans without a
+      background color spill invisibly (transparent), and each row paints
+      before the next one, so only the same-color seam between consecutive
+      colored rows is bridged — text, cursors, and adjacent different colors
+      are unaffected. */
+.xterm .xterm-rows > div {
+  overflow: visible !important;
+}
+
 .xterm .xterm-rows > div > span {
   height: calc(100% + 1px);
 }
@@ -853,7 +912,10 @@
    Small viewports: the sidebar slides in over the main pane as a drawer
    (opened by the header hamburger, closed by navigating or tapping the
    backdrop); the main pane takes the full width. Desktop layout above 768px
-   is untouched. */
+   is untouched.
+
+   Issue #354: the hamburger stays on mobile; the sidebar's inline toggle
+   bar (a desktop affordance) is hidden here. */
 
 .menu-toggle {
   /* Issue #326: the hamburger toggles the sidebar on every viewport —
@@ -879,11 +941,25 @@
   color: var(--accent);
 }
 
+/* Issue #354: the header hamburger is mobile-only — on desktop the toggle
+   is the small icon at the top right of the sidebar itself. */
+@media (min-width: 769px) {
+  .menu-toggle {
+    display: none;
+  }
+}
+
 .sidebar-backdrop {
   display: none;
 }
 
 @media (max-width: 768px) {
+  /* Issue #354: the inline toggle is a desktop affordance; the drawer is
+     opened/closed by the header hamburger (+ backdrop/navigation). */
+  .picker-topbar {
+    display: none;
+  }
+
   .app-header {
     padding-top: calc(10px + env(safe-area-inset-top, 0px));
     padding-right: calc(12px + env(safe-area-inset-right, 0px));

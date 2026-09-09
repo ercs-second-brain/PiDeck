@@ -12,7 +12,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SessionManagerSpawner } from "../pipeline/issues/ports.js";
 import { ProjectLayout } from "./layout.js";
-import { RESURRECT_WORKER_COMMAND, SessionManager } from "./manager.js";
+import { deserializeCommand, resurrectionCommand, SessionManager } from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeGitRunner } from "./testing/fake-git.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
@@ -109,7 +109,9 @@ describe("SessionManager.reconcile: reboot resurrection + lost sessions (issue #
     // recorded workspace (its fresh worktree, issue #287); orchestrator gets
     // a plain shell in the project dir.
     const workerPane = rebooted.sessions.get(worker.session.tmuxSession);
-    expect(workerPane?.command).toEqual(RESURRECT_WORKER_COMMAND);
+    // The recorded spawn command (shaped: discovery off + shipped skills,
+    // issue #356) guarded by the shell fallback.
+    expect(workerPane?.command).toEqual(resurrectionCommand(deserializeCommand(worker.session.command ?? "")));
     expect(workerPane?.cwd).toBe(worker.session.cwd);
     const orchPane = rebooted.sessions.get(orchestrator.tmuxSession);
     expect(orchPane?.command).toEqual([]);

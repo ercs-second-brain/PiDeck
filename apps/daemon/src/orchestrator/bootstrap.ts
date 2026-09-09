@@ -40,13 +40,8 @@ import { ProjectLayout } from "../sessions/layout.js";
 import { serializeCommand, shQuote, type SessionManager } from "../sessions/manager.js";
 import type { Tmux } from "../sessions/tmux.js";
 
-import {
-  findAgentPromptPath,
-  orchestratorPromptValues,
-  renderGlobalAgentPrompt,
-  renderOrchestratorPrompt,
-  renderTemplate,
-} from "./prompt.js";
+import { findAgentPromptPath, orchestratorPromptValues, renderGlobalAgentPrompt, renderOrchestratorPrompt, renderTemplate } from "./prompt.js";
+import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 
 /** Rendered prompt file written into the project's state dir. */
 const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
@@ -62,13 +57,18 @@ const AGENT_PANE_COMMANDS = new Set(["pi", "node"]);
  * with the rendered prompt appended to its system prompt, its own session id
  * in the environment (agent/README.md: every agent session gets
  * `PD_SESSION_ID`), and the user skills applied to the persona (issue #315)
- * surfaced via `--skill <file>`.
+ * surfaced via `--skill <file>`. Discovery is off (`--no-skills`, issue
+ * #356): the per-persona assignment is the single source of truth for store
+ * skills, so pi's global skill locations (e.g. the installer's
+ * `~/.pi/agent/skills/` symlinks, visible to every session on the machine)
+ * must not leak other personas' skills into the pane.
  */
 export function orchestratorLaunchCommand(options: { sessionId: string; promptFile: string; skillArgs?: string[] }): string {
   return [
     "env",
     `PD_SESSION_ID=${shQuote(options.sessionId)}`,
     "pi",
+    "--no-skills",
     "--append-system-prompt",
     shQuote(options.promptFile),
     ...(options.skillArgs ?? []),
@@ -87,7 +87,9 @@ export interface OrchestratorBootstrapDeps {
   /**
    * Per-persona user assets (issue #315): prompt overrides take precedence
    * over the shipped templates; applied skills ride the launch lines as
-   * `--skill <file>`. Absent (default): shipped defaults, no shaping.
+   * `--skill <file>`. Absent (default): shipped defaults, no persona
+   * shaping (panes still run with discovery off + shipped integration
+   * skills — issue #356).
    */
   agentAssets?: PersonaLaunchAssets;
   /**
@@ -207,15 +209,26 @@ export class OrchestratorBootstrap {
   /**
    * The orchestrator-pane launch line for one persona (orchestrator or
    * global agent): pi with the rendered prompt file plus the persona's
-   * applied user skills (issue #315).
+   * applied user skills (issue #315) and PiDeck's shipped integration
+   * skills (issue #356 — discovery is off, so they ride the line
+   * explicitly).
    */
   private personaLaunchLine(persona: Persona): (sessionId: string, promptFile: string) => string {
     return (sessionId, promptFile) =>
       orchestratorLaunchCommand({
         sessionId,
         promptFile,
-        skillArgs: this.agentAssets?.skillLaunchArgs(persona) ?? [],
+        skillArgs: this.skillLaunchArgs(persona),
       });
+  }
+
+  /**
+   * The full `--skill` argv for a persona's pane: the shipped integration
+   * skills (every PiDeck pane gets them; issue #356) followed by the store
+   * skills assigned to the persona (issue #315).
+   */
+  private skillLaunchArgs(persona: string): string[] {
+    return [...shippedGlobalSkillArgs(), ...(this.agentAssets?.skillLaunchArgs(persona) ?? [])];
   }
 
   /**
@@ -287,7 +300,7 @@ export class OrchestratorBootstrap {
             sessionId,
             promptFile,
             spec,
-            skillArgs: this.agentAssets?.skillLaunchArgs(kind) ?? [],
+            skillArgs: this.skillLaunchArgs(kind),
           }),
         ),
     );

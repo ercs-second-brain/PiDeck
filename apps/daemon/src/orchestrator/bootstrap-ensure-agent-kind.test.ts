@@ -48,7 +48,7 @@ describe("OrchestratorBootstrap.ensureAgentKindSession (issue #310)", () => {
     const line = h.daemon.tmux.sessions.get(audit.tmuxSession)?.paneLines[0] ?? "";
     // The full launch line: pi with the kind persona, session id env, and
     // the read-only tool exclusion — typed, exactly like an orchestrator's.
-    expect(line).toContain("pi --append-system-prompt");
+    expect(line).toContain("pi --no-skills --append-system-prompt");
     expect(line).toContain(`agent-prompt-${audit.id}.md`);
     expect(line).toContain(`PD_SESSION_ID=${shQuote(audit.id)}`);
     expect(line).toContain("--exclude-tools edit,write");
@@ -162,6 +162,6 @@ describe("OrchestratorBootstrap.ensureAgentKindSession: user-defined kinds (regi
     expect(persona).toContain("Report to sess-parent-2");
     expect(persona).not.toContain("{{PARENT_SESSION_ID}}");
     const line = h.daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "";
-    expect(line).toContain("pi --append-system-prompt");
+    expect(line).toContain("pi --no-skills --append-system-prompt");
   });
 });

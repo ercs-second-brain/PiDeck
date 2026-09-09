@@ -52,7 +52,7 @@ describe("prompt-gate v2: kind-spec permutation matrix (issue #333)", () => {
           expect(agentKindExcludedTools(spec)).toEqual(readOnly ? ["edit", "write"] : []);
           const argv = agentKindLaunchCommand({ sessionId: "s1", promptFile: "/tmp/p.md", spec });
           const joined = argv.join(" ");
-          expect(joined).toContain("pi --append-system-prompt /tmp/p.md");
+          expect(joined).toContain("pi --no-skills --append-system-prompt /tmp/p.md");
           expect(joined.includes("--exclude-tools edit,write")).toBe(readOnly);
         });
 

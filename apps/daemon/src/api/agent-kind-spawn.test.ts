@@ -132,7 +132,7 @@ describe("agent-kind spawn: parent-of-any-role resolution", () => {
       expect(orchestrator).toBeDefined();
       expect(session.parentSessionId).toBe(orchestrator!.id);
       // The fallback parent is a real persona pane, not a bare shell.
-      expect(daemon.tmux.sessions.get(orchestrator!.tmuxSession)?.paneLines[0] ?? "").toContain("pi --append-system-prompt");
+      expect(daemon.tmux.sessions.get(orchestrator!.tmuxSession)?.paneLines[0] ?? "").toContain("pi --no-skills --append-system-prompt");
     } finally {
       services.callerProcesses = original;
     }
@@ -160,7 +160,7 @@ describe("agent-kind spawn: parent-of-any-role resolution", () => {
     // Audits take no question input: the pane bytes carry only the persona
     // launch line (typed by the bootstrap, #290 pattern).
     const bytes = daemon.tmux.sentBytes(session.tmuxSession).toString("utf8");
-    expect(bytes).toContain("pi --append-system-prompt");
+    expect(bytes).toContain("pi --no-skills --append-system-prompt");
     expect(bytes).not.toContain("why is build slow?");
   });
 });
@@ -180,7 +180,7 @@ describe("agent-kind spawn: read-only enforcement + gating", () => {
       expect(res.status).toBe(201);
       const session = sessionSchema.parse(res.json);
       const launchLine = daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "";
-      expect(launchLine).toContain("pi --append-system-prompt");
+      expect(launchLine).toContain("pi --no-skills --append-system-prompt");
       expect(launchLine).toContain("--exclude-tools edit,write");
       expect(launchLine).toContain(`PD_SESSION_ID=${session.id}`);
     }
@@ -253,7 +253,7 @@ describe("agent-kind spawn: caps + route parity", () => {
     expect(projectSessions.filter((s) => s.agentKind !== undefined)).toHaveLength(1);
     expect(daemon.services.sessions.listWorkers({ projectId })).toEqual([]);
     const session = sessionSchema.parse(res.json);
-    expect(daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "").toContain("pi --append-system-prompt");
+    expect(daemon.tmux.sessions.get(session.tmuxSession)?.paneLines[0] ?? "").toContain("pi --no-skills --append-system-prompt");
   });
 
   it("rejects kind bodies that violate the spawn rules (409/400) and unknown projects (404)", async () => {
