@@ -41,7 +41,10 @@ import { nextBackoffMs } from "../lib/backoff";
 // State shape
 // ---------------------------------------------------------------------------
 
-export type ConnectionState = "connecting" | "online" | "offline";
+/** WebSocket connection state of the store's daemon link (surfaced via the
+ *  sidebar's daemon status; the kanban's live indicator was removed in
+ *  issue #276). */
+type ConnectionState = "connecting" | "online" | "offline";
 
 export interface AppState {
   connection: ConnectionState;
