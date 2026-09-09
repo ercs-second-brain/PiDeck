@@ -82,6 +82,18 @@ function AppHeader(props: { sidebarOpen: boolean; onToggleSidebar: () => void })
   );
 }
 
+/** Issue #260 (B8): the update popup's live content — mounted through the
+ *  sidebar's footer slot so it anchors above the settings entry. Both
+ *  surfaces are quiet (render nothing) when there is nothing to report. */
+function UpdatePopup() {
+  return (
+    <>
+      <UpdateBanner />
+      <NodeVersionWarning />
+    </>
+  );
+}
+
 function Shell() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -137,8 +149,6 @@ function Shell() {
   return (
     <div className={`app${sidebarOpen ? " sidebar-open" : ""}`}>
       <AppHeader sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((open) => !open)} />
-      <UpdateBanner />
-      <NodeVersionWarning />
       <div className="app-body">
         <SidebarContext.Provider value={sidebar}>
           <SessionPicker
@@ -161,6 +171,7 @@ function Shell() {
             onStartGlobalAgent={startGlobalAgent}
             onTerminateWorker={terminateWorker}
             onDeleteProject={deleteProjectAndLeave}
+            updateSlot={<UpdatePopup />}
           />
           <main className="app-main">
             <Outlet />

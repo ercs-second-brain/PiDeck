@@ -44,4 +44,32 @@ describe("picker footer (global settings, issue #176)", () => {
     expect(renderPicker({ loading: true })).toContain("picker-footer-settings");
     expect(renderPicker({ error: "connection refused" })).toContain("picker-footer-settings");
   });
+
+  it("anchors the update popup inside the footer, above the settings entry (issue #260)", () => {
+    const html = renderToString(
+      <SessionPicker
+        entries={[]}
+        error={null}
+        selectedSessionId={null}
+        onSelectSession={() => {}}
+        onSelectProject={() => {}}
+        onOpenSettings={() => {}}
+        onSelectAllProjects={() => {}}
+        onStartOnboarding={() => {}}
+        onOpenGlobalSettings={() => {}}
+        onStartOrchestrator={() => {}}
+        updateSlot={
+          <div className="update-popup">
+            <div className="update-banner">Update available</div>
+          </div>
+        }
+      />,
+    );
+    expect(html).toContain("update-popup");
+    expect(html).toContain("Update available");
+    // The popup precedes the settings button within the footer block.
+    const footer = html.indexOf("picker-footer");
+    expect(html.indexOf("update-popup")).toBeGreaterThan(footer);
+    expect(html.indexOf("update-popup")).toBeLessThan(html.indexOf("picker-footer-settings"));
+  });
 });
