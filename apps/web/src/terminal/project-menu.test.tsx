@@ -32,7 +32,7 @@ function renderRow(menuOpen: boolean): string {
       onOpenSettings={() => {}}
       onDeleteProject={() => {}}
       onSpawnAgent={() => {}}
-      onAskInvestigator={() => {}}
+      onAskSpawnInput={() => {}}
       onStartOrchestrator={() => {}}
       onSelectProject={() => {}}
     />,
@@ -89,8 +89,10 @@ describe("Spawn agent menu section (docs/agent-kinds.md, #297/#300/#302)", () =>
   });
 
   it("renders the investigator question modal with its confirm disabled while the question is empty", () => {
-    const html = renderToString(<InvestigatorPromptModal projectName={project.name} pending={false} onConfirm={() => {}} onCancel={() => {}} />);
-    expect(html).toContain("Spawn investigator?");
+    const html = renderToString(
+      <InvestigatorPromptModal projectName={project.name} agentKind="investigator" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(html).toContain("Spawn Investigator?");
     expect(html).toContain("<code>agentsKISS</code>");
     expect(html).toContain("aria-label=\"Investigator question\"");
     // Empty question in SSR: the confirm renders its label but stays disabled
@@ -99,11 +101,21 @@ describe("Spawn agent menu section (docs/agent-kinds.md, #297/#300/#302)", () =>
     expect(html).toContain("disabled");
   });
 
+  it("derives the modal copy from the kind's shared metadata (issue #324)", () => {
+    const html = renderToString(
+      <InvestigatorPromptModal projectName={project.name} agentKind="investigator" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(html).toContain("aria-label=\"Spawn investigator\"");
+    expect(html).toContain("aria-label=\"Investigator question\"");
+  });
+
   it("shows the in-flight and failure states inside the investigator modal", () => {
-    const pending = renderToString(<InvestigatorPromptModal projectName="p" pending onConfirm={() => {}} onCancel={() => {}} />);
+    const pending = renderToString(
+      <InvestigatorPromptModal projectName="p" agentKind="investigator" pending onConfirm={() => {}} onCancel={() => {}} />,
+    );
     expect(pending).toContain("Spawning…");
     const failed = renderToString(
-      <InvestigatorPromptModal projectName="p" pending={false} error="agent sessions are not wired yet" onConfirm={() => {}} onCancel={() => {}} />,
+      <InvestigatorPromptModal projectName="p" agentKind="investigator" pending={false} error="agent sessions are not wired yet" onConfirm={() => {}} onCancel={() => {}} />,
     );
     expect(failed).toContain("terminate-modal-error");
     expect(failed).toContain("agent sessions are not wired yet");

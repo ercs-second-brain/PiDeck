@@ -9,7 +9,7 @@
  */
 
 import type { ReactNode } from "react";
-import type { AgentKind, Session, Worker } from "@pideck/shared";
+import { AGENT_KIND_INFO, AGENT_KINDS, type AgentKind, type Session, type Worker } from "@pideck/shared";
 import { formatRunningDuration } from "../lib/format-timestamp";
 import { workerStatusClasses } from "../lib/worker-status";
 
@@ -170,17 +170,19 @@ export function AgentRow(props: {
 
 /**
  * Callbacks shared by the project row and its open ⋯ menu (issues
- * #167/#172 + docs/agent-kinds.md, #297/#300/#302).
+ * #167/#172 + docs/agent-kinds.md, #297/#300/#302 + #324): the spawn-agent
+ * entries render from the shared AGENT_KIND_INFO metadata — kinds whose
+ * spec takesInput open the question modal, the rest spawn directly.
  */
 interface ProjectMenuCallbacks {
   /** Opens the project's settings page in the main pane (issue #167). */
   onOpenSettings: (projectId: string) => void;
   /** Opens the delete-confirmation modal (issue #172). */
   onDeleteProject: (projectId: string) => void;
-  /** Spawns an audit agent-kind session directly (docs/agent-kinds.md, #300/#302). */
+  /** Spawns an input-free agent kind directly (docs/agent-kinds.md, #300/#302). */
   onSpawnAgent: (projectId: string, kind: AgentKind) => void;
-  /** Opens the investigator question modal (#297: it takes the question as input). */
-  onAskInvestigator: (projectId: string) => void;
+  /** Opens the question modal for a kind whose spec takesInput (#297 + #324). */
+  onAskSpawnInput: (projectId: string, kind: AgentKind) => void;
 }
 
 /**
@@ -244,7 +246,8 @@ export function ProjectRow(props: {
       </button>
       {/* Issue #167: the ⋯ context menu. Settings opens the project's
           settings page in the main pane; kanban stays the row's name click
-          (#173), so it is not duplicated here. */}
+          (#173), so it is not duplicated here. The spawn-agent entries are
+          data-driven from the shared kind metadata (issue #324). */}
       <button
         type="button"
         className="picker-project-menu"
@@ -263,7 +266,7 @@ export function ProjectRow(props: {
           onOpenSettings={props.onOpenSettings}
           onDeleteProject={props.onDeleteProject}
           onSpawnAgent={props.onSpawnAgent}
-          onAskInvestigator={props.onAskInvestigator}
+          onAskSpawnInput={props.onAskSpawnInput}
         />
       )}
     </div>
@@ -273,10 +276,11 @@ export function ProjectRow(props: {
 
 /**
  * The project row's open ⋯ context menu (issue #167): Settings, the spawn
- * agent section (docs/agent-kinds.md, issues #297/#300/#302 — preset-prompt,
- * read-only sessions that report per their kind: the investigator answers a
- * question for its caller; the audits deliver to the project orchestrator),
- * and the local-only delete entry (issue #172). Pure rendering.
+ * agent section (docs/agent-kinds.md, issues #297/#300/#302 — rendered
+ * from the shared AGENT_KIND_INFO metadata per issue #324: preset-prompt,
+ * read-only sessions that report per their kind; takesInput kinds open the
+ * question modal, the rest spawn directly), and the local-only delete
+ * entry (issue #172). Pure rendering.
  */
 function ProjectMenu(props: { projectName: string; projectId: string } & ProjectMenuCallbacks) {
   return (
@@ -291,30 +295,21 @@ function ProjectMenu(props: { projectName: string; projectId: string } & Project
       </button>
       <div className="picker-menu-section" role="group" aria-label="Spawn agent">
         <span className="picker-menu-label">Spawn agent</span>
-        <button
-          type="button"
-          role="menuitem"
-          title="Spawn an investigator — it investigates one question against the codebase and reports back"
-          onClick={() => props.onAskInvestigator(props.projectId)}
-        >
-          Investigator
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          title="Spawn a devex audit — mines prior sessions for friction, reports to the orchestrator"
-          onClick={() => props.onSpawnAgent(props.projectId, "devex-audit")}
-        >
-          Devex audit
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          title="Spawn a KISS audit — complexity findings, reported to the orchestrator"
-          onClick={() => props.onSpawnAgent(props.projectId, "kiss-audit")}
-        >
-          KISS audit
-        </button>
+        {AGENT_KINDS.map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            role="menuitem"
+            title={AGENT_KIND_INFO[kind].description}
+            onClick={() =>
+              AGENT_KIND_INFO[kind].takesInput
+                ? props.onAskSpawnInput(props.projectId, kind)
+                : props.onSpawnAgent(props.projectId, kind)
+            }
+          >
+            {AGENT_KIND_INFO[kind].menuLabel}
+          </button>
+        ))}
       </div>
       {/* Issue #172: delete is local-only — the GitHub repo is kept; the
           confirmation modal states that explicitly. */}

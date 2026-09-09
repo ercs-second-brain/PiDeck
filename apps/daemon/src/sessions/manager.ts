@@ -233,7 +233,7 @@ export class SessionManager {
    * #297/#300/#302) — a session with a pre-baked persona prompt and a fixed
    * report route, never a worker record. Mechanics live in
    * `agent-kind-spawn.ts`; persona/parent/report-target knowledge stays
-   * with the caller (the api-layer `spawnAgentKindSession`).
+   * with the caller (the api-layer `handleAgentKindSpawn`).
    */
   spawnAgentKind(projectId: string, request: AgentKindSpawnRequest): Promise<Session> {
     return spawnAgentKindSession(

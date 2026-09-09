@@ -19,7 +19,7 @@
  *   cheap and exempt.
  */
 
-import { ACTIVE_WORKER_STATUSES, AGENT_KIND_REPORT_TARGET, type Session } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES, AGENT_KIND_REPORT_TARGET, type AgentKind, type Session } from "@pideck/shared";
 
 import { HttpError } from "./router.js";
 import { requireOr404 } from "./handlers.js";
@@ -29,7 +29,7 @@ import { agentKindSpec } from "../sessions/agent-kinds.js";
 
 /** The spawn input both routes accept (validated by their schemas). */
 export interface SpawnAgentKindInput {
-  kind: "investigator" | "devex-audit" | "kiss-audit";
+  kind: AgentKind;
   name: string;
   question?: string;
   parentSessionId?: string;
@@ -78,12 +78,14 @@ async function resolveParentSessionId(
 /**
  * Spawns one agent-kind session (the handler behind both
  * `POST /api/projects/:projectId/spawn` with `kind` and the contract
- * endpoint `POST /api/projects/:projectId/spawn-agent`). Returns the new
+ * endpoint `POST /api/projects/:projectId/spawn-agent`). Renamed in
+ * issue #324 — it shadowed the sessions-layer `spawnAgentKindSession`, a
+ * same-named but different-layer function. Returns the new
  * session record — agent-kind sessions are not workers. The persona launch
  * line is typed into the bare-shell pane (bootstrap, issue #310) before
  * the response returns.
  */
-export async function spawnAgentKindSession(services: DaemonServices, projectId: string, input: SpawnAgentKindInput): Promise<Session> {
+export async function handleAgentKindSpawn(services: DaemonServices, projectId: string, input: SpawnAgentKindInput): Promise<Session> {
   const project = requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
   const spec = agentKindSpec(input.kind);
 
@@ -119,7 +121,8 @@ export async function spawnAgentKindSession(services: DaemonServices, projectId:
   await services.orchestratorBootstrap.ensureForSession(session);
 
   // Issue #56 parity: never type the question into an agent that cannot
-  // run — gate it on pi auth readiness like worker prompts.
+  // run — gate it on pi auth readiness like worker prompts (the question
+  // reaches only kinds whose spec takesInput — schemas enforce that).
   if (input.question !== undefined) {
     const piAuth = await services.piAuth.payload();
     if (piAuth.ready) {

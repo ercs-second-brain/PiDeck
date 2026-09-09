@@ -31,7 +31,7 @@ import { CliError, optionalFlag, parseArgs, positional, requireFlag, type Parsed
 import { DaemonClient } from "./client.js";
 import { PI_NODE_MIN_VERSION } from "../api/node-version.js";
 import { currentTmuxSession } from "./tmux-context.js";
-import { AGENT_KINDS, AGENT_KIND_REPORT_TARGET, agentKindSchema, type AgentKind } from "@pideck/shared";
+import { AGENT_KIND_INFO, AGENT_KINDS, AGENT_KIND_REPORT_TARGET, agentKindSchema, type AgentKind } from "@pideck/shared";
 
 /** Injectables for tests (defaults: the live tmux context). */
 export interface RunDeps {
@@ -223,7 +223,9 @@ async function cmdDiff(ctx: CommandContext): Promise<number> {
 /**
  * Validated agent kind for a `spawn --kind` invocation (docs/agent-kinds.md),
  * or `null` for a plain worker spawn. Kind rules: never `--issue`/`--prompt`
- * (the persona is the prompt); investigators take `--question`, audits don't.
+ * (the persona is the prompt); kinds whose shared spec takesInput take
+ * `--question`, the others don't (the investigator-only rule, derived from
+ * AGENT_KIND_INFO, issue #324).
  */
 function parseAgentKindSpawn(
   kindRaw: string | boolean | undefined,
@@ -243,11 +245,10 @@ function parseAgentKindSpawn(
   }
   if (issueRaw !== undefined) throw new CliError("--issue cannot be combined with --kind (agent kinds are not issue-owned)");
   if (prompt !== undefined) throw new CliError("--prompt cannot be combined with --kind (the persona is the prompt)");
-  if (kind.data === "investigator" && question === undefined) {
-    throw new CliError("spawn --kind investigator needs --question <question>");
-  }
-  if (kind.data !== "investigator" && question !== undefined) {
-    throw new CliError(`--question is investigator-only (kind "${kind.data}" takes no input)`);
+  if (AGENT_KIND_INFO[kind.data].takesInput) {
+    if (question === undefined) throw new CliError(`spawn --kind ${kind.data} needs --question <question>`);
+  } else if (question !== undefined) {
+    throw new CliError(`--question is not an input of kind "${kind.data}" (it takes no input)`);
   }
   return kind.data;
 }

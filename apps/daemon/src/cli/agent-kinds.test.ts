@@ -65,13 +65,13 @@ describe("pideck spawn --kind (CLI validation)", () => {
     ).rejects.toThrow(/investigator needs --question/);
   });
 
-  it("rejects --question for audit kinds (they take no input)", async () => {
+  it("rejects --question for audit kinds (they take no input — the rule derives from the shared takesInput spec, #324)", async () => {
     await expect(
       run(
         ["spawn", "--project", "p1", "--kind", "devex-audit", "--name", "x", "--question", "why?"],
         unreachable,
       ),
-    ).rejects.toThrow(/--question is investigator-only/);
+    ).rejects.toThrow(/--question is not an input of kind "devex-audit"/);
   });
 
   it("rejects --issue and --prompt alongside --kind (agent kinds are not issue-owned; the persona is the prompt)", async () => {

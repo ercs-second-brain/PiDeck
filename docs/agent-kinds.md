@@ -3,8 +3,10 @@
 A generic mechanism for spawning PiDeck agents with a **pre-baked persona
 prompt** and a **fixed report route** — instead of three bespoke code paths
 (investigator, devex-audit, kiss-audit), one kind registry drives all of
-them. Adding a fourth kind later is an enum entry, a persona file, and a
-registry row.
+them. Adding a fourth kind later is an enum entry, a persona file, a
+registry row, and one `AGENT_KIND_INFO` metadata row (issue #324: labels,
+⋯-menu text, and input rules are data-driven from shared — daemon and web
+alike). Nothing else; type-checking catches misses.
 
 This doc is the scaffold contract: the implementing worker builds the
 plumbing (spawn/registration/sidebar/CLI) on top of it after #290 merges.
@@ -34,16 +36,22 @@ commits, or PRs.
   interface AgentKindSpec {
     /** Persona template file under agent/prompts/, rendered like worker prompts. */
     personaFile: string;
-    /** Who receives the final report. */
-    reportTarget: "caller" | "project-orchestrator";
-    /** Sidebar label prefix (short, e.g. "◇ investigate"). */
-    label: string;
+    /** Whether the spawn occupies a worker-like workspace (concurrency-capped). */
+    workerLike: boolean;
+    /** Whether the pane launches with the write tools excluded. */
+    readOnly: boolean;
   }
 
   const AGENT_KINDS: Record<AgentKind, AgentKindSpec> = { ... };
   ```
 
-  Adding a kind = enum entry + persona file + registry row. Nothing else.
+  The report route (`AGENT_KIND_REPORT_TARGET`) and the presentation
+  metadata (sidebar label, ⋯-menu text, `takesInput` input rules —
+  `AGENT_KIND_INFO`, issue #324) live beside the enum in `packages/shared`,
+  so daemon and web render from one source.
+
+  Adding a kind = enum entry + persona file + registry row + one
+  `AGENT_KIND_INFO` row. Nothing else.
 
 ## 2. Persona files
 
