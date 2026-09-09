@@ -10,6 +10,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { GLOBAL_AGENT_PROJECT_ID, type Session, type Worker } from "@pideck/shared";
+import { boardStore } from "../store/store";
 import {
   fetchProjects,
   fetchAllSessions,
@@ -58,8 +59,10 @@ export type SidebarData = Omit<SidebarContextValue, "openOnboarding">;
  * Sidebar poll interval (#88). The websocket hub keeps kanban/worker state
  * live; this REST poll is the sidebar's fallback — fast enough for new
  * orchestrator/worker rows to appear (starts/terminates also trigger an
- * immediate reload), slow enough not to spam the daemon. A tick while the
- * previous load is still running is skipped: pending requests never pile up.
+ * immediate reload, and issue #269 subscribes the sidebar to the store's
+ * pushed worker lifecycle events so spawned workers show up promptly),
+ * slow enough not to spam the daemon. A tick while the previous load is
+ * still running is skipped: pending requests never pile up.
  */
 const POLL_INTERVAL_MS = 15_000;
 
@@ -140,6 +143,12 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
   }, [reloadTick]);
 
   const reload = useCallback(() => setReloadTick((tick) => tick + 1), []);
+
+  // Issue #269 (B18): the REST poll above is a slow fallback. Worker spawns
+  // are pushed over the websocket in real time — reload the sidebar as soon
+  // as the store applies one, so the worker row appears on the next push at
+  // worst (same for status changes, keeping the row badges current).
+  useEffect(() => boardStore.onWorkerEvent(reload), [reload]);
 
   // Shared start flow (orchestrator + global agent): pending state, then
   // reload so the new row appears without waiting for the next poll tick
