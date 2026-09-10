@@ -7,9 +7,13 @@
  * fakes: `pipeline-cap.test.ts`.
  */
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Project } from "@pideck/shared";
 
+import { BlockedTicketStore } from "./blocked-store.js";
 import { IssueSpawnPipeline } from "./pipeline.js";
 import { makeIssue } from "../../testing/fixtures.js";
 import {
@@ -72,6 +76,8 @@ function makeHarness(options: {
   spawner: WorkerSpawner;
   workerConcurrency?: number;
   occupants?: number;
+  /** Issue #427: pass a persisted store to exercise restart semantics. */
+  blockedStore?: BlockedTicketStore;
 }): { pipeline: IssueSpawnPipeline; spawns: Array<{ projectId: string; issueNumber: number }> } {
   const settings: Project["settings"] = {
     ...makeProject().settings,
@@ -85,6 +91,7 @@ function makeHarness(options: {
     spawner: options.spawner,
     scheduler: new QueueingScheduler({ spawner: options.spawner, pollIntervalMs: 0 }),
     ...(options.occupants !== undefined ? { countOccupants: () => options.occupants as number } : {}),
+    ...(options.blockedStore !== undefined ? { blockedStore: options.blockedStore } : {}),
     now: () => new Date("2026-09-06T12:00:00Z"),
     onError: (err) => {
       throw err;
@@ -164,6 +171,32 @@ describe("IssueSpawnPipeline unblock sweep (issue #408)", () => {
     await flush();
     expect(spawns).toHaveLength(0);
     expect(pipeline.isRecordedBlocked(PROJECT_ID, 5)).toBe(true);
+  });
+
+  it("a blocked ticket survives a restart and unblocks on the next merge (issue #427)", async () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), "pideck-blocked-")), "blocked.json");
+    const script: BlockerScript = new Map([[5, [{ number: 2, state: "open", repository: null }]]]);
+    const { spawner, spawns } = fakeSpawner();
+
+    // Before the fix: the map was in-memory, so this first pipeline's
+    // record vanished with it — no redelivery ever re-triggered #5.
+    const before = makeHarness({ blockerScript: script, spawner, blockedStore: new BlockedTicketStore(file) }).pipeline;
+    before.handleEvent({ type: "issue.assigned", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
+    await flush();
+    expect(before.isRecordedBlocked(PROJECT_ID, 5)).toBe(true);
+
+    // Restart: a fresh pipeline hydrates the blocked map from disk.
+    const after = makeHarness({ blockerScript: script, spawner, blockedStore: new BlockedTicketStore(file) }).pipeline;
+    expect(after.isRecordedBlocked(PROJECT_ID, 5)).toBe(true);
+
+    // The PR merging closes the blocker: the restarted pipeline's sweep
+    // re-evaluates the persisted ticket and spawns through the matrix.
+    script.set(5, []);
+    await after.sweepUnblocked(PROJECT_ID);
+    await flush();
+    expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#5`]);
+    expect(after.isRecordedBlocked(PROJECT_ID, 5)).toBe(false); // consumed + persisted
+    expect(new BlockedTicketStore(file).isRecorded(PROJECT_ID, 5)).toBe(false);
   });
 });
 
