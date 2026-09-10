@@ -28,6 +28,12 @@
  * have no worker status, so a delivery failure drops the entry loudly
  * (the pane is gone; the question can never be answered).
  *
+ * One queue, one loop (issue #395): worker and session prompts share a
+ * single `{sessionId, prompt, workerId?}` queue and a single delivery
+ * pass — an entry with a `workerId` carries the worker status side
+ * effects (terminal drop, `running` on success, `failed` on delivery
+ * error); a session entry just drops loudly through the error sink.
+ *
  * Prompt-gate v2 (issue #333) adds the spec-driven spawn decisions on top:
  * {@link planAgentKindSpawn} maps a kind spec to its post-boot delivery
  * (auto → taskTemplate, waitForInput → caller input or ready-idle) plus
@@ -98,19 +104,18 @@ export function callerWaitsNotice(spec: Pick<AgentKindSpec, "label">, name: stri
   return `[pideck] your ${spec.label} agent "${name}" is working; it will deliver its report to this session via pideck send — no polling needed.`;
 }
 
+/**
+ * One queued prompt awaiting pi auth (issue #56, one queue per issue #395).
+ * Worker spawns queue with a `workerId`; agent-kind sessions (the
+ * researcher's question, docs/agent-kinds.md) queue without one. `prompt`
+ * is `undefined` only for issue-backed worker spawns without an initial
+ * prompt (the hold is about the truthful `spawning` status, not typing).
+ */
 interface PendingPrompt {
-  workerId: string;
   sessionId: string;
-  /** Initial task prompt, `undefined` for issue-backed spawns without one. */
   prompt: string | undefined;
-}
-
-/** A queued prompt for an agent-kind session (docs/agent-kinds.md) — e.g. the
- * researcher's question — held until pi auth is ready (issue #56 parity).
- * Sessions have no worker status, so these retry until deliverable. */
-interface PendingSessionPrompt {
-  sessionId: string;
-  prompt: string;
+  /** Present for worker spawns: the entry drives worker status transitions. */
+  workerId?: string;
 }
 
 export interface PromptGateDeps {
@@ -134,7 +139,6 @@ export class PromptGate {
   private readonly onError: (err: unknown) => void;
 
   private readonly pending: PendingPrompt[] = [];
-  private readonly pendingSessions: PendingSessionPrompt[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private delivering: Promise<void> | null = null;
 
@@ -161,14 +165,14 @@ export class PromptGate {
     this.ensureTimer();
   }
 
-  /** Number of queued prompts (tests/observability). */
+  /** Number of queued worker prompts (tests/observability). */
   get size(): number {
-    return this.pending.length;
+    return this.pending.filter((entry) => entry.workerId !== undefined).length;
   }
 
   /** Number of queued agent-kind session prompts (tests/observability). */
   get sessionSize(): number {
-    return this.pendingSessions.length;
+    return this.pending.filter((entry) => entry.workerId === undefined).length;
   }
 
   /**
@@ -178,17 +182,21 @@ export class PromptGate {
    * session; retried by the same poll loop until deliverable.
    */
   queueSession(sessionId: string, prompt: string): void {
-    if (this.pendingSessions.some((entry) => entry.sessionId === sessionId)) return;
-    this.pendingSessions.push({ sessionId, prompt });
+    if (this.pending.some((entry) => entry.workerId === undefined && entry.sessionId === sessionId)) return;
+    this.pending.push({ sessionId, prompt });
     this.ensureTimer();
   }
 
   /**
-   * One delivery pass over the queue: for every entry, either keep it
-   * waiting (auth not ready / worker still non-terminal), deliver the prompt
-   * and mark the worker `running`, or drop it truthfully (`failed` when the
-   * pane rejects the delivery, silently when the worker already ended).
-   * Safe to run concurrently — passes serialize.
+   * One delivery pass over the queue (issue #395): for every entry, either
+   * keep it waiting (auth not ready / worker still non-terminal), deliver
+   * the prompt, or drop it truthfully. Worker entries drive worker status —
+   * `running` on success, `failed` (never silently losing the prompt) when
+   * the pane rejects the delivery, a silent drop when the worker already
+   * ended. Session entries have no worker status, so a delivery failure
+   * drops them loudly through the error sink (the pane is gone; the
+   * question can never be answered). Safe to run concurrently — passes
+   * serialize.
    */
   async deliverPending(): Promise<void> {
     if (this.delivering !== null) return this.delivering;
@@ -200,8 +208,11 @@ export class PromptGate {
 
   private async deliverAll(): Promise<void> {
     for (const entry of [...this.pending]) {
-      const worker = this.deps.getWorker(entry.workerId);
-      if (worker === undefined || TERMINAL_STATUSES.has(worker.status)) {
+      const workerId = entry.workerId;
+      // Worker branch: an ended worker's queued prompt is meaningless —
+      // drop it before even probing readiness (session entries have no
+      // worker to check and always take the readiness probe below).
+      if (workerId !== undefined && this.endedWorker(workerId)) {
         this.drop(entry);
         continue;
       }
@@ -217,48 +228,48 @@ export class PromptGate {
         if (entry.prompt !== undefined) {
           await this.deps.sendKeys(entry.sessionId, entry.prompt, { enter: true });
         }
-        this.deps.updateWorkerStatus(
-          entry.workerId,
-          "running",
-          entry.prompt !== undefined ? "agent running; initial prompt delivered" : "agent running in tmux session",
-        );
+        this.onDelivered(entry, workerId);
         this.drop(entry);
       } catch (err) {
-        this.deps.updateWorkerStatus(
-          entry.workerId,
-          "failed",
-          `initial prompt delivery failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        this.drop(entry);
+        this.onDeliveryFailed(entry, workerId, err);
       }
     }
-    await this.deliverSessionPrompts();
-    if (this.pending.length === 0 && this.pendingSessions.length === 0) this.clearTimer();
+    if (this.pending.length === 0) this.clearTimer();
+  }
+
+  /** True when a worker's queued prompt is meaningless (gone or ended). */
+  private endedWorker(workerId: string): boolean {
+    const worker = this.deps.getWorker(workerId);
+    return worker === undefined || TERMINAL_STATUSES.has(worker.status);
+  }
+
+  /** Success hook: worker entries flip to `running` (sessions have none). */
+  private onDelivered(entry: PendingPrompt, workerId: string | undefined): void {
+    if (workerId === undefined) return;
+    this.deps.updateWorkerStatus(
+      workerId,
+      "running",
+      entry.prompt !== undefined ? "agent running; initial prompt delivered" : "agent running in tmux session",
+    );
   }
 
   /**
-   * One delivery pass over the agent-kind session queue (docs/agent-kinds.md):
-   * keep waiting while auth is unready, deliver once it is, and drop loudly
-   * when the pane rejects the delivery (the question can never be answered).
+   * Failure hook: the entry is always dropped. Worker entries record the
+   * truth on the worker (`failed` — the prompt is never silently lost);
+   * sessions have no worker status, so the failure surfaces loudly through
+   * the error sink (the pane is gone; the question can never be answered).
    */
-  private async deliverSessionPrompts(): Promise<void> {
-    for (const entry of [...this.pendingSessions]) {
-      let ready: boolean;
-      try {
-        ready = await this.deps.isReady();
-      } catch (err) {
-        this.onError(err);
-        continue;
-      }
-      if (!ready) continue;
-      try {
-        await this.deps.sendKeys(entry.sessionId, entry.prompt, { enter: true });
-        this.dropSession(entry);
-      } catch (err) {
-        this.dropSession(entry);
-        this.onError(err instanceof Error ? err : new Error(String(err)));
-      }
+  private onDeliveryFailed(entry: PendingPrompt, workerId: string | undefined, err: unknown): void {
+    this.drop(entry);
+    if (workerId === undefined) {
+      this.onError(err instanceof Error ? err : new Error(String(err)));
+      return;
     }
+    this.deps.updateWorkerStatus(
+      workerId,
+      "failed",
+      `initial prompt delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   /** Stops the poll timer (daemon shutdown); queued entries stay inspectable. */
@@ -269,11 +280,6 @@ export class PromptGate {
   private drop(entry: PendingPrompt): void {
     const index = this.pending.indexOf(entry);
     if (index !== -1) this.pending.splice(index, 1);
-  }
-
-  private dropSession(entry: PendingSessionPrompt): void {
-    const index = this.pendingSessions.indexOf(entry);
-    if (index !== -1) this.pendingSessions.splice(index, 1);
   }
 
   private ensureTimer(): void {
