@@ -55,8 +55,8 @@ import {
  * and back on desktop — persisted in localStorage under per-viewport keys
  * (issue #364), so the mobile drawer's auto-close never overwrites the
  * desktop's persisted choice.
- * Issue #354: the hamburger is mobile-only; on desktop the toggle is a
- * small icon at the top right of the sidebar itself, and the collapse is
+ * Issue #354: the hamburger is mobile-only; on desktop the toggle is the
+ * workspace row's collapse icon (issue #373 B21a), and the collapse is
  * manual-only — the user's open/closed choice is never overridden.
  */
 const router = createBrowserRouter([

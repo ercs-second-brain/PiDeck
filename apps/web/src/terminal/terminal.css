@@ -55,22 +55,18 @@
   transition: width 0.2s ease, visibility 0.2s;
 }
 
-/* Issue #354: the sidebar's own collapse toggle (desktop). A slim bar at
-   the top of the sidebar with the icon at its right edge; hidden on the
-   mobile drawer breakpoint, where the header hamburger remains. */
-.picker-topbar {
-  flex: none;
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 10px 0;
-}
-
+/* Issue #354/#373 (B21a): the sidebar's own collapse toggle (desktop) — a
+   small icon at the workspace row's right edge (the auto left margin pushes
+   it across from the row's name + terminal-open chat buttons). Hidden on
+   the mobile drawer breakpoint, where the header hamburger remains. */
 .sidebar-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 26px;
   height: 26px;
+  margin-left: auto;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -86,26 +82,40 @@
   color: var(--accent);
 }
 
-/* Issue #326: desktop collapse — closed state. Issue #354: the closed
-   state is a slim rail that keeps the toggle visible (pointing right) —
-   with the hamburger gone on desktop, this rail is the way back. Scoped
-   to the desktop breakpoint so the ≤768px drawer (transform-based) is
-   untouched. */
+/* Issue #326: desktop collapse — closed state. Issue #354: the closed state
+   is a slim rail; issue #373 (B21b): the rail keeps ONLY the workspace
+   row's toggle visible (pointing right — with the hamburger gone on desktop
+   it is the way back) while the rest of the panel hides. Scoped to the
+   desktop breakpoint so the ≤768px drawer (transform-based) is untouched. */
 @media (min-width: 769px) {
   .app:not(.sidebar-open) .session-picker {
     width: 36px;
   }
 
-  /* The rail holds only the toggle: hide the list and footer outright
-     (they are overflow-clipped anyway) so nothing half-shows. */
-  .app:not(.sidebar-open) .picker-scroll,
+  /* The rail holds only the toggle: hide every other scroll-region child
+     (project list, empty/error states, the add row, any open confirm modal
+     — they are overflow-clipped anyway) and the footer outright so nothing
+     half-shows. */
+  .app:not(.sidebar-open) .picker-scroll {
+    padding: 4px;
+  }
+
+  .app:not(.sidebar-open) .picker-scroll > :not(.picker-global-row),
   .app:not(.sidebar-open) .picker-footer {
     display: none;
   }
 
-  .app:not(.sidebar-open) .picker-topbar {
-    justify-content: center;
-    padding: 4px;
+  .app:not(.sidebar-open) .picker-global-row {
+    margin: 0;
+  }
+
+  /* Inside the surviving workspace row, only the toggle itself stays. */
+  .app:not(.sidebar-open) .picker-global-row > :not(.sidebar-toggle) {
+    display: none;
+  }
+
+  .app:not(.sidebar-open) .sidebar-toggle {
+    margin: 0;
   }
 }
 
@@ -126,8 +136,11 @@
 }
 
 /* Issue #108/#173: the project row holds the name (= kanban entry) and
-   the chat icon (= orchestrator entry) side by side. position: relative
-   anchors the row's ⋯ context menu (issue #167). */
+   the chat icon (= orchestrator entry) side by side. Issue #373 (B20): the
+   terminal-open chat icon sits on the LEFT, immediately after the name —
+   the name stops growing so the icon hugs it — while the ⋯ context menu
+   alone is pushed to the row's far right (auto left margin). position:
+   relative anchors the row's ⋯ context menu (issue #167). */
 .picker-project-row {
   position: relative;
   display: flex;
@@ -138,7 +151,10 @@
 
 .picker-project-name {
   display: block;
-  flex: 1;
+  /* Issue #373 (B20): shrink-to-fit (with ellipsis), never grow — the
+     terminal-open buttons keep their place beside the name, not beside the
+     row's far-right menu. */
+  flex: 0 1 auto;
   min-width: 0;
   padding: 2px 4px;
   border: none;
@@ -164,7 +180,10 @@
 
 /* The workspace-level agent row (issue #259: labeled "Workspace", name =
    all-projects board entry): same row anatomy as a project row, first in
-   the sidebar above the project list. */
+   the sidebar above the project list. Issue #373: the terminal-open chat
+   icon hugs the name (B20) and the row may also host the desktop collapse
+   toggle at its right edge (B21a — the .sidebar-toggle rules carry the
+   auto left margin). */
 .picker-global-row {
   margin-bottom: 12px;
 }
@@ -213,6 +232,10 @@
 .picker-project-menu {
   /* Anchors the ::after hit-target ghost and the row's dropdown. */
   position: relative;
+  /* Issue #373 (B20): the ⋯ context menu alone sits at the row's far
+     right — the auto margin absorbs the space left between the chat icon
+     and the menu. */
+  margin-left: auto;
 }
 
 .picker-project-menu::after {
@@ -649,6 +672,10 @@
 }
 
 .picker-add-name {
+  /* Issue #373 (B20): the row-name stopped growing so project names hug
+     their terminal-open icon — the add row keeps its old full-width click
+     target instead. */
+  flex: 1;
   color: var(--text-dim);
   font-weight: 500;
 }
@@ -954,9 +981,10 @@
 }
 
 @media (max-width: 768px) {
-  /* Issue #354: the inline toggle is a desktop affordance; the drawer is
-     opened/closed by the header hamburger (+ backdrop/navigation). */
-  .picker-topbar {
+  /* Issue #354/#373: the inline toggle (now on the workspace row) is a
+     desktop affordance; the drawer is opened/closed by the header
+     hamburger (+ backdrop/navigation). */
+  .sidebar-toggle {
     display: none;
   }
 

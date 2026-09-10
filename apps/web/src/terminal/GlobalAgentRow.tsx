@@ -11,6 +11,7 @@
  * no workspace work to open.
  */
 
+import type { ReactNode } from "react";
 import type { Session } from "@pideck/shared";
 
 /**
@@ -35,6 +36,12 @@ export function GlobalAgentRow(props: {
   /** Opens the all-projects (workspace) board — the row's NAME click. */
   onSelectBoard: () => void;
   onStart: () => void;
+  /**
+   * Issue #373 (B21a): the desktop sidebar collapse toggle, rendered as the
+   * row's last control at its right edge (absent on mobile, where the header
+   * hamburger owns the drawer).
+   */
+  toggle?: ReactNode;
 }) {
   const chatTitle = props.session ? "Attach the workspace agent terminal" : "Start the workspace agent";
   const disabled = props.disabled || props.starting;
@@ -58,6 +65,7 @@ export function GlobalAgentRow(props: {
       >
         💬
       </button>
+      {props.toggle}
     </div>
   );
 }
