@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AccessibleRepo } from "@pideck/shared";
 
 import { apiListAccessibleRepos, errorMessage } from "../../lib/api";
+import { Toggle } from "../../components/Toggle";
 import type { WizardForm } from "./wizard-form";
 import { StepPanel } from "./StepPanel";
 
@@ -100,6 +101,22 @@ function RepoSelector(props: { selectedUrl: string; onSelect: (repoUrl: string) 
   );
 }
 
+/** The create-repo public toggle (private by default, explicit opt-in). */
+function PublicToggle(props: { isPublic: boolean; onChange: (isPublic: boolean) => void }) {
+  return (
+    <Toggle
+      checked={props.isPublic}
+      onToggle={props.onChange}
+      label={
+        <>
+          Public repository <small>(recommended default is private)</small>
+        </>
+      }
+    />
+  );
+}
+
+/** Step 3's form: repo source (clone vs create) + per-mode fields. */
 export function RepoSourceStep(props: {
   form: WizardForm;
   onChange: (patch: Partial<WizardForm>) => void;
@@ -179,12 +196,7 @@ export function RepoSourceStep(props: {
               onChange={(e) => onChange({ repoName: e.target.value })}
             />
           </div>
-          <label className="toggle-row">
-            <input type="checkbox" checked={form.isPublic} onChange={(e) => onChange({ isPublic: e.target.checked })} />
-            <span>
-              Public repository <small>(recommended default is private)</small>
-            </span>
-          </label>
+          <PublicToggle isPublic={form.isPublic} onChange={(isPublic) => onChange({ isPublic })} />
         </>
       )}
 

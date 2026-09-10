@@ -793,32 +793,11 @@ code {
 
 /* Full-screen overlay while a banner-initiated apply runs (and for the
    completion beat before the reload): the app underneath is dimmed — the
-   update is app-wide, the presentation matches the scope. */
-.update-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-critical);
-  background: var(--backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-
+   update is app-wide, the presentation matches the scope. Chrome is the
+   shared modal chrome (.modal-overlay/.modal-card/.modal-title below) —
+   the card only narrows; the overlay centers and sits above everything. */
 .update-modal {
-  width: 100%;
   max-width: 480px;
-  padding: 24px 28px;
-  border: 1px solid var(--issue);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-modal);
-}
-
-.update-modal-title {
-  margin: 0 0 6px;
-  font-size: var(--fs-xl);
-  font-weight: 650;
 }
 
 .update-modal-detail {
@@ -854,12 +833,6 @@ code {
 }
 
 /* --- Connection indicator -------------------------------------------------- */
-
-.board-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 
 /* --- Onboarding wizard ------------------------------------------------------ */
 
@@ -950,9 +923,10 @@ code {
   font-weight: 600;
 }
 
-/* Issue #294: one shared text-input chrome — the field inputs and the
+/* Issue #294: one shared text-input chrome — field inputs/selects and the
    repo option's static surface (its flex layout is its own rule). */
 .field input,
+.field select,
 .repo-option {
   padding: 8px 12px;
   border: 1px solid var(--border);
@@ -961,8 +935,19 @@ code {
   color: var(--text);
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   border-color: var(--accent);
+}
+
+/* One shared section-title for panels and modal sections (AssetDialog,
+   agent kinds, worker pipeline): the quiet uppercase panel heading. */
+.section-title {
+  margin: 0 0 8px;
+  font-size: var(--fs-base);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
 .field-hint {
@@ -1008,16 +993,92 @@ code {
   color: var(--text-dim);
 }
 
+/* --- Shared toggle switch (issue #359) -------------------------------- */
+
+/* ONE on/off control for the whole non-terminal UI: the Toggle component
+   renders a real, visually-hidden checkbox (semantics + keyboard operation:
+   tab + space) with role="switch", a decorative track/thumb, and the row's
+   label. The whole label row is the click/touch target. */
 .toggle-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: var(--fs-md);
   cursor: pointer;
 }
 
 .toggle-row small {
   color: var(--text-dim);
+}
+
+.toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Visually hidden but focusable — the global :focus-visible outline is
+   mirrored onto the switch track by the adjacent-sibling rule below. */
+.toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.toggle-switch {
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.toggle-thumb {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 2px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.toggle-input:checked + .toggle-switch {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.toggle-input:checked + .toggle-switch .toggle-thumb {
+  transform: translateX(14px);
+  background: #fff;
+}
+
+.toggle-input:focus-visible + .toggle-switch {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.toggle-row-disabled {
+  cursor: default;
+}
+
+.toggle-row-disabled .toggle-switch {
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle-switch,
+  .toggle-thumb {
+    transition: none;
+  }
 }
 
 .perm-report p {
@@ -1339,28 +1400,8 @@ code {
   max-width: 460px;
 }
 
-.global-worker-settings .section-title {
-  font-size: var(--fs-base);
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  margin-bottom: 8px;
-}
-
 .global-worker-settings .settings-form {
   margin-top: 8px;
-}
-
-.global-worker-settings .toggle-row span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.global-worker-settings .toggle-row input {
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
 }
 
 /* --- Agent assets modal (issue #315) ----------------------------------------------- */
@@ -1381,6 +1422,7 @@ code {
 .asset-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -1410,7 +1452,7 @@ code {
   font-size: var(--fs-xs);
   color: var(--text-dim);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 1px 8px;
   white-space: nowrap;
 }
@@ -1453,25 +1495,14 @@ code {
   margin: 8px 0;
 }
 
-.asset-persona-checks .toggle-row span {
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-}
-
 .asset-editor-text {
   min-height: 260px;
 }
 
 /* --- Nested asset dialogs (issue #358, B11) --------------------------------------
    The prompt/skill/agent-kind editors open as proper modal dialogs over the
-   agent-assets modal instead of appending inline to it. The overlay is a
-   fixed position element (later DOM order paints it over the host modal);
-   z-modal + 1 keeps it above. */
-.asset-dialog-overlay {
-  z-index: calc(var(--z-modal) + 1);
-}
-
+   agent-assets modal instead of appending inline to it. The overlay's z-index
+   bump lives with the shared modal chrome (.modal-overlay.asset-dialog-overlay). */
 .asset-dialog {
   max-width: 640px;
 }
@@ -1590,7 +1621,7 @@ code {
   }
 }
 
-/* --- Onboarding modal (issue #62) ------------------------------------------ */
+/* --- Shared modal chrome ------------------------------------------------------ */
 
 .modal-overlay {
   position: fixed;
@@ -1612,6 +1643,31 @@ code {
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-modal);
+}
+
+/* Modal/dialog title (the AssetDialog standard): --fs-xl per DESIGN.md —
+   one heading treatment for every modal (settings, agent assets,
+   onboarding, nested dialogs, the update modal). Section headings inside
+   a modal stay .section-title. */
+.modal-title {
+  margin: 0 0 8px;
+  font-size: var(--fs-xl);
+  font-weight: 650;
+}
+
+/* Issue #358 B11: nested asset dialogs paint over the host modal — the
+   compound selector keeps this rule after .modal-overlay in the cascade
+   (same specificity alone would lose to the later .modal-overlay rule). */
+.modal-overlay.asset-dialog-overlay {
+  z-index: calc(var(--z-modal) + 1);
+}
+
+/* The update-apply overlay is centered (a status modal, not a form) and
+   sits on the --z-critical rung above every other modal. */
+.update-modal-overlay {
+  align-items: center;
+  z-index: var(--z-critical);
 }
 
 /* Issue #294: one shared quiet icon-button chrome — the modal close and
@@ -1683,10 +1739,6 @@ code {
     gap: 10px;
   }
 
-  .board-actions {
-    flex-wrap: wrap;
-  }
-
   .wizard-steps,
   .wizard-actions {
     flex-wrap: wrap;
@@ -1698,16 +1750,33 @@ code {
     min-height: 40px;
   }
 
+  .field input,
+  .field select {
+    min-height: 40px;
+  }
+
+  /* The toggle row is the touch target: full-height rows and a larger
+     switch on touch viewports. */
+  .toggle-row {
+    min-height: 40px;
+  }
+
+  .toggle-switch {
+    width: 40px;
+    height: 24px;
+  }
+
+  .toggle-thumb {
+    width: 18px;
+    height: 18px;
+  }
+
+  .toggle-input:checked + .toggle-switch .toggle-thumb {
+    transform: translateX(16px);
+  }
+
   .modal-overlay {
     padding: 20px 10px;
-  }
-
-  .update-modal-overlay {
-    padding: 12px 10px;
-  }
-
-  .update-modal {
-    padding: 18px 16px;
   }
 
   .modal-card {
@@ -1726,8 +1795,37 @@ code {
     height: 40px;
   }
 
+  /* 40px hit areas for the notification affordances (negative margins on
+     the clears keep the visual layout unchanged). */
+  .notif-clear {
+    width: 40px;
+    text-align: center;
+    padding: 8px 0;
+    margin: -8px 0;
+  }
+
+  .notif-clear-all {
+    padding: 10px 8px;
+    margin: -8px -4px;
+  }
+
+  .notif-perm-enable {
+    min-height: 40px;
+  }
+
+  .asset-action {
+    padding: 10px 12px;
+    margin: -7px -2px;
+  }
+
+  .link-button {
+    padding: 10px 8px;
+    margin: -9px -4px;
+  }
+
   /* 16px input font stops iOS Safari's focus-time page zoom. */
-  .field input {
+  .field input,
+  .field select {
     font-size: var(--fs-lg);
   }
 

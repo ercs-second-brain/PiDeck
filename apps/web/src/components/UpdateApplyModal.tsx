@@ -28,8 +28,8 @@ export function UpdateApplyModal({ updating, reloading }: UpdateApplyModalProps)
   if (reloading) {
     return (
       <div className="update-modal-overlay" role="status" aria-live="assertive">
-        <div className="update-modal">
-          <h2 className="update-modal-title">Update complete</h2>
+        <div className="modal-card update-modal">
+          <h2 className="modal-title">Update complete</h2>
           <p className="update-modal-detail">Reloading into the new build&hellip;</p>
         </div>
       </div>
@@ -37,9 +37,9 @@ export function UpdateApplyModal({ updating, reloading }: UpdateApplyModalProps)
   }
   if (updating === null) return null;
   return (
-    <div className="update-modal-overlay" role="status" aria-live="assertive">
-      <div className="update-modal">
-        <h2 className="update-modal-title">Updating PiDeck&hellip;</h2>
+    <div className="modal-overlay update-modal-overlay" role="status" aria-live="assertive">
+      <div className="modal-card update-modal">
+        <h2 className="modal-title">Updating PiDeck&hellip;</h2>
         <p className="update-modal-detail">
           Moving to <code>{updating.targetSha.slice(0, 7)}</code>
         </p>

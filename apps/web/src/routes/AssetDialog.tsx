@@ -23,7 +23,7 @@ export function AssetDialog(props: { ariaLabel: string; title?: string; footer?:
         <button type="button" className="modal-close" aria-label={`Close ${props.ariaLabel}`} onClick={props.onClose}>
           ×
         </button>
-        {props.title !== undefined && <h2 className="section-title">{props.title}</h2>}
+        {props.title !== undefined && <h2 className="modal-title">{props.title}</h2>}
         {props.children}
         {props.footer !== undefined && (
           <>

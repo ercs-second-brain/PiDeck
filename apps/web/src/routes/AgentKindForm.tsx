@@ -19,8 +19,9 @@ import {
 } from "@pideck/shared";
 
 import { EditorActions } from "./AssetEditorActions";
+import { Toggle } from "../components/Toggle";
 
-/** Human labels for the spawnableBy role checkboxes. */
+/** Human labels for the spawnableBy role toggles. */
 const ROLE_LABELS: Record<AgentKindSpawnableRole, string> = {
   global: "Global agent",
   orchestrator: "Orchestrator",
@@ -105,27 +106,12 @@ export function parseDraft(draft: KindDraft): UpsertAgentKindRequest | string {
   return result.data;
 }
 
-/** One labeled checkbox row (the toggle chrome from the #315 editor). */
-function ToggleCheck(props: { checked: boolean; label: string; onToggle: () => void }) {
-  return (
-    <label className="toggle-row">
-      <input type="checkbox" checked={props.checked} onChange={props.onToggle} />
-      <span>{props.label}</span>
-    </label>
-  );
-}
-
 /** The spawnableBy role multi-select (spec v2). */
 function RoleChecks(props: { selected: AgentKindSpawnableRole[]; onToggle: (role: AgentKindSpawnableRole) => void }) {
   return (
     <div className="asset-persona-checks">
       {AGENT_KIND_SPAWNABLE_ROLES.map((role) => (
-        <ToggleCheck
-          key={role}
-          checked={props.selected.includes(role)}
-          label={ROLE_LABELS[role]}
-          onToggle={() => props.onToggle(role)}
-        />
+        <Toggle key={role} checked={props.selected.includes(role)} label={ROLE_LABELS[role]} onToggle={() => props.onToggle(role)} />
       ))}
     </div>
   );
@@ -228,9 +214,9 @@ export function AgentKindForm(props: {
         <RoleChecks selected={draft.spawnableBy} onToggle={toggleRole} />
       </Field>
       <div className="asset-persona-checks">
-        <ToggleCheck checked={draft.callerWaits} label="Caller waits for the report" onToggle={() => onChange({ ...draft, callerWaits: !draft.callerWaits })} />
-        <ToggleCheck checked={draft.readOnly} label="Read-only (no edit/write tools)" onToggle={() => onChange({ ...draft, readOnly: !draft.readOnly })} />
-        <ToggleCheck
+        <Toggle checked={draft.callerWaits} label="Caller waits for the report" onToggle={() => onChange({ ...draft, callerWaits: !draft.callerWaits })} />
+        <Toggle checked={draft.readOnly} label="Read-only (no edit/write tools)" onToggle={() => onChange({ ...draft, readOnly: !draft.readOnly })} />
+        <Toggle
           checked={draft.workerLike}
           label="Worker-like (own worktree, counts against concurrency)"
           onToggle={() => onChange({ ...draft, workerLike: !draft.workerLike })}
