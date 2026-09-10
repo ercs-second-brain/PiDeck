@@ -15,7 +15,14 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { archivedAgentSessionLogSchema, sessionSchema, workerSchema } from "@pideck/shared";
+import { WebSocket } from "ws";
+import {
+  archivedAgentSessionLogSchema,
+  kanbanUpdateEventSchema,
+  sessionSchema,
+  workerSchema,
+  type KanbanUpdateEvent,
+} from "@pideck/shared";
 
 import { startContractServer, type ContractServer } from "./contract-fixtures.js";
 
@@ -37,6 +44,16 @@ async function registerProject(id: string): Promise<string> {
     repoUrl: `https://github.com/ak/${id}`,
   });
   return `ak-${id}`;
+}
+
+/** Waits for `count` events of the given type (the hub is async). */
+async function waitForEvent(messages: unknown[], type: string, count: number): Promise<unknown[]> {
+  for (let i = 0; i < 100; i++) {
+    const found = messages.filter((m) => (m as { type?: string }).type === type);
+    if (found.length >= count) return found;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`expected ${count} "${type}" events; got: ${JSON.stringify(messages)}`);
 }
 
 describe("POST /api/sessions/:sessionId/terminate (issues #317/#357)", () => {
@@ -98,8 +115,62 @@ describe("archived persona-agent log route (issue #357 B9)", () => {
   });
 });
 
+describe("persona-agent archive hub broadcast (issue #358)", () => {
+    it("broadcasts session.archived on the hub per archived persona agent (issue #358)", async () => {
+    const { api, daemon, base } = server;
+    const projectId = await registerProject("term-broadcast");
+    const parent = await daemon.services.sessions.ensureOrchestrator(projectId);
+
+    // A live WS client (the sidebar's connection) captures the hub events.
+    const ws = new WebSocket(base.replace("http://", "ws://") + "/api/ws");
+    const messages: unknown[] = [];
+    ws.on("message", (raw: Buffer) => messages.push(JSON.parse(raw.toString("utf8")) as unknown));
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+
+    try {
+      const parentSpawn = await api("POST", `/api/projects/${projectId}/spawn-agent`, {
+        kind: "devex-audit",
+        name: "parent-audit",
+        parentSessionId: parent.id,
+      });
+      const grand = sessionSchema.parse(parentSpawn.json);
+      const childSpawn = await api("POST", `/api/projects/${projectId}/spawn-agent`, {
+        kind: "researcher",
+        name: "child-research",
+        parentSessionId: grand.id,
+        question: "q",
+      });
+      const child = sessionSchema.parse(childSpawn.json);
+
+      const res = await api("POST", `/api/sessions/${grand.id}/terminate`);
+      expect(res.status).toBe(200);
+
+      // One archive event per lineage member (B10 cascade covers each).
+      const archived = await waitForEvent(messages, "session.archived", 2);
+      expect(archived).toHaveLength(2);
+      const event = kanbanUpdateEventSchema.parse(
+        archived[0],
+      ) as Extract<KanbanUpdateEvent, { type: "session.archived" }>;
+      expect(event.type).toBe("session.archived");
+      expect(event.projectId).toBe(projectId);
+      expect(event.rootSessionId).toBe(grand.id);
+      expect([grand.id, child.id]).toContain(event.sessionId);
+      expect(["devex-audit", "researcher"]).toContain(event.agentKind);
+      // Worker-backed and kill-path terminates do NOT emit the event (the
+      // worker path announces via worker.status.changed instead).
+      const other = messages.filter((m) => (m as { type?: string }).type === "session.archived");
+      expect(other).toHaveLength(2);
+    } finally {
+      ws.close();
+    }
+  });
+});
+
 describe("terminate cascades to descendant persona agents (issue #357 B10)", () => {
-    it("archives a persona agent's live descendants with it (issue #357 B10)", async () => {
+  it("archives a persona agent's live descendants with it (issue #357 B10)", async () => {
     const { api, daemon } = server;
     const projectId = await registerProject("term-cascade");
     const parent = await daemon.services.sessions.ensureOrchestrator(projectId);

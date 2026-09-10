@@ -123,6 +123,16 @@ export const kanbanUpdateEventSchema = z.discriminatedUnion("type", [
     workerId: workerIdField,
     status: workerStatusSchema,
   }),
+  z.object({
+    type: z.literal("session.archived"),
+    at: isoDateTimeSchema,
+    projectId: projectIdField,
+    sessionId: sessionIdField,
+    /** The persona kind of the archived persona agent (agent-kind sessions only). */
+    agentKind: agentKindIdSchema,
+    /** The lineage root of the archive (the terminated parent's id). */
+    rootSessionId: sessionIdField,
+  }),
 ]);
 export type KanbanUpdateEvent = z.infer<typeof kanbanUpdateEventSchema>;
 

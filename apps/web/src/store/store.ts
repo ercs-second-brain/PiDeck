@@ -83,7 +83,7 @@ export interface BoardStore {
  */
 type WorkerLifecycleEvent = Extract<
   KanbanUpdateEvent,
-  { type: "worker.spawned" | "worker.status.changed" }
+  { type: "worker.spawned" | "worker.status.changed" | "session.archived" }
 >;
 
 const INITIAL_STATE: AppState = {
@@ -159,6 +159,11 @@ export function applyKanbanEvent(state: AppState, event: KanbanUpdateEvent): App
       );
       return { ...state, workers: { ...state.workers, [event.projectId]: workers } };
     }
+    case "session.archived":
+      // Issue #358: the state holds no persona-agent records (AgentKindsSection
+      // fetches its own) — the reduction is a no-op on purpose; the store
+      // notifies the worker-event listeners (the sidebar's reload is the update).
+      return state;
   }
 }
 
@@ -339,8 +344,11 @@ class LiveBoardStore implements BoardStore {
     }
     // Worker lifecycle events always notify (issue #269) — even when the
     // reducer was a no-op (unknown worker), the sidebar decides what a
-    // refresh is worth.
-    if (event.type === "worker.spawned" || event.type === "worker.status.changed") {
+    // refresh is worth. Persona-agent archives (issue #358) notify the same
+    // way: the state holds no persona-agent records (AgentKindsSection
+    // fetches its own), so the reduction is a no-op on purpose — the
+    // sidebar's reload is the update (the #370 poll-gap finding).
+    if (event.type === "worker.spawned" || event.type === "worker.status.changed" || event.type === "session.archived") {
       for (const listener of this.workerEventListeners) listener(event);
     }
   }

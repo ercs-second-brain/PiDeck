@@ -221,6 +221,24 @@ describe("boardStore.onWorkerEvent (issue #269)", () => {
     boardStore.apply({ type: "kanban.card.moved", at: "2026-01-03T00:00:00.000Z", projectId: PROJECT_ID, cardId: "issue-1", from: "backlog", to: "in_progress", card: card("issue-1", "in_progress", 1) });
     expect(seen.map((event) => event.type)).toEqual(["worker.spawned", "worker.status.changed"]);
   });
+
+  it("notifies subscribers for session.archived (issue #358 — the poll-gap finding)", () => {
+    const seen: KanbanUpdateEvent[] = [];
+    const unsubscribe = boardStore.onWorkerEvent((event) => seen.push(event));
+    const archiveEvent = {
+      type: "session.archived" as const,
+      at: "2026-01-05T00:00:00.000Z",
+      projectId: PROJECT_ID,
+      sessionId: "sess-agent-1",
+      agentKind: "devex-audit",
+      rootSessionId: "sess-agent-1",
+    };
+    // The reduction is a no-op (no persona-agent records in state), but the
+    // sidebar still learns instantly via the listener (the reload is the update).
+    boardStore.apply(archiveEvent);
+    expect(seen.map((event) => event.type)).toEqual(["session.archived"]);
+    unsubscribe();
+  });
 });
 
 describe("reconnect backoff", () => {

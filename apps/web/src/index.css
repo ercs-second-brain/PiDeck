@@ -1463,6 +1463,27 @@ code {
   min-height: 260px;
 }
 
+/* --- Nested asset dialogs (issue #358, B11) --------------------------------------
+   The prompt/skill/agent-kind editors open as proper modal dialogs over the
+   agent-assets modal instead of appending inline to it. The overlay is a
+   fixed position element (later DOM order paints it over the host modal);
+   z-modal + 1 keeps it above. */
+.asset-dialog-overlay {
+  z-index: calc(var(--z-modal) + 1);
+}
+
+.asset-dialog {
+  max-width: 640px;
+}
+
+/* The dialog replaces the inline-editor chrome: no top rule, no width cap. */
+.asset-dialog .agent-assets-editor {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+  max-width: none;
+}
+
 /* --- Card diff link ---------------------------------------------------------------- */
 
 .card-diff-link {
