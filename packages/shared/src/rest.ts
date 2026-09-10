@@ -19,7 +19,7 @@ import {
   agentKindSpecSchema,
   spawnAgentRequestSchema,
   upsertAgentKindRequestSchema,
-} from "./agent-kinds.js";
+} from "./agent-kind-spec.js";
 import {
   agentAssetsSchema,
   agentKindIdSchema,
