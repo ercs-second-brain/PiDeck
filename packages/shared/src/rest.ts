@@ -9,7 +9,7 @@
  * Endpoints: projects CRUD/register, per-project kanban state, sessions and
  * workers lists, per-project orchestrator start (issue #53), worker
  * terminate (issue #64), PR diffs, per-worker files-changed (issue #126),
- * and daemon settings (auto-agent username, concurrency, worker-pipeline
+ * and daemon settings (review account #407, concurrency, worker-pipeline
  * toggles #106).
  */
 
@@ -586,22 +586,25 @@ export const endpoints = {
   /**
    * Create a user-defined kind (spec v2): persona content is mandatory
    * (shipped kinds fall back to `agent/prompts/<name>.md`; user kinds have
-   * no shipped default). 409 when the name collides with a shipped kind or
-   * an existing user kind.
+   * no shipped default). Creating with a shipped name stores an override
+   * that shadows the shipped spec and lifts any tombstone (issue #368).
+   * 409 when the name duplicates an existing user kind.
    */
   createAgentKind: { method: "POST", path: "/api/agent-kinds", params: z.object({}), request: upsertAgentKindRequestSchema, response: agentKindSpecSchema },
   /**
-   * Update a user-defined kind (spec v2): the body's `name` must match the
-   * `:kind` path param. Affects future spawns (and relaunched panes, like
-   * every persona asset) — never a running pane. 409 for shipped kinds
-   * (immutable specs; their personas are editable via agent-assets prompt
-   * overrides), 404 for unknown ids.
+   * Update a kind (spec v2): the body's `name` must match the `:kind` path
+   * param. Updating a shipped kind stores an override that shadows the
+   * shipped spec (issue #368; persona content is required, like every
+   * stored kind). Affects future spawns (and relaunched panes, like every
+   * persona asset) — never a running pane. 404 for unknown ids.
    */
   updateAgentKind: { method: "PUT", path: "/api/agent-kinds/:kind", params: z.object({ kind: agentKindIdSchema }), request: upsertAgentKindRequestSchema, response: agentKindSpecSchema },
   /**
-   * Delete a user-defined kind. 409 while any live session of the kind
-   * exists (terminate them first), 409 for shipped kinds, 404 for unknown
-   * ids. Existing sessions keep working; only future spawns are affected.
+   * Delete a kind. A user kind is removed; a shipped kind is tombstoned
+   * (persisted, so the deletion sticks across reloads — re-creating the
+   * name lifts the tombstone; issue #368). 409 while any live session of
+   * the kind exists (terminate them first), 404 for unknown ids. Existing
+   * sessions keep working; only future spawns are affected.
    */
   deleteAgentKind: { method: "DELETE", path: "/api/agent-kinds/:kind", params: z.object({ kind: agentKindIdSchema }), request: null, response: z.undefined() },
 } as const satisfies Record<string, EndpointShape>;
