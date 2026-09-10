@@ -53,7 +53,11 @@ function validatePersistedLogs(value: unknown): PersistedLogs | undefined {
   return { version: STATE_VERSION, logs };
 }
 
-const EMPTY: PersistedLogs = { version: STATE_VERSION, logs: {} };
+/** Fresh literal per construction — NEVER a shared module constant: the
+ * fallback is returned by reference and `this.logs` aliases it, so a shared
+ * empty would leak logs across store instances in-process (issue #372 —
+ * the AgentKindStore trap, found by its tests during #368). */
+const empty = (): PersistedLogs => ({ version: STATE_VERSION, logs: {} });
 
 export class ArchivedLogStore {
   private readonly store: JsonStore<PersistedLogs>;
@@ -61,7 +65,7 @@ export class ArchivedLogStore {
 
   constructor(filePath: string) {
     this.store = new JsonStore(filePath);
-    this.logs = this.store.load(validatePersistedLogs, EMPTY).logs;
+    this.logs = this.store.load(validatePersistedLogs, empty()).logs;
   }
 
   /** Persists (or overwrites) a worker's captured scrollback. */

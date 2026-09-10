@@ -85,3 +85,18 @@ describe("terminate captures scrollback (issue #104)", () => {
     expect(capture?.args).toContain("-J");
   });
 });
+
+describe("ArchivedLogStore fallback isolation (issue #372)", () => {
+  it("a fresh instance over an absent file never sees another instance's saves", () => {
+    // Regression: the shared EMPTY module constant was returned by reference
+    // on absent files, so the first store's save() mutated the shared object
+    // and a second store (fresh state dir, no file) saw its logs.
+    const dirA = mkdtempSync(path.join(tmpdir(), "pideck-iso-a-"));
+    const dirB = mkdtempSync(path.join(tmpdir(), "pideck-iso-b-"));
+    const first = new ArchivedLogStore(path.join(dirA, "logs.json"));
+    first.save("worker-1", { capturedAt: "2026-01-01T00:00:00.000Z", scrollback: "leaked?" });
+
+    const second = new ArchivedLogStore(path.join(dirB, "logs.json"));
+    expect(second.get("worker-1")).toBeUndefined();
+  });
+});

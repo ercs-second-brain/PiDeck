@@ -287,3 +287,18 @@ describe("SessionRegistry: legacy kind-id migration (issue #335)", () => {
     expect(readFileSync(filePath, "utf8")).not.toContain("investigator");
   });
 });
+
+describe("SessionRegistry fallback isolation (issue #372)", () => {
+  it("a fresh instance over an absent file never sees another instance's sessions", () => {
+    // Regression: the shared EMPTY_STATE module constant was the load()
+    // fallback, returned by reference on absent files — the same latent
+    // pattern the AgentKindStore fix (issue #368) removed. Registry.load()
+    // only reads the fallback today, but the pattern must not come back.
+    const otherDir = mkdtempSync(path.join(tmpdir(), "pideck-registry-iso-"));
+    const first = new SessionRegistry(filePath);
+    first.createSession({ projectId: "proj", role: "worker", tmuxSession: "pideck-proj-worker-1", workerId: null });
+
+    const second = new SessionRegistry(path.join(otherDir, "sessions.json"));
+    expect(second.listSessions()).toEqual([]);
+  });
+});
