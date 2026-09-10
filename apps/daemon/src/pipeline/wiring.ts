@@ -81,10 +81,10 @@ export interface GithubAutomationOptions {
    */
   reviewAccountToken?: () => string | null;
   reviewAccountUsername?: () => string | null;
-  /** Pi auth readiness for review-agent prompt gating (issue #107). */
-  piReady?: () => Promise<boolean>;
-  /** Prompt gate (issue #56) holding review prompts until pi is ready. */
-  promptGate?: Pick<PromptGate, "queue">;
+  /** Pi auth readiness for review-agent prompt gating (issue #107). Required (issue #424 F8) — the daemon context always provides it. */
+  piReady: () => Promise<boolean>;
+  /** Prompt gate (issue #56) holding review prompts until pi is ready. Required (issue #424 F8). */
+  promptGate: Pick<PromptGate, "queue">;
   /**
    * Agent-kind registry (v2, issue #330): consulted by the session
    * control's occupancy count so workerLike kind sessions gate the
@@ -193,8 +193,8 @@ export class GithubAutomation {
               `spawn:${projectId}`,
             );
           },
-          ...(options.piReady !== undefined ? { piReady: options.piReady } : {}),
-          ...(options.promptGate !== undefined ? { promptGate: options.promptGate } : {}),
+          piReady: options.piReady,
+          promptGate: options.promptGate,
           onError: (err) => this.onError(err, `review-spawn:${projectId}`),
         }),
     };

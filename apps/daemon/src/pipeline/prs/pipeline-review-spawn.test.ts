@@ -38,6 +38,9 @@ function fakeSessions() {
 
 const REQUEST = { prNumber: 12, parentWorkerId: "worker-1", prompt: "review prompt" };
 
+/** Issue #424 (F8): the readiness deps are required — both tests are on the ready path (no hold). */
+const READY_DEPS = { piReady: async () => true, promptGate: { queue: () => undefined } };
+
 describe("spawnReviewAgent env (issue #407)", () => {
   it("injects the review account token as GH_TOKEN into the reviewer pane", async () => {
     const fake = fakeSessions();
@@ -45,6 +48,7 @@ describe("spawnReviewAgent env (issue #407)", () => {
       sessions: fake.sessions as never,
       broadcastSpawned: () => undefined,
       reviewGhToken: "ghp_review",
+      ...READY_DEPS,
       onError: () => undefined,
     });
     expect(worker?.id).toBe("worker-reviewer-1");
@@ -57,6 +61,7 @@ describe("spawnReviewAgent env (issue #407)", () => {
       sessions: fake.sessions as never,
       broadcastSpawned: () => undefined,
       reviewGhToken: null,
+      ...READY_DEPS,
       onError: () => undefined,
     });
     expect(fake.spawns[0]?.options).not.toHaveProperty("env");
