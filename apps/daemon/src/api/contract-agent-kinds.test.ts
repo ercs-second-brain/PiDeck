@@ -1,9 +1,12 @@
 /**
- * Contract test for the agent-kind CRUD endpoints (registry v2, issue #330):
- * GET/POST /api/agent-kinds, PUT/DELETE /api/agent-kinds/:kind — over real
- * HTTP. Covers the shipped-kind guardrails (immutable, undeletable), the
- * update-safe user-kind store, and the live-session deletion guardrail.
- * The spawn-side consumption (spawnableBy, trigger rules) is covered in
+ * Contract test for the agent-kind CRUD endpoints (registry v2, issue
+ * #330): GET/POST /api/agent-kinds, PUT/DELETE /api/agent-kinds/:kind — over
+ * real HTTP. Issue #368 (B18) reverses the shipped-kind immutability
+ * guardrails: shipped kinds are editable (stored overrides shadowing the
+ * shipped spec) and deletable (persisted tombstones) — covered in the
+ * "shipped kinds are user-editable" describe. Also covers the update-safe
+ * user-kind store and the live-session deletion guardrail. The spawn-side
+ * consumption (spawnableBy, trigger rules) is covered in
  * `agent-kind-spawn.test.ts`; the store itself in
  * `sessions/agent-kinds.test.ts`.
  */
@@ -77,15 +80,6 @@ describe("agent-kind CRUD (registry v2, issue #330)", () => {
     expect((await api("PUT", updatePath, kindBody("scribe"))).status).toBe(400);
   });
 
-  it("guards the shipped kinds: collisions 409, updates 409, deletes 409", async () => {
-    const { api } = server;
-    expect((await api("POST", endpoints.createAgentKind.path, kindBody("researcher"))).status).toBe(409);
-    expect(
-      (await api("PUT", formatPath("updateAgentKind", { kind: "kiss-audit" }), kindBody("kiss-audit"))).status,
-    ).toBe(409);
-    expect((await api("DELETE", formatPath("deleteAgentKind", { kind: "researcher" }))).status).toBe(409);
-  });
-
   it("guards user kinds: unknown 404, live sessions 409 (terminate first)", async () => {
     const { api, daemon } = server;
     expect((await api("DELETE", formatPath("deleteAgentKind", { kind: "ghost" }))).status).toBe(404);
@@ -106,5 +100,66 @@ describe("agent-kind CRUD (registry v2, issue #330)", () => {
     }
     expect((await api("DELETE", kindPath)).status).toBe(204);
     expect((await api("DELETE", kindPath)).status).toBe(404);
+  });
+});
+
+describe("shipped kinds are user-editable and user-deletable (issue #368)", () => {
+  it("edits a shipped kind: the stored override shadows the shipped spec", async () => {
+    const { api, daemon } = server;
+    const updatePath = formatPath("updateAgentKind", { kind: "kiss-audit" });
+    const updated = await api("PUT", updatePath, kindBody("kiss-audit", { label: "my audit" }));
+    expect(updated.status).toBe(200);
+    expect(agentKindSpecSchema.parse(updated.json).label).toBe("my audit");
+
+    // The live registry resolves the override (spawnable, listed).
+    expect(daemon.services.agentKinds.get("kiss-audit")).toMatchObject({ label: "my audit" });
+    expect(daemon.services.registry.getSession.length).toBeGreaterThan(0);
+    const list = agentKindListSchema.parse((await api("GET", endpoints.listAgentKinds.path)).json);
+    expect(list.kinds.find((entry) => entry.name === "kiss-audit")).toMatchObject({ label: "my audit" });
+    // Reverting the label re-stores the override (still shadowing).
+    expect((await api("PUT", updatePath, kindBody("kiss-audit"))).status).toBe(200);
+  });
+
+  it("deletes a shipped kind: tombstoned, out of the live list, persisted across reloads", async () => {
+    const { api, daemon } = server;
+    const deletePath = formatPath("deleteAgentKind", { kind: "devex-audit" });
+    expect((await api("DELETE", deletePath)).status).toBe(204);
+
+    // Out of the live registry: not resolvable, not listed, not spawnable.
+    expect(daemon.services.agentKinds.get("devex-audit")).toBeUndefined();
+    expect(daemon.services.agentKinds.list().map((entry) => entry.name)).not.toContain("devex-audit");
+    expect(daemon.services.agentKinds.isTombstoned("devex-audit")).toBe(true);
+
+    // The tombstone is persisted (daemon reload over the same state dir).
+    const store = daemon.services.agentKindStore;
+    expect(store.isTombstoned("devex-audit")).toBe(true);
+    expect(store.get("devex-audit")).toBeUndefined();
+
+    // Re-deleting is 404 (already gone from the live registry).
+    expect((await api("DELETE", deletePath)).status).toBe(404);
+  });
+
+  it("re-creates a tombstoned shipped kind: the create lifts the tombstone", async () => {
+    const { api, daemon } = server;
+    expect((await api("DELETE", formatPath("deleteAgentKind", { kind: "researcher" }))).status).toBe(204);
+    expect(daemon.services.agentKinds.get("researcher")).toBeUndefined();
+
+    // A create under the tombstoned name re-creates the kind — the
+    // deletion is lifted (the user re-created the persona).
+    const created = await api("POST", endpoints.createAgentKind.path, kindBody("researcher"));
+    expect(created.status).toBe(200);
+    expect(daemon.services.agentKinds.get("researcher")).toMatchObject({ name: "researcher" });
+    expect(daemon.services.agentKinds.isTombstoned("researcher")).toBe(false);
+  });
+
+  it("blocks deleting a shipped kind with live sessions (terminate first)", async () => {
+    const { api, daemon } = server;
+    const project = await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/ak/kinds2" });
+    await daemon.services.sessions.spawnAgentKind(project.id, { kind: "kiss-audit", parentSessionId: "sess-caller-1" });
+
+    const res = await api("DELETE", formatPath("deleteAgentKind", { kind: "kiss-audit" }));
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(res.json)).toContain("live session");
+    expect(daemon.services.agentKinds.get("kiss-audit")).toBeDefined();
   });
 });
