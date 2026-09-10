@@ -129,12 +129,13 @@ export async function archiveReviewAgent(tracked: TrackedPR, sessions: PRSession
   }
 }
 
-/** Whether the project's worker concurrency cap has a free slot for a reviewer. */
+/** Whether the project's worker concurrency cap has a free slot for a reviewer.
+ * Occupancy is the ONE shared predicate (issue #393): active workers + live
+ * workerLike kind sessions, identical on every spawn path. */
 function underCap(ctx: ReviewContext, projectId: string): boolean {
   const cap = ctx.workerCap();
   if (cap === undefined) return true;
-  const active = ctx.sessions.listWorkers({ projectId }).filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status));
-  return active.length < cap;
+  return ctx.sessions.countProjectOccupants(projectId) < cap;
 }
 
 function promptOptions(tracked: TrackedPR, ctx: ReviewContext): ReviewAgentPromptOptions {

@@ -70,6 +70,15 @@ export interface PRSessionControl {
     projectId: string,
     request: { prNumber: number; parentWorkerId: string | null; prompt: string },
   ): Promise<Worker | null>;
+  /**
+   * Worker-concurrency occupancy for a project (issue #393): the ONE
+   * shared predicate every spawn path gates the `workerConcurrency` cap
+   * with — the project's active workers plus its live workerLike
+   * agent-kind sessions (`sessions/occupancy.ts`). Required so a project
+   * at its cap of workerLike kind sessions also gates review-agent
+   * spawns, not just worker spawns.
+   */
+  countProjectOccupants(projectId: string): number;
 }
 
 export interface PullRequestPipelineOptions {

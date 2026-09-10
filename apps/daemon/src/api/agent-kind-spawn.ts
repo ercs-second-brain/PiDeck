@@ -26,8 +26,9 @@
  *   `workerConcurrency` cap alongside workers; cheap spawns are exempt.
  */
 
-import { ACTIVE_WORKER_STATUSES, GLOBAL_AGENT_PROJECT_ID, type AgentKindSpec, type Project, type Session, type Worker } from "@pideck/shared";
+import { GLOBAL_AGENT_PROJECT_ID, type AgentKindSpec, type Project, type Session, type Worker } from "@pideck/shared";
 
+import { countProjectOccupants } from "../sessions/occupancy.js";
 import { HttpError } from "./router.js";
 import { requireOr404 } from "./handlers.js";
 import type { DaemonServices } from "./context.js";
@@ -139,20 +140,16 @@ export async function handleAgentKindSpawn(services: DaemonServices, projectId: 
 
   // Worker-concurrency cap applies to worker-like kinds (docs/agent-kinds.md
   // §5): they occupy a real workspace like workers; cheap spawns are
-  // exempt. Counted alongside the project's active workers.
+  // exempt. Occupancy is the ONE shared predicate (issue #393): active
+  // workers + live workerLike kind sessions, identical on every spawn path.
   if (spec.workerLike) {
     const cap = project.settings.workerConcurrency;
     if (cap != null) {
-      const activeWorkers = services.sessions
-        .listWorkers({ projectId })
-        .filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status)).length;
-      const liveKindSessions = services.sessions
-        .listSessions(projectId)
-        .filter((session) => session.agentKind !== undefined && services.agentKinds.get(session.agentKind)?.workerLike === true).length;
-      if (activeWorkers + liveKindSessions >= cap) {
+      const occupants = countProjectOccupants(services.sessions, services.agentKinds, projectId);
+      if (occupants >= cap) {
         throw new HttpError(
           409,
-          `worker concurrency cap reached for project "${projectId}" (${activeWorkers + liveKindSessions}/${cap} active)`,
+          `worker concurrency cap reached for project "${projectId}" (${occupants}/${cap} active)`,
         );
       }
     }

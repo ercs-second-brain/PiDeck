@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import type { Session } from "@pideck/shared";
 
 import { restPull } from "../../testing/fixtures.js";
 import { checkRuns, makeHarness, PROJECT, redFakePR, type Harness } from "./harness.js";
@@ -17,6 +18,19 @@ function greenHarness(options: Parameters<typeof makeHarness>[0] = {}): Harness 
   h.prs.set(12, { pull: restPull(12, { sha: "sha-1" }), checkRuns: checkRuns("success"), reviews: [], comments: [] });
   h.sessions.control.listWorkers()[0]!.prNumber = 12;
   return h;
+}
+
+/** A workerLike agent-kind session occupying a concurrency slot (issue #393). */
+function workerLikeKindSession(id: string, kind: string): Session {
+  return {
+    id,
+    projectId: PROJECT,
+    role: "worker",
+    tmuxSession: `pideck-${id}`,
+    workerId: null,
+    agentKind: kind,
+    createdAt: "2026-09-06T12:00:00Z",
+  };
 }
 
 describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => {
@@ -97,6 +111,23 @@ describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => 
     await unbounded.poll();
     await unbounded.poll();
     expect(unbounded.sessions.spawned).toHaveLength(1);
+  });
+
+  it("counts workerLike kind sessions toward the cap too (issue #393)", async () => {
+    // Cap 2: the active authoring worker (1) + one workerLike kind session
+    // (1) fill the project — the reviewer must NOT spawn, even though only
+    // one WORKER exists. Terminating the kind session frees the slot.
+    const kindSessions = [workerLikeKindSession("sess-kind-1", "devex-audit")];
+    const h = greenHarness({ workerCap: () => 2, kindSessions });
+    await h.poll();
+    await h.poll();
+    expect(h.sessions.spawned).toHaveLength(0);
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: null });
+
+    // The kind session is archived (terminated) → its slot frees → spawn.
+    kindSessions.length = 0;
+    await h.poll();
+    expect(h.sessions.spawned).toHaveLength(1);
   });
 });
 

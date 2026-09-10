@@ -256,8 +256,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // Per-persona user assets (issue #315) — before the manager + bootstrap so
   // both launch paths shape panes from the same store.
   const agentAssets = new AgentAssetsStore(stateDir);
-  // Agent-kind registry v2 (issue #330): user kinds (state-dir store) resolve
-  // ahead of shipped; shared by spawn paths and CRUD.
+  // Agent-kind registry v2 (issue #330): user kinds ahead of shipped; shared by spawn paths, CRUD, and #393 occupancy.
   const agentKindStore = new AgentKindStore(stateDir);
   const agentKinds = new AgentKindRegistry(agentKindStore);
   // Issue #318: pane-input readiness probe (test-overridable).
@@ -323,6 +322,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     workerSettings: () => settings.get(),
     piReady: () => piAuth.payload().then((payload) => payload.ready),
     promptGate,
+    agentKinds, // #393: kind-aware occupancy for the review-agent spawn cap
     ...watcherOptions,
   });
   automationRef.current = automation;

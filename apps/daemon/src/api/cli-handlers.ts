@@ -9,8 +9,9 @@
  * - `GET  /api/pi-auth` — pi provider readiness probe (issue #57)
  */
 
-import { ACTIVE_WORKER_STATUSES, workerSchema, type Project, type Worker } from "@pideck/shared";
+import { workerSchema, type Project, type Worker } from "@pideck/shared";
 
+import { countProjectOccupants } from "../sessions/occupancy.js";
 import type { DaemonServices } from "./context.js";
 import { nodeStatus } from "./node-version.js";
 import { HttpError, Router } from "./router.js";
@@ -80,15 +81,16 @@ export async function spawnWorker(
   input: { issueNumber?: number; name: string; prompt?: string },
 ): Promise<Worker> {
   const project = requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
-  const active = services.sessions.listWorkers({ projectId }).filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status));
   // `workerConcurrency` unset/null = unbounded (issues #14, #168); when set,
   // manual spawns beyond the cap are rejected (the auto-spawn pipeline queues
-  // instead).
+  // instead). Occupancy is the ONE shared predicate (issue #393): active
+  // workers + live workerLike kind sessions, identical on every spawn path.
   const cap = project.settings.workerConcurrency;
-  if (cap != null && active.length >= cap) {
+  const occupants = countProjectOccupants(services.sessions, services.agentKinds, projectId);
+  if (cap != null && occupants >= cap) {
     throw new HttpError(
       409,
-      `worker concurrency cap reached for project "${projectId}" (${active.length}/${cap} active)`,
+      `worker concurrency cap reached for project "${projectId}" (${occupants}/${cap} active)`,
     );
   }
   // Issue #378 (#266 parity): the initial prompt is resolved BEFORE the

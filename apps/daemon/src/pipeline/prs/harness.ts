@@ -7,9 +7,10 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Worker, WorkerStatus } from "@pideck/shared";
+import type { Session, Worker, WorkerStatus } from "@pideck/shared";
 
 import { GhClient } from "../../github/gh.js";
+import { countProjectOccupancy } from "../../sessions/occupancy.js";
 import { restPull } from "../../testing/fixtures.js";
 import type { PRPipelineEvent } from "./events.js";
 import { PullRequestPipeline, type PRSessionControl } from "./pipeline.js";
@@ -114,7 +115,10 @@ export function makeWorker(overrides: Partial<Worker> = {}): Worker {
   };
 }
 
-export function fakeSessions(workers: Worker[]): {
+export function fakeSessions(
+  workers: Worker[],
+  kindSessions: Session[] = [],
+): {
   control: PRSessionControl;
   prompts: SentPrompt[];
   statuses: StatusChange[];
@@ -167,6 +171,15 @@ export function fakeSessions(workers: Worker[]): {
       byId.set(reviewer.id, reviewer);
       return reviewer;
     },
+    // Issue #393: the same occupancy predicate the real wiring uses —
+    // active workers + the injected kind sessions (every kind session a
+    // fake passes in is treated as workerLike).
+    countProjectOccupants: (projectId) =>
+      countProjectOccupancy({
+        workers: workers.filter((w) => w.projectId === projectId),
+        sessions: kindSessions.filter((s) => s.projectId === projectId),
+        isWorkerLikeKind: () => true,
+      }),
   };
   return { control, prompts, statuses, archived, spawned };
 }
@@ -191,6 +204,8 @@ export interface Harness {
 export function makeHarness(
   options: {
     workers?: Worker[];
+    /** Worker-like agent-kind sessions occupying concurrency (issue #393). */
+    kindSessions?: Session[];
     maxFixAttempts?: number;
     fixPromptTimeoutMs?: number;
     trackerPath?: string;
@@ -201,7 +216,7 @@ export function makeHarness(
   const prs = new Map<number, FakePR>();
   const openList: number[] = [];
   const gh = fakePipelineGh(prs, openList);
-  const sessions = fakeSessions(options.workers ?? [makeWorker()]);
+  const sessions = fakeSessions(options.workers ?? [makeWorker()], options.kindSessions);
   const trackerPath =
     options.trackerPath ?? path.join(mkdtempSync(path.join(tmpdir(), "pideck-prpipeline-")), "prs.json");
   const tracker = new PRTracker(trackerPath);
