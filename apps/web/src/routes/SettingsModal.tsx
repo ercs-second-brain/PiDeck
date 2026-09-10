@@ -134,8 +134,8 @@ function ReviewAccountSettings({ settings }: { settings: SettingsRead | null }) 
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const save = async (): Promise<void> => {
     setSaving(true);
