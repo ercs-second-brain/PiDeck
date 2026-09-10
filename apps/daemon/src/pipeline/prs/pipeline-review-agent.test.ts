@@ -9,15 +9,20 @@ import { describe, expect, it } from "vitest";
 import type { Session } from "@pideck/shared";
 
 import { restPull } from "../../testing/fixtures.js";
-import { checkRuns, makeHarness, PROJECT, redFakePR, type Harness } from "./harness.js";
+import { checkRuns, makeHarness, PROJECT, redFakePR, REVIEW_USER, type Harness } from "./harness.js";
 
 /** Tracks PR #12 owned by the harness's default worker, with full control over CI/reviews. */
 function greenHarness(options: Parameters<typeof makeHarness>[0] = {}): Harness {
   const h = makeHarness(options);
   h.openList.push(12);
-  h.prs.set(12, { pull: restPull(12, { sha: "sha-1" }), checkRuns: checkRuns("success"), reviews: [], comments: [] });
+  h.prs.set(12, { pull: assignedPull(), checkRuns: checkRuns("success"), reviews: [], comments: [] });
   h.sessions.control.listWorkers()[0]!.prNumber = 12;
   return h;
+}
+
+/** A pull payload assigned to the review user — the configured-mode spawn gate (issue #408/#424). */
+function assignedPull(overrides: Parameters<typeof restPull>[1] = {}): Record<string, unknown> {
+  return { ...restPull(12, overrides), assignees: [{ login: REVIEW_USER }] };
 }
 
 /** A workerLike agent-kind session occupying a concurrency slot (issue #393). */
@@ -80,14 +85,14 @@ describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => 
 
   it("does not spawn a reviewer while the PR has merge conflicts, even when CI is green (issue #322)", async () => {
     const h = greenHarness();
-    h.prs.get(12)!.pull = restPull(12, { sha: "sha-1", mergeConflicts: true });
+    h.prs.get(12)!.pull = assignedPull({ sha: "sha-1", mergeConflicts: true });
     await h.poll();
     await h.poll();
     expect(h.sessions.spawned).toHaveLength(0);
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: null });
 
     // Conflicts resolved (author rebased) → the reviewer spawns on a later poll.
-    h.prs.get(12)!.pull = restPull(12, { sha: "sha-1" });
+    h.prs.get(12)!.pull = assignedPull({ sha: "sha-1" });
     await h.poll();
     expect(h.sessions.spawned).toHaveLength(1);
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: "worker-reviewer-1", reviewedHeadSha: "sha-1" });
@@ -150,7 +155,7 @@ describe("PullRequestPipeline: auto review agent — re-review and lifecycle (is
     expect(h.tracker.get(PROJECT, 12)!.reviewWorkerId).toBe("worker-reviewer-1");
 
     // Author pushes a follow-up commit; CI stays green → re-review prompt.
-    h.prs.get(12)!.pull = restPull(12, { sha: "sha-2" });
+    h.prs.get(12)!.pull = assignedPull({ sha: "sha-2" });
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(1);
     expect(h.sessions.prompts[0]).toEqual({ sessionId: "sess-reviewer-1", keys: expect.stringContaining("Re-review the updated diff") });
@@ -186,14 +191,14 @@ describe("PullRequestPipeline: auto review agent — re-review and lifecycle (is
     const merged = greenHarness();
     await merged.poll();
     await merged.poll();
-    merged.prs.get(12)!.pull = restPull(12, { sha: "sha-2", closed: true, merged: true });
+    merged.prs.get(12)!.pull = assignedPull({ sha: "sha-2", closed: true, merged: true });
     await merged.poll();
     expect(merged.sessions.archived).toContain("worker-reviewer-1");
 
     const closed = greenHarness();
     await closed.poll();
     await closed.poll();
-    closed.prs.get(12)!.pull = restPull(12, { sha: "sha-2", closed: true });
+    closed.prs.get(12)!.pull = assignedPull({ sha: "sha-2", closed: true });
     await closed.poll();
     expect(closed.sessions.archived).toContain("worker-reviewer-1");
   });

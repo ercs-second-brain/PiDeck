@@ -113,10 +113,13 @@ export interface UnitBuilderDeps {
    * Review account accessors (issue #407), read fresh: the token gates the
    * review flow (set = reviewer panes run gh as the second account and file
    * real reviews); the username is the review-user identity the
-   * PR-assignment leg (#408 lifecycle) keys off.
+   * PR-assignment leg (#408 lifecycle) keys off. Both-or-neither (issue
+   * #424): the settings store rejects one without the other, and the unit
+   * gates the review cycle on BOTH being set — a pre-validation asymmetric
+   * settings file degrades to single-account mode.
    */
   reviewAccountToken?: () => string | null;
-  reviewAccountUser?: () => string | null;
+  reviewAccountUsername?: () => string | null;
   /** Routes a watcher event into the automation (the shared event router). */
   onWatcherEvent: (projectId: string, event: GithubWatcherEvent) => void;
   /** Routes a PR pipeline event onto the kanban broadcast bridge. */
@@ -178,12 +181,17 @@ export function buildUnit(deps: UnitBuilderDeps, projectId: string, repoUrl: str
     // Issue #107: review-agent spawns respect the project's worker cap,
     // read fresh so a settings change lands without a restart.
     workerCap: () => deps.projects.get(projectId)?.settings.workerConcurrency ?? undefined,
-    // Issue #407: the review cycle (agent, real reviews, triggers) runs
-    // only with a configured review account, read fresh per poll.
-    reviewAccount: () => (deps.reviewAccountToken?.() ?? null) !== null,
+    // Issue #407/#424: the review cycle (agent, real reviews, triggers) runs
+    // only with BOTH the token and the username configured — SettingsStore's
+    // both-or-neither validation makes the pairing an invariant for
+    // settings-driven runs; the both-set gate keeps a pre-validation
+    // asymmetric file inert (single-account mode) instead of half-configured.
+    reviewAccount: () => (deps.reviewAccountToken?.() ?? null) !== null && (deps.reviewAccountUsername?.() ?? null) !== null,
     // Issue #408: the review-user identity — worker PRs are assigned to it
     // on submission and the reviewer-spawn trigger keys off the assignment.
-    reviewAccountUser: () => deps.reviewAccountUser?.() ?? null,
+    // Non-null whenever reviewAccount() is true (issue #424); "" only when
+    // the accessors are absent entirely (never in production wiring).
+    reviewAccountUsername: () => deps.reviewAccountUsername?.() ?? "",
     onError: (err) => deps.onError(err, `pr-pipeline:${projectId}`),
   });
   return {

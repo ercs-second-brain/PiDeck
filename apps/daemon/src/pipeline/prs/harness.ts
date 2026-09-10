@@ -196,6 +196,8 @@ export function fakeSessions(
 // Harness
 // ---------------------------------------------------------------------------
 
+export const REVIEW_USER = "review-bot";
+
 export interface Harness {
   prs: Map<number, FakePR>;
   openList: number[];
@@ -223,8 +225,8 @@ export function makeHarness(
     workerCap?: () => number | undefined;
     /** Review account configured (issue #407)? Default true — reviewer tests. */
     reviewAccount?: () => boolean;
-    /** Review-user login (issue #408): worker PRs are assigned to it on submission. Default unset (no assignment leg). */
-    reviewAccountUser?: () => string | null;
+    /** Review-user login (issue #408): worker PRs are assigned to it on submission. Default: {@link REVIEW_USER} (issue #424 F2 — a configured account always carries its login). */
+    reviewAccountUsername?: () => string;
     /** Issue #408 failure injection: the assignment POST rejects (the leg must be non-fatal). */
     failAssignees?: boolean;
     /** Pipeline error sink (default console.error — tests inject a quiet sink). */
@@ -256,9 +258,11 @@ export function makeHarness(
     // Issue #407: harness default = review account configured (the review
     // cycle runs); tests pass `() => false` for single-account mode.
     reviewAccount: options.reviewAccount ?? (() => true),
-    // Issue #408: the review-user identity; unset by default (legacy hosts
-    // and the pre-#408 tests — no assignment leg, unconditioned spawn).
-    ...(options.reviewAccountUser !== undefined ? { reviewAccountUser: options.reviewAccountUser } : {}),
+    // Issue #408/#424 (F2): the review-user identity is ALWAYS configured —
+    // both-or-neither settings validation makes a configured account carry
+    // its login, so the assignment gate is live in the default mode. Tests
+    // may override with their own login.
+    reviewAccountUsername: options.reviewAccountUsername ?? (() => REVIEW_USER),
     ...(options.failAssignees === true || options.onError !== undefined
       ? { onError: options.onError ?? (() => undefined) }
       : {}),

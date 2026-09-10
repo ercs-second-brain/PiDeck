@@ -42,10 +42,12 @@ export interface DriveContext {
   reviewAccount?: () => boolean;
   /**
    * The review account's GitHub login (issue #408): the reviewer spawns only
-   * for PRs assigned to this user. Absent/null = legacy hosts (no assignment
-   * gate — the pre-#408 unconditioned spawn on green).
+   * for PRs assigned to this user. Non-null (issue #424): the settings
+   * store's both-or-neither validation plus the wiring's both-set
+   * `reviewAccount` gate guarantee a real login whenever the review cycle
+   * runs; `() => ""` when unconfigured (the gate keeps the cycle inert).
    */
-  reviewUser?: () => string | null;
+  reviewAccountUsername: () => string;
   /** The PR's current assignee logins (issue #408) — the review-user gate reads this. Optional: absent degrades to none. */
   prAssignees?: string[];
   /** Max consecutive CI-fix prompts per red streak. */

@@ -8,9 +8,7 @@
 import { describe, expect, it } from "vitest";
 
 import { restPull } from "../../testing/fixtures.js";
-import { checkRuns, makeHarness, PROJECT, type Harness } from "./harness.js";
-
-const REVIEW_USER = "review-bot";
+import { checkRuns, makeHarness, PROJECT, REVIEW_USER, type Harness } from "./harness.js";
 
 /** PR #12 owned by the harness's default worker, CI green, no reviews. `assigned` puts the review user on the PR. */
 function greenHarness(options: Parameters<typeof makeHarness>[0] = {}, assigned = false): Harness {
@@ -28,7 +26,7 @@ function greenHarness(options: Parameters<typeof makeHarness>[0] = {}, assigned 
 
 describe("PullRequestPipeline: PR assignment leg (issue #408)", () => {
   it("assigns the review user to a worker PR on submission", async () => {
-    const h = makeHarness({ reviewAccountUser: () => REVIEW_USER });
+    const h = makeHarness({ reviewAccountUsername: () => REVIEW_USER });
     h.openList.push(12);
     h.prs.set(12, { pull: restPull(12), checkRuns: checkRuns("success"), reviews: [], comments: [] });
     h.sessions.control.listWorkers()[0]!.prNumber = 12;
@@ -36,20 +34,20 @@ describe("PullRequestPipeline: PR assignment leg (issue #408)", () => {
     expect(h.assignments).toEqual([{ path: "/repos/o/r/issues/12/assignees", assignees: [REVIEW_USER] }]);
   });
 
-  it("does not assign without a configured review user (single-account mode)", async () => {
-    const h = greenHarness({});
+  it("does not assign in single-account mode (no review account configured)", async () => {
+    const h = greenHarness({ reviewAccount: () => false });
     await h.poll();
     expect(h.assignments).toEqual([]);
   });
 
   it("skips the assignment POST when the PR already carries the review user", async () => {
-    const h = greenHarness({ reviewAccountUser: () => REVIEW_USER }, true);
+    const h = greenHarness({ reviewAccountUsername: () => REVIEW_USER }, true);
     await h.poll();
     expect(h.assignments).toEqual([]);
   });
 
   it("a failed assignment POST is non-fatal — the PR is still tracked", async () => {
-    const h = greenHarness({ reviewAccountUser: () => REVIEW_USER, failAssignees: true });
+    const h = greenHarness({ reviewAccountUsername: () => REVIEW_USER, failAssignees: true });
     const events = await h.poll();
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ prNumber: 12 });
     // Issue #411: CI passed at discovery — the author rests at `done`, not
@@ -61,7 +59,7 @@ describe("PullRequestPipeline: PR assignment leg (issue #408)", () => {
 
 describe("PullRequestPipeline: reviewer-spawn assignment gate (issue #408)", () => {
   it("CI-green on a PR assigned to the review user spawns the reviewer", async () => {
-    const h = greenHarness({ reviewAccountUser: () => REVIEW_USER }, true);
+    const h = greenHarness({ reviewAccountUsername: () => REVIEW_USER }, true);
     await h.poll(); // discover + track
     await h.poll(); // reviewer spawns
     expect(h.sessions.spawned).toHaveLength(1);
@@ -69,7 +67,7 @@ describe("PullRequestPipeline: reviewer-spawn assignment gate (issue #408)", () 
   });
 
   it("CI-green on a PR NOT assigned to the review user spawns no reviewer", async () => {
-    const h = greenHarness({ reviewAccountUser: () => REVIEW_USER }, false);
+    const h = greenHarness({ reviewAccountUsername: () => REVIEW_USER }, false);
     await h.poll();
     await h.poll();
     expect(h.sessions.spawned).toHaveLength(0);
@@ -80,15 +78,20 @@ describe("PullRequestPipeline: reviewer-spawn assignment gate (issue #408)", () 
     expect(h.sessions.spawned).toHaveLength(1);
   });
 
-  it("without a configured review user the gate is off (legacy unconditioned spawn)", async () => {
-    const h = greenHarness({}, false);
+  it("single-account mode: the whole review cycle is inert (no reviewer spawn)", async () => {
+    // Issue #424 (F2): the pre-#408 "no review user → unconditioned spawn"
+    // cohort is gone — a configured review account always carries its login
+    // (both-or-neither settings validation), and single-account mode turns
+    // the review cycle off entirely.
+    const h = greenHarness({ reviewAccount: () => false }, false);
     await h.poll();
     await h.poll();
-    expect(h.sessions.spawned).toHaveLength(1);
+    expect(h.sessions.spawned).toHaveLength(0);
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: null });
   });
 
   it("a changes-requested review reaches the worker regardless of the assignment", async () => {
-    const h = greenHarness({ reviewAccountUser: () => REVIEW_USER }, false);
+    const h = greenHarness({ reviewAccountUsername: () => REVIEW_USER }, false);
     await h.poll();
     await h.poll();
     h.prs.get(12)!.reviews = [{ user: { login: "human" }, state: "CHANGES_REQUESTED", submitted_at: "2026-09-06T12:05:00Z" }];

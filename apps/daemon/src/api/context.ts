@@ -328,7 +328,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     // account (second identity) — all read fresh per decision.
     workerSettings: () => settings.get(),
     reviewAccountToken: () => settings.get().reviewAccountToken,
-    reviewAccountUser: () => settings.get().reviewAccountUsername,
+    reviewAccountUsername: () => settings.get().reviewAccountUsername,
     piReady: () => piAuth.payload().then((payload) => payload.ready),
     promptGate,
     agentKinds, // #393: kind-aware occupancy for the review-agent spawn cap

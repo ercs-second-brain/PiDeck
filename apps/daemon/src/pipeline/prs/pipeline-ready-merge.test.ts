@@ -11,20 +11,25 @@ import { describe, expect, it } from "vitest";
 
 import { restPull } from "../../testing/fixtures.js";
 import type { PRPipelineEvent } from "./events.js";
-import { checkRuns, makeHarness, PROJECT, restComment, type Harness } from "./harness.js";
+import { checkRuns, makeHarness, PROJECT, restComment, REVIEW_USER, type Harness } from "./harness.js";
 
 /** PR #12 owned by the harness's default worker, CI green, no reviews. */
 function greenHarness(options: Parameters<typeof makeHarness>[0] = {}): Harness {
   const h = makeHarness(options);
   h.openList.push(12);
-  h.prs.set(12, { pull: restPull(12, { sha: "sha-1" }), checkRuns: checkRuns("success"), reviews: [], comments: [] });
+  h.prs.set(12, { pull: assignedPull(), checkRuns: checkRuns("success"), reviews: [], comments: [] });
   h.sessions.control.listWorkers()[0]!.prNumber = 12;
   return h;
 }
 
-/** Approves PR #12 with a fresh submission timestamp. */
+/** A pull payload assigned to the review user — the configured-mode spawn gate (issue #408/#424). */
+function assignedPull(overrides: Parameters<typeof restPull>[1] = {}): Record<string, unknown> {
+  return { ...restPull(12, overrides), assignees: [{ login: REVIEW_USER }] };
+}
+
+/** Approves PR #12 with a fresh submission timestamp (as the review identity — configured mode). */
 function approve(h: Harness, submittedAt: string): void {
-  h.prs.get(12)!.reviews = [{ user: { login: "reviewer" }, state: "APPROVED", submitted_at: submittedAt }];
+  h.prs.get(12)!.reviews = [{ user: { login: REVIEW_USER }, state: "APPROVED", submitted_at: submittedAt }];
 }
 
 function readyEvents(events: PRPipelineEvent[]): PRPipelineEvent[] {

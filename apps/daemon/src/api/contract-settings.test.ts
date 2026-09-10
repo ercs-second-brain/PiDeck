@@ -58,6 +58,14 @@ describe("settings", () => {
     expect((await api("PUT", endpoints.updateSettings.path, { defaultWorkerConcurrency: 99 })).status).toBe(400);
     expect((await api("PUT", endpoints.updateSettings.path, { terminateOnMerge: "nope" })).status).toBe(400);
 
+    // Issue #424 (F2): the review-account pair is both-or-neither — half a
+    // second identity is not a configurable state.
+    expect((await api("PUT", endpoints.updateSettings.path, { reviewAccountToken: "ghp_review" })).status).toBe(400);
+    expect((await api("PUT", endpoints.updateSettings.path, { reviewAccountUsername: "review-bot" })).status).toBe(400);
+    const paired = await api("PUT", endpoints.updateSettings.path, { reviewAccountToken: "ghp_review", reviewAccountUsername: "review-bot" });
+    expect(paired.status).toBe(200);
+    await api("PUT", endpoints.updateSettings.path, { reviewAccountToken: null, reviewAccountUsername: null });
+
     // reset
     await api("PUT", endpoints.updateSettings.path, { defaultWorkerConcurrency: 3 });
   });

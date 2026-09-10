@@ -85,4 +85,19 @@ describe("SettingsStore", () => {
     expect(() => store.update({ defaultWorkerConcurrency: 99 })).toThrow();
     expect(() => store.update({ autoFixCi: "yes" as unknown as boolean })).toThrow();
   });
+
+  it("rejects the review-account pair set without each other (both-or-neither, issue #424)", () => {
+    const dir = testDaemon().stateDir;
+    const store = new SettingsStore(dir);
+    expect(() => store.update({ reviewAccountToken: "ghp_review" })).toThrow(/both-or-neither|together/);
+    expect(() => store.update({ reviewAccountUsername: "review-bot" })).toThrow();
+    expect(store.get().reviewAccountToken).toBeNull();
+    expect(store.get().reviewAccountUsername).toBeNull();
+
+    // Setting both is fine, and so is clearing both.
+    store.update({ reviewAccountToken: "ghp_review", reviewAccountUsername: "review-bot" });
+    expect(store.get().reviewAccountUsername).toBe("review-bot");
+    store.update({ reviewAccountToken: null, reviewAccountUsername: null });
+    expect(store.get().reviewAccountToken).toBeNull();
+  });
 });
