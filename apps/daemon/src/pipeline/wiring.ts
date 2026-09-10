@@ -25,9 +25,12 @@
  * the rest of the daemon tears down.
  */
 
+import path from "node:path";
+
 import { workerSchema } from "@pideck/shared";
 
 import type { GhClient } from "../github/gh.js";
+import { BlockedTicketStore } from "./issues/blocked-store.js";
 import { IssueSpawnPipeline } from "./issues/pipeline.js";
 import type { ProjectSource, WorkerSpawner } from "./issues/ports.js";
 import type { AgentKindLookup } from "../sessions/agent-kinds.js";
@@ -57,7 +60,7 @@ export interface GithubAutomationOptions {
   hub: WsHub;
   /** GhClient factory, keyed by repo URL (the daemon context's factory). */
   gh: (repoUrl: string) => GhClient;
-  /** Daemon state dir (PR tracker persistence lives under `<stateDir>/pr-tracker/`). */
+  /** Daemon state dir (PR tracker + blocked-ticket persistence live under it). */
   stateDir: string;
   /**
    * Worker-pipeline toggles (issue #106), read fresh on every pipeline
@@ -201,6 +204,11 @@ export class GithubAutomation {
       projects: projectSource,
       blockers: new RoutingBlockerResolver(options.projects, options.gh, this.onError),
       spawner: this.spawner,
+      // Issue #427: the blocked-ticket map persists next to the PR tracker
+      // files, so a restart no longer strands blocked tickets (the watcher
+      // re-baselines and the catch-up sweep never revisits issues at/below
+      // the cursor — the merge-driven sweep is the only recovery path).
+      blockedStore: new BlockedTicketStore(path.join(options.stateDir, "blocked-tickets.json")),
       // Issue #408: the unblock sweep gates capped projects' spawns with the
       // SAME occupancy predicate (#393) as every other spawn path — active
       // workers + live workerLike kind sessions.

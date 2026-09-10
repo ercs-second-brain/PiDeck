@@ -40,7 +40,11 @@
  *    tickets when a PR merges in the project (its "Closes"-linked issues
  *    just closed), re-spawning the unblocked ones through the same matrix —
  *    deduped against running workers and gated by the #393 occupancy
- *    predicate when the project has a concurrency cap.
+ *    predicate when the project has a concurrency cap. The blocked map is
+ *    persisted (issue #427, {@link BlockedTicketStore}): the watcher
+ *    re-baselines on restart and the catch-up sweep never revisits issues
+ *    at/below the cursor, so without persistence a restart would strand
+ *    blocked tickets until a human re-assigned them.
  *
  * No app wiring lives here: the daemon entry point owns constructing the
  * pipeline and piping watcher events into {@link IssueSpawnPipeline.handleEvent}.
@@ -49,6 +53,7 @@
 import { issueCardId, type GithubWatcherEvent, type Issue, type IssueBlocker, type KanbanCard, type KanbanUpdateEvent, type RefNumber } from "@pideck/shared";
 
 import type { GhClient } from "../../github/gh.js";
+import { BlockedTicketStore } from "./blocked-store.js";
 import { GhBlockerResolver } from "./blockers.js";
 import { Emitter } from "./emitter.js";
 import { buildIssueSpawnPrompt } from "./prompts.js";
@@ -71,6 +76,12 @@ export interface IssueSpawnPipelineOptions {
   gh?: GhClient;
   /** Spawn scheduling. Default: cap-aware {@link QueueingScheduler} (unbounded when the project sets no cap). */
   scheduler?: SpawnScheduler;
+  /**
+   * Persisted blocked-ticket map (issue #427). Default: an in-memory-only
+   * store (no file) — the daemon wiring passes
+   * `<stateDir>/blocked-tickets.json` so blocked tickets survive restarts.
+   */
+  blockedStore?: BlockedTicketStore;
   /**
    * Project occupancy (issue #393 — active workers + workerLike kind
    * sessions), the ONE shared predicate: the unblock sweep gates a capped
@@ -126,11 +137,12 @@ export class IssueSpawnPipeline {
    * Blocked tickets per project (issue #408): spawns suppressed by open
    * blockers, kept so the merge-driven unblock sweep can re-evaluate them
    * — the watcher emits no event when a blocker resolves, so without this
-   * record the ticket would sit forever. In-memory by design: the sweep
-   * re-derives the blocked state from GitHub, so losing the map on restart
-   * only delays the next re-evaluation to the next redelivery/merge.
+   * record the ticket would sit forever. Persisted (issue #427): neither
+   * the watcher's restart re-baseline nor the catch-up sweep (issues at/
+   * below the cursor are never revisited) would ever re-trigger these
+   * tickets, so the map survives restarts via {@link BlockedTicketStore}.
    */
-  private readonly blocked = new Map<string, Map<number, Issue>>();
+  private readonly blockedStore: BlockedTicketStore;
 
   constructor(options: IssueSpawnPipelineOptions) {
     this.projects = options.projects;
@@ -143,6 +155,7 @@ export class IssueSpawnPipeline {
     this.scheduler =
       options.scheduler ?? new QueueingScheduler({ spawner: this.spawner, onError: (err) => this.onError(err) });
     this.countOccupants = options.countOccupants;
+    this.blockedStore = options.blockedStore ?? new BlockedTicketStore();
   }
 
   /**
@@ -192,7 +205,7 @@ export class IssueSpawnPipeline {
 
   /** Whether this pipeline has the issue recorded as blocked (tests/ops). */
   isRecordedBlocked(projectId: string, issueNumber: RefNumber): boolean {
-    return this.blocked.get(projectId)?.has(issueNumber) ?? false;
+    return this.blockedStore.isRecorded(projectId, issueNumber);
   }
 
   /**
@@ -205,7 +218,7 @@ export class IssueSpawnPipeline {
    * recorded; tickets that gained a worker elsewhere are dropped.
    */
   async sweepUnblocked(projectId: string): Promise<void> {
-    const recorded = this.blocked.get(projectId);
+    const recorded = this.blockedStore.snapshot(projectId);
     if (recorded === undefined || recorded.size === 0) return;
     const registered = this.projects.get(projectId);
     if (registered === undefined) return;
@@ -215,7 +228,7 @@ export class IssueSpawnPipeline {
         // recorded): drop it — never conflict with a running worker.
         const active = await this.spawner.listActiveWorkerIssueNumbers(projectId);
         if (active.has(number)) {
-          recorded.delete(number);
+          this.blockedStore.remove(projectId, number);
           continue;
         }
         // Always re-resolve fresh here (the sweep's whole purpose): the
@@ -231,7 +244,7 @@ export class IssueSpawnPipeline {
         // keeps the ticket recorded for the next sweep instead of spawning.
         const cap = registered.project.settings.workerConcurrency ?? undefined;
         if (cap !== undefined && (this.countOccupants?.(projectId) ?? 0) >= cap) continue;
-        recorded.delete(number);
+        this.blockedStore.remove(projectId, number);
         const key = issueKey(issue);
         if (this.accepted.has(key)) continue;
         this.accepted.add(key);
@@ -253,9 +266,7 @@ export class IssueSpawnPipeline {
   }
 
   private recordBlocked(issue: Issue): void {
-    const perProject = this.blocked.get(issue.projectId) ?? new Map<number, Issue>();
-    perProject.set(issue.number, issue);
-    this.blocked.set(issue.projectId, perProject);
+    this.blockedStore.record(issue);
   }
 
   /**
@@ -269,7 +280,7 @@ export class IssueSpawnPipeline {
     const key = issueKey(issue);
     this.retracted.add(key);
     this.accepted.delete(key);
-    this.blocked.get(issue.projectId)?.delete(issue.number);
+    this.blockedStore.remove(issue.projectId, issue.number);
     this.scheduler.cancel(issue.projectId, issue.number);
     void this.spawner
       .archiveWorkersForIssue(issue.projectId, issue.number, `archived: ${reason} (#416)`)
@@ -313,7 +324,7 @@ export class IssueSpawnPipeline {
         );
         return;
       }
-      this.blocked.get(registered.project.id)?.delete(issue.number);
+      this.blockedStore.remove(registered.project.id, issue.number);
       this.emitCardMoved(registered.project.id, issue, spawned.worker.id);
     } catch (err) {
       this.accepted.delete(key);
