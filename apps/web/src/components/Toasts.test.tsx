@@ -35,17 +35,40 @@ describe("toastKey / toastText (issue #111)", () => {
     expect(toastKey("kisstest", 42)).toBe("kisstest#42");
   });
 
+  it("keys ready-for-merge toasts apart from merges of the same PR (issue #408)", () => {
+    expect(toastKey("kisstest", 42, "ready_for_merge")).toBe("ready:kisstest#42");
+  });
+
   it("prefers the project name and falls back to the raw id", () => {
-    const toast: MergedPRToast = { key: "kisstest#42", projectId: "kisstest", prNumber: 42, title: "x" };
+    const toast: MergedPRToast = { key: "kisstest#42", projectId: "kisstest", prNumber: 42, kind: "merged", title: "x" };
     expect(toastText("kisstest", toast)).toBe("kisstest #42 merged");
     expect(toastText(undefined, toast)).toBe("kisstest #42 merged");
+  });
+
+  it("renders the ready-for-merge headline (issue #408)", () => {
+    const ready: MergedPRToast = { key: "ready:kisstest#42", projectId: "kisstest", prNumber: 42, kind: "ready_for_merge", title: "x" };
+    expect(toastText("kisstest", ready)).toBe("kisstest #42 ready for merge");
   });
 });
 
 describe("appendToast (issue #111)", () => {
   it("appends an event as a toast", () => {
     const toasts = appendToast([], mergedEvent());
-    expect(toasts).toEqual([{ key: "kisstest#42", projectId: "kisstest", prNumber: 42, title: "Fix the flaky test" }]);
+    expect(toasts).toEqual([{ key: "kisstest#42", projectId: "kisstest", prNumber: 42, kind: "merged", title: "Fix the flaky test" }]);
+  });
+
+  it("appends a ready-for-merge event with its own key (issue #408)", () => {
+    const event: NotificationEvent = {
+      type: "notification.pr.ready_for_merge",
+      at: NOW,
+      projectId: "kisstest",
+      prNumber: 42,
+      title: "Fix the flaky test",
+    };
+    const toasts = appendToast([], event);
+    expect(toasts).toEqual([
+      { key: "ready:kisstest#42", projectId: "kisstest", prNumber: 42, kind: "ready_for_merge", title: "Fix the flaky test" },
+    ]);
   });
 
   it("dedupes re-emissions of the same merge", () => {
@@ -70,7 +93,7 @@ describe("ToastStack (issue #111)", () => {
   it("renders '<project> #42 merged' with the PR title and a dismiss affordance", () => {
     const html = renderToString(
       <ToastStack
-        toasts={[{ key: "kisstest#42", projectId: "kisstest", prNumber: 42, title: "Fix the flaky test" }]}
+        toasts={[{ key: "kisstest#42", projectId: "kisstest", prNumber: 42, kind: "merged", title: "Fix the flaky test" }]}
         projects={[KISSTEST]}
         onDismiss={() => {}}
       />,
@@ -81,10 +104,21 @@ describe("ToastStack (issue #111)", () => {
     expect(html).toContain("Dismiss");
   });
 
+  it("renders the ready-for-merge headline (issue #408)", () => {
+    const html = renderToString(
+      <ToastStack
+        toasts={[{ key: "ready:kisstest#42", projectId: "kisstest", prNumber: 42, kind: "ready_for_merge", title: "Fix the flaky test" }]}
+        projects={[KISSTEST]}
+        onDismiss={() => {}}
+      />,
+    );
+    expect(html).toContain("kisstest #42 ready for merge");
+});
+
   it("falls back to the project id for unknown projects", () => {
     const html = renderToString(
       <ToastStack
-        toasts={[{ key: "ghost#7", projectId: "ghost", prNumber: 7, title: "Ghost PR" }]}
+        toasts={[{ key: "ghost#7", projectId: "ghost", prNumber: 7, kind: "merged", title: "Ghost PR" }]}
         projects={[KISSTEST]}
         onDismiss={() => {}}
       />,

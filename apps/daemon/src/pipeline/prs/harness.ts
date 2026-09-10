@@ -61,7 +61,7 @@ export function redFakePR(number = 12, overrides: Parameters<typeof restPull>[1]
  * `prs`/`openList` state — unlike api/testutil's route-table gh fake, this
  * one models a fixed repo's PR set rather than arbitrary REST paths.
  */
-function fakePipelineGh(prs: Map<number, FakePR>, openList: number[]): GhClient {
+function fakePipelineGh(prs: Map<number, FakePR>, openList: number[], assignments: Array<{ path: string; assignees: string[] }>, failAssignees: boolean): GhClient {
   // check-runs paths carry the commit SHA, not the PR number; the fake
   // tracks which PR's fetch is in flight (single pull first, then its
   // enrichment) to route those calls.
@@ -69,6 +69,14 @@ function fakePipelineGh(prs: Map<number, FakePR>, openList: number[]): GhClient 
   return new GhClient(async (args) => {
     const p = args[1] ?? "";
     const json = (body: unknown) => ({ stdout: JSON.stringify(body), stderr: "" });
+    // Issue #408: the PR-assignment leg POSTs the issues-assignees endpoint.
+    if (args[1] === "--method" && args[2] === "POST") {
+      const path = args[3] ?? "";
+      if (failAssignees) throw new Error("GitHub down");
+      const assignees = args.flatMap((a, i) => (typeof a === "string" && args[i - 1] === "-f" && a.startsWith("assignees[]=") ? [a.slice("assignees[]=".length)] : []));
+      assignments.push({ path, assignees });
+      return json({ assignees: assignees.map((login) => ({ login })) });
+    }
     if (p.includes("/pulls?state=open")) return json(openList.map((n) => prs.get(n)!.pull));
     const single = /\/pulls\/(\d+)$/.exec(p);
     if (single) {
@@ -199,6 +207,8 @@ export interface Harness {
   advance(ms: number): void;
   pipeline: PullRequestPipeline;
   poll(): Promise<PRPipelineEvent[]>;
+  /** Issue #408: assignee POSTs the pipeline fired (path + parsed assignees). */
+  assignments: Array<{ path: string; assignees: string[] }>;
 }
 
 export function makeHarness(
@@ -213,11 +223,18 @@ export function makeHarness(
     workerCap?: () => number | undefined;
     /** Review account configured (issue #407)? Default true — reviewer tests. */
     reviewAccount?: () => boolean;
+    /** Review-user login (issue #408): worker PRs are assigned to it on submission. Default unset (no assignment leg). */
+    reviewAccountUser?: () => string | null;
+    /** Issue #408 failure injection: the assignment POST rejects (the leg must be non-fatal). */
+    failAssignees?: boolean;
+    /** Pipeline error sink (default console.error — tests inject a quiet sink). */
+    onError?: (err: unknown) => void;
   } = {},
 ): Harness {
   const prs = new Map<number, FakePR>();
   const openList: number[] = [];
-  const gh = fakePipelineGh(prs, openList);
+  const assignments: Array<{ path: string; assignees: string[] }> = [];
+  const gh = fakePipelineGh(prs, openList, assignments, options.failAssignees === true);
   const sessions = fakeSessions(options.workers ?? [makeWorker()], options.kindSessions);
   const trackerPath =
     options.trackerPath ?? path.join(mkdtempSync(path.join(tmpdir(), "pideck-prpipeline-")), "prs.json");
@@ -239,6 +256,12 @@ export function makeHarness(
     // Issue #407: harness default = review account configured (the review
     // cycle runs); tests pass `() => false` for single-account mode.
     reviewAccount: options.reviewAccount ?? (() => true),
+    // Issue #408: the review-user identity; unset by default (legacy hosts
+    // and the pre-#408 tests — no assignment leg, unconditioned spawn).
+    ...(options.reviewAccountUser !== undefined ? { reviewAccountUser: options.reviewAccountUser } : {}),
+    ...(options.failAssignees === true || options.onError !== undefined
+      ? { onError: options.onError ?? (() => undefined) }
+      : {}),
     now,
   });
   return {
@@ -254,6 +277,7 @@ export function makeHarness(
     },
     pipeline,
     poll: () => pipeline.pollOnce(),
+    assignments,
   };
 }
 

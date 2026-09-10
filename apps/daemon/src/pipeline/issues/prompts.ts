@@ -34,8 +34,9 @@ export function buildIssueSpawnPrompt(issue: Issue): string {
       : `You own this issue end-to-end (assigned to ${issue.assignee}).`,
     `Read the issue (e.g. \`gh issue view ${issue.number}\`) for the full task context, then implement ` +
       "it in your workspace: plan, edit code, run the project's checks, and fix what fails.",
-    `When the change is ready, open a PR that links the issue (e.g. \`pideck report-pr <pr>\` to report it, ` +
-      `and reference #${issue.number} in the PR body).`,
+    `When the change is ready, open a PR that links the issue with a closing keyword — put ` +
+      "\`Closes #" + issue.number + "\` in the PR body (e.g. \`pideck report-pr <pr>\` to report it): the platform " +
+      "unblocks dependent tickets when the PR merges, and that only works with the closing keyword.",
   ];
   return parts.map(oneLine).join(" ");
 }

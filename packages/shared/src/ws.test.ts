@@ -139,6 +139,18 @@ describe("websocket: user notifications (issue #111)", () => {
     expect(wsServerEventSchema.safeParse({ type: "notification.pr.merged", at: NOW, projectId: "p", prNumber: 0, title: "x" }).success).toBe(false);
     expect(wsServerEventSchema.safeParse({ type: "notification.pr.exploded", at: NOW }).success).toBe(false);
   });
+
+  it("parses the ready-for-merge notification event (issue #408)", () => {
+    const ready = wsServerEventSchema.parse({
+      type: "notification.pr.ready_for_merge",
+      at: NOW,
+      projectId: "p",
+      prNumber: 42,
+      title: "Add the thing",
+    });
+    expect(ready.type).toBe("notification.pr.ready_for_merge");
+    expect(wsServerEventSchema.safeParse({ type: "notification.pr.ready_for_merge", at: NOW, projectId: "p", prNumber: 0, title: "x" }).success).toBe(false);
+  });
 });
 
 describe("websocket: GitHub watcher events", () => {

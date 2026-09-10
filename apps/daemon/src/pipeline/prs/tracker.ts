@@ -27,6 +27,10 @@
  *   request-changes review deterministically prompts the PR-authoring
  *   worker to address the findings. #408's deterministic PR lifecycle keys
  *   further steps on this same signal.
+ * - `readyNotifiedHeadSha` (issue #408): the head SHA the ready-for-merge
+ *   notification last fired for (CI-green + approved + both agents idle). A
+ *   new head or a new review round re-arms the trigger — each approved round
+ *   notifies the orchestrator exactly once.
  *
  * State is persisted to a JSON file (same pattern as the session
  * registry) so a daemon restart reconciles tracked PRs instead of losing
@@ -57,6 +61,8 @@ const trackedPRSchema = z.object({
   reviewedHeadSha: z.string().nullable().default(null),
   /** Latest review submission seen on the PR (issue #407 trigger watermark). Defaults keep pre-#407 files loadable. */
   lastReviewSeenAt: z.string().nullable().default(null),
+  /** Head SHA the ready-for-merge notification last fired for (issue #408). Defaults keep pre-#408 files loadable. */
+  readyNotifiedHeadSha: z.string().nullable().default(null),
   headSha: z.string().nullable(),
   cardSignature: z.string().nullable(),
   updatedAt: z.string(),
@@ -108,6 +114,7 @@ export class PRTracker {
       reviewWorkerId: null,
       reviewedHeadSha: null,
       lastReviewSeenAt: null,
+      readyNotifiedHeadSha: null,
       headSha: null,
       cardSignature: null,
       updatedAt: now.toISOString(),

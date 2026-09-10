@@ -232,6 +232,10 @@ export class GithubAutomation {
       projects: projectSource,
       blockers: new RoutingBlockerResolver(options.projects, options.gh, this.onError),
       spawner: this.spawner,
+      // Issue #408: the unblock sweep gates capped projects' spawns with the
+      // SAME occupancy predicate (#393) as every other spawn path — active
+      // workers + live workerLike kind sessions.
+      countOccupants: (projectId) => countProjectOccupants(options.sessions, options.agentKinds, projectId),
       onError: (err) => this.onError(err, "issue-pipeline"),
     });
 
@@ -399,6 +403,7 @@ export class GithubAutomation {
           sessionControl: this.sessionControl,
           workerSettings: this.options.workerSettings,
           reviewAccountToken: this.options.reviewAccountToken,
+          reviewAccountUser: this.options.reviewAccountUser,
           onWatcherEvent: (projectId, event) => this.handleWatcherEvent(projectId, event),
           onPrEvent: (projectId, event) => {
             if (this.units.get(projectId) !== undefined) this.broadcastPrEvent(projectId, event);
@@ -450,5 +455,9 @@ export class GithubAutomation {
 
   private broadcastPrEvent(projectId: string, event: PRPipelineEvent): void {
     this.bridge.broadcastPrEvent(projectId, event);
+    // Issue #408 (flow step 8): a merge closes the PR's "Closes"-linked issues —
+    // re-evaluate the project's recorded blocked tickets and spawn workers for
+    // the ones that just unblocked (occupancy + dedupe = no running conflicts).
+    if (event.type === "notification.pr.merged") void this.issuePipeline.sweepUnblocked(projectId);
   }
 }

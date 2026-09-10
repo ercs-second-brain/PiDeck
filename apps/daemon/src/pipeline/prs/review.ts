@@ -54,6 +54,15 @@ export interface ReviewContext {
    * Absent/false = single-account mode (worker + CI only).
    */
   reviewAccount?: () => boolean;
+  /**
+   * The review account's GitHub login (issue #408): the reviewer spawns only
+   * for PRs assigned to this user — the PR-assignment leg (the pipeline)
+   * assigns worker PRs to the review identity on submission. Absent/null =
+   * legacy hosts: no assignment gate (pre-#408 unconditioned spawn).
+   */
+  reviewUser?: () => string | null;
+  /** The PR's current assignee logins (issue #408). Optional: absent degrades to none. */
+  prAssignees?: string[];
   /** Injectable clock (issue #407 trigger bookkeeping). */
   now: () => Date;
   /**
@@ -89,6 +98,13 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
 
   await triggerFindingsAddress(tracked, pr, headSha, ctx, newReview, settings);
   if (!settings.autoReview) return;
+  // Issue #408: the reviewer spawns only for PRs assigned to the review
+  // user — the pipeline's assignment leg marks worker PRs on submission, and
+  // "CI green on a PR assigned to the review user" is the spawn trigger. A
+  // PR not assigned to the review identity is not in the auto-review flow;
+  // with no configured review user (legacy hosts/tests) the gate is off.
+  const reviewUser = ctx.reviewUser?.() ?? null;
+  if (reviewUser !== null && !(ctx.prAssignees ?? []).includes(reviewUser)) return;
   await driveReviewerRound(tracked, pr, headSha, ctx);
 }
 

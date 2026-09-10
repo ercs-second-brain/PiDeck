@@ -184,6 +184,19 @@ export const notificationEventSchema = z.discriminatedUnion("type", [
     title: z.string().min(1),
   }),
   /**
+   * A tracked PR is ready for merge (issue #408): CI-green, approved, and
+   * both the author worker and the reviewer idle. Notifies the orchestrator
+   * (the webapp surface); merging stays human/orchestrator-approved.
+   */
+  z.object({
+    type: z.literal("notification.pr.ready_for_merge"),
+    at: isoDateTimeSchema,
+    projectId: projectIdField,
+    prNumber: refNumberSchema,
+    /** PR title, for the toast's secondary line. */
+    title: z.string().min(1),
+  }),
+  /**
    * A preset-prompt agent-kind session finished its run and delivered its
    * report (docs/agent-kinds.md, issues #297/#300/#302). Emitted for the
    * orchestrator-routed audit kinds (devex-audit, kiss-audit): the report

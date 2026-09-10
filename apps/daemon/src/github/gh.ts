@@ -131,6 +131,24 @@ export class GhClient {
     return JSON.parse(stdout) as T;
   }
 
+  /**
+   * POSTs to a REST endpoint with `-f` form fields and JSON-parses the
+   * response. Array values are repeated fields (`-f "key[]=<v>"` — gh's
+   * repeated-field syntax renders them as a JSON array).
+   */
+  async apiPost<T>(path: string, fields: Record<string, string | string[]>): Promise<T> {
+    const args = ["api", "--method", "POST", path];
+    for (const [key, value] of Object.entries(fields)) {
+      if (Array.isArray(value)) {
+        for (const item of value) args.push("-f", `${key}[]=${item}`);
+      } else {
+        args.push("-f", `${key}=${value}`);
+      }
+    }
+    const { stdout } = await this.run(args);
+    return JSON.parse(stdout) as T;
+  }
+
   /** GET a REST endpoint including response headers (via `gh api -i`). */
   async apiWithHeaders<T>(path: string): Promise<GhApiResponse<T>> {
     const { stdout } = await this.run(["api", "-i", path]);
