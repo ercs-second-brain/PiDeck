@@ -15,35 +15,26 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
 vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: class {} }));
 vi.mock("@xterm/addon-canvas", () => ({ CanvasAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
-import type { Session, Worker } from "@pideck/shared";
-import { makeProject } from "./test-fixtures";
+import type { Worker } from "@pideck/shared";
+import { makeProject, makeSession } from "./test-fixtures";
 import { TerminalPage } from "./TerminalPage";
 import { SidebarContext, type SidebarContextValue } from "./sidebar";
 import type { ProjectEntry } from "./SessionPicker";
 
 const project = makeProject();
 
-const sessions: Session[] = [
-  {
-    id: "sess-orch-1",
-    projectId: "agentskiss",
-    role: "orchestrator",
-    tmuxSession: "pideck-agentskiss-orchestrator-1",
-    workerId: null,
-    createdAt: "2025-01-01T00:00:00.000Z",
-  },
+const sessions = [
+  makeSession({ id: "sess-orch-1", role: "orchestrator", tmuxSession: "pideck-agentskiss-orchestrator-1" }),
 ];
 
 const entry: ProjectEntry = { project, sessions, workers: [] as Worker[] };
 
-const globalAgentSession: Session = {
+const globalAgentSession = makeSession({
   id: "sess-global-1",
   projectId: "global",
   role: "orchestrator",
   tmuxSession: "pideck-global-orchestrator-1",
-  workerId: null,
-  createdAt: "2025-01-01T00:00:00.000Z",
-};
+});
 
 function renderMain(path: string, context: Partial<SidebarContextValue>) {
   const value: SidebarContextValue = {

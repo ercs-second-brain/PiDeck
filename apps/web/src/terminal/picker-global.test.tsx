@@ -13,26 +13,17 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { Session } from "@pideck/shared";
 import { SessionPicker, type ProjectEntry } from "./SessionPicker";
+import { makeProject, makeSession } from "./test-fixtures";
 
-const globalAgent: Session = {
+const globalAgent: Session = makeSession({
   id: "sess-global-1",
   projectId: "global",
   role: "orchestrator",
   tmuxSession: "pideck-global-orchestrator-1",
-  workerId: null,
-  createdAt: "2025-01-01T00:00:00.000Z",
-};
+});
 
 const entry: ProjectEntry = {
-  project: {
-    id: "agentskiss",
-    name: "agentsKISS",
-    repoUrl: "https://github.com/o/r",
-    defaultBranch: "main",
-    settings: { autoAgentUsername: null, workerConcurrency: 2 },
-    createdAt: "2025-01-01T00:00:00.000Z",
-    updatedAt: "2025-01-01T00:00:00.000Z",
-  },
+  project: makeProject({ repoUrl: "https://github.com/o/r" }),
   sessions: [],
   workers: [],
 };

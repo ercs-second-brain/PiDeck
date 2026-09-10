@@ -11,21 +11,14 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { Session, Worker } from "@pideck/shared";
-import { makeProject } from "./test-fixtures";
+import type { Worker } from "@pideck/shared";
+import { makeProject, makeSession } from "./test-fixtures";
 import { SessionPicker } from "./SessionPicker";
 
 const project = makeProject();
 
-const sessions: Session[] = [
-  {
-    id: "sess-orch-1",
-    projectId: "agentskiss",
-    role: "orchestrator",
-    tmuxSession: "pideck-agentskiss-orchestrator-1",
-    workerId: null,
-    createdAt: "2025-01-01T00:00:00.000Z",
-  },
+const sessions = [
+  makeSession({ id: "sess-orch-1", role: "orchestrator", tmuxSession: "pideck-agentskiss-orchestrator-1" }),
 ];
 
 const workers: Worker[] = [];

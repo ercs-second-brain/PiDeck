@@ -6,23 +6,18 @@
  * budget (kiss ratchet).
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { rmSync } from "node:fs";
+import { describe, expect, it } from "vitest";
 import { SessionManagerSpawner } from "../pipeline/issues/ports.js";
 import { ProjectLayout } from "./layout.js";
 import { deserializeCommand, resurrectionCommand, SessionManager } from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeGitRunner } from "./testing/fake-git.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
+import { makeSessionManager } from "./testing/fake-manager.js";
 import { Tmux, TmuxError } from "./tmux.js";
 
-let stateDir: string;
-
-beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-reconcile-"));
-});
+const makeManager = () => makeSessionManager({ tmpPrefix: "pideck-reconcile-" });
 
 const fakePaneState = (command: string[], cwd: string | undefined) => ({
   command,
@@ -32,25 +27,9 @@ const fakePaneState = (command: string[], cwd: string | undefined) => ({
   rows: 24,
 });
 
-function makeManager(): { manager: SessionManager; fake: FakeTmuxRunner; layout: ProjectLayout } {
-  const fake = new FakeTmuxRunner();
-  const layout = new ProjectLayout(stateDir);
-  const manager = new SessionManager({
-    tmux: new Tmux({ runner: (args) => fake.run(args) }),
-    registry: new SessionRegistry(layout.sessionsFilePath()),
-    layout,
-    git: new FakeGitRunner().asRunner(),
-  });
-  return { manager, fake, layout };
-}
-
 describe("SessionManager.reconcile (issue #15)", () => {
   it("re-attaches prior sessions after a daemon restart (tmux still alive)", async () => {
-    const fake = new FakeTmuxRunner();
-    const tmux = new Tmux({ runner: (args) => fake.run(args) });
-    const layout = new ProjectLayout(stateDir);
-    const registry = new SessionRegistry(layout.sessionsFilePath());
-    const manager = new SessionManager({ tmux, registry, layout, git: new FakeGitRunner().asRunner() });
+    const { manager, fake, layout } = makeManager();
     const spawned = await manager.spawnWorker("proj", { issueNumber: 1 });
     await manager.ensureOrchestrator("proj");
     fake.sessions.set(spawned.session.tmuxSession, {
@@ -61,7 +40,12 @@ describe("SessionManager.reconcile (issue #15)", () => {
     // Daemon restart: fresh registry + manager over the same state dir and
     // the same, still-running tmux server.
     const registry2 = new SessionRegistry(layout.sessionsFilePath());
-    const manager2 = new SessionManager({ tmux, registry: registry2, layout, git: new FakeGitRunner().asRunner() });
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: (args) => fake.run(args) }),
+      registry: registry2,
+      layout,
+      git: new FakeGitRunner().asRunner(),
+    });
     const result = await manager2.reconcile();
 
     expect(result.alive.map((s) => s.tmuxSession)).toEqual(
@@ -79,12 +63,8 @@ describe("SessionManager.reconcile (issue #15)", () => {
 
 describe("SessionManager.reconcile: reboot resurrection + lost sessions (issue #15/#27)", () => {
   it("resurrects sessions after a reboot (tmux server gone)", async () => {
-    const fake = new FakeTmuxRunner();
-    const tmux = new Tmux({ runner: (args) => fake.run(args) });
-    const layout = new ProjectLayout(stateDir);
+    const { manager, layout } = makeManager();
     layout.ensureProject("proj");
-    const registry = new SessionRegistry(layout.sessionsFilePath());
-    const manager = new SessionManager({ tmux, registry, layout, git: new FakeGitRunner().asRunner() });
     const worker = await manager.spawnWorker("proj", { issueNumber: 1 });
     const orchestrator = await manager.ensureOrchestrator("proj");
 
@@ -122,6 +102,7 @@ describe("SessionManager.reconcile: reboot resurrection + lost sessions (issue #
   });
 
   it("marks workers stopped when a dead session cannot be resurrected", async () => {
+    const { stateDir } = makeManager();
     const layout = new ProjectLayout(stateDir);
     layout.ensureProject("proj");
     const registry = new SessionRegistry(layout.sessionsFilePath());
@@ -165,15 +146,7 @@ describe("SessionManager.reconcile: reboot resurrection + lost sessions (issue #
 
 describe("SessionManager.reconcile: adoption + lost sessions (issue #15/#64)", () => {
   it("marks workers stopped without resurrecting when asked (resurrect: false)", async () => {
-    const fake = new FakeTmuxRunner();
-    const layout = new ProjectLayout(stateDir);
-    const registry = new SessionRegistry(layout.sessionsFilePath());
-    const manager = new SessionManager({
-      tmux: new Tmux({ runner: (args) => fake.run(args) }),
-      registry,
-      layout,
-      git: new FakeGitRunner().asRunner(),
-    });
+    const { manager, fake, layout } = makeManager();
     const spawned = await manager.spawnWorker("proj", { issueNumber: 1 });
     fake.sessions.clear(); // pane died
 
@@ -191,16 +164,9 @@ describe("SessionManager.reconcile: adoption + lost sessions (issue #15/#64)", (
   });
 
   it("adopts live daemon-named tmux sessions missing from the registry", async () => {
-    const fake = new FakeTmuxRunner();
+    const { fake, manager } = makeManager();
     fake.sessions.set("pideck-lostproj-worker-1", fakePaneState(["pi"], undefined));
     fake.sessions.set("someone-elses-session", fakePaneState(["bash"], undefined));
-    const layout = new ProjectLayout(stateDir);
-    const manager = new SessionManager({
-      tmux: new Tmux({ runner: (args) => fake.run(args) }),
-      registry: new SessionRegistry(layout.sessionsFilePath()),
-      layout,
-      git: new FakeGitRunner().asRunner(),
-    });
 
     const result = await manager.reconcile({ resurrect: false });
 

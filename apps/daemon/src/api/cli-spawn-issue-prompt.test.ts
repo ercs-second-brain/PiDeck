@@ -17,39 +17,10 @@
 import { describe, expect, it } from "vitest";
 
 import { spawnWorker } from "./cli-handlers.js";
-import { testDaemon } from "./testutil.js";
-
-const UPDATED_AT = "2026-01-01T00:00:00.000Z";
-
-/** A fake gh single-issue REST route (the handler's initial-prompt fetch). */
-function issueRoute(owner: string, repo: string, number: number, title: string, pr = false): [string, unknown] {
-  return [
-    `/repos/${owner}/${repo}/issues/${number}`,
-    pr
-      ? {
-          number,
-          title,
-          state: "open",
-          user: { login: "someone" },
-          html_url: `https://github.com/${owner}/${repo}/pull/${number}`,
-          updated_at: UPDATED_AT,
-          pull_request: { html_url: `https://github.com/${owner}/${repo}/pull/${number}` },
-        }
-      : {
-          number,
-          title,
-          state: "open",
-          user: { login: "someone" },
-          assignee: null,
-          assignees: [],
-          html_url: `https://github.com/${owner}/${repo}/issues/${number}`,
-          updated_at: UPDATED_AT,
-        },
-  ];
-}
+import { issueRoute, testDaemon, type FakeGhRoutes } from "./testutil.js";
 
 /** Fake gh routes: one real issue and one pull request (same number space). */
-function issueRoutes(): Parameters<typeof testDaemon>[0] {
+function issueRoutes(): FakeGhRoutes {
   return {
     api: Object.fromEntries([
       issueRoute("o", "r", 5, "Fix the flaky test"),
@@ -58,7 +29,7 @@ function issueRoutes(): Parameters<typeof testDaemon>[0] {
   };
 }
 
-async function daemonWithProject(ghRoutes: Parameters<typeof testDaemon>[0] = issueRoutes()) {
+async function daemonWithProject(ghRoutes: FakeGhRoutes = issueRoutes()) {
   const daemon = testDaemon(ghRoutes);
   await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
   return daemon;

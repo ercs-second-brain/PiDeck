@@ -8,32 +8,11 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
-import { SessionManager } from "./manager.js";
+import { describe, expect, it } from "vitest";
 import { ArchivedLogStore } from "./archived-logs.js";
-import { ProjectLayout } from "./layout.js";
-import { SessionRegistry } from "./registry.js";
-import { FakeTmuxRunner } from "./testing/fake-tmux.js";
-import { FakeGitRunner } from "./testing/fake-git.js";
-import { Tmux } from "./tmux.js";
+import { makeSessionManager } from "./testing/fake-manager.js";
 
-let stateDir: string;
-
-beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-archive-log-"));
-});
-
-function makeManager(): { manager: SessionManager; fake: FakeTmuxRunner; layout: ProjectLayout } {
-  const fake = new FakeTmuxRunner();
-  const layout = new ProjectLayout(stateDir);
-  const manager = new SessionManager({
-    tmux: new Tmux({ runner: (args) => fake.run(args) }),
-    registry: new SessionRegistry(layout.sessionsFilePath()),
-    layout,
-    git: new FakeGitRunner().asRunner(),
-  });
-  return { manager, fake, layout };
-}
+const makeManager = () => makeSessionManager({ tmpPrefix: "pideck-archive-log-" });
 
 describe("terminate captures scrollback (issue #104)", () => {
   it("captures the pane bytes first, persists them, then kills tmux", async () => {

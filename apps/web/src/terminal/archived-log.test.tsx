@@ -15,8 +15,8 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
 vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: class {} }));
 vi.mock("@xterm/addon-canvas", () => ({ CanvasAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
-import type { Session, Worker } from "@pideck/shared";
-import { makeProject } from "./test-fixtures";
+import type { Worker } from "@pideck/shared";
+import { makeProject, makeSession, makeWorker } from "./test-fixtures";
 import { ArchivedLogPanel, ArchivedLogView } from "./ArchivedLogView";
 import { TerminalPage } from "./TerminalPage";
 import { SidebarContext, type SidebarContextValue } from "./sidebar";
@@ -24,26 +24,15 @@ import type { ProjectEntry } from "./SessionPicker";
 
 const project = makeProject();
 
-const workerSession: Session = {
-  id: "sess-worker-1",
-  projectId: "agentskiss",
-  role: "worker",
-  tmuxSession: "pideck-agentskiss-worker-1",
-  workerId: "worker-1",
-  createdAt: "2025-01-01T00:00:00.000Z",
-};
+const workerSession = makeSession({ workerId: "worker-1" });
 
-const archivedWorker: Worker = {
-  id: "worker-1",
-  projectId: "agentskiss",
-  sessionId: "sess-worker-1",
+const archivedWorker: Worker = makeWorker({
   issueNumber: 104,
   prNumber: 110,
   status: "archived",
   statusMessage: "archived: terminated from the webapp",
-  startedAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-02T00:00:00.000Z",
-};
+});
 
 const entry: ProjectEntry = { project, sessions: [workerSession], workers: [archivedWorker] };
 
