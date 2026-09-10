@@ -1594,10 +1594,10 @@ code {
 }
 
 /* Issue #294: one shared quiet icon-button chrome — the modal close and
-   the picker's terminate affordance (terminal.css; size/color specifics
-   stay local to each). */
+   the picker's row ⋯ menu toggle (terminal.css; size/color specifics stay
+   local to each). */
 .modal-close,
-.picker-terminate {
+.picker-row-menu-toggle {
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);

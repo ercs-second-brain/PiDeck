@@ -42,11 +42,15 @@ export function splitAgentSessions(sessions: Session[], orchestratorId: string |
 export function AgentChildrenList(props: {
   sessions: Session[] | undefined;
   selectedSessionId: string | null;
-  /** Session id whose terminate request is in flight (✕ disabled, #311). */
+  /** Session id whose terminate request is in flight (entry disabled, #311). */
   pendingTerminateSessionId?: string | null;
   /** Opens the terminate-confirm modal for an agent session (#311). */
   onAskTerminate?: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
+  /** Session id whose row ⋯ menu is open (issue #355, B5). */
+  openRowMenuSessionId?: string | null;
+  /** Toggles a row's ⋯ context menu (issue #355, B5). */
+  onToggleRowMenu?: (sessionId: string) => void;
 }) {
   if (props.sessions === undefined || props.sessions.length === 0) return null;
   return (
@@ -59,6 +63,8 @@ export function AgentChildrenList(props: {
           pending={props.pendingTerminateSessionId === agent.id}
           onAskTerminate={props.onAskTerminate}
           onSelectSession={props.onSelectSession}
+          rowMenuOpen={props.openRowMenuSessionId === agent.id}
+          onToggleRowMenu={props.onToggleRowMenu}
         />
       ))}
     </ul>

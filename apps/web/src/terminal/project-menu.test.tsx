@@ -120,6 +120,15 @@ describe("Spawn agent submenu (docs/agent-kinds.md §8, issues #324/#330/#331)",
     expect(html).toContain(">KISS audit</button>");
   });
 
+  it("pops the submenu out of the menu as a flyout anchored to its toggle (issue #355, B6)", () => {
+    const html = renderRow(true, { spawnSubmenuOpen: true });
+    // The submenu renders inside the anchor wrapping its toggle — popped out, not in place.
+    expect(html).toContain("picker-submenu-anchor");
+    const anchor = html.slice(html.indexOf("picker-submenu-anchor"));
+    expect(anchor).toContain("Spawn agent ▸");
+    expect(anchor).toContain(">Built-in</span>");
+  });
+
   it("states each kind's behavior in its menu title", () => {
     const html = renderRow(true, { spawnSubmenuOpen: true });
     expect(html).toContain("Spawn a researcher — it researches one question against the codebase and reports back");

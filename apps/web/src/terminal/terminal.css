@@ -295,15 +295,21 @@
   padding: 8px 12px;
 }
 
-/* Issue #331: the spawn-agent submenu — an in-place expansion under its
-   "Spawn agent ▸" toggle, indented one step so the nesting reads. Same
-   chrome as the parent menu; its buttons inherit the menu button styles. */
-.picker-submenu {
+/* Issue #331 + #355 (B6): the spawn-agent submenu — a flyout popped OUT to
+   the left of the parent ⋯ menu (the menu hugs the sidebar's right edge, so
+   left is the only visible side), top-aligned with its "Spawn agent ▸"
+   toggle. It renders with the shared .picker-context-menu chrome plus this
+   positioning override, and stays a DOM child of the parent menu so the
+   outside-click dismiss still targets the whole menu. */
+.picker-submenu-anchor {
+  position: relative;
   display: flex;
   flex-direction: column;
-  margin: 2px 0 2px 12px;
-  padding-left: 6px;
-  border-left: 2px solid var(--border);
+}
+
+.picker-submenu {
+  top: 0;
+  right: calc(100% + 4px);
 }
 
 .picker-submenu button {
@@ -422,8 +428,8 @@
   margin-top: 4px;
 }
 
-/* Issue #64: a worker row is the session button + (active workers only) a
-   terminate affordance. */
+/* Issue #355 (B5): worker rows carry the session button + a ⋯ context-menu
+   affordance (the terminate entry moved off the row's standalone ✕). */
 .picker-worker-row {
   display: flex;
   align-items: stretch;
@@ -436,18 +442,32 @@
   min-width: 0;
 }
 
-/* Input chrome comes from the shared quiet icon-button rule (issue #294). */
-.picker-terminate {
+/* Issue #355 (B5): the rows' ⋯ menu — anchor wraps the toggle + menu so the
+   menu drops under the toggle; the toggle takes the same quiet icon-button
+   chrome the ✕ had. The menu itself renders with the shared
+   .picker-context-menu chrome (see above); .picker-row-menu only marks it
+   for the dismissal targeting in use-picker-state. */
+.picker-row-menu-anchor {
+  position: relative;
   flex: none;
+  display: flex;
+}
+
+.picker-row-menu-toggle {
   width: 22px;
   color: var(--text-dim);
   font-size: var(--fs-sm);
 }
 
-.picker-terminate:hover {
-  border-color: var(--red);
-  color: var(--red);
+.picker-row-menu-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
   background: var(--bg-hover);
+}
+
+.picker-context-menu button:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 /* Issues #297/#300/#302: agent-kind sessions spawned by a worker nest under
@@ -461,8 +481,8 @@
   border-left: 2px solid var(--border);
 }
 
-/* Issue #311: agent-kind rows carry the same row-action layout as worker
-   rows — session button + terminate affordance. */
+/* Issue #311 + #355 (B5): agent-kind rows carry the same row-action layout
+   as worker rows — session button + ⋯ context-menu affordance. */
 .picker-agent-row {
   display: flex;
   align-items: stretch;
@@ -1000,7 +1020,7 @@
   }
 
   /* Finger-sized targets for the picker's small controls. */
-  .picker-terminate {
+  .picker-row-menu-toggle {
     width: 40px;
     height: 40px;
     font-size: var(--fs-lg);

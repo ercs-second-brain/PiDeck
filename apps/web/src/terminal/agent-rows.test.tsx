@@ -5,8 +5,9 @@
  * child-group pattern (menu spawns — parented to the orchestrator — sit at
  * the project's child level; worker spawns nest under the worker's row),
  * and they are attachable like worker rows. Issue #311: every agent row —
- * nested or not — also carries the ✕ terminate affordance confirmed through
- * the #268 modal pattern. The picker is pure, so it is
+ * nested or not — also carries the terminate affordance confirmed through
+ * the #268 modal pattern; issue #355 (B5) moves it behind the row's ⋯
+ * context menu. The picker is pure, so it is
  * exercised directly without xterm or effects.
  */
 
@@ -14,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { Session } from "@pideck/shared";
 import { SessionPicker, type ProjectEntry } from "./SessionPicker";
+import { RowOptionsMenu } from "./picker-rows";
 import { TerminateAgentSessionModal } from "./picker-modals";
 import { makeProject } from "./test-fixtures";
 
@@ -149,23 +151,36 @@ describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => 
   });
 });
 
-describe("agent-row terminate affordance (issue #311, #268 modal pattern)", () => {
-  it("renders the ✕ affordance on root-level agent rows when a terminate handler is wired", () => {
+describe("agent-row ⋯ terminate menu (issue #355, B5 — #311 affordance moved off the row, #268 modal pattern)", () => {
+  it("renders the ⋯ affordance on root-level agent rows when a terminate handler is wired", () => {
     const html = renderPicker([entryWith([orchestrator, devexAudit])], { onTerminateAgentSession: async () => {} });
-    expect(html).toContain("picker-terminate");
-    expect(html).toContain('title="Terminate session"');
-    expect(html.indexOf("sess-agent-1")).toBeLessThan(html.indexOf("picker-terminate"));
+    expect(html).toContain("picker-row-menu-toggle");
+    expect(html).toContain('title="Session options"');
+    // The standalone ✕ delete button is gone from the row (issue #355, B5).
+    expect(html).not.toContain("picker-terminate");
+    expect(html.indexOf("sess-agent-1")).toBeLessThan(html.indexOf("picker-row-menu-toggle"));
   });
 
-  it("renders the ✕ affordance on nested agent rows too (nested or not, per #311)", () => {
+  it("renders the ⋯ affordance on nested agent rows too (nested or not, per #311/#355)", () => {
     const html = renderPicker([entryWith([orchestrator, worker, researcher])], { onTerminateAgentSession: async () => {} });
     expect(html).toContain("picker-agent-children");
-    expect(html).toContain("picker-terminate");
+    expect(html).toContain("picker-row-menu-toggle");
   });
 
   it("omits the affordance without a terminate handler (legacy hosts/tests)", () => {
     const html = renderPicker([entryWith([orchestrator, devexAudit])]);
-    expect(html).not.toContain("picker-terminate");
+    expect(html).not.toContain("picker-row-menu-toggle");
+  });
+
+  it("RowOptionsMenu renders its menu with the danger Terminate entry when open", () => {
+    const open = renderToString(
+      <RowOptionsMenu sessionId="s" open pending entryLabel="Terminate session…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />,
+    );
+    expect(open).toContain("picker-row-menu");
+    expect(open).toContain("picker-menu-danger");
+    expect(open).toContain("Terminate session…");
+    // In-flight overlay: the entry is disabled while the request runs.
+    expect(open).toContain("disabled");
   });
 
   it("renders the agent terminate modal with label, kind, and no-archived-log copy", () => {
