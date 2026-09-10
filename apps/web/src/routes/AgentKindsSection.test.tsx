@@ -21,7 +21,6 @@ vi.mock("../lib/api", () => ({
 
 import { AgentKindForm, parseDraft, type KindDraft } from "./AgentKindForm";
 import { AgentKindsSection, KindRows } from "./AgentKindsSection";
-
 const { apiListAgentKinds } = vi.mocked(await import("../lib/api"));
 
 const USER_KIND: AgentKindSpec = {
@@ -59,22 +58,47 @@ const DRAFT: KindDraft = {
 describe("agent-kinds section (issue #332)", () => {
   it("lists every registry kind with shipped/custom chips and per-kind state", () => {
     const html = renderToString(
-      <KindRows kinds={KINDS} onEdit={() => {}} onDelete={() => {}} confirmingDeleteName={null} />,
+      <KindRows kinds={KINDS} tombstoned={[]} onEdit={() => {}} onDelete={() => {}} onRestore={() => {}} confirmingDeleteName={null} />,
     );
     expect((html.match(/asset-row/g) ?? []).length).toBe(KINDS.length);
-    // Shipped kind: chip, no edit/delete actions.
+    // Shipped kind: chip; every kind is editable + deletable (issue #368).
     expect(html).toContain("Researcher");
     expect(html).toContain("shipped");
+    expect(html).toContain("Edit");
     // Custom kind: chip plus the edit/delete actions.
     expect(html).toContain("docs-writer");
     expect(html).toContain("custom");
     expect(html).toContain("Delete");
     const confirming = renderToString(
-      <KindRows kinds={KINDS} onEdit={() => {}} onDelete={() => {}} confirmingDeleteName="docs-writer" />,
+      <KindRows kinds={KINDS} tombstoned={[]} onEdit={() => {}} onDelete={() => {}} onRestore={() => {}} confirmingDeleteName="docs-writer" />,
     );
     expect(confirming).toContain("Confirm delete?");
     expect(html).toContain("auto"); // trigger summary
     expect(html).toContain("the orchestrator"); // report-target summary
+  });
+});
+
+describe("shipped kinds are user-editable and user-deletable (issue #368)", () => {
+    it("renders tombstoned shipped kinds as deleted rows with restore (issue #368)", () => {
+    const html = renderToString(
+      <KindRows kinds={KINDS} tombstoned={["kiss-audit"]} onEdit={() => {}} onDelete={() => {}} onRestore={() => {}} confirmingDeleteName={null} />,
+    );
+    // The deleted shipped kind is out of the live list: the researcher and
+    // custom rows render; the tombstone row re-renders the deleted kind's
+    // label with the deleted chip and the restore action.
+    expect((html.match(/shipped · edited|>shipped<|>custom</g) ?? []).length).toBe(KINDS.length);
+    expect(html).toContain("kiss-audit");
+    expect(html).toContain("deleted");
+    expect(html).toContain("Restore");
+    expect((html.match(/asset-row/g) ?? []).length).toBe(KINDS.length + 1);
+  });
+
+  it("chips an edited shipped kind (override shadows the shipped spec, issue #368)", () => {
+    const editedShipped: AgentKindSpec = { ...SHIPPED_AGENT_KINDS[0]!, persona: "My researcher prompt." };
+    const html = renderToString(
+      <KindRows kinds={[editedShipped]} tombstoned={[]} onEdit={() => {}} onDelete={() => {}} onRestore={() => {}} confirmingDeleteName={null} />,
+    );
+    expect(html).toContain("shipped · edited");
   });
 
   it("renders the config form with every spec-v2 field", () => {

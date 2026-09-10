@@ -1,11 +1,12 @@
 /**
  * Agent-kind registry v2 (issue #330, docs/agent-kinds.md): resolution
- * order (user kinds shadow nothing — shipped names are rejected at the
- * CRUD layer — but user kinds resolve ahead of shipped), shipped kinds as
- * spec-v2 data (the dogfood check), and the auto-task column (issue #329):
- * autonomous kinds carry a taskTemplate that is typed after the persona
- * boot; the researcher is task-less by config (it waits for its caller's
- * question) and renders no task at all.
+ * order — stored kinds (user kinds and, since #368, shipped-kind
+ * overrides) resolve ahead of shipped, and tombstoned shipped kinds do not
+ * resolve at all (issue #368) — shipped kinds as spec-v2 data (the
+ * dogfood check), and the auto-task column (issue #329): autonomous kinds
+ * carry a taskTemplate that is typed after the persona boot; the
+ * researcher is task-less by config (it waits for its caller's question)
+ * and renders no task at all.
  */
 
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -75,6 +76,49 @@ describe("AgentKindRegistry (issue #330)", () => {
   });
 });
 
+describe("shipped kinds are user-editable and user-deletable (issue #368)", () => {
+  it("resolves a stored override ahead of its shipped spec (shadowing)", () => {
+    const store = new AgentKindStore(stateDir);
+    const override = userKind("researcher", { label: "my researcher" });
+    store.save(override);
+    const registry = new AgentKindRegistry(store);
+    expect(registry.get("researcher")).toEqual(override);
+    // Listed ONCE — the override shadows the shipped spec in the listing
+    // (the shipped entry is dropped; the override keeps its stored position).
+    expect(registry.list().filter((kind) => kind.name === "researcher")).toHaveLength(1);
+    expect(registry.list().find((kind) => kind.name === "researcher")).toEqual(override);
+    // isShipped still answers for the name (the persona-override surface keys on it).
+    expect(registry.isShipped("researcher")).toBe(true);
+  });
+
+  it("tombstoning a shipped kind stops its resolution and listing", () => {
+    const store = new AgentKindStore(stateDir);
+    store.delete("devex-audit");
+    const registry = new AgentKindRegistry(store);
+    expect(registry.get("devex-audit")).toBeUndefined();
+    expect(registry.list().map((kind) => kind.name)).not.toContain("devex-audit");
+    expect(registry.isTombstoned("devex-audit")).toBe(true);
+    // Other shipped kinds are untouched.
+    expect(registry.get("researcher")).toBeDefined();
+  });
+
+  it("saving an override lifts the tombstone (re-creating a deleted shipped kind)", () => {
+    const store = new AgentKindStore(stateDir);
+    store.delete("kiss-audit");
+    expect(store.isTombstoned("kiss-audit")).toBe(true);
+    store.save(userKind("kiss-audit"));
+    expect(store.isTombstoned("kiss-audit")).toBe(false);
+    expect(new AgentKindRegistry(store).get("kiss-audit")).toBeDefined();
+  });
+
+  it("a tombstone for an unknown name is harmless", () => {
+    const store = new AgentKindStore(stateDir);
+    store.delete("never-shipped");
+    expect(store.isTombstoned("never-shipped")).toBe(false); // not shipped — no tombstone recorded
+    expect(store.delete("ghost")).toBe(false);
+  });
+});
+
 describe("AgentKindStore (user kinds, issue #330)", () => {
   it("persists user kinds across reloads (update-safe state-dir file)", () => {
     const file = path.join(stateDir, "agent-kinds.json");
@@ -101,6 +145,19 @@ describe("AgentKindStore (user kinds, issue #330)", () => {
 
   it("reports false when deleting an unknown kind", () => {
     expect(new AgentKindStore(stateDir).delete("ghost")).toBe(false);
+  });
+
+  it("persists shipped-kind tombstones and overrides across reloads (issue #368)", () => {
+    const first = new AgentKindStore(stateDir);
+    first.delete("researcher");
+    const override = userKind("kiss-audit", { label: "my audit" });
+    first.save(override);
+
+    const second = new AgentKindStore(stateDir);
+    expect(second.isTombstoned("researcher")).toBe(true);
+    expect(second.get("kiss-audit")).toEqual(override);
+    // The pre-#368 file shape (no tombstones field) still loads.
+    expect(second.get("historian")).toBeUndefined();
   });
 });
 

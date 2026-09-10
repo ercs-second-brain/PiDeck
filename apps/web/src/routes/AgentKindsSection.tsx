@@ -1,56 +1,83 @@
 /**
  * Agent-kinds section of the agent-assets modal (issue #332): the
- * registry-v2 persona editor. Consumes the #347 CRUD API — the shipped
- * kinds render as immutable rows (their prompts are editable via the
- * prompt-override surface above, issue #315); every user-defined kind can
- * be edited (persona content, task template, config, via
- * {@link AgentKindForm}) and deleted (the daemon's 409 guardrail blocks
- * kinds with live sessions). The "+ New kind" flow creates a validated
- * spec. Changes affect future spawns only; live panes are untouched.
+ * registry-v2 persona editor. Consumes the #347 CRUD API. Issue #368
+ * (B18 — the immutability design is reversed): shipped kinds are editable
+ * and deletable like custom kinds — an edit stores an override shadowing
+ * the shipped spec; a delete tombstones the shipped kind (persisted, so it
+ * sticks across reloads, with a restore row). The daemon's 409 guardrail
+ * blocks kinds with live sessions. The "+ New kind" flow creates a
+ * validated spec. Changes affect future spawns only; live panes are
+ * untouched.
  */
 
 import { useEffect, useState } from "react";
-import type { AgentKindSpec } from "@pideck/shared";
+import { SHIPPED_AGENT_KINDS, type AgentKindSpec } from "@pideck/shared";
 
-import { apiCreateAgentKind, apiDeleteAgentKind, apiListAgentKinds, apiUpdateAgentKind, errorMessage } from "../lib/api";
+import { apiCreateAgentKind, apiDeleteAgentKind, apiGetAgentAssets, apiListAgentKinds, apiUpdateAgentKind, errorMessage } from "../lib/api";
 import { AgentKindForm, NEW_KIND_DRAFT, draftFromSpec, parseDraft, type KindDraft } from "./AgentKindForm";
 
 /** The editor's modal state: create, or edit one custom kind. */
 type KindEditor = { mode: "create"; draft: KindDraft } | { mode: "edit"; name: string; draft: KindDraft };
 
-/** One row per registry kind: label, id, shipped/custom chip, actions. */
+const isShippedName = (name: string): boolean => SHIPPED_AGENT_KINDS.some((shipped) => shipped.name === name);
+
+/**
+ * One row per registry kind: label, id, shipped/custom chip, actions. Every
+ * kind is editable and deletable (issue #368); tombstoned shipped kinds
+ * render a restore row after the list.
+ */
 export function KindRows(props: {
   kinds: AgentKindSpec[];
+  /** Shipped kind ids the user deleted (tombstoned — restore rows). */
+  tombstoned: string[];
   onEdit: (spec: AgentKindSpec) => void;
   onDelete: (name: string) => void;
+  onRestore: (name: string) => void;
   confirmingDeleteName: string | null;
 }) {
   return (
-    <ul className="asset-list">
-      {props.kinds.map((spec) => (
-        <li key={spec.name} className="asset-row">
-          <span className="asset-name">{spec.menuLabel ?? spec.label}</span>
-          <span className="asset-name asset-name-mono">{spec.name}</span>
-          <span className={`asset-chip${spec.persona === undefined ? "" : " asset-chip-on"}`}>
-            {spec.persona === undefined ? "shipped" : "custom"}
-          </span>
-          <span className="asset-personas">
-            {spec.trigger === "auto" ? "auto" : "waits for input"} · reports to{" "}
-            {spec.reportTarget === "orchestrator" ? "the orchestrator" : "the calling session"}
-          </span>
-          {spec.persona !== undefined && (
-            <>
+    <>
+      <ul className="asset-list">
+        {props.kinds.map((spec) => {
+          const shipped = isShippedName(spec.name);
+          const overridden = shipped && spec.persona !== undefined;
+          return (
+            <li key={spec.name} className="asset-row">
+              <span className="asset-name">{spec.menuLabel ?? spec.label}</span>
+              <span className="asset-name asset-name-mono">{spec.name}</span>
+              <span className={`asset-chip${overridden ? " asset-chip-on" : ""}`}>
+                {overridden ? "shipped · edited" : shipped ? "shipped" : "custom"}
+              </span>
+              <span className="asset-personas">
+                {spec.trigger === "auto" ? "auto" : "waits for input"} · reports to{" "}
+                {spec.reportTarget === "orchestrator" ? "the orchestrator" : "the calling session"}
+              </span>
               <button type="button" className="asset-action" onClick={() => props.onEdit(spec)}>
                 Edit
               </button>
               <button type="button" className="asset-action asset-action-dim" onClick={() => props.onDelete(spec.name)}>
                 {props.confirmingDeleteName === spec.name ? "Confirm delete?" : "Delete"}
               </button>
-            </>
-          )}
-        </li>
-      ))}
-    </ul>
+            </li>
+          );
+        })}
+      </ul>
+      {props.tombstoned.length > 0 && (
+        <ul className="asset-list">
+          {props.tombstoned.map((name) => (
+            <li key={name} className="asset-row">
+              <span className="asset-name">{SHIPPED_AGENT_KINDS.find((shipped) => shipped.name === name)?.menuLabel ?? name}</span>
+              <span className="asset-name asset-name-mono">{name}</span>
+              <span className="asset-chip">deleted</span>
+              <span className="asset-personas">shipped kind deleted — future spawns stopped</span>
+              <button type="button" className="asset-action" onClick={() => props.onRestore(name)}>
+                Restore
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -78,6 +105,44 @@ function useAgentKinds() {
   return { kinds, loadError, reload };
 }
 
+/**
+ * Shipped kinds the user deleted (issue #368), derived from the live list
+ * minus the shipped names (the list response carries no separate tombstone
+ * field — absence is the tombstone).
+ */
+function tombstonedShippedNames(kinds: AgentKindSpec[] | null): string[] {
+  const liveNames = kinds === null ? [] : kinds.map((entry) => entry.name);
+  return SHIPPED_AGENT_KINDS.filter((shipped) => !liveNames.includes(shipped.name)).map((shipped) => shipped.name);
+}
+
+/**
+ * Opens the kind editor for one spec (issue #368): a shipped kind with no
+ * persona content prefills the persona from the shipped default prompt
+ * (the #315 prompt-override editor's prefill behavior) so the edit starts
+ * from the shipped text.
+ */
+function openKindEditor(spec: AgentKindSpec, setEditor: (editor: KindEditor) => void): void {
+  const draft = draftFromSpec(spec);
+  if (draft.persona !== "" || !isShippedName(spec.name)) {
+    setEditor({ mode: "edit", name: spec.name, draft });
+    return;
+  }
+  void apiGetAgentAssets()
+    .then((assets) => setEditor({ mode: "edit", name: spec.name, draft: { ...draft, persona: assets.defaults[spec.name as keyof typeof assets.defaults] ?? "" } }))
+    .catch(() => setEditor({ mode: "edit", name: spec.name, draft }));
+}
+
+/**
+ * Restores a tombstoned shipped kind (issue #368): re-creates the kind
+ * from its shipped spec — the save lifts the tombstone.
+ */
+async function restoreShippedKind(name: string, reload: () => Promise<void>): Promise<void> {
+  const shipped = SHIPPED_AGENT_KINDS.find((entry) => entry.name === name);
+  if (shipped === undefined) return;
+  await apiCreateAgentKind({ ...shipped, persona: "" });
+  await reload();
+}
+
 /** The self-fetching agent-kinds section (registry v2 via `GET /api/agent-kinds`). */
 export function AgentKindsSection() {
   const { kinds, loadError, reload } = useAgentKinds();
@@ -86,6 +151,10 @@ export function AgentKindsSection() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Tombstoned shipped kinds (issue #368): deleted shipped kinds, derived
+  // from the live list minus the shipped names (the list response carries
+  // no separate tombstone field — absence is the tombstone).
+  const tombstoned = tombstonedShippedNames(kinds);
 
   const closeEditor = (message: string): Promise<void> => {
     setEditor(null);
@@ -124,9 +193,10 @@ export function AgentKindsSection() {
     <section className="global-worker-settings">
       <h2 className="section-title">Agent kinds</h2>
       <p className="field-hint">
-        Spawnable agent personas from the kind registry. Shipped kinds are immutable — edit their prompts via the
-        overrides above. Custom kinds are yours: edit persona, task template, and config; deleting needs no live
-        sessions of the kind. Changes affect future spawns.
+        Spawnable agent personas from the kind registry. Every kind is yours: edit persona, task template, and
+        config — shipped kinds included (an edit shadows the shipped spec; the shipped default stays the fallback
+        until then). Deleting a shipped kind tombstones it — restore any time. Deleting needs no live sessions of
+        the kind. Changes affect future spawns.
       </p>
       {loadError !== null && <p className="error-note">Failed to load agent kinds: {loadError}</p>}
       {error !== null && <p className="error-note">{error}</p>}
@@ -134,13 +204,19 @@ export function AgentKindsSection() {
       {kinds !== null && (
         <KindRows
           kinds={kinds}
+          tombstoned={tombstoned}
           confirmingDeleteName={confirmingDeleteName}
           onEdit={(spec) => {
             setError(null);
             setNote(null);
-            setEditor({ mode: "edit", name: spec.name, draft: draftFromSpec(spec) });
+            openKindEditor(spec, setEditor);
           }}
           onDelete={deleteKind}
+          onRestore={(name) => {
+            setError(null);
+            setNote(null);
+            restoreShippedKind(name, reload).catch((err: unknown) => setError(errorMessage(err)));
+          }}
         />
       )}
       <div className="wizard-actions">

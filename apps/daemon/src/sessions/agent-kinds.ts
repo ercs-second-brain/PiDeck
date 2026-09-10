@@ -9,11 +9,13 @@
  * kind is data: the {@link AgentKindSpec} schema in `@pideck/shared`.
  *
  * Registry v2 (issue #330) makes kinds user-definable. Resolution order:
- * user-defined kinds (the {@link AgentKindStore}, state-dir persisted and
- * update-safe) first, then the shipped built-ins
+ * stored kinds (the {@link AgentKindStore} — user kinds AND, since issue
+ * #368, shipped-kind overrides) first, then the shipped built-ins
  * (`SHIPPED_AGENT_KINDS` in shared — the built-ins ARE spec-v2 data, the
- * dogfood check). No hardcoded kind names remain in the daemon: adding or
- * editing a kind is data, never code.
+ * dogfood check). Issue #368 (B18, the immutability reversal): shipped
+ * kinds are user-editable and user-deletable — a stored override shadows
+ * its shipped spec, and a tombstone stops the shipped spec from resolving
+ * or listing at all.
  *
  * Persona content resolution (at launch, in `orchestrator/bootstrap.ts`):
  * the kind's agent-assets prompt override (issue #315, shipped kinds)
@@ -31,7 +33,7 @@ import { sanitizeTmuxSegment } from "./tmux-commands.js";
 
 /** Read-only view of the registry (the spawn paths depend on this, not the class). */
 export interface AgentKindLookup {
-  /** One kind spec by id (user kinds first, then shipped); `undefined` when unknown. */
+  /** One kind spec by id (overrides first, then shipped); `undefined` when unknown or tombstoned. */
   get(name: string): AgentKindSpec | undefined;
 }
 
@@ -42,20 +44,30 @@ export interface AgentKindLookup {
  * kinds); the daemon context wires the store-backed instance.
  */
 export class AgentKindRegistry implements AgentKindLookup {
-  constructor(private readonly userKinds?: AgentKindLookup & { list(): AgentKindSpec[] }) {}
+  constructor(private readonly userKinds?: AgentKindLookup & { list(): AgentKindSpec[]; isTombstoned?(name: string): boolean }) {}
 
   get(name: string): AgentKindSpec | undefined {
-    return this.userKinds?.get(name) ?? SHIPPED_AGENT_KINDS.find((kind) => kind.name === name);
+    // Issue #368: a stored override shadows the shipped spec; a tombstone
+    // (the user deleted the shipped kind) stops the shipped fallback.
+    return this.userKinds?.get(name) ?? SHIPPED_AGENT_KINDS.find((kind) => kind.name === name && !this.userKinds?.isTombstoned?.(kind.name));
   }
 
-  /** Every spawnable kind: shipped first, then user-defined. */
+  /** Every spawnable kind: shipped first (minus tombstoned, minus overridden — a stored override shadows its shipped spec in the listing too, issue #368), then stored kinds. */
   list(): AgentKindSpec[] {
-    return [...SHIPPED_AGENT_KINDS, ...(this.userKinds?.list() ?? [])];
+    const shipped = SHIPPED_AGENT_KINDS.filter(
+      (kind) => !this.userKinds?.isTombstoned?.(kind.name) && this.userKinds?.get(kind.name) === undefined,
+    );
+    return [...shipped, ...(this.userKinds?.list() ?? [])];
   }
 
-  /** Whether the id belongs to a shipped built-in (immutable spec, undeletable). */
+  /** Whether the id belongs to a shipped built-in (the persona-override surface keys on it). */
   isShipped(name: string): boolean {
     return SHIPPED_AGENT_KINDS.some((kind) => kind.name === name);
+  }
+
+  /** Whether the shipped kind is tombstoned (user-deleted, issue #368). */
+  isTombstoned(name: string): boolean {
+    return this.userKinds?.isTombstoned?.(name) ?? false;
   }
 }
 
