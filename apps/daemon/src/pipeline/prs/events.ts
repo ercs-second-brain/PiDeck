@@ -14,6 +14,11 @@
  *   forwards it onto the WS hub as a shared `notification.pr.merged` event
  *   so the webapp can toast it. Emitted once per merge (the PR drops out
  *   of the active list as `done`).
+ * - `notification.pr.ready_for_merge` — the orchestrator notification
+ *   (issue #408): the PR is CI-green, approved, and both the author worker
+ *   and the reviewer are idle. The wiring forwards it onto the WS hub as a
+ *   shared `NotificationEvent` (webapp toast/notification center); merging
+ *   stays human/orchestrator-approved — this only notifies.
  */
 
 import type { KanbanCard } from "@pideck/shared";
@@ -42,6 +47,14 @@ export type PRPipelineEvent =
       projectId: string;
       prNumber: number;
       /** PR title at merge time, for the webapp toast. */
+      title: string;
+    }
+  | {
+      type: "notification.pr.ready_for_merge";
+      at: string;
+      projectId: string;
+      prNumber: number;
+      /** PR title, for the webapp toast/notification center. */
       title: string;
     };
 

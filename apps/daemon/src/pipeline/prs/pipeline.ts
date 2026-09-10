@@ -17,6 +17,12 @@
  * - A new GitHub review requesting changes → the worker is prompted to
  *   address the findings (`addressing_review`, issue #407 — deterministic,
  *   watermark-keyed; covers findings that ride only in the review body).
+ * - Issue #408 (the deterministic PR lifecycle): worker PRs are assigned to
+ *   the review user on submission (`reviewAccountUser`); a CI-green PR
+ *   assigned to that user drives the review-agent cycle; and a green +
+ *   approved PR with both the author and the reviewer idle notifies the
+ *   orchestrator it is ready for merge (`notification.pr.ready_for_merge`,
+ *   once per round — merging stays human/orchestrator-approved).
  * - Merged → card `done`; with `terminateOnMerge` (issue #106) the owning
  *   worker's pane is archived, otherwise the pane keeps running as `done`.
  * - Settled CI or any review decision → card `in_review`.
@@ -36,7 +42,7 @@ import { ACTIVE_WORKER_STATUSES, type KanbanCard, type KanbanColumn, type PullRe
 
 import type { GhClient, RepoRef } from "../../github/gh.js";
 import { pullRequestColumn } from "../../api/kanban.js";
-import { enrichPullRequest, fetchReviewComments, getFailingChecks, listPullRequests, mapRestPull } from "../../github/pulls.js";
+import { assignPullRequest, enrichPullRequest, fetchReviewComments, getFailingChecks, listPullRequests, mapRestPull } from "../../github/pulls.js";
 import { DEFAULT_POLL_INTERVAL_MS, PollLoop, type GithubWatcherEvent } from "../../github/watch.js";
 import type { PRPipelineEvent, PRPipelineEventEmitter } from "./events.js";
 import { driveLoop } from "./drive.js";
@@ -115,6 +121,12 @@ export interface PullRequestPipelineOptions {
    * mode: worker + CI only).
    */
   reviewAccount?: () => boolean;
+  /**
+   * The review account's GitHub login (issue #408): worker PRs are assigned
+   * to this user on submission (the PR-assignment leg), and the reviewer
+   * spawns only for PRs assigned to them. Absent/null = no assignment leg.
+   */
+  reviewAccountUser?: () => string | null;
   /** Max consecutive CI-fix prompts per red streak. Default: {@link DEFAULT_MAX_FIX_ATTEMPTS}. */
   maxFixAttempts?: number;
   /** Age at which an unanswered fix/address prompt is treated as stale. Default: 15 min. */
@@ -182,7 +194,7 @@ export class PullRequestPipeline {
       tracked.title = pr.title;
       return [];
     }
-    const cardEvent = this.trackIfOwned(pr);
+    const cardEvent = this.trackIfOwned(pr, []);
     this.tracker.save();
     return cardEvent === null ? [] : [cardEvent];
   }
@@ -197,8 +209,8 @@ export class PullRequestPipeline {
     const events: PRPipelineEvent[] = [];
     try {
       const records = await listPullRequests(this.gh, this.projectId, this.repo, "open");
-      for (const { pullRequest } of records) {
-        const cardEvent = this.trackIfOwned(pullRequest);
+      for (const record of records) {
+        const cardEvent = this.trackIfOwned(record.pullRequest, record.assignees);
         if (cardEvent !== null) events.push(cardEvent);
       }
     } catch (err) {
@@ -283,6 +295,10 @@ export class PullRequestPipeline {
         // Issue #407: the review cycle runs only with a configured review
         // account (reviewer panes then run gh as that second identity).
         reviewAccount: this.options.reviewAccount ?? (() => false),
+        // Issue #408: the review identity the PR-assignment leg assigns to;
+        // the reviewer-spawn gate keys off the PR carrying this assignee.
+        reviewUser: this.options.reviewAccountUser,
+        prAssignees: record.assignees,
         maxFixAttempts: this.maxFixAttempts,
         fixPromptTimeoutMs: this.fixPromptTimeoutMs,
         now: this.now,
@@ -319,9 +335,10 @@ export class PullRequestPipeline {
   /**
    * Registers a PR when a registered worker owns it (registry
    * `worker.prNumber`); returns the initial card event, or `null` when the
-   * PR is already tracked or has no owning worker.
+   * PR is already tracked or has no owning worker. `prAssignees` (issue
+   * #408) skips the review-user assignment when the PR already carries it.
    */
-  private trackIfOwned(pr: PullRequest): PRPipelineEvent | null {
+  private trackIfOwned(pr: PullRequest, prAssignees: string[]): PRPipelineEvent | null {
     if (this.tracker.get(pr.projectId, pr.number) !== undefined) return null;
     const owner = this.findOwner(pr);
     if (owner === undefined) return null;
@@ -333,6 +350,15 @@ export class PullRequestPipeline {
       sessionId: owner.sessionId,
       title: pr.title,
     });
+    // Issue #408: worker PRs are assigned to the review user on submission —
+    // the deterministic key the reviewer-spawn trigger reads. Best-effort and
+    // fire-and-forget: a failed assignment is logged and the PR's next
+    // registration pass (restart re-registration) retries; the review gate
+    // stays closed until the PR actually carries the assignee.
+    const reviewUser = this.options.reviewAccountUser?.() ?? null;
+    if (reviewUser !== null && !prAssignees.includes(reviewUser)) {
+      void assignPullRequest(this.gh, this.repo, pr.number, [reviewUser]).catch((err) => this.onError(err));
+    }
     this.setWorkerStatusQuietly(owner.id, "awaiting_ci", `PR #${pr.number} opened — watching CI`);
     const at = this.now().toISOString();
     tracked.title = pr.title;

@@ -187,6 +187,9 @@ export function buildUnit(deps: UnitBuilderDeps, projectId: string, repoUrl: str
     // Issue #407: the review cycle (agent, real reviews, triggers) runs
     // only with a configured review account, read fresh per poll.
     reviewAccount: () => (deps.reviewAccountToken?.() ?? null) !== null,
+    // Issue #408: the review-user identity — worker PRs are assigned to it
+    // on submission and the reviewer-spawn trigger keys off the assignment.
+    reviewAccountUser: () => deps.reviewAccountUser?.() ?? null,
     onError: (err) => deps.onError(err, `pr-pipeline:${projectId}`),
   });
   return {

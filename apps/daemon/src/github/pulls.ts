@@ -37,6 +37,9 @@ const restPullSchema = z.object({
   // Issue #322: GitHub's mergeability verdict. `null` while GitHub computes
   // it — mapped to "not known to conflict".
   mergeable: z.boolean().nullable().optional(),
+  // Issue #408: the PR's assignees — the review-user assignment gate keys
+  // off this. Optional so unexpected shapes degrade to none.
+  assignees: z.array(z.object({ login: z.string() })).optional(),
 });
 
 export interface PullRequestRecord {
@@ -44,6 +47,8 @@ export interface PullRequestRecord {
   pullRequest: PullRequest;
   /** Head commit SHA — feed to {@link getCiStatus}. */
   headSha: string;
+  /** Assignee logins (issue #408): the review-user assignment gate reads this. */
+  assignees: string[];
 }
 
 /** Maps one REST PR payload. */
@@ -67,7 +72,23 @@ export function mapRestPull(projectId: string, raw: unknown): PullRequestRecord 
       : {}),
     ...(r.mergeable !== undefined && r.mergeable !== null ? { mergeConflicts: !r.mergeable } : {}),
   });
-  return { pullRequest, headSha: r.head.sha };
+  return { pullRequest, headSha: r.head.sha, assignees: r.assignees?.map((a) => a.login) ?? [] };
+}
+
+const assignIssueResponseSchema = z.object({
+  assignees: z.array(z.object({ login: z.string() })).nullable().optional(),
+});
+
+/**
+ * Assigns users to a pull request (issue #408): PRs use the issues assignees
+ * endpoint. Returns the PR's full assignee list after the call. Callers treat
+ * failure as non-fatal — the assignment is retried on the PR's next
+ * registration pass (e.g. after a daemon restart re-registers it).
+ */
+export async function assignPullRequest(gh: GhClient, repo: RepoRef, prNumber: number, assignees: string[]): Promise<string[]> {
+  const raw = await gh.apiPost(`/repos/${repo.owner}/${repo.repo}/issues/${prNumber}/assignees`, { assignees });
+  const parsed = assignIssueResponseSchema.safeParse(raw);
+  return parsed.success ? (parsed.data.assignees ?? []).map((a) => a.login) : [];
 }
 
 /** Lists repository pull requests via REST (all states by default). */

@@ -108,9 +108,13 @@ function isTerminalEvent(event: { type: string }): event is TerminalServerEvent 
   return TERMINAL_EVENT_TYPES.has(event.type);
 }
 
-/** Every user-notification kind (merged PRs #111; agent audit reports #300/#302). */
+/** Every user-notification kind (merged PRs #111; agent audit reports #300/#302; ready-for-merge #408). */
 function isNotificationEvent(event: { type: string }): event is NotificationEvent {
-  return event.type === "notification.pr.merged" || event.type === "notification.agent.report";
+  return (
+    event.type === "notification.pr.merged" ||
+    event.type === "notification.pr.ready_for_merge" ||
+    event.type === "notification.agent.report"
+  );
 }
 
 // ---------------------------------------------------------------------------

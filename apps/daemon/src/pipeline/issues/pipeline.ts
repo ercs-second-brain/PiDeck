@@ -28,6 +28,12 @@
  *    `kanban.card.moved` event (backlog → in_progress, full card attached)
  *    is emitted on {@link IssueSpawnPipeline.kanbanEvents} for the API
  *    layer (#9) to forward to connected webapps.
+ * 6. **Unblock sweep** (issue #408): a spawn suppressed by open blockers is
+ *    recorded; {@link IssueSpawnPipeline.sweepUnblocked} re-evaluates those
+ *    tickets when a PR merges in the project (its "Closes"-linked issues
+ *    just closed), re-spawning the unblocked ones through the same matrix —
+ *    deduped against running workers and gated by the #393 occupancy
+ *    predicate when the project has a concurrency cap.
  *
  * No app wiring lives here: the daemon entry point owns constructing the
  * pipeline and piping watcher events into {@link IssueSpawnPipeline.handleEvent}.
@@ -58,6 +64,14 @@ export interface IssueSpawnPipelineOptions {
   gh?: GhClient;
   /** Spawn scheduling. Default: cap-aware {@link QueueingScheduler} (unbounded when the project sets no cap). */
   scheduler?: SpawnScheduler;
+  /**
+   * Project occupancy (issue #393 — active workers + workerLike kind
+   * sessions), the ONE shared predicate: the unblock sweep gates a capped
+   * project's spawn on it so kind sessions block auto-spawns exactly like
+   * every other spawn path. Optional; absent = the sweep relies on the
+   * scheduler's worker-count accounting alone.
+   */
+  countOccupants?: (projectId: string) => number;
   /** Injectable clock (tests). */
   now?: () => Date;
   /** Error sink for spawn/scheduling failures. Default: console.error. */
@@ -80,6 +94,7 @@ export class IssueSpawnPipeline {
   private readonly blockers: BlockerResolver;
   private readonly spawner: WorkerSpawner;
   private readonly scheduler: SpawnScheduler;
+  private readonly countOccupants: ((projectId: string) => number) | undefined;
   private readonly now: () => Date;
   private readonly onError: (err: unknown) => void;
 
@@ -89,6 +104,16 @@ export class IssueSpawnPipeline {
    * a spawn attempt fails so a redelivered event can retry.
    */
   private readonly accepted = new Set<string>();
+
+  /**
+   * Blocked tickets per project (issue #408): spawns suppressed by open
+   * blockers, kept so the merge-driven unblock sweep can re-evaluate them
+   * — the watcher emits no event when a blocker resolves, so without this
+   * record the ticket would sit forever. In-memory by design: the sweep
+   * re-derives the blocked state from GitHub, so losing the map on restart
+   * only delays the next re-evaluation to the next redelivery/merge.
+   */
+  private readonly blocked = new Map<string, Map<number, Issue>>();
 
   constructor(options: IssueSpawnPipelineOptions) {
     this.projects = options.projects;
@@ -100,6 +125,7 @@ export class IssueSpawnPipeline {
     // bypassed entirely and uncapped issues spawn immediately.
     this.scheduler =
       options.scheduler ?? new QueueingScheduler({ spawner: this.spawner, onError: (err) => this.onError(err) });
+    this.countOccupants = options.countOccupants;
   }
 
   /**
@@ -134,13 +160,84 @@ export class IssueSpawnPipeline {
     return this.accepted.has(`${projectId}#${issueNumber}`);
   }
 
+  /** Whether this pipeline has the issue recorded as blocked (tests/ops). */
+  isRecordedBlocked(projectId: string, issueNumber: RefNumber): boolean {
+    return this.blocked.get(projectId)?.has(issueNumber) ?? false;
+  }
+
+  /**
+   * Merge-driven unblock sweep (issue #408, flow step 8): re-evaluates the
+   * project's recorded blocked tickets. A merged PR's "Closes"-linked
+   * issues are closed by GitHub at merge time, so the sweep re-resolves the
+   * native blockers and re-schedules the tickets whose blockers all closed
+   * — through the same spawn matrix as the watcher path (blocked check,
+   * dedupe, cap queueing). Tickets that still have open blockers stay
+   * recorded; tickets that gained a worker elsewhere are dropped.
+   */
+  async sweepUnblocked(projectId: string): Promise<void> {
+    const recorded = this.blocked.get(projectId);
+    if (recorded === undefined || recorded.size === 0) return;
+    const registered = this.projects.get(projectId);
+    if (registered === undefined || registered.project.settings.autoAgentUsername === null) return;
+    for (const [number, issue] of [...recorded]) {
+      try {
+        // A worker already runs this ticket (spawned elsewhere since it was
+        // recorded): drop it — never conflict with a running worker.
+        const active = await this.spawner.listActiveWorkerIssueNumbers(projectId);
+        if (active.has(number)) {
+          recorded.delete(number);
+          continue;
+        }
+        // Always re-resolve fresh here (the sweep's whole purpose): the
+        // recorded snapshot's inline detail is stale by definition.
+        const detail = await this.blockers.resolve(registered.repo, issue);
+        const openBlockers = detail.filter((blocker) => blocker.state === "open");
+        if (openBlockers.length > 0) {
+          this.recordBlocked(issue); // still blocked (detail refreshed)
+          continue;
+        }
+        // Unblocked: re-arm through the SAME spawn matrix. Occupancy gate
+        // first (#393): at a capped project's occupancy limit the sweep
+        // keeps the ticket recorded for the next sweep instead of spawning.
+        const cap = registered.project.settings.workerConcurrency ?? undefined;
+        if (cap !== undefined && (this.countOccupants?.(projectId) ?? 0) >= cap) continue;
+        recorded.delete(number);
+        const key = issueKey(issue);
+        if (this.accepted.has(key)) continue;
+        this.accepted.add(key);
+        // The recorded snapshot's inline blocker detail is stale by
+        // definition — strip it so spawnFor re-resolves fresh.
+        const fresh: Issue = { ...issue, blockers: undefined };
+        this.scheduler.schedule(
+          () => this.spawnFor(registered, fresh, key),
+          {
+            projectId,
+            issueNumber: issue.number,
+            maxConcurrentWorkers: cap,
+          },
+        );
+      } catch (err) {
+        this.onError(err);
+      }
+    }
+  }
+
+  private recordBlocked(issue: Issue): void {
+    const perProject = this.blocked.get(issue.projectId) ?? new Map<number, Issue>();
+    perProject.set(issue.number, issue);
+    this.blocked.set(issue.projectId, perProject);
+  }
+
   private async spawnFor(registered: RegisteredProject, issue: Issue, key: string): Promise<void> {
     try {
       const openBlockers = await this.openBlockers(registered, issue);
       if (openBlockers.length > 0) {
         // Blocked: release the dedupe slot so a later redelivery (after the
-        // blockers resolve) can spawn. No unblock event exists yet (#11).
+        // blockers resolve) can spawn, and record the ticket for the merge-
+        // driven unblock sweep (issue #408) — no watcher event fires when a
+        // blocker resolves on its own.
         this.accepted.delete(key);
+        this.recordBlocked(issue);
         return;
       }
       // Restart safety: a worker for this issue may already exist in the
@@ -153,6 +250,7 @@ export class IssueSpawnPipeline {
         issue.number,
         buildIssueSpawnPrompt(issue),
       );
+      this.blocked.get(registered.project.id)?.delete(issue.number);
       this.emitCardMoved(registered.project.id, issue, spawned.worker.id);
     } catch (err) {
       this.accepted.delete(key);

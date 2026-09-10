@@ -9,7 +9,7 @@
  * the worker's status message reflects why nothing is driven.
  */
 
-import type { PullRequest, WorkerStatus } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES, type PullRequest, type WorkerStatus } from "@pideck/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
 import type { ReviewSubmission } from "../../github/reviews.js";
@@ -40,6 +40,14 @@ export interface DriveContext {
   latestReview?: ReviewSubmission | null;
   /** Whether the review account is configured (issue #407) — gates the whole review cycle. Absent = single-account mode. */
   reviewAccount?: () => boolean;
+  /**
+   * The review account's GitHub login (issue #408): the reviewer spawns only
+   * for PRs assigned to this user. Absent/null = legacy hosts (no assignment
+   * gate — the pre-#408 unconditioned spawn on green).
+   */
+  reviewUser?: () => string | null;
+  /** The PR's current assignee logins (issue #408) — the review-user gate reads this. Optional: absent degrades to none. */
+  prAssignees?: string[];
   /** Max consecutive CI-fix prompts per red streak. */
   maxFixAttempts: number;
   /** Age at which an unanswered prompt is treated as stale. */
@@ -66,8 +74,11 @@ export async function driveLoop(
 
   // A worker stuck on a prompt for too long is considered idle again;
   // the branches below then re-prompt (CI red) or deliver deferred comments.
+  // The author's status follows the state (issue #408: the ready-for-merge
+  // idle check reads it) — set quietly if the record still exists.
   if ((tracked.state === "fixing" || tracked.state === "addressing") && promptStale) {
     tracked.state = "watching";
+    setStatusIfChanged(ctx, tracked.workerId, "awaiting_ci", `PR #${tracked.prNumber}: watching CI`);
   }
 
   // Issue #407: observe the PR's latest review submission once per poll —
@@ -75,6 +86,10 @@ export async function driveLoop(
   // re-treated as pre-existing once CI goes green. A NEW submission that
   // requests changes triggers the worker in the green branch below.
   const review = observeReview(tracked, ctx.latestReview ?? null);
+  // Issue #408: a fresh review round re-arms the ready-for-merge trigger —
+  // a changes-requested round that ends in a fresh approval notifies again
+  // even when the head never moved.
+  if (review.isNew !== null) tracked.readyNotifiedHeadSha = null;
 
   if (pr.ciStatus === "failure") {
     return driveCiFailure(tracked, pr, headSha, headChangedSincePrompt, newComments, ctx, events);
@@ -86,7 +101,35 @@ export async function driveLoop(
   // Issue #407: `review.isNew` — a newly observed review submission — drives
   // the deterministic address-findings trigger.
   await driveReview(tracked, pr, headSha, ctx, review.isNew);
-  return greenEvents;
+  // Issue #408: green + approved + both agents idle → the orchestrator is
+  // notified the PR is ready for merge (merging stays human-approved).
+  const ready = driveReadyForMerge(tracked, pr, headSha, ctx);
+  return ready === null ? greenEvents : [...greenEvents, ready];
+}
+
+/**
+ * Ready-for-merge trigger (issue #408): when the PR is CI-green AND approved
+ * AND both the author worker and the reviewer are idle, the orchestrator is
+ * notified exactly once per round (per head, re-armed by new review rounds).
+ * Runs in both modes: a human approval in single-account mode is just as
+ * ready-for-merge as the auto reviewer's.
+ */
+function driveReadyForMerge(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: DriveContext): PRPipelineEvent | null {
+  if (pr.ciStatus !== "success" || pr.reviewState !== "approved") return null;
+  if (tracked.state !== "watching") return null; // a prompt is in flight — the author is not idle
+  if (tracked.readyNotifiedHeadSha === headSha) return null; // this round already notified
+  const reviewer = tracked.reviewWorkerId === null ? undefined : ctx.sessions.getWorker(tracked.reviewWorkerId);
+  if (reviewer !== undefined && ACTIVE_WORKER_STATUSES.has(reviewer.status)) return null; // reviewer still working
+  const author = ctx.sessions.getWorker(tracked.workerId);
+  if (author !== undefined && author.status !== "awaiting_ci" && ACTIVE_WORKER_STATUSES.has(author.status)) return null;
+  tracked.readyNotifiedHeadSha = headSha;
+  return {
+    type: "notification.pr.ready_for_merge",
+    at: ctx.now().toISOString(),
+    projectId: tracked.projectId,
+    prNumber: tracked.prNumber,
+    title: pr.title,
+  };
 }
 
 /** CI red branch: drive the worker into a bounded fix cycle unless gated off. */

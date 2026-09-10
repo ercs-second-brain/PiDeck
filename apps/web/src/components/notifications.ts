@@ -8,15 +8,17 @@
  */
 
 import type { AgentKind, NotificationEvent } from "@pideck/shared";
-import { toastKey } from "./Toasts";
+import { isPrNotification, toastKey } from "./Toasts";
 
-/** One persisted notification (merged PRs #111; agent audit reports #300/#302). */
+/** One persisted notification (merged PRs #111; agent reports #300/#302; ready-for-merge #408). */
 export interface CenterNotification {
   /** Stable dedupe key, shared with toasts. */
   key: string;
   projectId: string;
-  /** PR number (merged-PR notifications only). */
+  /** PR number (PR-lifecycle notifications — merged #111, ready-for-merge #408). */
   prNumber?: number;
+  /** The PR lifecycle fact (PR notifications only). */
+  prKind?: "merged" | "ready_for_merge";
   /** The agent kind that finished (agent-report notifications only). */
   agentKind?: AgentKind;
   /** The agent-kind session that ran (agent-report notifications only). */
@@ -39,8 +41,8 @@ const STORAGE_KEY = "pideck.notifications.v1";
 
 /** Stable dedupe key for a notification event, shared with toasts. */
 function notificationKey(event: NotificationEvent): string {
-  return event.type === "notification.pr.merged"
-    ? toastKey(event.projectId, event.prNumber)
+  return isPrNotification(event)
+    ? toastKey(event.projectId, event.prNumber, event.type === "notification.pr.merged" ? "merged" : "ready_for_merge")
     : `agent:${event.projectId}:${event.sessionId}`;
 }
 
@@ -49,10 +51,9 @@ export function appendNotification(list: CenterNotification[], event: Notificati
   const key = notificationKey(event);
   if (list.some((n) => n.key === key)) return list;
   const base = { key, projectId: event.projectId, title: event.title, at: event.at, read: false };
-  const next =
-    event.type === "notification.pr.merged"
-      ? { ...base, prNumber: event.prNumber }
-      : { ...base, agentKind: event.agentKind, sessionId: event.sessionId, reportTargetSessionId: event.reportTargetSessionId };
+  const next = isPrNotification(event)
+    ? { ...base, prNumber: event.prNumber, prKind: event.type === "notification.pr.merged" ? ("merged" as const) : ("ready_for_merge" as const) }
+    : { ...base, agentKind: event.agentKind, sessionId: event.sessionId, reportTargetSessionId: event.reportTargetSessionId };
   return [{ ...next }, ...list].slice(0, MAX_NOTIFICATIONS);
 }
 

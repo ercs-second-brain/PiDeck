@@ -4,8 +4,9 @@
  * Converts the issue pipeline's `kanban.card.moved` events and the PR
  * pipelines' card events to shared `KanbanUpdateEvent`s and broadcasts
  * them on the WS hub, so connected webapps see boards move live. The PR
- * pipelines' user-facing `notification.pr.merged` event (issue #111) is
- * forwarded 1:1 as a shared `NotificationEvent` on the same hub.
+ * pipelines' user-facing `notification.pr.merged` (issue #111) and
+ * `notification.pr.ready_for_merge` (issue #408) events are forwarded 1:1
+ * as shared `NotificationEvent`s on the same hub.
  *
  * The per-card `lastColumns` map exists only to synthesize the `from`
  * column of `kanban.card.moved` for PR cards (PR card events carry only
@@ -33,10 +34,10 @@ export class KanbanBridge {
 
   /** Ensures the per-project column map exists, then synthesizes `from`. */
   broadcastPrEvent(projectId: string, event: PRPipelineEvent): void {
-    if (event.type === "notification.pr.merged") {
+    if (event.type === "notification.pr.merged" || event.type === "notification.pr.ready_for_merge") {
       this.broadcast(
         {
-          type: "notification.pr.merged",
+          type: event.type,
           at: event.at,
           projectId: event.projectId,
           prNumber: event.prNumber,

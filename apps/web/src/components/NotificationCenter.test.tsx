@@ -42,7 +42,7 @@ describe("appendNotification (issue #178)", () => {
   it("prepends an event as an unread notification, newest first", () => {
     const first = appendNotification([], mergedEvent());
     expect(first).toEqual([
-      { key: "kisstest#42", projectId: "kisstest", prNumber: 42, title: "Fix the flaky test", at: NOW, read: false },
+      { key: "kisstest#42", projectId: "kisstest", prNumber: 42, prKind: "merged", title: "Fix the flaky test", at: NOW, read: false },
     ]);
     const second = appendNotification(first, mergedEvent({ projectId: "p", prNumber: 7 }));
     expect(second.map((n) => n.prNumber)).toEqual([7, 42]);
@@ -51,6 +51,23 @@ describe("appendNotification (issue #178)", () => {
   it("dedupes re-emissions of the same merge", () => {
     const once = appendNotification([], mergedEvent());
     expect(appendNotification(once, mergedEvent({ at: "2026-01-02T03:09:05.000Z" }))).toBe(once);
+  });
+
+  it("records a ready-for-merge notification with its own key (issue #408)", () => {
+    const ready: NotificationEvent = {
+      type: "notification.pr.ready_for_merge",
+      at: NOW,
+      projectId: "kisstest",
+      prNumber: 42,
+      title: "Fix the flaky test",
+    };
+    const list = appendNotification([], ready);
+    expect(list).toEqual([
+      { key: "ready:kisstest#42", projectId: "kisstest", prNumber: 42, prKind: "ready_for_merge" as const, title: "Fix the flaky test", at: NOW, read: false },
+    ]);
+    // Same PR merged later → a separate entry (distinct keys).
+    const both = appendNotification(list, mergedEvent());
+    expect(both.map((n) => n.key)).toEqual(["kisstest#42", "ready:kisstest#42"]);
   });
 
   it("caps the history at the newest notifications", () => {
@@ -96,7 +113,7 @@ describe("notificationTime (issue #178)", () => {
 });
 
 describe("NotificationList (issue #178)", () => {
-  const item = { key: "kisstest#42", projectId: "kisstest", prNumber: 42, title: "Fix the flaky test", at: NOW, read: false };
+  const item = { key: "kisstest#42", projectId: "kisstest", prNumber: 42, prKind: "merged" as const, title: "Fix the flaky test", at: NOW, read: false };
 
   it("renders an empty-state note without notifications", () => {
     const html = renderToString(<NotificationList notifications={[]} projects={[KISSTEST]} onOpen={() => {}} onClear={() => {}} />);

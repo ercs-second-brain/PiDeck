@@ -9,16 +9,19 @@ const TOAST_MS = 6_000;
 export const MAX_TOASTS = 4;
 
 /**
- * One merged-PR toast (issue #111). agent-orchestrator surfaces `pr_merged`
- * as a notification that is never held as unresolved — a terminal fact,
- * shown once. Mirrored here: toasts are ephemeral (no history, no ack), the
- * board's `done` card carries the durable state.
+ * One PR-lifecycle toast (issues #111/#408): a PR merged, or a green +
+ * approved PR is ready for merge. agent-orchestrator surfaces these as
+ * notifications that are never held as unresolved — terminal facts, shown
+ * once. Mirrored here: toasts are ephemeral (no history, no ack), the
+ * board's card carries the durable state.
  */
 export interface MergedPRToast {
-  /** Stable key (`<projectId>#<prNumber>`) — dedupes re-emissions. */
+  /** Stable key — dedupes re-emissions; the kind keeps merged/ready keys apart. */
   key: string;
   projectId: string;
   prNumber: number;
+  /** Which PR lifecycle fact: `merged` (#111) or `ready_for_merge` (#408). */
+  kind: "merged" | "ready_for_merge";
   title: string;
 }
 
@@ -37,22 +40,28 @@ export interface AgentReportToast {
 /** Any toast the stack renders. */
 export type AppToast = MergedPRToast | AgentReportToast;
 
-/** Stable dedupe key for a merged-PR event/toast. */
-export function toastKey(projectId: string, prNumber: number): string {
-  return `${projectId}#${prNumber}`;
+/** Whether the event is a PR-lifecycle notification (merged #111, ready-for-merge #408). */
+export function isPrNotification(event: NotificationEvent): event is Extract<NotificationEvent, { type: "notification.pr.merged" | "notification.pr.ready_for_merge" }> {
+  return event.type === "notification.pr.merged" || event.type === "notification.pr.ready_for_merge";
+}
+
+/** Stable dedupe key for a merged-PR event/toast (kind-suffixed since #408). */
+export function toastKey(projectId: string, prNumber: number, kind: "merged" | "ready_for_merge" = "merged"): string {
+  return kind === "merged" ? `${projectId}#${prNumber}` : `ready:${projectId}#${prNumber}`;
 }
 
 /** Stable dedupe key for any notification event (toasts + the center record path). */
 function eventKey(event: NotificationEvent): string {
-  return event.type === "notification.pr.merged"
-    ? toastKey(event.projectId, event.prNumber)
+  return isPrNotification(event)
+    ? toastKey(event.projectId, event.prNumber, event.type === "notification.pr.merged" ? "merged" : "ready_for_merge")
     : `agent:${event.projectId}:${event.sessionId}`;
 }
 
-/** Toast headline: "kisstest #42 merged" / "kisstest devex-audit report ready"; project name when known. */
+/** Toast headline: "kisstest #42 merged" / "kisstest #42 ready for merge"; project name when known. */
 export function toastText(projectName: string | undefined, toast: MergedPRToast | AgentReportToast): string {
   const project = projectName ?? toast.projectId;
-  return "prNumber" in toast ? `${project} #${toast.prNumber} merged` : `${project} ${toast.agentKind} report ready`;
+  if ("prNumber" in toast) return toast.kind === "ready_for_merge" ? `${project} #${toast.prNumber} ready for merge` : `${project} #${toast.prNumber} merged`;
+  return `${project} ${toast.agentKind} report ready`;
 }
 
 /** Appends an event as a toast, deduped by key and bounded — pure. */
@@ -60,10 +69,9 @@ export function appendToast(toasts: AppToast[], event: NotificationEvent): AppTo
   const key = eventKey(event);
   if (toasts.some((t) => t.key === key)) return toasts;
   const base = { key, projectId: event.projectId, title: event.title };
-  const next =
-    event.type === "notification.pr.merged"
-      ? { ...base, prNumber: event.prNumber }
-      : { ...base, agentKind: event.agentKind };
+  const next = isPrNotification(event)
+    ? { ...base, prNumber: event.prNumber, kind: event.type === "notification.pr.merged" ? ("merged" as const) : ("ready_for_merge" as const) }
+    : { ...base, agentKind: event.agentKind };
   return [...toasts, next].slice(-MAX_TOASTS);
 }
 
@@ -170,7 +178,11 @@ function maybeBrowserNotify(event: NotificationEvent, enabled: boolean): void {
   if (!enabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
   const project = boardStore.getState().projects.find((p) => p.id === event.projectId);
   const name = project?.name ?? event.projectId;
-  const headline = event.type === "notification.pr.merged" ? `${name} #${event.prNumber} merged` : `${name} ${event.agentKind} report ready`;
+  const headline = isPrNotification(event)
+    ? event.type === "notification.pr.ready_for_merge"
+      ? `${name} #${event.prNumber} ready for merge`
+      : `${name} #${event.prNumber} merged`
+    : `${name} ${event.agentKind} report ready`;
   try {
     new Notification(headline, { body: event.title });
   } catch {
