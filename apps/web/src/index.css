@@ -1646,6 +1646,12 @@ code {
   box-shadow: var(--shadow-modal);
 }
 
+/* Issue #396: the card is the shell's focus fallback (tabIndex -1) — never
+   paint a focus ring on it; real controls inside keep theirs. */
+.modal-card:focus {
+  outline: none;
+}
+
 /* Modal/dialog title (the AssetDialog standard): --fs-xl per DESIGN.md —
    one heading treatment for every modal (settings, agent assets,
    onboarding, nested dialogs, the update modal). Section headings inside
