@@ -23,6 +23,19 @@ function workerBadge(worker: Worker): { label: string; className: string } {
   return { label: worker.status, className: workerStatusClasses(worker.status, "worker-badge") };
 }
 
+/**
+ * Issue #409 (B31): the role badge of a worker row — a review agent
+ * (Worker.kind === "reviewer", issue #107) badges "reviewer", every
+ * implementer (explicit or the pre-#107 absent default) keeps "worker".
+ * Same pattern as agent-kind rows, which badge the kind itself.
+ */
+function workerRoleBadge(worker: Worker | undefined): { label: string; className: string } {
+  if (worker?.kind === "reviewer") {
+    return { label: "reviewer", className: "role-badge role-reviewer" };
+  }
+  return { label: "worker", className: "role-badge role-worker" };
+}
+
 /** The worker record behind a session, if any. */
 export function workerFor(session: Session, workers: Worker[]): Worker | undefined {
   return session.workerId !== null ? workers.find((candidate) => candidate.id === session.workerId) : undefined;
@@ -134,6 +147,7 @@ export function WorkerRow(props: {
 }) {
   const worker = workerFor(props.session, props.workers);
   const badge = worker ? workerBadge(worker) : null;
+  const role = workerRoleBadge(worker);
   if (props.archived) {
     // Terminated worker: history only — visibly not active, not terminable,
     // but clickable: opens the read-only archived log (issue #104).
@@ -145,7 +159,7 @@ export function WorkerRow(props: {
           title="View the archived worker's log"
           onClick={() => props.onSelectSession(props.session.id)}
         >
-          <span className="role-badge role-worker">worker</span>
+          <span className={role.className}>{role.label}</span>
           <span className="picker-session-name">{props.session.tmuxSession}</span>
           {worker && (
             <span className="picker-runtime picker-runtime-final">
@@ -164,7 +178,7 @@ export function WorkerRow(props: {
         className={`picker-session${props.session.id === props.selectedSessionId ? " selected" : ""}`}
         onClick={() => props.onSelectSession(props.session.id)}
       >
-        <span className="role-badge role-worker">worker</span>
+        <span className={role.className}>{role.label}</span>
         <span className="picker-session-name">{props.session.tmuxSession}</span>
         {worker && <span className="picker-runtime">{formatRunningDuration(worker.startedAt, props.now ?? Date.now())}</span>}
         {badge && <span className={badge.className}>{badge.label}</span>}

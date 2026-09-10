@@ -404,6 +404,13 @@
   color: var(--accent);
 }
 
+/* Issue #409: review agents (Worker.kind === "reviewer") badge their role
+   instead of a generic "worker" — same accent treatment as agent kinds. */
+.role-reviewer {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
 .worker-badge {
   font-size: var(--fs-2xs);
   padding: 2px 6px;
