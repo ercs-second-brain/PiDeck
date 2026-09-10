@@ -335,7 +335,7 @@ export class PullRequestPipeline {
     const terminateOnMerge = this.options.workerSettings?.().terminateOnMerge ?? DEFAULT_WORKER_PIPELINE_SETTINGS.terminateOnMerge;
     if (terminateOnMerge && this.sessions.archiveWorker !== undefined) {
       try {
-        await this.sessions.archiveWorker(tracked.workerId, `${message} — terminated on merge`);
+        await this.sessions.archiveWorker(tracked.workerId, `${message} — archived on merge`);
         return;
       } catch {
         // Fall through to the quiet status update below.

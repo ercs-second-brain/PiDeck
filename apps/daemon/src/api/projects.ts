@@ -305,7 +305,7 @@ export class ProjectService {
     if (driving.length > 0) {
       throw new ConflictError(
         `project "${id}" has ${driving.length} active worker(s) driving PR ` +
-          `(#${driving.map((worker) => worker.prNumber).join(", #")}) — terminate or finish them before deleting`,
+          `(#${driving.map((worker) => worker.prNumber).join(", #")}) — delete or finish them before deleting`,
       );
     }
     teardown.stopWatching(id);

@@ -198,7 +198,7 @@ describe("terminateWorker (issue #64)", () => {
     );
 
     expect(archived.status).toBe("archived");
-    expect(archived.statusMessage).toContain("terminated");
+    expect(archived.statusMessage).toContain("deleted");
     expect(daemon.tmux.sessions.has(session.tmuxSession)).toBe(false); // pane (and pi) gone
     // History preserved: session + worker records stay queryable.
     expect(daemon.services.sessions.listSessions("tw-rw").map((s) => s.id)).toContain(session.id);

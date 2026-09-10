@@ -224,7 +224,7 @@ describe("SessionManager.archiveWorker (issue #64)", () => {
     const archived = await manager.archiveWorker(worker.id);
 
     expect(archived?.status).toBe("archived");
-    expect(archived?.statusMessage).toContain("terminated");
+    expect(archived?.statusMessage).toContain("deleted");
     expect(fake.sessions.has(session.tmuxSession)).toBe(false); // pane (and pi process) gone
     // History preserved: session + worker records stay in the registry.
     expect(manager.listSessions("proj").map((s) => s.id)).toContain(session.id);
@@ -293,7 +293,7 @@ describe("reconcile skips archived sessions (issue #64)", () => {
     expect(result.lost).toEqual([]);
     expect(rebooted.sessions.has(spawned.session.tmuxSession)).toBe(false);
     expect(manager2.getWorker(spawned.worker.id)?.status).toBe("archived");
-    expect(manager2.getWorker(spawned.worker.id)?.statusMessage).toContain("terminated");
+    expect(manager2.getWorker(spawned.worker.id)?.statusMessage).toContain("deleted");
   });
 
   it("skips archived worker sessions even when their tmux pane is still alive", async () => {

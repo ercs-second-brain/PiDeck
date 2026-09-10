@@ -344,7 +344,7 @@ export class SessionManager {
    * not an error, and re-terminating an archived worker just refreshes the
    * archived status. Returns `null` for an unknown worker id.
    */
-  async archiveWorker(workerId: string, message = "archived: terminated from the webapp"): Promise<Worker | null> {
+  async archiveWorker(workerId: string, message = "archived: deleted from the webapp"): Promise<Worker | null> {
     const worker = this.registry.getWorker(workerId);
     if (!worker) return null;
     const session = this.registry.getSession(worker.sessionId);
