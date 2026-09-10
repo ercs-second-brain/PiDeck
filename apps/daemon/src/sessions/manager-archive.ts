@@ -9,6 +9,13 @@
  * Split from `manager.ts` (kiss max-lines budget) following the
  * `agent-kind-spawn.ts` pattern: explicit deps, free function; the
  * {@link SessionManager} facade delegates.
+ *
+ * Note (KISS-audit F9): the archived-log wire contracts —
+ * `archivedWorkerLogSchema` vs `archivedAgentSessionLogSchema` in
+ * `@pideck/shared` — overlap heavily but are **intentionally** separate
+ * live contracts (worker metadata vs persona metadata); they are left
+ * un-unified, and this module must not grow shared response plumbing
+ * between the two paths.
  */
 
 import type { Session } from "@pideck/shared";
@@ -67,20 +74,45 @@ export async function archiveAgentSession(
   return deps.registry.getSession(session.id) as Session;
 }
 
-/** One persona agent's archive step: capture scrollback, kill pane, mark `archivedAt`. */
-async function archiveAgentPane(deps: AgentArchiveDeps, session: Session): Promise<void> {
-  if (await deps.tmux.hasSession(session.tmuxSession)) {
-    // The #104 pattern: capture the scrollback BEFORE killing the pane —
-    // the bytes at termination. A capture failure never blocks the archive.
-    try {
-      const scrollback = await deps.tmux.capturePane(session.tmuxSession, {
-        lines: ARCHIVED_SCROLLBACK_LINES,
-      });
-      deps.archivedLogs.save(session.id, { capturedAt: new Date().toISOString(), scrollback });
-    } catch (err) {
-      console.error(`[sessions] scrollback capture failed for ${session.tmuxSession}:`, err);
-    }
-    await deps.tmux.killSession(session.tmuxSession);
+/**
+ * Shared archive-capture step (issue #392) for BOTH archive paths — the
+ * worker archive (`SessionManager.archiveWorker`) and the persona-agent
+ * archive ({@link archiveAgentPane}): the #104 capture-before-kill pattern,
+ * one source of truth so the two copies can never diverge again (the agent
+ * path had lost the #362 `joinWrapped: true` fix via copy-paste).
+ *
+ * When the pane is alive: capture `ARCHIVED_SCROLLBACK_LINES` of scrollback
+ * with `-J` (join hard-wrapped rows into logical lines so the archived log
+ * reflows at the viewing pane's width instead of baking in the capture-time
+ * pane width), persist it under `ownerKey` (worker id / session id — the id
+ * spaces are disjoint), then kill the pane. A capture failure never blocks
+ * the archive (logged, pane still killed). Returns whether the pane was
+ * alive (and thus captured + killed); no-op on an already-dead pane.
+ */
+export async function captureArchivedScrollback(
+  deps: { tmux: Tmux; archivedLogs: ArchivedLogStore },
+  tmuxSession: string,
+  ownerKey: string,
+): Promise<boolean> {
+  if (!(await deps.tmux.hasSession(tmuxSession))) return false;
+  try {
+    const scrollback = await deps.tmux.capturePane(tmuxSession, {
+      lines: ARCHIVED_SCROLLBACK_LINES,
+      // Issue #362, both paths since #392: join hard-wrapped rows into
+      // logical lines so the archived log reflows at the viewing pane's
+      // width instead of wrapping mid-word at the capture-time pane width.
+      joinWrapped: true,
+    });
+    deps.archivedLogs.save(ownerKey, { capturedAt: new Date().toISOString(), scrollback });
+  } catch (err) {
+    console.error(`[sessions] scrollback capture failed for ${tmuxSession}:`, err);
   }
+  await deps.tmux.killSession(tmuxSession);
+  return true;
+}
+
+/** One persona agent's archive step: capture scrollback (shared helper), kill pane, mark `archivedAt`. */
+async function archiveAgentPane(deps: AgentArchiveDeps, session: Session): Promise<void> {
+  await captureArchivedScrollback(deps, session.tmuxSession, session.id);
   deps.registry.markSessionArchived(session.id, new Date().toISOString());
 }
