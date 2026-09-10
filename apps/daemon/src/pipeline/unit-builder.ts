@@ -4,17 +4,16 @@
  * A *unit* is everything one registered project needs to participate in
  * the GitHub automation loop:
  *
- * - an {@link IssueWatcher} (only when the project has auto-spawn enabled,
- *   i.e. `settings.autoAgentUsername !== null`) feeding the shared
- *   {@link IssueSpawnPipeline};
+ * - an {@link IssueWatcher} (always on — assignment-driven spawning, issue
+ *   #416) feeding the shared {@link IssueSpawnPipeline};
  * - a {@link PullRequestWatcher} feeding the project's
  *   {@link PullRequestPipeline};
  * - a persisted {@link PRTracker} (`<stateDir>/pr-tracker/<projectId>.json`)
  *   and {@link IssueCursor} (`<stateDir>/issue-cursor/<projectId>.json`), so
  *   the PR loop and the catch-up sweep survive daemon restarts.
  *
- * Units are identity-keyed by a `configKey` (repo URL + auto-agent
- * username): a changed key means the unit is stopped and rebuilt.
+ * Units are identity-keyed by a `configKey` (repo URL): a changed key means
+ * the unit is stopped and rebuilt.
  */
 
 import path from "node:path";
@@ -88,7 +87,7 @@ export interface ProjectUnit {
   repoUrl: string;
   /** Identity of the settings that produced this unit — change ⇒ rebuild. */
   configKey: string;
-  issueWatcher: IssueWatcher | null;
+  issueWatcher: IssueWatcher;
   /** Persisted high-water mark of processed issue numbers (issue #50). */
   issueCursor: IssueCursor;
   /** Catch-up sweep loop (`null` when no catch-up is in progress). */
@@ -114,7 +113,7 @@ export interface UnitBuilderDeps {
    * Review account accessors (issue #407), read fresh: the token gates the
    * review flow (set = reviewer panes run gh as the second account and file
    * real reviews); the username is the review-user identity the
-   * PR-assignment leg (#408 lifecycle, #416 assignment spawning) keys off.
+   * PR-assignment leg (#408 lifecycle) keys off.
    */
   reviewAccountToken?: () => string | null;
   reviewAccountUser?: () => string | null;
@@ -139,26 +138,21 @@ export function buildUnit(deps: UnitBuilderDeps, projectId: string, repoUrl: str
     return undefined;
   }
   const gh = deps.gh(repoUrl);
-  const project = deps.projects.get(projectId);
-  if (project === undefined) return undefined;
+  // Existence check only — the pipelines read settings fresh per decision.
+  if (deps.projects.get(projectId) === undefined) return undefined;
   const emit = (event: GithubWatcherEvent): void => deps.onWatcherEvent(projectId, event);
 
-  // Auto-spawn semantics: only watch issues created by / assigned to the
-  // project's auto-agent username (PRD: "created or assigned to the
-  // configured username"); no username ⇒ no issue watcher at all.
-  const username = project.settings.autoAgentUsername;
-  const issueWatcher =
-    username === null
-      ? null
-      : new IssueWatcher({
-          gh,
-          projectId,
-          repo,
-          username,
-          pollIntervalMs: deps.pollIntervalMs,
-          emit,
-          onError: (err) => deps.onError(err, `issue-watcher:${projectId}`),
-        });
+  // Assignment-driven spawning (issue #416): the issue watcher is always
+  // on and watches every open issue — the pipeline spawns on any
+  // `issue.assigned` transition, no per-user setting involved.
+  const issueWatcher = new IssueWatcher({
+    gh,
+    projectId,
+    repo,
+    pollIntervalMs: deps.pollIntervalMs,
+    emit,
+    onError: (err) => deps.onError(err, `issue-watcher:${projectId}`),
+  });
   const prWatcher = new PullRequestWatcher({
     gh,
     projectId,

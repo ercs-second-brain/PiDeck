@@ -12,7 +12,6 @@ import { projectSettingsSchema } from "./index.js";
 describe("domain: project settings", () => {
   it("accepts per-project pipeline toggle overrides (issue #322)", () => {
     const settings = projectSettingsSchema.parse({
-      autoAgentUsername: null,
       autoReview: false,
       autoFixCi: true,
       terminateOnMerge: null, // explicit clear → inherit the daemon-wide toggle

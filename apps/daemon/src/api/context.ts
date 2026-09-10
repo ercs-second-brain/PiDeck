@@ -291,7 +291,6 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     layout,
     // agent/README.md: daemon-wide defaults seed new projects.
     defaultSettings: () => ({
-      autoAgentUsername: settings.get().autoAgentUsername,
       workerConcurrency: settings.get().defaultWorkerConcurrency,
     }),
     // Mid-run register/update/delete → watcher/pipeline resync (issue #46).

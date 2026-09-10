@@ -30,5 +30,5 @@ Creates an issue in the project's GitHub repository via the `gh` CLI. PiDeck doe
 ## Rules
 
 - Never create issues on repositories outside the current project without the user asking.
-- Do not assign the issue to the auto-agent username yourself — issue creation and assignment events are what the daemon's auto-spawn pipeline reacts to (exact trigger semantics: see the issue pipeline in `apps/daemon/src/pipeline/issues`); leave assignment to the user or orchestrator unless explicitly requested.
+- Assigning any GitHub user to an issue is the deterministic worker-spawn trigger (issue #416 — see the issue pipeline in `apps/daemon/src/pipeline/issues`): assigning spawns a worker within a poll interval, unassigning/closing archives it. Leave assignment to the user or orchestrator unless explicitly requested.
 - Report the issue URL back to the requester.

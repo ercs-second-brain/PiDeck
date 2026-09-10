@@ -1,9 +1,8 @@
 /**
  * Daemon-wide settings (`<stateDir>/settings.json`, all projects): default
- * auto-agent username, default worker concurrency applied to new projects,
- * the worker-pipeline toggles that gate the PR loop's always-on behaviors
- * (issue #106, default ON), and the merged-PR browser-notification toggle
- * (issue #111, default OFF).
+ * worker concurrency applied to new projects, the worker-pipeline toggles
+ * that gate the PR loop's always-on behaviors (issue #106, default ON), and
+ * the merged-PR browser-notification toggle (issue #111, default OFF).
  */
 
 import { z } from "zod";
@@ -14,7 +13,6 @@ import { JsonStore } from "../json-store.js";
 const persistedSchema = settingsSchema.extend({ version: z.literal(1) });
 
 const DEFAULT_SETTINGS: Settings = {
-  autoAgentUsername: null,
   // Issue #280: new projects default to a 3-worker concurrency cap (was 1).
   defaultWorkerConcurrency: 3,
   terminateOnMerge: true,

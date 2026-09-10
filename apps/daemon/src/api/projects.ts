@@ -49,7 +49,7 @@ interface Persisted {
 type ProjectSettingsPatch = Partial<
   Pick<
     ProjectSettings,
-    "autoAgentUsername" | "workerConcurrency" | "terminateOnMerge" | "autoFixCi" | "autoFixReviewComments" | "autoReview"
+    "workerConcurrency" | "terminateOnMerge" | "autoFixCi" | "autoFixReviewComments" | "autoReview"
   >
 >;
 
@@ -60,7 +60,6 @@ function resolveSettings(
 ): ProjectSettings {
   if (patch === undefined) return base;
   return {
-    autoAgentUsername: patch.autoAgentUsername !== undefined ? patch.autoAgentUsername : base.autoAgentUsername,
     // Issue #168: `undefined` = field not sent (keep the base); `null` =
     // explicitly cleared → unbounded (issue #14 semantics); a number = cap.
     // Normalizing `null` → `undefined` here keeps every stored project and
@@ -180,9 +179,7 @@ export interface ProjectTeardown {
   forgetBoard: (projectId: string) => void;
 }
 
-const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
-  autoAgentUsername: null,
-};
+const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {};
 
 export class ProjectService {
   private readonly store: ProjectStore;

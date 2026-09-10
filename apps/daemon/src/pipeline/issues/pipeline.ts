@@ -1,21 +1,23 @@
 /**
- * Issue→auto-spawn pipeline (issue #10).
+ * Issue→worker-spawn pipeline, assignment-driven (issues #10, #416).
  *
- * Consumes the github issue watcher's events and turns eligible issues into
- * running workers:
+ * Consumes the github issue watcher's events and turns assigned issues into
+ * running workers. Assignment is the deterministic trigger (B36 #416): the
+ * orchestrator assigns a GitHub user to an issue when it wants a worker —
+ * **any** assignment (no per-user setting; the old `autoAgentUsername`
+ * gate is gone) — and the assignment spawns the worker:
  *
- * 1. **Filter** — only issues in a registered project with auto-spawn
- *    enabled (`settings.autoAgentUsername !== null`) are considered;
- *    `issue.created` qualifies directly, `issue.assigned` only when the
- *    issue is assigned to the configured auto-agent username.
+ * 1. **Trigger** — `issue.assigned` events only; issue creation spawns
+ *    nothing (an unassigned issue means no worker wanted yet).
  * 2. **Blocked check** — the native "blocked by" relationship links are
  *    resolved (closed and cross-repo blockers included in the detail) and
  *    filtered to **open** blockers client-side; any open blocker suppresses
  *    the spawn.
  * 3. **Dedupe** — at most one worker per project+issue, idempotent on
- *    event redelivery: an in-memory in-flight/succeeded map guards the
- *    pipeline lifetime, and non-terminal registry workers (surviving a
- *    daemon restart) are checked via the {@link WorkerSpawner} port.
+ *    event redelivery and re-assignment: an in-memory in-flight/succeeded
+ *    map guards the pipeline lifetime, and non-terminal registry workers
+ *    (surviving a daemon restart) are checked via the {@link WorkerSpawner}
+ *    port.
  * 4. **Spawn** — through the {@link SpawnScheduler} and the
  *    {@link WorkerSpawner} port (default: `SessionManager.spawnWorker`).
  *    The default {@link QueueingScheduler} honors the project's
@@ -28,7 +30,12 @@
  *    `kanban.card.moved` event (backlog → in_progress, full card attached)
  *    is emitted on {@link IssueSpawnPipeline.kanbanEvents} for the API
  *    layer (#9) to forward to connected webapps.
- * 6. **Unblock sweep** (issue #408): a spawn suppressed by open blockers is
+ * 6. **Retract** (issue #416) — `issue.unassigned` / `issue.closed` events
+ *    cancel the lifecycle: queued spawn tasks are dropped (scheduler
+ *    cancel), blocked records cleared, dedupe marks released, and any
+ *    non-terminal worker for the issue is archived — unassign/close never
+ *    leave zombie workers. Re-assigning later spawns a fresh worker.
+ * 7. **Unblock sweep** (issue #408): a spawn suppressed by open blockers is
  *    recorded; {@link IssueSpawnPipeline.sweepUnblocked} re-evaluates those
  *    tickets when a PR merges in the project (its "Closes"-linked issues
  *    just closed), re-spawning the unblocked ones through the same matrix —
@@ -101,9 +108,19 @@ export class IssueSpawnPipeline {
   /**
    * Issues this pipeline has accepted for spawn (in flight or already
    * spawned) — the redelivery idempotence guard. Entries are removed when
-   * a spawn attempt fails so a redelivered event can retry.
+   * a spawn attempt fails (retry) or the issue is retracted (#416: a later
+   * assignment may spawn again).
    */
   private readonly accepted = new Set<string>();
+
+  /**
+   * Retracted issues per #416 (unassign/close observed while a spawn task
+   * was queued or already running): the scheduler cannot cancel a started
+   * task, so the spawn path re-checks this mark right before (and after)
+   * spawning and archives instead. Cleared when the issue is assigned
+   * again. In-memory by design — same restart semantics as `accepted`.
+   */
+  private readonly retracted = new Set<string>();
 
   /**
    * Blocked tickets per project (issue #408): spawns suppressed by open
@@ -129,21 +146,29 @@ export class IssueSpawnPipeline {
   }
 
   /**
-   * Handles one watcher event. Synchronous: filtering and the dedupe mark
-   * happen inline, the (potentially slow) blocked check + spawn run as a
-   * scheduler task.
+   * Handles one watcher event. Synchronous: filtering, the dedupe/retract
+   * marks and the cancel happen inline, the (potentially slow) blocked
+   * check + spawn run as a scheduler task.
+   *
+   * Assignment-driven (#416): `issue.assigned` spawns; `issue.created`
+   * never does; `issue.unassigned` / `issue.closed` retract the issue's
+   * spawn lifecycle (no queued spawn, no zombie worker).
    */
   handleEvent(event: GithubWatcherEvent): void {
-    if (event.type !== "issue.created" && event.type !== "issue.assigned") return;
+    if (event.type === "issue.unassigned" || event.type === "issue.closed") {
+      const issue = event.issue;
+      if (this.projects.get(issue.projectId) === undefined) return; // not a registered project
+      this.retract(issue, event.type === "issue.closed" ? "issue closed" : "issue unassigned");
+      return;
+    }
+    if (event.type !== "issue.assigned") return; // issue.created spawns nothing (#416)
     const issue = event.issue;
     const registered = this.projects.get(issue.projectId);
     if (registered === undefined) return; // not a registered project
-    const username = registered.project.settings.autoAgentUsername;
-    if (username === null) return; // auto-spawn disabled for this project
-    if (event.type === "issue.assigned" && issue.assignee !== username) return;
 
     const key = issueKey(issue);
-    if (this.accepted.has(key)) return; // already in flight / already spawned
+    this.retracted.delete(key); // a fresh assignment overrides an earlier retract
+    if (this.accepted.has(key)) return; // already in flight / already spawned: spawn once
     this.accepted.add(key);
     this.scheduler.schedule(
       () => this.spawnFor(registered, issue, key),
@@ -158,6 +183,11 @@ export class IssueSpawnPipeline {
   /** Whether this pipeline has accepted the issue for spawn (dedupe view, tests/ops). */
   isAccepted(projectId: string, issueNumber: RefNumber): boolean {
     return this.accepted.has(`${projectId}#${issueNumber}`);
+  }
+
+  /** Whether the issue is currently retracted (unassigned/closed — tests/ops). */
+  isRetracted(projectId: string, issueNumber: RefNumber): boolean {
+    return this.retracted.has(`${projectId}#${issueNumber}`);
   }
 
   /** Whether this pipeline has the issue recorded as blocked (tests/ops). */
@@ -178,7 +208,7 @@ export class IssueSpawnPipeline {
     const recorded = this.blocked.get(projectId);
     if (recorded === undefined || recorded.size === 0) return;
     const registered = this.projects.get(projectId);
-    if (registered === undefined || registered.project.settings.autoAgentUsername === null) return;
+    if (registered === undefined) return;
     for (const [number, issue] of [...recorded]) {
       try {
         // A worker already runs this ticket (spawned elsewhere since it was
@@ -228,6 +258,24 @@ export class IssueSpawnPipeline {
     this.blocked.set(issue.projectId, perProject);
   }
 
+  /**
+   * Retracts an issue's spawn lifecycle (issue #416): drops any queued
+   * spawn task, clears the dedupe and blocked records (a later assignment
+   * may spawn again), and archives any non-terminal worker for the issue —
+   * unassign/close must not leave zombie workers. The retract mark guards
+   * the cancel race with an in-flight spawn task (see {@link spawnFor}).
+   */
+  private retract(issue: Issue, reason: string): void {
+    const key = issueKey(issue);
+    this.retracted.add(key);
+    this.accepted.delete(key);
+    this.blocked.get(issue.projectId)?.delete(issue.number);
+    this.scheduler.cancel(issue.projectId, issue.number);
+    void this.spawner
+      .archiveWorkersForIssue(issue.projectId, issue.number, `archived: ${reason} (#416)`)
+      .catch((err: unknown) => this.onError(err));
+  }
+
   private async spawnFor(registered: RegisteredProject, issue: Issue, key: string): Promise<void> {
     try {
       const openBlockers = await this.openBlockers(registered, issue);
@@ -245,11 +293,26 @@ export class IssueSpawnPipeline {
       const active = await this.spawner.listActiveWorkerIssueNumbers(registered.project.id);
       if (active.has(issue.number)) return;
 
+      // Issue #416: the issue may have been unassigned/closed while this
+      // spawn task sat queued — never spawn for a retracted issue.
+      if (this.retracted.has(key)) return;
       const spawned = await this.spawner.spawnWorker(
         registered.project.id,
         issue.number,
         buildIssueSpawnPrompt(issue),
       );
+      // The retract may have been observed while the spawn was in flight:
+      // archive the just-spawned worker instead of leaving it running
+      // (the retract path's own archive call ran before this worker
+      // registered — exactly one of the two finds it).
+      if (this.retracted.has(key)) {
+        await this.spawner.archiveWorkersForIssue(
+          registered.project.id,
+          issue.number,
+          "archived: issue unassigned or closed (#416)",
+        );
+        return;
+      }
       this.blocked.get(registered.project.id)?.delete(issue.number);
       this.emitCardMoved(registered.project.id, issue, spawned.worker.id);
     } catch (err) {

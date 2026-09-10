@@ -13,7 +13,7 @@ import { DEFAULT_WORKER_PIPELINE_SETTINGS, resolvePipelineSettings } from "./set
 const ALL_OFF = { terminateOnMerge: false, autoFixCi: false, autoFixReviewComments: false, autoReview: false };
 
 function projectSettings(overrides: Partial<ProjectSettings>): { settings: ProjectSettings } {
-  return { settings: { autoAgentUsername: null, ...overrides } };
+  return { settings: { ...overrides } };
 }
 
 describe("resolvePipelineSettings (issue #322)", () => {

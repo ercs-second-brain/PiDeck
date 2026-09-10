@@ -50,11 +50,7 @@ function makeIssue(number: number, overrides: Partial<Issue> = {}): Issue {
 
 async function registeredDaemon(options: { piReady?: boolean } = {}): Promise<TestDaemon> {
   const daemon = testDaemon(emptyRoutes(), { watcherPollIntervalMs: NO_TICK, ...options });
-  await daemon.services.projects.register({
-    mode: "clone",
-    repoUrl: REPO_URL,
-    settings: { autoAgentUsername: AUTO_USER },
-  });
+  await daemon.services.projects.register({ mode: "clone", repoUrl: REPO_URL });
   await daemon.services.automation.start();
   return daemon;
 }
@@ -116,9 +112,9 @@ describe("issue-assigned auto-spawn delivers the issue prompt (issue #266)", () 
     const sendKeys = vi.spyOn(daemon.services.sessions, "sendKeys").mockResolvedValue(undefined);
 
     daemon.services.automation.handleWatcherEvent(PROJECT, {
-      type: "issue.created",
+      type: "issue.assigned",
       at: NOW,
-      issue: makeIssue(266),
+      issue: makeIssue(266, { assignee: AUTO_USER }),
     });
     await flush();
 

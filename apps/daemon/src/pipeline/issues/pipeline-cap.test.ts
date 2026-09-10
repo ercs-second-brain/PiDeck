@@ -36,14 +36,15 @@ export function makeProject(overrides: Partial<Project["settings"]> = {}): Proje
     name: "Proj",
     repoUrl: "https://github.com/o/r",
     defaultBranch: "main",
-    settings: { autoAgentUsername: "kiss-bot", ...overrides },
+    settings: { ...overrides },
     createdAt: now,
     updatedAt: now,
   };
 }
 
-export function issueCreated(issue: Issue): GithubWatcherEvent {
-  return { type: "issue.created", at: "2026-09-06T12:00:00Z", issue };
+/** Assignment is the only spawn trigger (#416): tests drive it directly. */
+export function issueAssigned(issue: Issue, assignee = "kiss-bot"): GithubWatcherEvent {
+  return { type: "issue.assigned", at: "2026-09-06T12:00:00Z", issue: { ...issue, assignee } };
 }
 
 /** Blockers the fake resolver reports per issue number. */
@@ -111,6 +112,11 @@ function registrySpawner(): {
     async listActiveWorkerIssueNumbers(projectId) {
       return new Set(active.get(projectId) ?? []);
     },
+    async archiveWorkersForIssue(projectId, issueNumber) {
+      if (!active.get(projectId)?.has(issueNumber)) return [];
+      active.get(projectId)?.delete(issueNumber); // archived ⇒ slot freed
+      return [];
+    },
   };
   return {
     spawner,
@@ -151,7 +157,7 @@ describe("IssueSpawnPipeline worker concurrency cap (#14)", () => {
     const { spawner, spawns, stopWorker } = registrySpawner();
     const { pipeline, drain } = makeCappedHarness(project, spawner);
 
-    for (const n of [1, 2, 3, 4, 5]) pipeline.handleEvent(issueCreated(openIssue(n)));
+    for (const n of [1, 2, 3, 4, 5]) pipeline.handleEvent(issueAssigned(openIssue(n)));
     await flush();
     expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#1`, `${PROJECT_ID}#2`]);
 
@@ -181,7 +187,7 @@ describe("IssueSpawnPipeline worker concurrency cap (#14)", () => {
     const { spawner, spawns } = registrySpawner();
     const { pipeline } = makeCappedHarness(project, spawner);
 
-    for (const n of [1, 2, 3, 4, 5]) pipeline.handleEvent(issueCreated(openIssue(n)));
+    for (const n of [1, 2, 3, 4, 5]) pipeline.handleEvent(issueAssigned(openIssue(n)));
     await flush();
     expect(spawnKeys(spawns)).toEqual([
       `${PROJECT_ID}#1`,
@@ -206,10 +212,11 @@ describe("IssueSpawnPipeline worker concurrency cap (#14)", () => {
         return spawner.spawnWorker(projectId, issueNumber);
       },
       listActiveWorkerIssueNumbers: (projectId) => spawner.listActiveWorkerIssueNumbers(projectId),
+      archiveWorkersForIssue: (projectId, issueNumber, message) => spawner.archiveWorkersForIssue(projectId, issueNumber, message),
     };
     const { pipeline, drain } = makeCappedHarness(project, gated);
 
-    for (const n of [1, 2, 3]) pipeline.handleEvent(issueCreated(openIssue(n)));
+    for (const n of [1, 2, 3]) pipeline.handleEvent(issueAssigned(openIssue(n)));
     await flush();
     // #1's spawn task is still in flight (slot held by the task, not yet by a
     // worker) and #2's worker is active → #3 must wait despite cap 2.
@@ -237,8 +244,8 @@ describe("IssueSpawnPipeline worker concurrency cap (#14)", () => {
       onError: (err) => errors.push(err),
     });
 
-    pipeline.handleEvent(issueCreated(openIssue(1)));
-    pipeline.handleEvent(issueCreated(openIssue(2)));
+    pipeline.handleEvent(issueAssigned(openIssue(1)));
+    pipeline.handleEvent(issueAssigned(openIssue(2)));
     await flush();
     expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#1`]);
     expect(errors).toEqual([]);

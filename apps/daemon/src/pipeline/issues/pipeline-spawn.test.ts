@@ -1,13 +1,14 @@
 /**
  * IssueSpawnPipeline unit tests (split from pipeline.test.ts, issue #400):
  * the spawn/not-spawn matrix — blockers (live resolver + inline detail),
- * username eligibility, project/event filters — plus redelivery/dedupe
+ * project/event filters — plus redelivery/dedupe, the #416 assignment
+ * semantics (spawn once; unassign/close retracts without zombie workers)
  * and the kanban event emitter. The shared fakes and the concurrency-cap
  * queueing tests live in pipeline-cap.test.ts.
  */
 
 import { describe, expect, it } from "vitest";
-import { kanbanUpdateEventSchema, type GithubWatcherEvent, type Issue, type Project } from "@pideck/shared";
+import { kanbanUpdateEventSchema, type Project } from "@pideck/shared";
 
 import { Emitter } from "./emitter.js";
 import { QueueingScheduler } from "./scheduler.js";
@@ -15,16 +16,20 @@ import { IssueSpawnPipeline } from "./pipeline.js";
 import type { RegisteredProject, WorkerSpawner } from "./ports.js";
 import { makeIssue } from "../../testing/fixtures.js";
 import type { SpawnedWorker } from "../../sessions/manager.js";
-import { PROJECT_ID, REPO, flush, issueCreated, makeProject, scriptedBlockerResolver, spawnKeys, type BlockerScript } from "./pipeline-cap.test.js";
+import { PROJECT_ID, REPO, flush, issueAssigned, makeProject, scriptedBlockerResolver, spawnKeys, type BlockerScript } from "./pipeline-cap.test.js";
 
-function fakeSpawner(options: { active?: number[] } = {}): {
+export function fakeSpawner(options: { active?: number[] } = {}): {
   spawner: WorkerSpawner;
   spawns: Array<{ projectId: string; issueNumber: number }>;
+  archivedKeys: string[];
 } {
   const spawns: Array<{ projectId: string; issueNumber: number }> = [];
+  const active = new Set<number>(options.active ?? []);
+  const archivedKeys: string[] = [];
   const spawner: WorkerSpawner = {
     async spawnWorker(projectId, issueNumber) {
       spawns.push({ projectId, issueNumber });
+      active.add(issueNumber);
       const n = spawns.length;
       const spawned: SpawnedWorker = {
         session: {
@@ -50,21 +55,28 @@ function fakeSpawner(options: { active?: number[] } = {}): {
       return spawned;
     },
     async listActiveWorkerIssueNumbers() {
-      return new Set(options.active ?? []);
+      return new Set(active);
+    },
+    async archiveWorkersForIssue(projectId, issueNumber) {
+      if (!active.has(issueNumber)) return [];
+      active.delete(issueNumber); // archived ⇒ slot freed
+      archivedKeys.push(`${projectId}#${issueNumber}`);
+      return [];
     },
   };
-  return { spawner, spawns };
+  return { spawner, spawns, archivedKeys };
 }
 
-interface Harness {
+export interface Harness {
   pipeline: IssueSpawnPipeline;
   spawns: Array<{ projectId: string; issueNumber: number }>;
+  archivedKeys: string[];
   kanbanEvents: unknown[];
   resolveCalls: number[];
   errors: unknown[];
 }
 
-function makeHarness(options: {
+export function makeHarness(options: {
   project?: Project;
   projects?: Map<string, RegisteredProject>;
   blockerScript?: BlockerScript;
@@ -77,7 +89,10 @@ function makeHarness(options: {
     ]);
   const resolveCalls: number[] = [];
   const blockers = scriptedBlockerResolver(options.blockerScript ?? new Map(), resolveCalls);
-  const { spawner, spawns } = options.spawner === undefined ? fakeSpawner() : { spawner: options.spawner, spawns: [] as Array<{ projectId: string; issueNumber: number }> };
+  const { spawner, spawns, archivedKeys } =
+    options.spawner === undefined
+      ? fakeSpawner()
+      : { spawner: options.spawner, spawns: [] as Array<{ projectId: string; issueNumber: number }>, archivedKeys: [] as string[] };
   const errors: unknown[] = [];
   const pipeline = new IssueSpawnPipeline({
     projects: { get: (id) => projects.get(id) },
@@ -92,11 +107,7 @@ function makeHarness(options: {
   });
   const kanbanEvents: unknown[] = [];
   pipeline.kanbanEvents.on((event) => kanbanEvents.push(event));
-  return { pipeline, spawns, kanbanEvents, resolveCalls, errors };
-}
-
-function issueAssigned(issue: Issue): GithubWatcherEvent {
-  return { type: "issue.assigned", at: "2026-09-06T12:00:00Z", issue };
+  return { pipeline, spawns, archivedKeys, kanbanEvents, resolveCalls, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +118,7 @@ describe("IssueSpawnPipeline spawn matrix (blockers)", () => {
   it("spawns a worker for a fresh unblocked issue and emits the kanban card move", async () => {
     const { pipeline, spawns, kanbanEvents } = makeHarness({ blockerScript: new Map([[1, []]]) });
 
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
 
     expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#1`]);
@@ -134,14 +145,14 @@ describe("IssueSpawnPipeline spawn matrix (blockers)", () => {
     const script: BlockerScript = new Map([[1, [{ number: 2, state: "open", repository: null }]]]);
     const { pipeline, spawns, kanbanEvents } = makeHarness({ blockerScript: script });
 
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
     expect(spawns).toHaveLength(0);
     expect(kanbanEvents).toHaveLength(0);
 
     // Blocker closes; a redelivered event now spawns.
     script.set(1, [{ number: 2, state: "closed", repository: null }]);
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
     expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#1`]);
   });
@@ -150,7 +161,7 @@ describe("IssueSpawnPipeline spawn matrix (blockers)", () => {
     const { pipeline, spawns } = makeHarness({
       blockerScript: new Map([[1, [{ number: 2, state: "closed", repository: null }]]]),
     });
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
     expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#1`]);
   });
@@ -159,7 +170,7 @@ describe("IssueSpawnPipeline spawn matrix (blockers)", () => {
     const { pipeline, spawns } = makeHarness({
       blockerScript: new Map([[1, [{ number: 9, state: "open", repository: "other/repo" }]]]),
     });
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
     expect(spawns).toHaveLength(0);
   });
@@ -175,7 +186,7 @@ describe("IssueSpawnPipeline spawn matrix (blockers)", () => {
 
     // Inline detail contains only a closed blocker → spawn, resolver untouched.
     pipeline.handleEvent(
-      issueCreated(makeIssue(7, { blockers: [{ number: 6, state: "closed", repository: null }] })),
+      issueAssigned(makeIssue(7, { blockers: [{ number: 6, state: "closed", repository: null }] })),
     );
     await flush();
     expect(resolveCalls).toEqual([]);
@@ -183,46 +194,42 @@ describe("IssueSpawnPipeline spawn matrix (blockers)", () => {
 
     // Inline detail with an open (cross-repo) blocker → no spawn, resolver untouched.
     pipeline.handleEvent(
-      issueCreated(makeIssue(8, { blockers: [{ number: 9, state: "open", repository: "x/y" }] })),
+      issueAssigned(makeIssue(8, { blockers: [{ number: 9, state: "open", repository: "x/y" }] })),
     );
     await flush();
     expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#7`]);
   });
 });
 
-describe("IssueSpawnPipeline spawn eligibility (username, project & event filters)", () => {
-  it("spawns when the issue is assigned to the configured auto-agent username", async () => {
-    const { pipeline, spawns } = makeHarness({ blockerScript: new Map([[3, []]]) });
-    pipeline.handleEvent(issueAssigned(makeIssue(3, { assignee: "kiss-bot" })));
-    await flush();
-    expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#3`]);
-  });
-
-  it("ignores issues assigned to other users", async () => {
-    const { pipeline, spawns, kanbanEvents } = makeHarness({ blockerScript: new Map([[3, []]]) });
-    pipeline.handleEvent(issueAssigned(makeIssue(3, { assignee: "someone-else" })));
-    await flush();
-    expect(spawns).toHaveLength(0);
-    expect(kanbanEvents).toHaveLength(0);
-  });
-
-  it("ignores everything when auto-spawn is disabled (null username)", async () => {
+describe("IssueSpawnPipeline spawn eligibility (assignment-driven, #416)", () => {
+  it("spawns on any assignment — no per-user setting", async () => {
     const { pipeline, spawns } = makeHarness({
-      project: makeProject({ autoAgentUsername: null }),
       blockerScript: new Map([
-        [1, []],
-        [2, []],
+        [3, []],
+        [4, []],
       ]),
     });
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
-    pipeline.handleEvent(issueAssigned(makeIssue(2, { assignee: "kiss-bot" })));
+    pipeline.handleEvent(issueAssigned(makeIssue(3, { assignee: "kiss-bot" })));
+    pipeline.handleEvent(issueAssigned(makeIssue(4, { assignee: "someone-else" })));
+    await flush();
+    expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#3`, `${PROJECT_ID}#4`]);
+  });
+
+  it("never spawns on issue.created — assignment is the only trigger", async () => {
+    const { pipeline, spawns } = makeHarness({ blockerScript: new Map([[1, []]]) });
+    pipeline.handleEvent({ type: "issue.created", at: "2026-09-06T12:00:00Z", issue: makeIssue(1) });
     await flush();
     expect(spawns).toHaveLength(0);
+    // A later assignment of the same (seen) issue spawns.
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
+    await flush();
+    expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#1`]);
   });
 
   it("ignores issues in unregistered projects", async () => {
     const { pipeline, spawns } = makeHarness({ blockerScript: new Map([[1, []]]) });
-    pipeline.handleEvent(issueCreated(makeIssue(1, { projectId: "ghost" })));
+    pipeline.handleEvent(issueAssigned(makeIssue(1, { projectId: "ghost" })));
+    pipeline.handleEvent({ type: "issue.unassigned", at: "2026-09-06T12:00:00Z", issue: makeIssue(2, { projectId: "ghost" }) });
     await flush();
     expect(spawns).toHaveLength(0);
   });
@@ -251,13 +258,13 @@ describe("IssueSpawnPipeline spawn eligibility (username, project & event filter
   });
 });
 
-describe("IssueSpawnPipeline redelivery & dedupe", () => {
-  it("never spawns twice for the same issue (redelivery idempotence)", async () => {
+describe("IssueSpawnPipeline redelivery & dedupe (#416: spawn once)", () => {
+  it("never spawns twice for the same issue — re-assignment does not double-spawn", async () => {
     const { pipeline, spawns } = makeHarness({ blockerScript: new Map([[1, []]]) });
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
-    pipeline.handleEvent(issueAssigned(makeIssue(1, { assignee: "kiss-bot" })));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1), "someone-else"));
     await flush();
     expect(spawnKeys(spawns)).toEqual([`${PROJECT_ID}#1`]);
   });
@@ -265,7 +272,7 @@ describe("IssueSpawnPipeline redelivery & dedupe", () => {
   it("does not spawn a second worker when an active worker already exists (restart safety)", async () => {
     const { spawner, spawns } = fakeSpawner({ active: [1] });
     const { pipeline } = makeHarness({ blockerScript: new Map([[1, []]]), spawner });
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
     expect(spawns).toHaveLength(0);
   });
@@ -279,20 +286,21 @@ describe("IssueSpawnPipeline redelivery & dedupe", () => {
         return base.spawner.spawnWorker(projectId, issueNumber);
       },
       listActiveWorkerIssueNumbers: (projectId) => base.spawner.listActiveWorkerIssueNumbers(projectId),
+      archiveWorkersForIssue: (projectId, issueNumber, message) => base.spawner.archiveWorkersForIssue(projectId, issueNumber, message),
     };
     const { pipeline, kanbanEvents, errors } = makeHarness({
       blockerScript: new Map([[1, []]]),
       spawner,
     });
 
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
     expect(base.spawns).toHaveLength(0);
     expect(kanbanEvents).toHaveLength(0);
     expect(errors).toHaveLength(1);
 
     fail = false;
-    pipeline.handleEvent(issueCreated(makeIssue(1)));
+    pipeline.handleEvent(issueAssigned(makeIssue(1)));
     await flush();
     expect(spawnKeys(base.spawns)).toEqual([`${PROJECT_ID}#1`]);
   });

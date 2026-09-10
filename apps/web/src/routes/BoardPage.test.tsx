@@ -36,7 +36,7 @@ const project: Project = projectSchema.parse({
   name: "Demo",
   repoUrl: "https://github.com/o/r",
   defaultBranch: "main",
-  settings: { autoAgentUsername: "octocat" },
+  settings: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 });
@@ -110,8 +110,6 @@ describe("BoardPage (issue #244 smoke)", () => {
     expect(html).toContain("Demo");
     expect(html).toContain("https://github.com/o/r");
     expect(html).toContain("main");
-    expect(html).toContain("auto-spawn @");
-    expect(html).toContain("octocat");
     expect(html).toContain("card 9");
     expect(html).toContain("Workers");
     expect(html).toContain("w-1");

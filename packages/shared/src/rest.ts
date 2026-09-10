@@ -82,8 +82,6 @@ export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
  * toggle takes effect without a daemon restart.
  */
 export const settingsSchema = z.object({
-  /** Default auto-agent username applied to new projects; `null` disables auto-spawn by default. */
-  autoAgentUsername: z.string().min(1).nullable(),
   /** Default worker concurrency applied to new projects. */
   defaultWorkerConcurrency: z.number().int().min(1).max(16),
   /** Terminate (archive) a worker's pane when its PR merges. */
@@ -96,10 +94,11 @@ export const settingsSchema = z.object({
   autoReview: z.boolean().default(true),
   /**
    * GitHub login of the review account (issue #407) — the second GitHub
-   * identity the review flow runs as. The worker/PR-assignment leg (#408's
-   * lifecycle, #416's assignment spawning) and review-user-keyed triggers
-   * key off this identity; it does NOT make issue assignments imply
-   * reviews — the review assignment is a separate role. `null` = not set.
+   * identity the review flow runs as. The PR-assignment leg (#408's
+   * lifecycle) and review-user-keyed triggers key off this identity; it
+   * does NOT make issue assignments imply reviews — the review assignment
+   * is a separate role, and issue-assignment worker spawning (#416) keys
+   * off any assignee, not this user. `null` = not set.
    */
   reviewAccountUsername: z.string().min(1).nullable().default(null),
   /**

@@ -71,6 +71,12 @@ export interface WorkerSpawner {
    * worker (`spawning`/`running`/CI/review states — any non-terminal status).
    */
   listActiveWorkerIssueNumbers(projectId: string): Promise<Set<number>>;
+  /**
+   * Archives every non-terminal worker spawned for the issue (issue #416
+   * retract: unassign/close must not leave zombie workers) and returns the
+   * workers it archived. Terminal workers are left untouched.
+   */
+  archiveWorkersForIssue(projectId: string, issueNumber: number, message: string): Promise<Worker[]>;
 }
 
 /** Options for the {@link SessionManagerSpawner} adapter. */
@@ -137,5 +143,15 @@ export class SessionManagerSpawner implements WorkerSpawner {
       if (ACTIVE_WORKER_STATUSES.has(worker.status)) active.add(worker.issueNumber);
     }
     return active;
+  }
+
+  async archiveWorkersForIssue(projectId: string, issueNumber: number, message: string): Promise<Worker[]> {
+    const archived: Worker[] = [];
+    for (const worker of this.sessions.listWorkers({ projectId })) {
+      if (worker.issueNumber !== issueNumber || !ACTIVE_WORKER_STATUSES.has(worker.status)) continue;
+      const updated = await this.sessions.archiveWorker(worker.id, message);
+      if (updated !== null) archived.push(updated);
+    }
+    return archived;
   }
 }

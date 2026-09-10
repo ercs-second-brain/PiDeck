@@ -30,7 +30,6 @@ import { workerSchema } from "@pideck/shared";
 import type { GhClient } from "../github/gh.js";
 import { IssueSpawnPipeline } from "./issues/pipeline.js";
 import type { ProjectSource, WorkerSpawner } from "./issues/ports.js";
-import { SessionManagerSpawner } from "./issues/ports.js";
 import type { AgentKindLookup } from "../sessions/agent-kinds.js";
 import { countProjectOccupants } from "../sessions/occupancy.js";
 import type { PRSessionControl } from "./prs/pipeline.js";
@@ -45,41 +44,12 @@ import { KanbanBridge } from "./broadcast.js";
 import { CatchUpSweep } from "./catchup.js";
 import { watcherOptionsFromEnv } from "./env.js";
 import { associateWorkerPr } from "./issue-refs.js";
+import { hubAnnouncedSpawner } from "./spawner.js";
 import { buildUnit, registeredProject, RoutingBlockerResolver, type ProjectUnit } from "./unit-builder.js";
 import { spawnReviewAgent as spawnReviewAgentImpl } from "./prs/review-spawn.js";
 
 export { watcherOptionsFromEnv };
 export { CATCH_UP_BATCH_SIZE } from "./catchup.js";
-
-/**
- * The issue-spawn pipeline's spawner: `SessionManager`-backed spawns,
- * announced on the hub (manual spawns announce via the spawn endpoint; the
- * pipeline bypasses it), with the issue context prompt (issue #266) gated
- * on pi readiness like manual spawns and review-agent spawns (issue #56).
- */
-function hubAnnouncedSpawner(
-  options: GithubAutomationOptions,
-  bridge: KanbanBridge,
-  now: () => Date,
-  onError: (err: unknown, where: string) => void,
-): WorkerSpawner {
-  const base = new SessionManagerSpawner(options.sessions, {
-    ...(options.piReady !== undefined ? { piReady: options.piReady } : {}),
-    ...(options.promptGate !== undefined ? { promptGate: options.promptGate } : {}),
-    onError: (err) => onError(err, "issue-spawn-prompt"),
-  });
-  return {
-    spawnWorker: async (projectId, issueNumber, prompt) => {
-      const spawned = await base.spawnWorker(projectId, issueNumber, prompt);
-      bridge.broadcast(
-        { type: "worker.spawned", at: now().toISOString(), worker: workerSchema.parse(spawned.worker) },
-        `spawn:${projectId}`,
-      );
-      return spawned;
-    },
-    listActiveWorkerIssueNumbers: (projectId) => base.listActiveWorkerIssueNumbers(projectId),
-  };
-}
 
 export interface GithubAutomationOptions {
   projects: ProjectService;
@@ -100,9 +70,9 @@ export interface GithubAutomationOptions {
    * review` submissions on primary-account PRs) and the PR loop's
    * review-based triggers run; null = single-account mode (no review cycle
    * at all). `reviewAccountUser` is the second account's login — the
-   * identity the PR-assignment leg (#408 lifecycle, #416 assignment
-   * spawning) and review-user-keyed triggers key off; it does NOT make
-   * issue assignments imply reviews.
+   * identity the PR-assignment leg (#408 lifecycle) and review-user-keyed
+   * triggers key off; issue-assignment worker spawning (#416) does NOT key
+   * off it — any assignee triggers a worker.
    */
   reviewAccountToken?: () => string | null;
   reviewAccountUser?: () => string | null;
@@ -155,7 +125,6 @@ export class GithubAutomation {
     this.bridge = new KanbanBridge(options.hub, this.onError);
     this.catchUp = new CatchUpSweep({
       gh: options.gh,
-      getProject: (projectId) => options.projects.get(projectId),
       handleWatcherEvent: (projectId, event) => this.handleWatcherEvent(projectId, event),
       isRunning: () => this.running,
       isLiveUnit: (unit) => this.units.get(unit.projectId) === unit,
@@ -322,14 +291,21 @@ export class GithubAutomation {
    */
   handleWatcherEvent(projectId: string, event: GithubWatcherEvent): void {
     if (!this.running) return; // stopped: watchers are halted; late events are dropped
-    if (event.type === "issue.created" || event.type === "issue.assigned") {
+    if (
+      event.type === "issue.created" ||
+      event.type === "issue.assigned" ||
+      event.type === "issue.unassigned" ||
+      event.type === "issue.closed"
+    ) {
       this.issuePipeline.handleEvent(event);
-      // The event went through the spawn matrix (acceptance is the sync
-      // contract; blocked/dup/cap decisions are the pipeline's), so the
-      // cursor may advance past it — otherwise the next restart would
+      // Assignment events went through the spawn matrix (acceptance is the
+      // sync contract; blocked/dup/cap decisions are the pipeline's), so the
+      // cursor may advance past them — otherwise the next restart would
       // re-sweep issues the running daemon already handled (issue #50).
-      const unit = this.units.get(projectId);
-      if (unit !== undefined) unit.issueCursor.set(event.issue.number);
+      if (event.type === "issue.assigned") {
+        const unit = this.units.get(projectId);
+        if (unit !== undefined) unit.issueCursor.set(event.issue.number);
+      }
       return;
     }
     const unit = this.units.get(projectId);
@@ -388,7 +364,7 @@ export class GithubAutomation {
     const created: ProjectUnit[] = [];
     for (const project of this.options.projects.list()) {
       const existing = this.units.get(project.id);
-      const configKey = `${project.repoUrl}|${project.settings.autoAgentUsername ?? ""}`;
+      const configKey = project.repoUrl;
       if (existing !== undefined) {
         if (existing.configKey === configKey) continue;
         this.stopUnit(existing);
@@ -428,16 +404,14 @@ export class GithubAutomation {
    * against concurrent stop().
    */
   private async activateUnit(unit: ProjectUnit): Promise<void> {
-    if (unit.issueWatcher !== null) {
-      try {
-        await unit.issueWatcher.pollOnce(); // baseline: seed the snapshot, discard the backlog replay
-        await this.catchUp.reconcileAfterBaseline(unit);
-      } catch (err) {
-        this.onError(err, `issue-watcher-baseline:${unit.projectId}`);
-      }
+    try {
+      await unit.issueWatcher.pollOnce(); // baseline: seed the snapshot, discard the backlog replay
+      await this.catchUp.reconcileAfterBaseline(unit);
+    } catch (err) {
+      this.onError(err, `issue-watcher-baseline:${unit.projectId}`);
     }
     if (!this.running || this.units.get(unit.projectId) !== unit) return;
-    unit.issueWatcher?.start();
+    unit.issueWatcher.start();
     unit.prWatcher.start();
     unit.prPipeline.start();
     for (const prEvent of unit.prPipeline.reconcile()) {
@@ -448,7 +422,7 @@ export class GithubAutomation {
   private stopUnit(unit: ProjectUnit): void {
     this.catchUp.stopLoop(unit);
     this.bridge.forget(unit.projectId);
-    unit.issueWatcher?.stop();
+    unit.issueWatcher.stop();
     unit.prWatcher.stop();
     unit.prPipeline.stop();
   }

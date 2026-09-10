@@ -1,9 +1,10 @@
 /**
- * Per-project settings form (issues #264, #322): the auto-agent username,
- * worker concurrency cap (#168), and the tri-state per-project overrides of
- * the daemon-wide pipeline toggles (#322 — "inherit" sends `null`, meaning
- * the daemon-wide toggle applies; "on"/"off" send explicit overrides).
- * Rendered inside the project settings modal below the global toggles.
+ * Per-project settings form (issues #264, #322): the worker concurrency cap
+ * (#168) and the tri-state per-project overrides of the daemon-wide
+ * pipeline toggles (#322 — "inherit" sends `null`, meaning the daemon-wide
+ * toggle applies; "on"/"off" send explicit overrides). Rendered inside the
+ * project settings modal below the global toggles. (Issue #416: the
+ * auto-agent username setting is gone — assignment spawning is default.)
  */
 
 import { useState } from "react";
@@ -55,28 +56,13 @@ function ProjectPipelineToggles(props: {
   );
 }
 
-/** The two free-form per-project fields (auto-agent username, worker cap). */
+/** The free-form per-project field (worker cap). */
 function ProjectCoreFields(props: {
-  username: string;
-  onUsername: (value: string) => void;
   concurrency: string;
   onConcurrency: (value: string) => void;
 }) {
   return (
     <>
-      <div className="field">
-        <label htmlFor="auto-agent-username">Auto-agent username</label>
-        <input
-          id="auto-agent-username"
-          type="text"
-          placeholder="GitHub username, empty = disabled"
-          value={props.username}
-          onChange={(e) => props.onUsername(e.target.value)}
-        />
-        <small className="field-hint">
-          Issues created by or assigned to this user auto-spawn a worker. Empty disables auto-spawn.
-        </small>
-      </div>
       <div className="field">
         <label htmlFor="worker-concurrency">Worker concurrency cap</label>
         <input
@@ -97,7 +83,6 @@ function ProjectCoreFields(props: {
 }
 
 export function SettingsForm({ project }: { project: Project }) {
-  const [username, setUsername] = useState(project.settings.autoAgentUsername ?? "");
   const [concurrency, setConcurrency] = useState(project.settings.workerConcurrency?.toString() ?? "");
   const [toggles, setToggles] = useState(() => ({
     autoReview: toChoice(project.settings.autoReview),
@@ -110,7 +95,6 @@ export function SettingsForm({ project }: { project: Project }) {
   const [error, setError] = useState<string | null>(null);
 
   const save = async (): Promise<void> => {
-    const trimmed = username.trim();
     const capRaw = concurrency.trim();
     let cap: number | undefined;
     if (capRaw.length > 0) {
@@ -126,7 +110,6 @@ export function SettingsForm({ project }: { project: Project }) {
     try {
       await apiUpdateProject(project.id, {
         settings: {
-          autoAgentUsername: trimmed.length > 0 ? trimmed : null,
           // Issue #168: an empty field sends `null` explicitly — the daemon
           // treats it as unset (unbounded); omitting the field would keep
           // the previous cap instead of clearing it.
@@ -154,11 +137,6 @@ export function SettingsForm({ project }: { project: Project }) {
       }}
     >
       <ProjectCoreFields
-        username={username}
-        onUsername={(value) => {
-          setUsername(value);
-          setSaved(false);
-        }}
         concurrency={concurrency}
         onConcurrency={(value) => {
           setConcurrency(value);

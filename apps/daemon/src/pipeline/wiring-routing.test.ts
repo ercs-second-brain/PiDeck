@@ -85,11 +85,7 @@ function restPull(number: number, sha: string): Record<string, unknown> {
 
 export async function registeredDaemon(ghRoutes: FakeGhRoutes = emptyRoutes()): Promise<TestDaemon & { automation: GithubAutomation }> {
   const daemon = testDaemon(ghRoutes, { watcherPollIntervalMs: NO_TICK });
-  await daemon.services.projects.register({
-    mode: "clone",
-    repoUrl: REPO_URL,
-    settings: { autoAgentUsername: AUTO_USER },
-  });
+  await daemon.services.projects.register({ mode: "clone", repoUrl: REPO_URL });
   return { ...daemon, automation: daemon.services.automation };
 }
 
@@ -112,7 +108,7 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Issue → auto-spawn (watcher event routing)
+// Issue → worker spawn (watcher event routing, #416)
 // ---------------------------------------------------------------------------
 
 describe("GithubAutomation issue wiring (#46)", () => {
@@ -123,9 +119,9 @@ describe("GithubAutomation issue wiring (#46)", () => {
     await daemon.services.automation.start();
 
     daemon.services.automation.handleWatcherEvent(PROJECT, {
-      type: "issue.created",
+      type: "issue.assigned",
       at: NOW,
-      issue: makeIssue(46),
+      issue: makeIssue(46, { assignee: AUTO_USER }),
     });
     await flush();
 
@@ -146,27 +142,62 @@ describe("GithubAutomation issue wiring (#46)", () => {
       card: { kind: "issue", number: 46, column: "in_progress", workerId: workers[0]!.id },
     });
 
-    // Dedupe: a redelivered event does not spawn a second worker.
+    // Dedupe: a re-assignment (redelivered event) does not spawn a second
+    // worker (issue #416: assignment spawns once).
     daemon.services.automation.handleWatcherEvent(PROJECT, {
-      type: "issue.created",
+      type: "issue.assigned",
       at: NOW,
-      issue: makeIssue(46),
+      issue: makeIssue(46, { assignee: AUTO_USER }),
     });
     await flush();
     expect(daemon.services.registry.listWorkers({ projectId: PROJECT })).toHaveLength(1);
   });
 
-  it("does not auto-spawn for a project without auto-spawn enabled", async () => {
-    const daemon = testDaemon(emptyRoutes(), { watcherPollIntervalMs: NO_TICK });
+  it("does not spawn on issue.created — assignment is the only spawn trigger (#416)", async () => {
+    const daemon = await registeredDaemon();
     active = daemon;
-    await daemon.services.projects.register({ mode: "clone", repoUrl: REPO_URL }); // no autoAgentUsername
     broadcasts(daemon);
     await daemon.services.automation.start();
-    expect(daemon.services.automation.watchedProjectIds).toEqual([PROJECT]); // PR loop only, no issue watcher
 
     daemon.services.automation.handleWatcherEvent(PROJECT, { type: "issue.created", at: NOW, issue: makeIssue(1) });
     await flush();
     expect(daemon.services.registry.listWorkers({ projectId: PROJECT })).toHaveLength(0);
+  });
+
+  it("retracts on unassign/close: queued spawns are cancelled and running workers archived (#416)", async () => {
+    const daemon = await registeredDaemon();
+    active = daemon;
+    broadcasts(daemon);
+    await daemon.services.automation.start();
+
+    daemon.services.automation.handleWatcherEvent(PROJECT, {
+      type: "issue.assigned",
+      at: NOW,
+      issue: makeIssue(9, { assignee: AUTO_USER }),
+    });
+    await flush();
+    const worker = daemon.services.registry.listWorkers({ projectId: PROJECT })[0];
+    expect(worker).toMatchObject({ issueNumber: 9, status: "running" });
+
+    // Unassign: the worker is archived, not left as a zombie.
+    daemon.services.automation.handleWatcherEvent(PROJECT, {
+      type: "issue.unassigned",
+      at: NOW,
+      issue: makeIssue(9),
+    });
+    await flush();
+    expect(daemon.services.registry.getWorker(worker?.id ?? "")?.status).toBe("archived");
+
+    // Re-assign spawns a fresh worker (the retract cleared the dedupe mark).
+    daemon.services.automation.handleWatcherEvent(PROJECT, {
+      type: "issue.assigned",
+      at: NOW,
+      issue: makeIssue(9, { assignee: AUTO_USER }),
+    });
+    await flush();
+    const running = daemon.services.registry.listWorkers({ projectId: PROJECT, status: "running" });
+    expect(running).toHaveLength(1);
+    expect(running[0]?.status).toBe("running");
   });
 });
 
@@ -188,15 +219,15 @@ describe("GithubAutomation watcher state (#46)", () => {
 
     // SIGTERM ordering: after automation.stop() no further spawn/prompt
     // work is started, even if a late watcher event is delivered.
-    daemon.services.automation.handleWatcherEvent(PROJECT, { type: "issue.created", at: NOW, issue: makeIssue(46) });
+    daemon.services.automation.handleWatcherEvent(PROJECT, { type: "issue.assigned", at: NOW, issue: makeIssue(46, { assignee: AUTO_USER }) });
     await flush();
     expect(daemon.services.registry.listWorkers({ projectId: PROJECT })).toHaveLength(0);
   });
 
   it("start() baselines the issue watcher so the existing backlog does not mass-spawn", async () => {
-    // A pre-existing open issue authored by the auto-agent user would be
-    // emitted as `issue.created` by the watcher's first poll; the baseline
-    // sweep at start() must discard it.
+    // A pre-existing open issue would be emitted as `issue.created` by
+    // the watcher's first poll; the baseline sweep at start() must discard
+    // it (and it spawns nothing anyway — #416: assignment is the trigger).
     const daemon = await registeredDaemon({
       api: {
         "/repos/octo/repo/issues": [
@@ -230,28 +261,20 @@ describe("GithubAutomation watcher state (#46)", () => {
     await daemon.services.automation.start();
     expect(daemon.services.automation.watchedProjectIds).toEqual([PROJECT]);
 
-    await daemon.services.projects.register({
-      mode: "clone",
-      repoUrl: "https://github.com/octo/two",
-      settings: { autoAgentUsername: AUTO_USER },
-    });
+    await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/octo/two" });
     expect(daemon.automation.watchedProjectIds.sort()).toEqual([PROJECT, "octo-two"]);
   });
 
   it("is inert when disabled (PD_WATCHER_ENABLED=0 semantics)", async () => {
     const daemon = testDaemon(emptyRoutes(), { watcherEnabled: false, watcherPollIntervalMs: NO_TICK });
     active = daemon;
-    await daemon.services.projects.register({
-      mode: "clone",
-      repoUrl: REPO_URL,
-      settings: { autoAgentUsername: AUTO_USER },
-    });
+    await daemon.services.projects.register({ mode: "clone", repoUrl: REPO_URL });
     broadcasts(daemon);
     await daemon.services.automation.start();
 
     expect(daemon.services.automation.isRunning).toBe(false);
     expect(daemon.services.automation.watchedProjectIds).toEqual([]);
-    daemon.services.automation.handleWatcherEvent(PROJECT, { type: "issue.created", at: NOW, issue: makeIssue(46) });
+    daemon.services.automation.handleWatcherEvent(PROJECT, { type: "issue.assigned", at: NOW, issue: makeIssue(46, { assignee: AUTO_USER }) });
     await flush();
     expect(daemon.services.registry.listWorkers({ projectId: PROJECT })).toHaveLength(0);
   });

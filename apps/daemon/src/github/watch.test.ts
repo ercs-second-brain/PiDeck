@@ -93,32 +93,61 @@ function batchedGh(snapshots: Array<Record<string, unknown>[]>): { gh: GhClient;
 }
 
 describe("IssueWatcher", () => {
-  it("emits issue.created only for the watched user's issues", async () => {
+  it("emits issue.created for every newly seen open issue (#416: no per-user filter)", async () => {
     const gh = scriptedGh([
       { issues: [restIssue(makeIssueRecord(1)), restIssue(makeIssueRecord(2, { author: "someone-else" })), restIssue(makeIssueRecord(3, { author: "someone-else", assignees: ["eric"] }))] },
     ]);
-    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, username: "eric", emit: () => {} });
+    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
     const events = await watcher.pollOnce();
-    expect(events.map((e) => e.type)).toEqual(["issue.created", "issue.created"]);
-    expect(events.map((e) => (e.type === "issue.created" ? e.issue.number : null))).toEqual([1, 3]);
+    expect(events.map((e) => e.type)).toEqual(["issue.created", "issue.created", "issue.created"]);
+    expect(events.map((e) => (e.type === "issue.created" ? e.issue.number : null))).toEqual([1, 2, 3]);
   });
 
-  it("watches everything when username is null", async () => {
-    const gh = scriptedGh([{ issues: [restIssue(makeIssueRecord(1, { author: "someone-else" }))] }]);
-    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, username: null, emit: () => {} });
-    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created"]);
-  });
-
-  it("emits issue.assigned when the watched user becomes an assignee", async () => {
+  it("emits issue.assigned when any assignee is added — the spawn trigger (#416)", async () => {
     const gh = scriptedGh([
       { issues: [restIssue(makeIssueRecord(1))] },
       { issues: [restIssue(makeIssueRecord(1, { assignees: ["eric"] }))] },
     ]);
-    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, username: "eric", emit: () => {} });
+    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
     expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created"]);
     const events = await watcher.pollOnce();
     expect(events.map((e) => e.type)).toEqual(["issue.assigned"]);
     expect(events[0]?.type === "issue.assigned" && events[0]?.issue.assignee).toBe("eric");
+  });
+
+  it("emits issue.unassigned when an assigned issue loses all assignees (#416)", async () => {
+    const gh = scriptedGh([
+      { issues: [restIssue(makeIssueRecord(1, { assignees: ["eric"] }))] },
+      { issues: [restIssue(makeIssueRecord(1))] },
+    ]);
+    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
+    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created"]);
+    const events = await watcher.pollOnce();
+    expect(events.map((e) => e.type)).toEqual(["issue.unassigned"]);
+  });
+
+  it("does not emit unassigned while another assignee remains", async () => {
+    const gh = scriptedGh([
+      { issues: [restIssue(makeIssueRecord(1, { assignees: ["eric", "octocat"] }))] },
+      { issues: [restIssue(makeIssueRecord(1, { assignees: ["octocat"] }))] },
+    ]);
+    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
+    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created"]);
+    expect(await watcher.pollOnce()).toEqual([]);
+  });
+
+  it("emits issue.closed when a previously-seen open issue disappears from the poll (#416)", async () => {
+    const gh = scriptedGh([
+      { issues: [restIssue(makeIssueRecord(1)), restIssue(makeIssueRecord(2))] },
+      { issues: [restIssue(makeIssueRecord(1))] }, // #2 closed
+    ]);
+    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
+    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created", "issue.created"]);
+    const events = await watcher.pollOnce();
+    expect(events.map((e) => e.type)).toEqual(["issue.closed"]);
+    expect(events[0]?.type === "issue.closed" && events[0]?.issue.number).toBe(2);
+    // A reopen is seen as fresh (issue.created), not assigned.
+    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual([]);
   });
 
   it("does not re-emit created or assigned", async () => {
@@ -127,7 +156,7 @@ describe("IssueWatcher", () => {
       { issues: [restIssue(makeIssueRecord(1, { assignees: ["eric"] }))] },
       { issues: [restIssue(makeIssueRecord(1, { assignees: ["eric"] }))] },
     ]);
-    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, username: "eric", emit: () => {} });
+    const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
     expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created"]);
     expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.assigned"]);
     expect(await watcher.pollOnce()).toEqual([]);
@@ -138,7 +167,7 @@ describe("IssueWatcher", () => {
     try {
       const gh = scriptedGh([{ issues: [restIssue(makeIssueRecord(1))] }]);
       const events: GithubWatcherEvent[] = [];
-      const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, username: null, emit: (e) => events.push(e), pollIntervalMs: 10 });
+      const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: (e) => events.push(e), pollIntervalMs: 10 });
       watcher.start();
       expect(watcher.isRunning).toBe(true);
       await vi.advanceTimersByTimeAsync(DEFAULT_POLL_INTERVAL_MS);

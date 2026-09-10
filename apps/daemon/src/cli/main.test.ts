@@ -64,7 +64,7 @@ describe("run() command dispatch", () => {
         name: id,
         repoUrl: `https://github.com/o/${id}`,
         defaultBranch: "main",
-        settings: { autoAgentUsername: null, workerConcurrency: 1 },
+        settings: { workerConcurrency: 1 },
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };

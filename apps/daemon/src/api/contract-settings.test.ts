@@ -25,7 +25,6 @@ describe("settings", () => {
     const got = await api("GET", endpoints.getSettings.path);
     expect(got.status).toBe(200);
     expect(settingsSchema.parse(got.json)).toEqual({
-      autoAgentUsername: null,
       defaultWorkerConcurrency: 3,
       terminateOnMerge: true,
       autoFixCi: true,
@@ -36,11 +35,10 @@ describe("settings", () => {
       browserMergeNotifications: false,
     });
 
-    const updated = await api("PUT", endpoints.updateSettings.path, { autoAgentUsername: "auto-agent" });
+    const updated = await api("PUT", endpoints.updateSettings.path, { defaultWorkerConcurrency: 5 });
     expect(updated.status).toBe(200);
     expect(settingsSchema.parse(updated.json)).toEqual({
-      autoAgentUsername: "auto-agent",
-      defaultWorkerConcurrency: 3,
+      defaultWorkerConcurrency: 5,
       terminateOnMerge: true,
       autoFixCi: true,
       autoFixReviewComments: true,
@@ -61,6 +59,6 @@ describe("settings", () => {
     expect((await api("PUT", endpoints.updateSettings.path, { terminateOnMerge: "nope" })).status).toBe(400);
 
     // reset
-    await api("PUT", endpoints.updateSettings.path, { autoAgentUsername: null });
+    await api("PUT", endpoints.updateSettings.path, { defaultWorkerConcurrency: 3 });
   });
 });

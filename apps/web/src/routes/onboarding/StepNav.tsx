@@ -9,7 +9,7 @@ export interface StepDef {
  * (earlier in the flow, or already done per the shared onboarding state —
  * issue #165) marked done. The step list is passed in because the flows
  * split at issue #183: the global onboarding owns the pi/gh steps, the
- * project wizard the source/auto-agent steps.
+ * project wizard the repository step.
  */
 export function StepNav({
   steps,

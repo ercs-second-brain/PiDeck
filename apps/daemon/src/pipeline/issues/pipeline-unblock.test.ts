@@ -60,6 +60,9 @@ function fakeSpawner(options: { active?: number[] } = {}): {
     async listActiveWorkerIssueNumbers() {
       return new Set(options.active ?? []);
     },
+    async archiveWorkersForIssue() {
+      return [];
+    },
   };
   return { spawner, spawns };
 }
@@ -101,7 +104,7 @@ describe("IssueSpawnPipeline unblock sweep (issue #408)", () => {
     const { spawner, spawns } = fakeSpawner();
     const { pipeline } = makeHarness({ blockerScript: script, spawner });
 
-    pipeline.handleEvent({ type: "issue.created", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
+    pipeline.handleEvent({ type: "issue.assigned", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
     await flush();
     expect(spawns).toHaveLength(0);
     expect(pipeline.isRecordedBlocked(PROJECT_ID, 5)).toBe(true);
@@ -119,7 +122,7 @@ describe("IssueSpawnPipeline unblock sweep (issue #408)", () => {
     const { spawner, spawns } = fakeSpawner();
     const { pipeline } = makeHarness({ blockerScript: script, spawner });
 
-    pipeline.handleEvent({ type: "issue.created", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
+    pipeline.handleEvent({ type: "issue.assigned", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
     await flush();
 
     // Only #2 closed (its PR merged); #3 is still open.
@@ -135,7 +138,7 @@ describe("IssueSpawnPipeline unblock sweep (issue #408)", () => {
     const { spawner, spawns } = fakeSpawner({ active: [5] });
     const { pipeline } = makeHarness({ blockerScript: script, spawner });
 
-    pipeline.handleEvent({ type: "issue.created", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
+    pipeline.handleEvent({ type: "issue.assigned", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
     await flush();
     expect(pipeline.isRecordedBlocked(PROJECT_ID, 5)).toBe(true);
 
@@ -151,7 +154,7 @@ describe("IssueSpawnPipeline unblock sweep (issue #408)", () => {
     const { spawner, spawns } = fakeSpawner();
     const { pipeline } = makeHarness({ blockerScript: script, spawner, workerConcurrency: 1, occupants: 1 });
 
-    pipeline.handleEvent({ type: "issue.created", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
+    pipeline.handleEvent({ type: "issue.assigned", at: "2026-09-06T12:00:00Z", issue: issue5Blocked() });
     await flush();
     expect(pipeline.isRecordedBlocked(PROJECT_ID, 5)).toBe(true);
 

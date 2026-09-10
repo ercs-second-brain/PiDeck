@@ -67,8 +67,8 @@ describe("REST endpoint map", () => {
     expect(registerProjectRequestSchema.safeParse({ mode: "fork", name: "x" }).success).toBe(false);
   });
 
-  it("validates settings with username, concurrency, and the pipeline toggles (issue #106)", () => {
-    const settings = settingsSchema.parse({ autoAgentUsername: "eric", defaultWorkerConcurrency: 3 });
+  it("validates settings with concurrency and the pipeline toggles (issue #106)", () => {
+    const settings = settingsSchema.parse({ defaultWorkerConcurrency: 3 });
     expect(settings.defaultWorkerConcurrency).toBe(3);
     expect(settings.terminateOnMerge).toBe(true);
     expect(settings.autoFixCi).toBe(true);
@@ -78,15 +78,14 @@ describe("REST endpoint map", () => {
     expect(settings.reviewAccountToken).toBeNull();
     // Issue #407: the review account round-trips through the contract.
     const withReviewAccount = settingsSchema.parse({
-      autoAgentUsername: null,
       defaultWorkerConcurrency: 1,
       reviewAccountUsername: "review-bot",
       reviewAccountToken: "ghp_x",
     });
     expect(withReviewAccount.reviewAccountUsername).toBe("review-bot");
     expect(withReviewAccount.reviewAccountToken).toBe("ghp_x");
-    expect(settingsSchema.safeParse({ autoAgentUsername: "eric", defaultWorkerConcurrency: 0 }).success).toBe(false);
-    expect(settingsSchema.parse({ autoAgentUsername: null, defaultWorkerConcurrency: 1, autoFixCi: false }).autoFixCi).toBe(false);
+    expect(settingsSchema.safeParse({ defaultWorkerConcurrency: 0 }).success).toBe(false);
+    expect(settingsSchema.parse({ defaultWorkerConcurrency: 1, autoFixCi: false }).autoFixCi).toBe(false);
   });
 
   it("validates PR diff payloads", () => {

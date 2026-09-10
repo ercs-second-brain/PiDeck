@@ -24,9 +24,6 @@ export function BoardPage() {
           <h1 className="page-title">{project.name}</h1>
           <span className="project-repo">
             {project.repoUrl} · branch <code>{project.defaultBranch}</code>
-            {project.settings.autoAgentUsername && (
-              <span className="project-auto"> · auto-spawn @{project.settings.autoAgentUsername}</span>
-            )}
           </span>
         </div>
       </div>

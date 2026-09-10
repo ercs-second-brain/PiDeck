@@ -26,7 +26,8 @@ const NOW = "2026-09-06T12:00:00.000Z";
 
 
 /** REST issue payload (mapRestIssue shape) for the baseline/catch-up routes. */
-function restIssue(number: number, author: string = AUTO_USER, assignees: string[] = []): Record<string, unknown> {
+/** Downtime issues default to assigned (#416: only assigned issues spawn on catch-up). */
+function restIssue(number: number, author: string = AUTO_USER, assignees: string[] = [AUTO_USER]): Record<string, unknown> {
   return {
     number,
     title: `Issue ${number}`,
@@ -51,14 +52,18 @@ function cursorState(stateDir: string): number | null {
   return raw.lastSeenIssueNumber ?? null;
 }
 
-/** Registers the project (with auto-spawn settings) without starting the automation. */
+/** Registers the project without starting the automation. */
 async function registeredRoutesDaemon(
   routes: FakeGhRoutes,
-  settings: { autoAgentUsername: string | null; workerConcurrency?: number } = { autoAgentUsername: AUTO_USER },
+  settings: { workerConcurrency?: number } = {},
 ): Promise<TestDaemon & { automation: GithubAutomation }> {
   const daemon = testDaemon(routes, { watcherPollIntervalMs: NO_TICK });
   active = daemon;
-  await daemon.services.projects.register({ mode: "clone", repoUrl: REPO_URL, settings });
+  await daemon.services.projects.register({
+    mode: "clone",
+    repoUrl: REPO_URL,
+    ...(Object.keys(settings).length > 0 ? { settings } : {}),
+  });
   return { ...daemon, automation: daemon.services.automation };
 }
 
@@ -133,7 +138,7 @@ describe("GithubAutomation catch-up cursor lifecycle (#50)", () => {
 
     // The live watcher also emits #46 (its snapshot was seeded before the
     // catch-up ran); the pipeline's dedupe keeps a single worker.
-    daemon.automation.handleWatcherEvent(PROJECT, { type: "issue.created", at: NOW, issue: makeIssue(46) });
+    daemon.automation.handleWatcherEvent(PROJECT, { type: "issue.assigned", at: NOW, issue: makeIssue(46, { assignee: AUTO_USER }) });
     await flush();
     expect(daemon.services.registry.listWorkers({ projectId: PROJECT })).toHaveLength(1);
   });
@@ -149,7 +154,7 @@ describe("GithubAutomation catch-up batching & caps (#50)", () => {
     try {
       const routes = emptyRoutes();
       routes.api["/repos/octo/repo/issues"] = issuesNewestFirst(40);
-      const daemon = await registeredRoutesDaemon(routes, { autoAgentUsername: AUTO_USER, workerConcurrency: 16 });
+      const daemon = await registeredRoutesDaemon(routes, { workerConcurrency: 16 });
       broadcasts(daemon);
       await daemon.automation.start();
       daemon.automation.stop();
@@ -189,7 +194,7 @@ describe("GithubAutomation catch-up batching & caps (#50)", () => {
   it("honors the project's worker concurrency cap during catch-up", async () => {
     const routes = emptyRoutes();
     routes.api["/repos/octo/repo/issues"] = issuesNewestFirst(40);
-    const daemon = await registeredRoutesDaemon(routes, { autoAgentUsername: AUTO_USER, workerConcurrency: 1 });
+    const daemon = await registeredRoutesDaemon(routes, { workerConcurrency: 1 });
     broadcasts(daemon);
     await daemon.automation.start();
     daemon.automation.stop();
@@ -246,7 +251,7 @@ describe("GithubAutomation catch-up spawn matrix & eligibility (#50)", () => {
     expect(cursorState(daemon.stateDir)).toBe(46);
   });
 
-  it("applies the username rule to catch-up issues (author or assignee)", async () => {
+  it("applies the assignee rule to catch-up issues (assigned only, #416)", async () => {
     const routes = emptyRoutes();
     routes.api["/repos/octo/repo/issues"] = issuesNewestFirst(45);
     const daemon = await registeredRoutesDaemon(routes);
@@ -254,11 +259,11 @@ describe("GithubAutomation catch-up spawn matrix & eligibility (#50)", () => {
     await daemon.automation.start();
     daemon.automation.stop();
 
-    // #46: authored by someone else, unassigned ⇒ no spawn.
-    // #47: authored by someone else but assigned to the auto-agent ⇒ spawn.
+    // #46: unassigned ⇒ no spawn (assignment is the trigger, #416).
+    // #47: assigned ⇒ spawn, whoever authored it.
     routes.api["/repos/octo/repo/issues"] = [
       restIssue(47, "someone-else", [AUTO_USER]),
-      restIssue(46, "someone-else"),
+      restIssue(46, "someone-else", []),
       restIssue(45),
     ];
     await daemon.automation.start();
@@ -267,7 +272,7 @@ describe("GithubAutomation catch-up spawn matrix & eligibility (#50)", () => {
     const workers = daemon.services.registry.listWorkers({ projectId: PROJECT });
     expect(workers).toHaveLength(1);
     expect(workers[0]?.issueNumber).toBe(47);
-    // Non-matching issues are consumed (cursor advances past them).
+    // Unassigned issues are consumed (cursor advances past them).
     expect(cursorState(daemon.stateDir)).toBe(47);
   });
 });

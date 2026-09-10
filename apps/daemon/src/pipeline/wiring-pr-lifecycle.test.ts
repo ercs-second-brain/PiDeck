@@ -49,7 +49,7 @@ describe("GithubAutomation merge → unblock sweep (issue #408)", () => {
 
     // Issue #50 arrives blocked → suppressed and recorded for the sweep.
     daemon.services.automation.handleWatcherEvent(PROJECT, {
-      type: "issue.created",
+      type: "issue.assigned",
       at: NOW,
       issue: {
         projectId: PROJECT,
@@ -57,7 +57,7 @@ describe("GithubAutomation merge → unblock sweep (issue #408)", () => {
         title: "Follow-up work",
         state: "open",
         blockedBy: [],
-        assignee: null,
+        assignee: "octo-bot",
         url: "https://github.com/octo/repo/issues/50",
         updatedAt: NOW,
       },

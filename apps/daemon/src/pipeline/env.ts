@@ -2,8 +2,8 @@
  * Watcher/pipeline environment knobs (issue #46).
  *
  * API rate budget (why the knobs exist): per enabled project, every poll
- * costs one REST issues-list call (issue watcher, only when auto-spawn is
- * enabled) + one batched GraphQL open-PR listing (PR watcher) + the PR
+ * costs one REST issues-list call (issue watcher, always on — assignment-
+ * driven spawning, #416) + one batched GraphQL open-PR listing (PR watcher) + the PR
  * loop's per-tracked-PR enrichment (one REST pull + one check-run/review
  * batch + one comments call per tracked PR). At the default 30s interval
  * an idle project costs ~4 calls/30s; size `PD_WATCHER_POLL_INTERVAL_MS`

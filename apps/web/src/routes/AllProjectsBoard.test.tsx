@@ -39,7 +39,7 @@ function project(id: string, name: string): Project {
     name,
     repoUrl: `https://github.com/o/${id}`,
     defaultBranch: "main",
-    settings: { autoAgentUsername: null },
+    settings: {},
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   });
