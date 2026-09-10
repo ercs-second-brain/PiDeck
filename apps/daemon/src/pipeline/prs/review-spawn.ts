@@ -13,7 +13,7 @@
 
 import type { Worker } from "@pideck/shared";
 
-import type { PromptGate } from "../../agent/prompt-gate.js";
+import { deliverSpawnPrompt, type PromptGate } from "../../agent/prompt-gate.js";
 import type { SessionManager } from "../../sessions/manager.js";
 
 export interface ReviewSpawnRequest {
@@ -62,17 +62,21 @@ export async function spawnReviewAgent(projectId: string, request: ReviewSpawnRe
       ...(deps.reviewGhToken ? { env: { GH_TOKEN: deps.reviewGhToken } } : {}),
     });
     deps.broadcastSpawned(worker);
-    const ready = deps.piReady === undefined ? true : await deps.piReady();
-    if (!ready && deps.promptGate !== undefined) {
-      deps.promptGate.queue(worker, request.prompt);
-      return worker;
-    }
-    // Issue #318: wait for pi to accept input before typing (the pane was
-    // just created; typing inside pi's startup window swallows the submit
-    // Enter). Readiness wait + submit confirmation — bare-Enter nudges
-    // only, never a re-typed text.
-    await deps.sessions.deliverPromptWhenReady(worker.sessionId, request.prompt);
-    deps.sessions.updateWorkerStatus(worker.id, "running", "review agent running; prompt delivered");
+    // Issue #56/#318 gated delivery — the ONE shared spawn-path dance
+    // ({@link deliverSpawnPrompt}, issues #56/#318/#378; consolidated from
+    // four drifted copies in issue #426): pi-auth probe → queue on the
+    // gate when unready (never type a prompt into an agent that cannot
+    // run), else the #318 readiness wait + exactly-once type + submit
+    // confirmation; a pane that never readies is queued for a retry. A
+    // delivery error propagates to the catch below (the spawn reports
+    // failed through `deps.onError`; the pipeline retries on a later poll).
+    await deliverSpawnPrompt(
+      deps.sessions,
+      deps.promptGate,
+      deps.piReady,
+      { kind: "worker", worker },
+      request.prompt,
+    );
     return worker;
   } catch (err) {
     deps.onError(err);

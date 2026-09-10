@@ -30,7 +30,7 @@ function fakeSessions() {
         spawns.push({ options });
         return { worker };
       },
-      deliverPromptWhenReady: async () => undefined,
+      deliverPromptWhenReady: async () => ({ typed: true, accepted: true }),
       updateWorkerStatus: () => worker,
     },
   };

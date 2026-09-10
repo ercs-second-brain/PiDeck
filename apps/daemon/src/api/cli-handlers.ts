@@ -18,6 +18,7 @@ import { HttpError, Router } from "./router.js";
 import { NotFoundError } from "./projects.js";
 import { requireOr404 } from "./handlers.js";
 import { handleAgentKindSpawn } from "./agent-kind-spawn.js";
+import { deliverSpawnPrompt } from "../agent/prompt-gate.js";
 import { projectSpawnSchema, sessionReportPrSchema, sessionSendSchema } from "./cli-routes.js";
 import { buildIssueSpawnPrompt } from "../pipeline/issues/prompts.js";
 import { mapRestIssue } from "../github/issues.js";
@@ -73,6 +74,10 @@ async function issueSpawnPrompt(services: DaemonServices, project: Project, issu
  * delivered automatically once auth becomes ready. An unauthenticated
  * worker never reports `running`, and its prompt is never swallowed.
  *
+ * The delivery itself is the ONE shared spawn-path dance
+ * ({@link deliverSpawnPrompt}, issues #56/#318/#378; consolidated from four
+ * drifted copies in issue #426) — see agent/prompt-gate.ts.
+ *
  * Emits `worker.spawned` on the hub.
  */
 export async function spawnWorker(
@@ -104,28 +109,20 @@ export async function spawnWorker(
     issueNumber: input.issueNumber ?? 0,
     ...(prompt !== undefined ? { statusMessage: "agent running; initial prompt queued", prompt } : {}),
   });
-  const piAuth = await services.piAuth.payload();
-  if (!piAuth.ready) {
-    // Issue #56: never type a prompt into an agent that cannot run, and
-    // never leave an unauthenticated worker at `running` — the gate holds
-    // the worker at `spawning` with the precise fix in `statusMessage`.
-    services.promptGate.queue(worker, prompt);
-  } else if (prompt !== undefined) {
-    // Issue #56 parity: never type the prompt into an agent that cannot run.
-    // Issue #318: even with auth ready, the pane was just created — deliver
-    // through the readiness wait + submit confirmation (bare-Enter nudges
-    // only; the text is never re-typed). On timeout the prompt is queued on
-    // the gate instead; a typed-but-unconfirmed draft stays visible in the
-    // composer and must NOT be queued (double delivery).
-    const delivered = await services.sessions.deliverPromptWhenReady(worker.sessionId, prompt);
-    if (delivered.typed) {
-      services.sessions.updateWorkerStatus(worker.id, "running", delivered.accepted
-        ? "agent running; initial prompt delivered"
-        : "agent running; initial prompt typed (submit unconfirmed)");
-    } else {
-      services.promptGate.queue(worker, prompt);
-    }
-  }
+  // The one gated delivery dance shared with every other spawn path
+  // (issues #56/#318/#378, consolidated in issue #426): pi-auth probe →
+  // queue on the gate when unready (never type a prompt into an agent
+  // that cannot run), else the #318 readiness wait + exactly-once type +
+  // submit confirmation — a pane that never readies is queued for a
+  // retry, a typed-but-unconfirmed draft is NOT (it would double-deliver).
+  // Errors propagate: the awaited route fails the spawn request.
+  await deliverSpawnPrompt(
+    services.sessions,
+    services.promptGate,
+    () => services.piAuth.payload().then((piAuth) => piAuth.ready),
+    { kind: "worker", worker },
+    prompt,
+  );
   const workerParsed = workerSchema.parse(services.sessions.getWorker(worker.id) ?? worker);
   services.hub.broadcast({ type: "worker.spawned", at: services.now().toISOString(), worker: workerParsed });
   return workerParsed;

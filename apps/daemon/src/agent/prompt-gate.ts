@@ -34,6 +34,15 @@
  * effects (terminal drop, `running` on success, `failed` on delivery
  * error); a session entry just drops loudly through the error sink.
  *
+ * One delivery dance (KISS audit F5, issue #426): the pi-readiness prompt
+ * delivery every spawn path performs — probe piReady → queue on the gate
+ * if not ready → else the #318 readiness wait + exactly-once type + submit
+ * confirmation → truthful `running` status → error sink — lives in ONE
+ * shared {@link deliverSpawnPrompt} helper at the bottom of this module;
+ * the CLI worker spawn, the issue auto-spawn pipeline, the review-agent
+ * spawn, and the agent-kind session spawn all consume it instead of each
+ * re-implementing (and drifting from) the dance.
+ *
  * Prompt-gate v2 (issue #333) adds the spec-driven spawn decisions on top:
  * {@link planAgentKindSpawn} maps a kind spec to its post-boot delivery
  * (auto → taskTemplate, waitForInput → caller input or ready-idle) plus
@@ -295,4 +304,156 @@ export class PromptGate {
     clearInterval(this.timer);
     this.timer = null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Shared spawn-path prompt delivery (issues #56/#318/#378; KISS audit F5,
+// issue #426): one dance, every spawn path a consumer.
+// ---------------------------------------------------------------------------
+
+/** The session facade the delivery dance needs (`SessionManager` subset). */
+export interface SpawnPromptSessions {
+  /** The #318 bounded pane-input wait + exactly-once type + submit confirmation. */
+  deliverPromptWhenReady(sessionId: string, text: string): Promise<{ typed: boolean; accepted: boolean }>;
+  /** Worker status updates (worker targets only — sessions have none). */
+  updateWorkerStatus(workerId: string, status: Worker["status"], statusMessage?: string): Worker;
+}
+
+/**
+ * Which pane a spawn's prompt is delivered into, and what a held delivery
+ * does while waiting: a worker target queues with the worker status side
+ * effects ({@link PromptGate.queue} — terminal drop, `running` on success,
+ * `failed` on delivery error); a session target queues silently
+ * ({@link PromptGate.queueSession} — no worker status, failures surface
+ * loudly).
+ */
+export type SpawnPromptTarget =
+  | { /** A worker spawn: status transitions ride the worker record. */
+      kind: "worker"; worker: Worker }
+  | { /** An agent-kind session (docs/agent-kinds.md): queue-only. */
+      kind: "session"; sessionId: string };
+
+/**
+ * The gate surface spawn paths hand the helper. `queueSession` is optional
+ * only because the pipeline paths type their gate option as the narrow
+ * worker `Pick` (they never deliver session prompts) — a session target
+ * with a queue-less gate is a caller bug and fails loudly.
+ */
+export interface SpawnPromptGate {
+  queue: Pick<PromptGate, "queue">["queue"];
+  queueSession?: Pick<PromptGate, "queueSession">["queueSession"];
+}
+
+/** Per-path knobs that genuinely differ (everything else is converged). */
+export interface SpawnPromptLabels {
+  /**
+   * Error sink for the delivery dance. When absent, errors propagate to the
+   * awaited caller (the HTTP spawn routes fail the request); background
+   * spawn paths (the issue pipeline, the review spawn) pass their sink so a
+   * delivery failure never fails the spawn itself.
+   */
+  onError?: (err: unknown) => void;
+}
+
+/**
+ * The one pi-readiness prompt-delivery dance (issues #56/#318/#378):
+ *
+ * 1. probe pi auth readiness (`piReady` absent = assume ready — the
+ *    tests/legacy branch each former copy re-implemented);
+ * 2. not ready → the prompt is queued on the {@link PromptGate} (never
+ *    typed into an agent that cannot run) and delivery ends here;
+ * 3. ready → `deliverPromptWhenReady`: the #318 bounded pane-input wait,
+ *    the text typed exactly ONCE with one Enter, submit confirmed
+ *    (bare-Enter nudges only — the text is never re-typed);
+ * 4. delivered → a worker target flips to `running` with the one converged
+ *    truthful status message; a pane that never readies within the wait is
+ *    queued on the gate for a retried delivery — never dropped, never
+ *    double-typed (a typed-but-unconfirmed draft stays visible in the
+ *    composer and must NOT be queued).
+ *
+ * Without a gate there is nowhere to hold a prompt (the tests/legacy hosts
+ * the pipeline paths used to special-case): the delivery proceeds as
+ * before.
+ *
+ * Errors propagate to the caller unless `labels.onError` is set: the
+ * awaited HTTP spawn routes fail the request; the pipeline paths sink
+ * without failing the spawn (a thrown error would release the pipeline's
+ * dedupe slot and double-spawn).
+ */
+export async function deliverSpawnPrompt(
+  sessions: SpawnPromptSessions,
+  gate: SpawnPromptGate | undefined,
+  piReady: (() => Promise<boolean>) | undefined,
+  target: SpawnPromptTarget,
+  prompt: string | undefined,
+  labels: SpawnPromptLabels = {},
+): Promise<void> {
+  const sessionId = target.kind === "worker" ? target.worker.sessionId : target.sessionId;
+  try {
+    const ready = piReady === undefined ? true : await piReady();
+    if (!ready) {
+      // Issue #56: never type a prompt into an agent that cannot run —
+      // hold it on the gate for the poll loop to deliver.
+      if (gate !== undefined) {
+        queueOnGate(gate, target, prompt);
+        return;
+      }
+      await deliverReadyPrompt(sessions, gate, target, sessionId, prompt);
+      return;
+    }
+    await deliverReadyPrompt(sessions, gate, target, sessionId, prompt);
+  } catch (err) {
+    if (labels.onError === undefined) throw err;
+    labels.onError(err);
+  }
+}
+
+/**
+ * The ready-path delivery (pi auth ready, or nowhere to hold the prompt):
+ * type the prompt once after the #318 readiness wait, flip a worker target
+ * to `running` with the converged status strings, and queue on the gate
+ * when the pane never accepted input (the #318 launch-delay race).
+ */
+async function deliverReadyPrompt(
+  sessions: SpawnPromptSessions,
+  gate: SpawnPromptGate | undefined,
+  target: SpawnPromptTarget,
+  sessionId: string,
+  prompt: string | undefined,
+): Promise<void> {
+  if (prompt === undefined) return;
+  const delivered = await sessions.deliverPromptWhenReady(sessionId, prompt);
+  if (delivered.typed) {
+    if (target.kind === "worker") {
+      sessions.updateWorkerStatus(
+        target.worker.id,
+        "running",
+        delivered.accepted
+          ? "agent running; initial prompt delivered"
+          : "agent running; initial prompt typed (submit unconfirmed)",
+      );
+    }
+    return;
+  }
+  // The pane never accepted input within the bounded wait: queue for a
+  // retried delivery. A typed-but-unconfirmed draft must not be queued
+  // (double delivery) — it stays visible in the composer.
+  if (gate !== undefined) queueOnGate(gate, target, prompt);
+}
+
+/** Queues a held prompt on the gate for the target (worker or session). */
+function queueOnGate(gate: SpawnPromptGate, target: SpawnPromptTarget, prompt: string | undefined): void {
+  if (target.kind === "worker") {
+    gate.queue(target.worker, prompt);
+    return;
+  }
+  if (gate.queueSession === undefined) {
+    throw new Error("prompt gate cannot hold session prompts (queueSession missing)");
+  }
+  if (prompt === undefined) {
+    // Impossible from the real callers (session prompts always carry text —
+    // sessions have no worker status a prompt-less hold would keep truthful).
+    throw new Error("a session prompt hold requires a prompt");
+  }
+  gate.queueSession(target.sessionId, prompt);
 }

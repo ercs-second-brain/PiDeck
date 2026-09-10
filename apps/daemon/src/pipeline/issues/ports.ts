@@ -12,7 +12,7 @@
 
 import { ACTIVE_WORKER_STATUSES, type Issue, type IssueBlocker, type Project, type Worker } from "@pideck/shared";
 import type { SpawnedWorker } from "../../sessions/manager.js";
-import type { PromptGate } from "../../agent/prompt-gate.js";
+import { deliverSpawnPrompt, type PromptGate } from "../../agent/prompt-gate.js";
 import type { RepoRef } from "../../github/gh.js";
 import type { SessionManager } from "../../sessions/manager.js";
 
@@ -106,35 +106,27 @@ export class SessionManagerSpawner implements WorkerSpawner {
         ? { prompt, statusMessage: "agent running; initial prompt queued" }
         : {}),
     });
-    if (prompt !== undefined) void this.deliverInitialPrompt(spawned.worker, prompt);
-    return spawned;
-  }
-
-  /**
-   * Types the initial prompt into the fresh pane (issue #266): issue #56
-   * parity — never typed into an unauthenticated agent (held on the gate
-   * instead), delivery failures reported through the error sink without
-   * failing the spawn (the worker is up; a thrown error would release the
-   * pipeline's dedupe slot and double-spawn). Runs in the background: the
-   * spawn must not wait on pane typing (tmux send settle delays) or on
-   * pi-auth probes.
-   */
-  private async deliverInitialPrompt(worker: Worker, prompt: string): Promise<void> {
-    try {
-      const ready = this.options.piReady === undefined ? true : await this.options.piReady();
-      if (!ready && this.options.promptGate !== undefined) {
-        this.options.promptGate.queue(worker, prompt);
-        return;
-      }
-      // Issue #318: wait for pi to accept input first — the pane was just
-      // created, and typing inside pi's startup window swallows the submit
-      // Enter (typed-but-never-sent). Submit confirmation re-sends bare
-      // Enters only, never the text.
-      await this.sessions.deliverPromptWhenReady(worker.sessionId, prompt);
-      this.sessions.updateWorkerStatus(worker.id, "running", "agent running; initial prompt delivered");
-    } catch (err) {
-      (this.options.onError ?? ((e: unknown) => console.error("[pideck/pipeline] issue-spawn prompt delivery failed:", e)))(err);
+    if (prompt !== undefined) {
+      // Issue #266: the initial prompt delivery is a background step — the
+      // spawn resolves once the worker is up, never gated on the delivery.
+      // The delivery itself is the ONE shared spawn-path dance
+      // ({@link deliverSpawnPrompt}, issues #56/#318/#378; consolidated
+      // from four drifted copies in issue #426); its error sink keeps a
+      // delivery failure from failing the spawn (a thrown error would
+      // release the pipeline's dedupe slot and double-spawn).
+      void deliverSpawnPrompt(
+        this.sessions,
+        this.options.promptGate,
+        this.options.piReady,
+        { kind: "worker", worker: spawned.worker },
+        prompt,
+        {
+          onError:
+            this.options.onError ?? ((err: unknown) => console.error("[pideck/pipeline] issue-spawn prompt delivery failed:", err)),
+        },
+      );
     }
+    return spawned;
   }
 
   async listActiveWorkerIssueNumbers(projectId: string): Promise<Set<number>> {
