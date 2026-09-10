@@ -15,15 +15,20 @@
 import { describe, expect, it } from "vitest";
 
 import { restPull } from "../../testing/fixtures.js";
-import { checkRuns, makeHarness, PROJECT, restComment, type Harness } from "./harness.js";
+import { checkRuns, makeHarness, PROJECT, restComment, REVIEW_USER, type Harness } from "./harness.js";
 
 /** PR #12 owned by the harness's default worker, CI green, no reviews. */
 function greenHarness(options: Parameters<typeof makeHarness>[0] = {}): Harness {
   const h = makeHarness(options);
   h.openList.push(12);
-  h.prs.set(12, { pull: restPull(12, { sha: "sha-1" }), checkRuns: checkRuns("success"), reviews: [], comments: [] });
+  h.prs.set(12, { pull: assignedPull(), checkRuns: checkRuns("success"), reviews: [], comments: [] });
   h.sessions.control.listWorkers()[0]!.prNumber = 12;
   return h;
+}
+
+/** A pull payload assigned to the review user — the configured-mode spawn gate (issue #408/#424). */
+function assignedPull(overrides: Parameters<typeof restPull>[1] = {}): Record<string, unknown> {
+  return { ...restPull(12, overrides), assignees: [{ login: REVIEW_USER }] };
 }
 
 /** Status changes recorded for one worker id. */
@@ -95,7 +100,9 @@ describe("PullRequestPipeline: deterministic reviewer statuses (issue #411, B35)
     expect(h.sessions.control.getWorker(reviewerId)).toMatchObject({ status: "running" });
 
     // The reviewer posts a changes-requested review → its round is over.
-    h.prs.get(12)!.reviews = [{ user: { login: "reviewer-bot" }, state: "CHANGES_REQUESTED", submitted_at: "2026-09-06T12:05:00Z" }];
+    // The review author is the configured review identity (issue #424: the
+    // settle attribution always keys off reviewAccountUsername).
+    h.prs.get(12)!.reviews = [{ user: { login: REVIEW_USER }, state: "CHANGES_REQUESTED", submitted_at: "2026-09-06T12:05:00Z" }];
     await h.poll();
     expect(h.sessions.control.getWorker(reviewerId)).toMatchObject({
       status: "awaiting_ci",
@@ -107,14 +114,14 @@ describe("PullRequestPipeline: deterministic reviewer statuses (issue #411, B35)
     expect(statusesFor(h, reviewerId)).toHaveLength(1); // only the round-end settle
 
     // The author pushes → the re-review prompt flips it back to running.
-    h.prs.get(12)!.pull = restPull(12, { sha: "sha-2" });
+    h.prs.get(12)!.pull = { ...restPull(12, { sha: "sha-2" }), assignees: [{ login: REVIEW_USER }] };
     await h.poll();
     expect(h.sessions.prompts.some((p) => p.sessionId === h.sessions.control.getWorker(reviewerId)!.sessionId)).toBe(true);
     expect(h.sessions.control.getWorker(reviewerId)).toMatchObject({ status: "running", statusMessage: "PR #12: re-review requested" });
   });
 
   it("attributes the submission to the review user when one is configured", async () => {
-    const h = greenHarness({ reviewAccountUser: () => "reviewer-bot" });
+    const h = greenHarness({ reviewAccountUsername: () => "reviewer-bot" });
     h.prs.get(12)!.pull = { ...restPull(12, { sha: "sha-1" }), assignees: [{ login: "reviewer-bot" }] };
     await h.poll(); // discover + track
     await h.poll(); // reviewer spawns (assigned to the review user)

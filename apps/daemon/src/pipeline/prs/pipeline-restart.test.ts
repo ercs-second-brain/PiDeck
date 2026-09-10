@@ -72,6 +72,8 @@ describe("PullRequestPipeline: lifecycle", () => {
       sessions: sessions2.control,
       tracker: tracker2,
       emit: (event) => emitted2.push(event),
+      // Red-CI resume path only — the review cycle never runs here.
+      reviewAccountUsername: () => "",
       now: h.now,
     });
     const reconcileEvents = pipeline2.reconcile();
@@ -98,6 +100,7 @@ describe("PullRequestPipeline: lifecycle", () => {
       sessions: sessions3.control,
       tracker: tracker2,
       emit: (event) => emitted2.push(event),
+      reviewAccountUsername: () => "",
       now: h.now,
     });
     tracker2.get(PROJECT, 12)!.state = "watching";

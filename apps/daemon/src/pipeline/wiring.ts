@@ -72,17 +72,19 @@ export interface GithubAutomationOptions {
    * reviewer panes run `gh` as that second GitHub account (real `gh pr
    * review` submissions on primary-account PRs) and the PR loop's
    * review-based triggers run; null = single-account mode (no review cycle
-   * at all). `reviewAccountUser` is the second account's login — the
+   * at all). `reviewAccountUsername` is the second account's login — the
    * identity the PR-assignment leg (#408 lifecycle) and review-user-keyed
    * triggers key off; issue-assignment worker spawning (#416) does NOT key
-   * off it — any assignee triggers a worker.
+   * off it — any assignee triggers a worker. Both-or-neither (issue #424):
+   * the settings store rejects one without the other, and the unit builder
+   * gates the review cycle on BOTH being set.
    */
   reviewAccountToken?: () => string | null;
-  reviewAccountUser?: () => string | null;
-  /** Pi auth readiness for review-agent prompt gating (issue #107). */
-  piReady?: () => Promise<boolean>;
-  /** Prompt gate (issue #56) holding review prompts until pi is ready. */
-  promptGate?: Pick<PromptGate, "queue">;
+  reviewAccountUsername?: () => string | null;
+  /** Pi auth readiness for review-agent prompt gating (issue #107). Required (issue #424 F8) — the daemon context always provides it. */
+  piReady: () => Promise<boolean>;
+  /** Prompt gate (issue #56) holding review prompts until pi is ready. Required (issue #424 F8). */
+  promptGate: Pick<PromptGate, "queue">;
   /**
    * Agent-kind registry (v2, issue #330): consulted by the session
    * control's occupancy count so workerLike kind sessions gate the
@@ -191,8 +193,8 @@ export class GithubAutomation {
               `spawn:${projectId}`,
             );
           },
-          ...(options.piReady !== undefined ? { piReady: options.piReady } : {}),
-          ...(options.promptGate !== undefined ? { promptGate: options.promptGate } : {}),
+          piReady: options.piReady,
+          promptGate: options.promptGate,
           onError: (err) => this.onError(err, `review-spawn:${projectId}`),
         }),
     };
@@ -387,7 +389,7 @@ export class GithubAutomation {
           sessionControl: this.sessionControl,
           workerSettings: this.options.workerSettings,
           reviewAccountToken: this.options.reviewAccountToken,
-          reviewAccountUser: this.options.reviewAccountUser,
+          reviewAccountUsername: this.options.reviewAccountUsername,
           onWatcherEvent: (projectId, event) => this.handleWatcherEvent(projectId, event),
           onPrEvent: (projectId, event) => {
             if (this.units.get(projectId) !== undefined) this.broadcastPrEvent(projectId, event);

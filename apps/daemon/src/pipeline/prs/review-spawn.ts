@@ -38,10 +38,10 @@ export interface ReviewSpawnDeps {
    * (the pipeline gates it), so the value never matters in practice.
    */
   reviewGhToken?: string | null;
-  /** Pi auth readiness probe; absent = assume ready (tests/legacy hosts). */
-  piReady?: () => Promise<boolean>;
+  /** Pi auth readiness probe (issue #424 F8: required — production wiring always provides it). */
+  piReady: () => Promise<boolean>;
   /** Holds the prompt until pi auth becomes ready (issue #56 parity). */
-  promptGate?: Pick<PromptGate, "queue">;
+  promptGate: Pick<PromptGate, "queue">;
   onError: (err: unknown) => void;
 }
 

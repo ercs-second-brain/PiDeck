@@ -10,15 +10,20 @@
 import { describe, expect, it } from "vitest";
 
 import { restPull } from "../../testing/fixtures.js";
-import { checkRuns, makeHarness, PROJECT, restComment, type Harness } from "./harness.js";
+import { checkRuns, makeHarness, PROJECT, restComment, REVIEW_USER, type Harness } from "./harness.js";
 
 /** Tracks PR #12 owned by the harness's default worker, CI green, no reviews. */
 function greenHarness(options: Parameters<typeof makeHarness>[0] = {}): Harness {
   const h = makeHarness(options);
   h.openList.push(12);
-  h.prs.set(12, { pull: restPull(12, { sha: "sha-1" }), checkRuns: checkRuns("success"), reviews: [], comments: [] });
+  h.prs.set(12, { pull: assignedPull(), checkRuns: checkRuns("success"), reviews: [], comments: [] });
   h.sessions.control.listWorkers()[0]!.prNumber = 12;
   return h;
+}
+
+/** A pull payload assigned to the review user — the configured-mode spawn gate (issue #408/#424). */
+function assignedPull(overrides: Parameters<typeof restPull>[1] = {}): Record<string, unknown> {
+  return { ...restPull(12, overrides), assignees: [{ login: REVIEW_USER }] };
 }
 
 const CHANGES_REQUESTED = (submittedAt: string) => [{ user: { login: "reviewer" }, state: "CHANGES_REQUESTED", submitted_at: submittedAt }];
@@ -87,7 +92,7 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
     expect(h.sessions.prompts).toHaveLength(1);
 
     // Author pushes; the reviewer is re-prompted for the new head.
-    h.prs.get(12)!.pull = restPull(12, { sha: "sha-2" });
+    h.prs.get(12)!.pull = assignedPull({ sha: "sha-2" });
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(2);
     expect(h.sessions.prompts[1]!.sessionId).toBe("sess-reviewer-1");
@@ -104,7 +109,7 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
   it("a pre-existing review (loop start / restart resume) is recorded without triggering", async () => {
     const h = greenHarness();
     h.prs.set(12, {
-      pull: restPull(12, { sha: "sha-1" }),
+      pull: assignedPull(),
       checkRuns: checkRuns("success"),
       reviews: CHANGES_REQUESTED("2026-09-06T11:00:00Z"),
       comments: [],

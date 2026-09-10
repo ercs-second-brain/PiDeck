@@ -12,6 +12,22 @@ import { JsonStore } from "../json-store.js";
 
 const persistedSchema = settingsSchema.extend({ version: z.literal(1) });
 
+// Issue #424 (F2): the review-account pair is both-or-neither — a token
+// without its login (or vice versa) would configure half a second identity
+// and strand the review flow between modes. Enforced on the MERGED settings
+// (a patch carrying one half while the other is already stored is legal);
+// the load path stays tolerant so a pre-validation asymmetric file degrades
+// to an inert review cycle instead of resetting every setting.
+const updateSchema = settingsSchema.superRefine((settings, ctx) => {
+  if ((settings.reviewAccountToken === null) !== (settings.reviewAccountUsername === null)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["reviewAccountToken"],
+      message: "reviewAccountToken and reviewAccountUsername must be set together — both, or neither",
+    });
+  }
+});
+
 const DEFAULT_SETTINGS: Settings = {
   // Issue #280: new projects default to a 3-worker concurrency cap (was 1).
   defaultWorkerConcurrency: 3,
@@ -52,7 +68,9 @@ export class SettingsStore {
 
   /** Applies a partial update; validation errors throw (→ 400 via the router). */
   update(patch: Partial<Settings>): Settings {
-    const next = settingsSchema.parse({ ...this.current, ...patch });
+    // Issue #424 (F2): the both-or-neither refine rides the merged result —
+    // a ZodError here is a 400 via the router's dispatch error path.
+    const next = updateSchema.parse({ ...this.current, ...patch });
     this.current = next;
     this.file.save({ ...next, version: 1 });
     return next;

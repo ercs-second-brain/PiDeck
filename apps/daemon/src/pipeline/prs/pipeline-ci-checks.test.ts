@@ -60,6 +60,9 @@ describe("PullRequestPipeline: CI-fix prompt detail (issue #322)", () => {
       workerCap: () => undefined,
       repo: "o/r",
       failingChecks: () => Promise.reject(new Error("gh down")),
+      // Issue #424: the review identity is a required context field; this
+      // test never reaches the review cycle (red CI).
+      reviewAccountUsername: () => "",
       maxFixAttempts: 3,
       fixPromptTimeoutMs: 15 * 60_000,
       now: h.now,

@@ -18,7 +18,7 @@
  *   address the findings (`addressing_review`, issue #407 — deterministic,
  *   watermark-keyed; covers findings that ride only in the review body).
  * - Issue #408 (the deterministic PR lifecycle): worker PRs are assigned to
- *   the review user on submission (`reviewAccountUser`); a CI-green PR
+ *   the review user on submission (`reviewAccountUsername`); a CI-green PR
  *   assigned to that user drives the review-agent cycle; and a green +
  *   approved PR with both the author and the reviewer idle notifies the
  *   orchestrator it is ready for merge (`notification.pr.ready_for_merge`,
@@ -70,10 +70,10 @@ export interface PRSessionControl {
   /**
    * Terminates a worker (kills its tmux pane, marks `archived`) — used when
    * its PR merges and `terminateOnMerge` is on (issue #106), and for review
-   * agents reaching the end of their cycle (issue #107). Optional: the
-   * all-`done` legacy behavior applies when absent.
+   * agents reaching the end of their cycle (issue #107). Required (issue
+   * #424 F8): production wiring always provides it — no absent fallback.
    */
-  archiveWorker?(workerId: string, message?: string): Promise<Worker | null>;
+  archiveWorker(workerId: string, message?: string): Promise<Worker | null>;
   /**
    * Spawns the auto review agent for a PR (issue #107): a reviewer-kind
    * worker nested under `parentWorkerId` (the PR-authoring worker) with the
@@ -124,9 +124,13 @@ export interface PullRequestPipelineOptions {
   /**
    * The review account's GitHub login (issue #408): worker PRs are assigned
    * to this user on submission (the PR-assignment leg), and the reviewer
-   * spawns only for PRs assigned to them. Absent/null = no assignment leg.
+   * spawns only for PRs assigned to them. Required and non-null (issue
+   * #424): the settings store's both-or-neither validation plus the
+   * wiring's both-set `reviewAccount` gate guarantee a configured identity
+   * whenever the review cycle runs — pass `() => ""` when unconfigured
+   * (the `reviewAccount` gate keeps the cycle inert).
    */
-  reviewAccountUser?: () => string | null;
+  reviewAccountUsername: () => string;
   /** Max consecutive CI-fix prompts per red streak. Default: {@link DEFAULT_MAX_FIX_ATTEMPTS}. */
   maxFixAttempts?: number;
   /** Age at which an unanswered fix/address prompt is treated as stale. Default: 15 min. */
@@ -297,7 +301,8 @@ export class PullRequestPipeline {
         reviewAccount: this.options.reviewAccount ?? (() => false),
         // Issue #408: the review identity the PR-assignment leg assigns to;
         // the reviewer-spawn gate keys off the PR carrying this assignee.
-        reviewUser: this.options.reviewAccountUser,
+        // Non-null whenever reviewAccount() is true (issue #424).
+        reviewAccountUsername: this.options.reviewAccountUsername,
         prAssignees: record.assignees,
         maxFixAttempts: this.maxFixAttempts,
         fixPromptTimeoutMs: this.fixPromptTimeoutMs,
@@ -332,6 +337,11 @@ export class PullRequestPipeline {
     return this.options.sessions;
   }
 
+  /** Whether the review account is configured (issue #407). Default false. */
+  private reviewAccount(): boolean {
+    return this.options.reviewAccount?.() ?? false;
+  }
+
   /**
    * Registers a PR when a registered worker owns it (registry
    * `worker.prNumber`); returns the initial card event, or `null` when the
@@ -354,10 +364,11 @@ export class PullRequestPipeline {
     // the deterministic key the reviewer-spawn trigger reads. Best-effort and
     // fire-and-forget: a failed assignment is logged and the PR's next
     // registration pass (restart re-registration) retries; the review gate
-    // stays closed until the PR actually carries the assignee.
-    const reviewUser = this.options.reviewAccountUser?.() ?? null;
-    if (reviewUser !== null && !prAssignees.includes(reviewUser)) {
-      void assignPullRequest(this.gh, this.repo, pr.number, [reviewUser]).catch((err) => this.onError(err));
+    // stays closed until the PR actually carries the assignee. Gated on the
+    // review account being configured (issue #424: the identity is a real
+    // login exactly then — single-account mode has no assignment leg).
+    if (this.reviewAccount() && !prAssignees.includes(this.options.reviewAccountUsername())) {
+      void assignPullRequest(this.gh, this.repo, pr.number, [this.options.reviewAccountUsername()]).catch((err) => this.onError(err));
     }
     this.setWorkerStatusQuietly(owner.id, "awaiting_ci", `PR #${pr.number} opened — watching CI`);
     const at = this.now().toISOString();
@@ -383,14 +394,16 @@ export class PullRequestPipeline {
   /**
    * Merge settlement (issue #106): `terminateOnMerge` archives the owning
    * worker (pane killed, terminal `archived` status); otherwise the pane
-   * keeps running under the legacy `done` status.
+   * keeps running under the legacy `done` status. `archiveWorker` is
+   * required on the session control (issue #424 F8) — called directly, no
+   * absent-check, no fallback shape.
    */
   private async settleMerged(tracked: TrackedPR): Promise<void> {
     tracked.state = "done";
     await archiveReviewAgent(tracked, this.sessions, `PR #${tracked.prNumber} merged — review agent done`);
     const message = `PR #${tracked.prNumber} merged`;
     const terminateOnMerge = this.options.workerSettings?.().terminateOnMerge ?? DEFAULT_WORKER_PIPELINE_SETTINGS.terminateOnMerge;
-    if (terminateOnMerge && this.sessions.archiveWorker !== undefined) {
+    if (terminateOnMerge) {
       try {
         await this.sessions.archiveWorker(tracked.workerId, `${message} — archived on merge`);
         return;

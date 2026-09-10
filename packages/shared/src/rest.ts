@@ -108,8 +108,11 @@ export const settingsSchema = z.object({
    * real GitHub reviews (`gh pr review`) on PRs authored by the primary
    * account, and the PR loop's deterministic triggers key off review
    * submissions. `null` (default) = single-account mode: no review agent is
-   * spawned at all — the PR loop is worker + CI only. Set it together with
-   * `reviewAccountUsername`. Stored in the daemon settings file (plaintext,
+   * spawned at all — the PR loop is worker + CI only. Both-or-neither with
+   * `reviewAccountUsername` (issue #424): the daemon settings store rejects
+   * an update that sets one without the other, so the review account is
+   * always fully configured or fully off. Stored in the daemon settings
+   * file (plaintext,
    * like gh's own hosts.yml); the settings UI masks it on read (follow-up
    * UI wiring).
    */

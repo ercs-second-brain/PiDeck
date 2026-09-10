@@ -63,10 +63,13 @@ export interface ReviewContext {
   /**
    * The review account's GitHub login (issue #408): the reviewer spawns only
    * for PRs assigned to this user — the PR-assignment leg (the pipeline)
-   * assigns worker PRs to the review identity on submission. Absent/null =
-   * legacy hosts: no assignment gate (pre-#408 unconditioned spawn).
+   * assigns worker PRs to the review identity on submission. Non-null
+   * (issue #424): the settings store's both-or-neither validation plus the
+   * wiring's both-set `reviewAccount` gate guarantee a real login whenever
+   * the review cycle runs; `() => ""` when unconfigured (the gate then
+   * keeps the cycle inert).
    */
-  reviewUser?: () => string | null;
+  reviewAccountUsername: () => string;
   /** The PR's current assignee logins (issue #408). Optional: absent degrades to none. */
   prAssignees?: string[];
   /** Injectable clock (issue #407 trigger bookkeeping). */
@@ -107,10 +110,11 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
   // Issue #408: the reviewer spawns only for PRs assigned to the review
   // user — the pipeline's assignment leg marks worker PRs on submission, and
   // "CI green on a PR assigned to the review user" is the spawn trigger. A
-  // PR not assigned to the review identity is not in the auto-review flow;
-  // with no configured review user (legacy hosts/tests) the gate is off.
-  const reviewUser = ctx.reviewUser?.() ?? null;
-  if (reviewUser !== null && !(ctx.prAssignees ?? []).includes(reviewUser)) return;
+  // PR not assigned to the review identity is not in the auto-review flow.
+  // Issue #424 (F2): no legacy null-user branch — a configured review
+  // account always carries its login (both-or-neither), so the gate always
+  // applies.
+  if (!(ctx.prAssignees ?? []).includes(ctx.reviewAccountUsername())) return;
   await driveReviewerRound(tracked, pr, headSha, ctx);
 }
 
@@ -193,18 +197,20 @@ export function observeReview(tracked: TrackedPR, latest: ReviewSubmission | nul
  * finished"). The reviewer drops to the PR loop's resting status
  * (`awaiting_ci`) until the author's push re-prompts it (back to `running`,
  * prompt delivery) or the PR settles (archive). The review-user attribution
- * (#407) makes this deterministic: with a configured review user, only that
- * login's submission settles the reviewer (its `gh` identity); on legacy
- * hosts without one, any new submission while this PR's reviewer is
- * mid-round counts — the reviewer is the only agent posting reviews. A PR
- * that is already approved skips this: the archival path owns the
- * reviewer's terminal transition. Gated on status `running` so gate-held
+ * (#407) makes this deterministic: only the configured review login's
+ * submission settles the reviewer (its `gh` identity) — issue #424 (F2)
+ * deleted the legacy no-user branch. In single-account mode there is no
+ * reviewer at all, so the settle check stays inert. A PR that is already
+ * approved skips this: the archival path owns the reviewer's terminal
+ * transition. Gated on status `running` so gate-held
  * (`spawning`) or already-resting reviewers are untouched.
  */
 export function settleReviewerRound(tracked: TrackedPR, pr: PullRequest, newReview: ReviewSubmission, ctx: ReviewContext): void {
   if (pr.reviewState === "approved") return;
-  const reviewUser = ctx.reviewUser?.() ?? null;
-  if (reviewUser !== null && newReview.author !== reviewUser) return; // someone else's review
+  // Issue #424 (F2): no legacy null-user branch — only the configured
+  // review login's submission settles the reviewer (its `gh` identity);
+  // single-account mode has no reviewer, so the check below stays inert.
+  if (newReview.author !== ctx.reviewAccountUsername()) return; // someone else's review
   const reviewerId = tracked.reviewWorkerId;
   if (reviewerId === null) return;
   const reviewer = ctx.sessions.getWorker(reviewerId);
@@ -231,8 +237,9 @@ async function reReviewIfPushed(tracked: TrackedPR, pr: PullRequest, headSha: st
 
 /**
  * Archives a PR's review agent (terminal PR states and approval): kills its
- * pane when the archive path exists, else marks it `done`. Clears the
- * tracker's reviewer linkage either way; never throws.
+ * pane and marks it `archived` — `archiveWorker` is required on the session
+ * control (issue #424 F8), no fallback shape. Clears the tracker's reviewer
+ * linkage either way; never throws.
  */
 export async function archiveReviewAgent(tracked: TrackedPR, sessions: PRSessionControl, message: string): Promise<void> {
   const reviewerId = tracked.reviewWorkerId;
@@ -241,18 +248,11 @@ export async function archiveReviewAgent(tracked: TrackedPR, sessions: PRSession
   tracked.reviewedHeadSha = null;
   const reviewer = sessions.getWorker(reviewerId);
   if (reviewer === undefined || reviewer.status === "archived") return;
-  if (sessions.archiveWorker !== undefined) {
-    try {
-      await sessions.archiveWorker(reviewerId, message);
-      return;
-    } catch {
-      // Fall through to the quiet status update below.
-    }
-  }
   try {
-    sessions.updateWorkerStatus(reviewerId, "done", message);
+    await sessions.archiveWorker(reviewerId, message);
   } catch {
-    // The reviewer record vanished; the linkage is already cleared.
+    // Archival failed (e.g. a dead pane's kill race); the linkage is
+    // already cleared and the record's terminal status is best-effort.
   }
 }
 
