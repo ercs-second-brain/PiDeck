@@ -87,6 +87,15 @@ export interface SpawnedWorker {
 }
 
 /**
+ * Whether a spawn env carries the review account's `GH_TOKEN` (issues
+ * #407/#423): the session is flagged `runsAsReviewIdentity` so relaunch/
+ * reconcile re-inject the token at recreation time; no env/token → undefined.
+ */
+function spawnRunsAsReviewIdentity(env: Record<string, string> | undefined): boolean | undefined {
+  return env?.["GH_TOKEN"] !== undefined ? true : undefined;
+}
+
+/**
  * How much scrollback to capture when archiving a worker (issue #104): the
  * tmux server's default history limit, so a full pane history fits. Lives
  * in `archived-logs.ts` (shared with the #357 persona-agent archive).
@@ -135,6 +144,11 @@ export class SessionManager {
      * a constant so hermetic fake panes count as ready.
      */
     paneReady?: (tmuxSession: string) => Promise<boolean>;
+    /**
+     * Review account token (issue #423), read fresh per recreation decision:
+     * relaunch re-injects `GH_TOKEN` into a `runsAsReviewIdentity` pane.
+     */
+    reviewAccountToken?: () => string | null;
   }) {
     this.tmux = deps.tmux;
     this.registry = deps.registry;
@@ -143,7 +157,7 @@ export class SessionManager {
     this.personaAssets = deps.personaAssets;
     this.agentKinds = deps.agentKinds ?? new AgentKindRegistry();
     this.paneReady = deps.paneReady ?? ((name) => waitForPaneInputReady(deps.tmux, name));
-    this.deps = { tmux: deps.tmux, registry: deps.registry, layout: deps.layout };
+    this.deps = { tmux: deps.tmux, registry: deps.registry, layout: deps.layout, ...(deps.reviewAccountToken !== undefined ? { reviewAccountToken: deps.reviewAccountToken } : {}) };
     this.archivedLogs = deps.archivedLogs ?? new ArchivedLogStore(deps.layout.archivedLogsFilePath());
   }
 
@@ -234,6 +248,9 @@ export class SessionManager {
       // (issue #287); an explicit cwd is recorded as-is.
       ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
       command: serializeCommand(options.command ?? this.defaultWorkerCommand()),
+      // Issue #423: persist that this pane runs as the review identity —
+      // relaunch/reconcile then re-inject the token from settings.
+      runsAsReviewIdentity: spawnRunsAsReviewIdentity(options.env),
       workerId: null,
     });
     const worker = this.registry.registerWorker({
@@ -407,8 +424,12 @@ export class SessionManager {
     if (await this.tmux.hasSession(session.tmuxSession)) {
       await this.tmux.killSession(session.tmuxSession);
     }
-    const { cwd, command } = launchPath(this.deps, session);
-    await this.tmux.newSession(session.tmuxSession, { cwd, ...(command === undefined ? {} : { command }) });
+    const { cwd, command, env } = launchPath(this.deps, session);
+    await this.tmux.newSession(session.tmuxSession, {
+      cwd,
+      ...(command === undefined ? {} : { command }),
+      ...(env === undefined ? {} : { env }),
+    });
     if (session.workerId !== null) {
       const worker = this.registry.getWorker(session.workerId);
       if (worker && worker.status === "stopped") {

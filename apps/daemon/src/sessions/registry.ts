@@ -39,6 +39,12 @@ export interface CreateSessionInput {
   parentSessionId?: string;
   /** Sidebar label (`Session.name`, ≤ 20 characters); agent-kind spawns carry their `--name`. */
   name?: string;
+  /**
+   * Runs-as-review-identity flag (`Session.runsAsReviewIdentity`, issue
+   * #423): set when the pane was launched with the review account's
+   * `GH_TOKEN` — relaunch/reconcile re-inject the token on recreation.
+   */
+  runsAsReviewIdentity?: boolean;
 }
 
 export interface RegisterWorkerInput {
@@ -148,6 +154,7 @@ export class SessionRegistry {
     if (input.agentKind !== undefined) session.agentKind = input.agentKind;
     if (input.parentSessionId !== undefined) session.parentSessionId = input.parentSessionId;
     if (input.name !== undefined) session.name = input.name;
+    if (input.runsAsReviewIdentity !== undefined) session.runsAsReviewIdentity = input.runsAsReviewIdentity;
     this.sessions.set(session.id, session);
     this.save();
     return session;

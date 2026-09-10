@@ -440,6 +440,17 @@ export const sessionSchema = z.object({
    */
   command: z.string().min(1).optional(),
   /**
+   * Runs-as-review-identity flag (issue #423): set when the pane was
+   * launched with the review account's `GH_TOKEN` (issue #407) — the
+   * second GitHub identity that can file real reviews on primary-account
+   * PRs. Relaunch (#117) and reconcile-resurrect (#27) read the token
+   * fresh from settings at recreation time and re-inject it, so a
+   * resurrected reviewer never silently falls back to the primary
+   * identity (whose decisive reviews get HTTP 422, degrading the review
+   * leg to comment reviews the pipeline cannot key triggers on).
+   */
+  runsAsReviewIdentity: z.boolean().optional(),
+  /**
    * Sidebar label (the spawn's `--name`, ≤ 20 characters). Optional:
    * producers that don't track it may omit it — consumers fall back to the
    * kind's label plus the tmux session name.

@@ -303,3 +303,68 @@ describe("reconcile skips archived sessions (issue #64)", () => {
     expect(rebooted.sessions.has(stopped.session.tmuxSession)).toBe(true);
   });
 });
+
+describe("reconcile re-injects the reviewer GH_TOKEN (issue #423)", () => {
+  /** The `sh -c` env wrapper script Tmux embeds when a pane is given env. */
+  const envScript = (pane: { command: string[] } | undefined): string | undefined =>
+    pane?.command[0] === "sh" && pane.command[1] === "-c" ? pane.command[2] : undefined;
+
+  it("re-injects a fresh GH_TOKEN when resurrecting a reviewer session after a restart", async () => {
+    let token: string | null = "ghp_review";
+    const { manager, layout } = makeSessionManager({
+      tmpPrefix: "pideck-reconcile-reviewer-",
+      reviewAccountToken: () => token,
+    });
+    layout.ensureProject("proj");
+    const spawned = await manager.spawnWorker("proj", {
+      issueNumber: 423,
+      env: { GH_TOKEN: "ghp_spawn" },
+    });
+    expect(spawned.session.runsAsReviewIdentity).toBe(true);
+
+    // Daemon restart: the tmux server is gone, but sessions.json (with the
+    // runsAsReviewIdentity flag) and the settings store survived.
+    const rebooted = new FakeTmuxRunner();
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: (args) => rebooted.run(args) }),
+      registry: new SessionRegistry(layout.sessionsFilePath()),
+      layout,
+      git: new FakeGitRunner().asRunner(),
+      reviewAccountToken: () => token,
+    });
+    token = "ghp_rotated"; // settings rotated between spawn and resurrect
+
+    const result = await manager2.reconcile();
+
+    expect(result.resurrected.map((s) => s.tmuxSession)).toEqual([spawned.session.tmuxSession]);
+    const script = envScript(rebooted.sessions.get(spawned.session.tmuxSession));
+    // The resurrected reviewer pane starts with the review account's
+    // GH_TOKEN — its `gh pr review` calls file REAL reviews as the second
+    // identity (issue #407), instead of the primary identity's HTTP 422
+    // and the silent comment-review fallback.
+    expect(script).toContain("export GH_TOKEN=ghp_rotated");
+    expect(script).not.toContain("ghp_spawn");
+  });
+
+  it("does not inject GH_TOKEN when resurrecting an ordinary worker session", async () => {
+    const { manager, layout } = makeSessionManager({
+      tmpPrefix: "pideck-reconcile-plain-",
+      reviewAccountToken: () => "ghp_review",
+    });
+    layout.ensureProject("proj");
+    const spawned = await manager.spawnWorker("proj", { issueNumber: 1 });
+
+    const rebooted = new FakeTmuxRunner();
+    const manager2 = new SessionManager({
+      tmux: new Tmux({ runner: (args) => rebooted.run(args) }),
+      registry: new SessionRegistry(layout.sessionsFilePath()),
+      layout,
+      git: new FakeGitRunner().asRunner(),
+      reviewAccountToken: () => "ghp_review",
+    });
+    await manager2.reconcile();
+
+    const script = envScript(rebooted.sessions.get(spawned.session.tmuxSession));
+    if (script !== undefined) expect(script).not.toContain("GH_TOKEN");
+  });
+});
