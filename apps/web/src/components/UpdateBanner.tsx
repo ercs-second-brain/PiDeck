@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { UpdateStatusResponse } from "@pideck/shared";
+import { isTerminalUpdateStage, UPDATE_STAGE_TEXT, type UpdateStatusResponse } from "@pideck/shared";
 import { apiApplyUpdate, errorMessage } from "../lib/api";
 import {
   RELOAD_DELAY_MS,
@@ -90,16 +90,8 @@ export function clearStaleApplyError(error: ApplyError | null, result: UpdateSta
 }
 
 /** Human text for a shim stage; honest fallbacks when nothing is known yet. */
-const STAGE_TEXT: Record<string, string> = {
-  checking: "checking for updates",
-  fetching: "fetching the new source",
-  building: "rebuilding — installing dependencies and building (usually the longest step)",
-  installing: "installing the new build",
-  restarting: "restarting the daemon",
-};
-
 export function updatingText(stage: string | null, apiUp: boolean): string {
-  if (stage !== null && STAGE_TEXT[stage] !== undefined) return STAGE_TEXT[stage];
+  if (stage !== null && UPDATE_STAGE_TEXT[stage] !== undefined) return UPDATE_STAGE_TEXT[stage];
   if (stage !== null) return `update stage: ${stage}`;
   if (!apiUp) return "daemon restarting — it will come back with the new build";
   return "applying the update";
@@ -243,7 +235,7 @@ export interface UpdateBannerViewProps {
  */
 function activeApplyProgress(status: UpdateStatusResponse | null): UpdateStatusResponse["applyProgress"] {
   const progress = status?.applyProgress ?? null;
-  if (progress === null || progress.stage === "done" || progress.stage === "failed") return null;
+  if (progress === null || isTerminalUpdateStage(progress.stage)) return null;
   return progress;
 }
 

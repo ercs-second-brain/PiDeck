@@ -38,7 +38,7 @@ import { defaultGitRunner, type GitRunner } from "../github/repos.js";
 import { TtlSwrCache } from "./swr-cache.js";
 import { HttpError } from "./router.js";
 
-import type { UpdateStatus } from "@pideck/shared";
+import { isTerminalUpdateStage, type UpdateStatus } from "@pideck/shared";
 
 /**
  * Default re-check throttle (issue #82): the webapp forces fresh checks on
@@ -57,14 +57,6 @@ const PROGRESS_FILE = "var/update-state.json";
 const PROGRESS_TTL_MS = 30 * 60 * 1000;
 /** The shim writes `date -u +%Y-%m-%dT%H:%M:%SZ` — no sub-second precision. */
 const ISO_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
-/**
- * Progress stages that END an apply cycle (issue #221): everything else in
- * the file means an apply is genuinely running right now (within the liveness
- * TTL above) — the check must serve that fact instead of racing the shim's
- * git/gh operations with its own probes.
- */
-const TERMINAL_PROGRESS_STAGES = new Set(["done", "failed"]);
-
 const execFileAsync = promisify(execFile);
 
 /** Injectable detached-process spawner for {@link UpdateChecker.apply} (tests). */
@@ -203,11 +195,9 @@ export class UpdateChecker {
     // running — serve the last completed status (SHAs are still meaningful;
     // the webapp's apply polling keys on runningSha/progress) instead of
     // racing the shim's git fetch/reset and gh calls with our own probes.
-    if (progress !== null && !TERMINAL_PROGRESS_STAGES.has(progress.stage) && this.lastBase !== null) {
+    if (progress !== null && !isTerminalUpdateStage(progress.stage) && this.lastBase !== null) {
       return { ...this.lastBase, applyProgress: progress };
     }
-    // `force` (the webapp's `?refresh=1` on page load / window focus) skips
-    // the cache read; the fresh result still becomes the new cache entry.
     // `force` (the webapp's `?refresh=1` on page load / window focus) skips
     // the cache read; the fresh result still becomes the new cache entry.
     const base = await (options.force === true
