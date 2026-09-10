@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGetGhAuth, apiGetPiAuth, errorMessage, type GhAuth, type PiAuth } from "../../lib/api";
+import { Modal } from "../../components/Modal";
 import { GhPermissionStep } from "./GhPermissionStep";
 import { PiAuthStep } from "./PiAuthStep";
 import { RecordedNote } from "./RecordedNote";
@@ -84,13 +85,8 @@ function GlobalOnboarding({ onFinished }: { onFinished: () => void }) {
 /** The global onboarding rendered as a modal overlay over the terminals page. */
 export function GlobalOnboardingModal({ onClose, onFinished }: { onClose: () => void; onFinished: () => void }) {
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="PiDeck onboarding">
-      <div className="modal-card">
-        <button type="button" className="modal-close" aria-label="Close onboarding" onClick={onClose}>
-          ×
-        </button>
-        <GlobalOnboarding onFinished={onFinished} />
-      </div>
-    </div>
+    <Modal label="PiDeck onboarding" closeLabel="Close onboarding" onClose={onClose}>
+      <GlobalOnboarding onFinished={onFinished} />
+    </Modal>
   );
 }

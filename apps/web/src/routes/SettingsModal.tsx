@@ -13,6 +13,7 @@ import { apiUpdateSettings, apiGetSettings, errorMessage } from "../lib/api";
 import { useProject } from "../lib/use-project";
 import { BROWSER_NOTIFICATIONS_UNSUPPORTED, permissionState, requestNotificationPermission } from "../components/NotificationCenter";
 import { Toggle } from "../components/Toggle";
+import { Modal } from "../components/Modal";
 import { SettingsForm } from "./ProjectSettingsForm";
 
 /**
@@ -24,16 +25,11 @@ import { SettingsForm } from "./ProjectSettingsForm";
  */
 export function GlobalSettingsModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Global settings">
-      <div className="modal-card">
-        <button type="button" className="modal-close" aria-label="Close global settings" onClick={onClose}>
-          ×
-        </button>
-        <h1 className="modal-title">Global settings</h1>
-        <p className="project-repo">Daemon-wide — applies to every project.</p>
-        <GlobalWorkerSettings />
-      </div>
-    </div>
+    <Modal label="Global settings" closeLabel="Close global settings" onClose={onClose}>
+      <h1 className="modal-title">Global settings</h1>
+      <p className="project-repo">Daemon-wide — applies to every project.</p>
+      <GlobalWorkerSettings />
+    </Modal>
   );
 }
 
@@ -49,23 +45,18 @@ export function GlobalSettingsModal({ onClose }: { onClose: () => void }) {
 export function ProjectSettingsModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const { project, loaded } = useProject(projectId);
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Project settings">
-      <div className="modal-card">
-        <button type="button" className="modal-close" aria-label="Close project settings" onClick={onClose}>
-          ×
-        </button>
-        {project === undefined ? (
-          <p className="empty">{loaded ? `Project “${projectId}” not found.` : "Loading…"}</p>
-        ) : (
-          <>
-            <h1 className="modal-title">{project.name} — settings</h1>
-            <p className="project-repo">{project.repoUrl}</p>
-            <GlobalWorkerSettings />
-            <SettingsForm key={project.id} project={project} />
-          </>
-        )}
-      </div>
-    </div>
+    <Modal label="Project settings" closeLabel="Close project settings" onClose={onClose}>
+      {project === undefined ? (
+        <p className="empty">{loaded ? `Project “${projectId}” not found.` : "Loading…"}</p>
+      ) : (
+        <>
+          <h1 className="modal-title">{project.name} — settings</h1>
+          <p className="project-repo">{project.repoUrl}</p>
+          <GlobalWorkerSettings />
+          <SettingsForm key={project.id} project={project} />
+        </>
+      )}
+    </Modal>
   );
 }
 

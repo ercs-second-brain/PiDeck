@@ -3,13 +3,15 @@
  * shell, the terminate-worker confirm (issues #116/#268), the delete-project
  * confirm (issue #172), and the researcher-spawn question modal
  * (docs/agent-kinds.md, issue #297). Extracted from picker-rows to keep each
- * module under its complexity budget; Escape is handled by the
- * interaction-state hook — the backdrop click dismisses unless a request is
- * in flight. Pure rendering.
+ * module under its complexity budget; Escape is handled both by the
+ * interaction-state hook (for focus outside the modal) and by the shared
+ * {@link Modal} shell — the backdrop click dismisses unless a request is in
+ * flight (`canClose`). Pure rendering.
  */
 
 import { useState, type ReactNode } from "react";
 import { agentKindInfo, type AgentKind, type AgentKindSpec } from "@pideck/shared";
+import { Modal } from "../components/Modal";
 
 /**
  * Shared shell for the sidebar's small centered confirmation modals
@@ -34,33 +36,32 @@ function ConfirmModal(props: {
   onCancel: () => void;
 }) {
   return (
-    <div
-      className="modal-overlay terminate-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={props.ariaLabel}
-      onClick={props.pending ? undefined : props.onCancel}
+    <Modal
+      label={props.ariaLabel}
+      onClose={props.onCancel}
+      canClose={!props.pending}
+      closeButton={false}
+      overlayClassName="terminate-modal-overlay"
+      cardClassName="terminate-modal"
     >
-      <div className="modal-card terminate-modal" onClick={(event) => event.stopPropagation()}>
-        <h3 className="terminate-modal-title">{props.title}</h3>
-        <div className="terminate-modal-body">{props.body}</div>
-        {props.error && <p className="terminate-modal-error">{props.error}</p>}
-        <div className="terminate-modal-actions">
-          <button type="button" className="terminate-modal-cancel" disabled={props.pending} onClick={props.onCancel}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="terminate-modal-confirm"
-            disabled={props.pending || props.confirmDisabled === true}
-            title={props.confirmLabel}
-            onClick={props.onConfirm}
-          >
-            {props.pending ? props.pendingLabel : props.confirmLabel}
-          </button>
-        </div>
+      <h3 className="terminate-modal-title">{props.title}</h3>
+      <div className="terminate-modal-body">{props.body}</div>
+      {props.error && <p className="terminate-modal-error">{props.error}</p>}
+      <div className="terminate-modal-actions">
+        <button type="button" className="terminate-modal-cancel" disabled={props.pending} onClick={props.onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="terminate-modal-confirm"
+          disabled={props.pending || props.confirmDisabled === true}
+          title={props.confirmLabel}
+          onClick={props.onConfirm}
+        >
+          {props.pending ? props.pendingLabel : props.confirmLabel}
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 

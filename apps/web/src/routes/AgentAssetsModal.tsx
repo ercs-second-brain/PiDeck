@@ -27,6 +27,7 @@ import { PERSONAS, agentKindInfo, agentSkillIdSchema, type AgentAssets, type Age
 import { AssetDialog } from "./AssetDialog";
 import { AgentKindsSection } from "./AgentKindsSection";
 import { Toggle } from "../components/Toggle";
+import { Modal } from "../components/Modal";
 import { apiDeleteAgentSkill, apiDeletePromptOverride, apiGetAgentAssets, apiSaveAgentSkill, apiSavePromptOverride, errorMessage } from "../lib/api";
 
 /**
@@ -74,20 +75,15 @@ export function AgentAssetsModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Agent assets">
-      <div className="modal-card agent-assets-modal">
-        <button type="button" className="modal-close" aria-label="Close agent assets" onClick={onClose}>
-          ×
-        </button>
-        <h1 className="modal-title">Agent assets</h1>
-        <p className="project-repo">
-          Per-persona prompts, skills, and agent kinds — user-owned, stored by the daemon, applied when a session
-          spawns. Shipped defaults stay as fallback.
-        </p>
-        {loadError !== null && <p className="error-note">Failed to load agent assets: {loadError}</p>}
-        {assets !== null && <AgentAssetsView assets={assets} onReload={setAssets} />}
-      </div>
-    </div>
+    <Modal label="Agent assets" onClose={onClose} cardClassName="agent-assets-modal">
+      <h1 className="modal-title">Agent assets</h1>
+      <p className="project-repo">
+        Per-persona prompts, skills, and agent kinds — user-owned, stored by the daemon, applied when a session
+        spawns. Shipped defaults stay as fallback.
+      </p>
+      {loadError !== null && <p className="error-note">Failed to load agent assets: {loadError}</p>}
+      {assets !== null && <AgentAssetsView assets={assets} onReload={setAssets} />}
+    </Modal>
   );
 }
 

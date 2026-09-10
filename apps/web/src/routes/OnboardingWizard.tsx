@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Project } from "@pideck/shared";
 import { apiGetGhAuth, errorMessage } from "../lib/api";
+import { Modal } from "../components/Modal";
 import { AutoAgentStep } from "./onboarding/AutoAgentStep";
 import { RepoSourceStep } from "./onboarding/RepoSourceStep";
 import { StepNav } from "./onboarding/StepNav";
@@ -114,13 +115,8 @@ export function OnboardingModal({
   onRegistered: (project: Project) => void;
 }) {
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Project onboarding">
-      <div className="modal-card">
-        <button type="button" className="modal-close" aria-label="Close onboarding" onClick={onClose}>
-          ×
-        </button>
-        <OnboardingWizard onRegistered={onRegistered} />
-      </div>
-    </div>
+    <Modal label="Project onboarding" closeLabel="Close onboarding" onClose={onClose}>
+      <OnboardingWizard onRegistered={onRegistered} />
+    </Modal>
   );
 }

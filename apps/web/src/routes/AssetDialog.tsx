@@ -7,6 +7,7 @@
 
 import type { ReactNode } from "react";
 
+import { Modal } from "../components/Modal";
 import { EditorActions } from "./AssetEditorActions";
 
 /** The dialog's shared footer: error note plus Cancel/Save (the #315 chrome). */
@@ -18,20 +19,21 @@ export interface AssetDialogFooter {
 
 export function AssetDialog(props: { ariaLabel: string; title?: string; footer?: AssetDialogFooter; onClose: () => void; children: ReactNode }) {
   return (
-    <div className="modal-overlay asset-dialog-overlay" role="dialog" aria-modal="true" aria-label={props.ariaLabel}>
-      <div className="modal-card asset-dialog">
-        <button type="button" className="modal-close" aria-label={`Close ${props.ariaLabel}`} onClick={props.onClose}>
-          ×
-        </button>
-        {props.title !== undefined && <h2 className="modal-title">{props.title}</h2>}
-        {props.children}
-        {props.footer !== undefined && (
-          <>
-            {props.footer.error !== null && <p className="error-note">{props.footer.error}</p>}
-            <EditorActions saving={props.footer.saving} onSave={props.footer.onSave} onCancel={props.onClose} />
-          </>
-        )}
-      </div>
-    </div>
+    <Modal
+      label={props.ariaLabel}
+      closeLabel={`Close ${props.ariaLabel}`}
+      onClose={props.onClose}
+      overlayClassName="asset-dialog-overlay"
+      cardClassName="asset-dialog"
+    >
+      {props.title !== undefined && <h2 className="modal-title">{props.title}</h2>}
+      {props.children}
+      {props.footer !== undefined && (
+        <>
+          {props.footer.error !== null && <p className="error-note">{props.footer.error}</p>}
+          <EditorActions saving={props.footer.saving} onSave={props.footer.onSave} onCancel={props.onClose} />
+        </>
+      )}
+    </Modal>
   );
 }
