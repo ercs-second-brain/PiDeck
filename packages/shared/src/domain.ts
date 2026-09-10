@@ -466,9 +466,20 @@ export type Session = z.infer<typeof sessionSchema>;
 // ---------------------------------------------------------------------------
 
 /**
- * Worker lifecycle:
+ * Worker lifecycle (statuses are platform-derived, issue #411 — not
+ * agent-reported):
  * `spawning` → `running` → (`awaiting_ci` → `fixing_ci` | `addressing_review`)* → `done`
  * with `failed` / `stopped` as terminal failure states.
+ *
+ * The transitions the PR pipeline owns follow platform-truth events: prompt
+ * delivery sets `running` / `fixing_ci` / `addressing_review`; CI completion
+ * moves a passively watching author out of `awaiting_ci` to `done` ("CI
+ * green — awaiting review/merge") — `done` there is a resting state, and a
+ * later CI failure or review findings deterministically wake the worker
+ * again; the reviewer's own review submission ends its `running` round
+ * (resting `awaiting_ci` until re-prompted). Prompt staleness (a timeout
+ * heuristic, not truth) is the one remaining agent-behavior proxy. Manual
+ * status updates from the webapp (#76) remain possible on top.
  *
  * `archived` is a terminal status set only by an explicit terminate (issue
  * #64): the worker's tmux session was killed from the webapp and its

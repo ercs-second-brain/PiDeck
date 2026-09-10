@@ -102,8 +102,10 @@ describe("PullRequestPipeline: CI-fix loop", () => {
       status: "awaiting_ci",
       statusMessage: expect.stringContaining("auto-fix review comments disabled"),
     });
-    // No repeated identical status broadcasts (no churn on the hub).
+    // No repeated identical status broadcasts (no churn on the hub). Issue
+    // #411: poll 1 additionally moved the green-PR author to `done` (the
+    // B34 transition) — the gated notice rides on top and then dedupes.
     await h.poll();
-    expect(h.sessions.statuses).toHaveLength(2); // initial tracking + the disabled notice
+    expect(h.sessions.statuses).toHaveLength(3);
   });
 });

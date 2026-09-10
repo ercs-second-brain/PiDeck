@@ -14,7 +14,7 @@ import { ACTIVE_WORKER_STATUSES, type PullRequest, type WorkerStatus } from "@pi
 import type { PRReviewComment } from "../../github/pulls.js";
 import type { ReviewSubmission } from "../../github/reviews.js";
 import { buildCiFixPrompt, buildReviewCommentsPrompt } from "./prompts.js";
-import { driveReview, observeReview } from "./review.js";
+import { driveReview, observeReview, settleReviewerRound } from "./review.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import type { PRSessionControl } from "./pipeline.js";
 import type { TrackedPR } from "./tracker.js";
@@ -89,13 +89,22 @@ export async function driveLoop(
   // Issue #408: a fresh review round re-arms the ready-for-merge trigger —
   // a changes-requested round that ends in a fresh approval notifies again
   // even when the head never moved.
-  if (review.isNew !== null) tracked.readyNotifiedHeadSha = null;
+  if (review.isNew !== null) {
+    tracked.readyNotifiedHeadSha = null;
+    // Issue #411 (B35): the reviewer's own submission is platform truth
+    // that its round has ended — observed on red polls too (the watermark
+    // consumes there), so the reviewer's status never trails behind it.
+    settleReviewerRound(tracked, pr, review.isNew, ctx);
+  }
 
   if (pr.ciStatus === "failure") {
     return driveCiFailure(tracked, pr, headSha, headChangedSincePrompt, newComments, ctx, events);
   }
   if (pr.ciStatus === "success") tracked.fixAttempts = 0; // the previous red streak ended green
   const greenEvents = await driveGreen(tracked, pr, headSha, newComments, ctx, events);
+  // Issue #411 (B34): CI completion is platform truth — the passively
+  // watching author leaves `awaiting_ci` once CI has passed.
+  driveCiPassedAuthor(tracked, pr, newComments.length, ctx);
   // Issue #107: the auto review agent cycle runs on green PRs (after the
   // comment-delivery branch above, which owns the author's prompt state).
   // Issue #407: `review.isNew` — a newly observed review submission — drives
@@ -130,6 +139,28 @@ function driveReadyForMerge(tracked: TrackedPR, pr: PullRequest, headSha: string
     prNumber: tracked.prNumber,
     title: pr.title,
   };
+}
+
+/**
+ * Issue #411 (B34): CI completion is platform truth, so the author's status
+ * follows it. A passively watching author parked at `awaiting_ci` ("watching
+ * CI") must not stay there once CI has passed — `awaiting_ci` means waiting
+ * on CI, and the author's build round is complete. `done` carries what the
+ * PR is waiting for in its message; the deterministic triggers move the
+ * worker back to `fixing_ci` / `addressing_review` when platform events
+ * demand work, so `done` is a resting state, not a terminal one.
+ *
+ * Skipped while undelivered review comments exist with `autoFixReviewComments`
+ * off: the #106 gated notice (`awaiting_ci` + "disabled (setting)") is the
+ * truthful status then, and it must not ping-pong with this transition.
+ * A `running` author (the one agent-reported status left — the platform
+ * cannot see whether the agent is still typing) is left alone too.
+ */
+function driveCiPassedAuthor(tracked: TrackedPR, pr: PullRequest, newCommentCount: number, ctx: DriveContext): void {
+  if (pr.ciStatus !== "success" || tracked.state !== "watching" || newCommentCount > 0) return;
+  const author = ctx.sessions.getWorker(tracked.workerId);
+  if (author === undefined || author.status !== "awaiting_ci") return;
+  setStatusQuietly(ctx, tracked.workerId, "done", `PR #${tracked.prNumber}: CI green — awaiting review/merge`);
 }
 
 /** CI red branch: drive the worker into a bounded fix cycle unless gated off. */

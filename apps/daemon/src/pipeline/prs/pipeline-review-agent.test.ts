@@ -95,14 +95,25 @@ describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => 
 
   it("respects the project's worker concurrency cap and spawns when a slot frees", async () => {
     let cap: number | undefined = 1;
-    const h = greenHarness({ workerCap: () => cap });
+    const h = greenHarness({ workerCap: () => cap, fixPromptTimeoutMs: 1000 });
+    // CI red first: the fix prompt keeps the author actively working
+    // (`fixing_ci`) — it occupies the only slot, so no reviewer spawns.
+    h.prs.get(12)!.checkRuns = checkRuns("failure");
     await h.poll();
     await h.poll();
-    // The authoring worker occupies the only slot → no reviewer spawn.
+    expect(h.tracker.get(PROJECT, 12)!.state).toBe("fixing");
+
+    // CI green but the author's fix prompt is still in flight → the author
+    // holds the only slot → no reviewer spawn.
+    h.prs.get(12)!.checkRuns = checkRuns("success");
+    await h.poll();
     expect(h.sessions.spawned).toHaveLength(0);
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: null });
 
-    cap = 2; // settings change lands without a restart
+    // The prompt goes stale → the author rests (`done`, issue #411) → its
+    // slot frees → the reviewer spawns.
+    h.advance(2000);
+    cap = 1;
     await h.poll();
     expect(h.sessions.spawned).toHaveLength(1);
 
@@ -114,11 +125,11 @@ describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => 
   });
 
   it("counts workerLike kind sessions toward the cap too (issue #393)", async () => {
-    // Cap 2: the active authoring worker (1) + one workerLike kind session
-    // (1) fill the project — the reviewer must NOT spawn, even though only
-    // one WORKER exists. Terminating the kind session frees the slot.
+    // Cap 1: one workerLike kind session fills the project (the resting
+    // author — `done` once CI passed, issue #411 — holds no slot). The
+    // reviewer must NOT spawn. Terminating the kind session frees the slot.
     const kindSessions = [workerLikeKindSession("sess-kind-1", "devex-audit")];
-    const h = greenHarness({ workerCap: () => 2, kindSessions });
+    const h = greenHarness({ workerCap: () => 1, kindSessions });
     await h.poll();
     await h.poll();
     expect(h.sessions.spawned).toHaveLength(0);
