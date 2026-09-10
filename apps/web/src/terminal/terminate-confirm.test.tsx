@@ -96,7 +96,7 @@ describe("TerminateWorkerModal error surface (issue #268)", () => {
     expect(html).toContain("terminate-modal-error");
     expect(html).toContain("active worker(s)");
     // Not pending: the confirm button stays actionable for a retry.
-    expect(html).toContain("Terminate");
-    expect(html).not.toContain("Terminating…");
+    expect(html).toContain("Delete");
+    expect(html).not.toContain("Deleting…");
   });
 });

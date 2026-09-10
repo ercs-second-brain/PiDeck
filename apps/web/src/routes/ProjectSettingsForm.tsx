@@ -19,7 +19,7 @@ const PROJECT_TOGGLES: Array<{ key: "autoReview" | "autoFixCi" | "autoFixReviewC
   { key: "autoReview", label: "Auto review agents" },
   { key: "autoFixCi", label: "Automatically fix CI failures" },
   { key: "autoFixReviewComments", label: "Automatically fix review comments" },
-  { key: "terminateOnMerge", label: "Terminate workers on merge" },
+  { key: "terminateOnMerge", label: "Delete workers on merge" },
 ];
 
 function toChoice(value: boolean | null | undefined): ToggleChoice {

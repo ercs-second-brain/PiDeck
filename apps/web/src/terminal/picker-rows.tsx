@@ -43,7 +43,7 @@ export function RowOptionsMenu(props: {
   open: boolean;
   /** The terminate request for this row is in flight (entry disabled). */
   pending?: boolean;
-  /** The menu entry's label ("Terminate worker…" / "Terminate session…"). */
+  /** The menu entry's label ("Delete worker…" / "Delete session…", #377). */
   entryLabel: string;
   /** The menu entry's explanatory title. */
   entryTitle: string;
@@ -174,8 +174,8 @@ export function WorkerRow(props: {
           sessionId={props.session.id}
           open={props.rowMenuOpen === true}
           pending={props.pending}
-          entryLabel="Terminate worker…"
-          entryTitle="Terminate this worker — the daemon kills the pane and archives it"
+          entryLabel="Delete worker…"
+          entryTitle="Delete this worker — the daemon kills the pane and archives it"
           onToggle={() => props.onToggleRowMenu!(props.session.id)}
           onAskTerminate={() => props.onAskTerminate(props.session.id)}
         />
@@ -226,8 +226,8 @@ export function AgentRow(props: {
           sessionId={props.session.id}
           open={props.rowMenuOpen === true}
           pending={props.pending === true}
-          entryLabel="Terminate session…"
-          entryTitle="Terminate this agent session — the daemon kills the pane and removes the record"
+          entryLabel="Delete session…"
+          entryTitle="Delete this agent session — the daemon kills the pane and removes the record"
           onToggle={() => props.onToggleRowMenu!(props.session.id)}
           onAskTerminate={() => props.onAskTerminate!(props.session.id)}
         />
