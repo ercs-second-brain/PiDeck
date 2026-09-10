@@ -836,6 +836,21 @@
   height: 100%;
 }
 
+/* Issue #375: touch scrolling reaches xterm's scrollback. `touch-action:
+   none` keeps the browser's native vertical pan from claiming swipes that
+   start on the terminal surface — the claimed gesture was cancelled at the
+   compositor after xterm's first preventDefault, which is why a swipe moved
+   about one line and stopped ("scroll up doesn't work on mobile"). The JS
+   takeover (./touch-scroll.ts, same issue) scrolls from touch deltas and
+   relies on this rule so the stream is never interrupted; coarse-pointer
+   only, so fine-pointer devices keep the stock touch path. Taps still
+   synthesize their focus/click chain (touch-action never suppresses those). */
+@media (pointer: coarse) {
+  .terminal-screen .xterm {
+    touch-action: none;
+  }
+}
+
 /* Issues #299/#353: continuous ANSI background blocks. The DOM renderer
    draws each row as a fixed-height div whose inline-block spans carry the
    background color; on non-integer device pixel ratios the span's painted

@@ -9,6 +9,10 @@
  * dedicated visible input field (see ./mobile-input.tsx for the duplication
  * mechanism this closes) and is sent to the pane verbatim once, with the
  * trailing Enter. Keystroke bytes still flow through the one batcher.
+ *
+ * Mobile scrolling (issue #375): on those same devices swipes scroll xterm's
+ * scrollback like desktop mouse-wheel scrolls do — see ./touch-scroll.ts for
+ * why xterm 5.5's built-in touch path cannot.
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
@@ -24,6 +28,7 @@ import { createFitController } from "./terminal-fit";
 import { TERMINAL_THEME } from "./terminal-theme";
 import { TERMINAL_KEYS } from "./keys";
 import { MobileComposer, useCoarsePointer, useMobileTextareaGate } from "./mobile-input";
+import { createTouchScrollController } from "./touch-scroll";
 
 const STATUS_LABELS: Record<TerminalStatus, string> = {
   connecting: "Connecting…",
@@ -59,9 +64,10 @@ interface PaneRefs {
 
 /**
  * Mount/teardown of one terminal instance: builds the xterm surface, wires
- * output, keystroke batching (issue #67), fit, and the session attach, and
- * undoes all of it on unmount. Split out of {@link TerminalPane} so the
- * component stays under the repo's per-function line budget.
+ * output, keystroke batching (issue #67), fit, touch scrolling (issue #375),
+ * and the session attach, and undoes all of it on unmount. Split out of
+ * {@link TerminalPane} so the component stays under the repo's per-function
+ * line budget.
  */
 function useTerminalMount(refs: PaneRefs): void {
   const { sessionId, containerRef, sendRef, connectionRef, sizeRef, termRef, onStatus } = refs;
@@ -132,6 +138,32 @@ function useTerminalMount(refs: PaneRefs): void {
       term.dispose();
     };
   }, [sessionId, containerRef, sendRef, connectionRef, sizeRef, termRef, onStatus]);
+}
+
+/**
+ * Installs the touch-scroll takeover (issue #375) on the mounted terminal as
+ * the touch-device flag changes. Lives behind the pane's own mount effect, so
+ * it only ever sees a live terminal — the same lifecycle as the textarea
+ * gate above, and gated by the same coarse-pointer flag: fine-pointer
+ * devices keep xterm's built-in touch path untouched.
+ */
+function useTouchScroll(
+  termRef: RefObject<Terminal | null>,
+  coarsePointer: boolean,
+): void {
+  useEffect(() => {
+    const term = termRef.current;
+    if (!coarsePointer || !term) return;
+    const element = term.element;
+    const viewport = element?.querySelector<HTMLElement>(".xterm-viewport");
+    if (!element || !viewport) return;
+    const controller = createTouchScrollController({
+      element,
+      viewport,
+      textarea: term.textarea ?? null,
+    });
+    return () => controller.dispose();
+  }, [coarsePointer, termRef]);
 }
 
 /**
@@ -237,6 +269,8 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
     onStatus,
   });
   useMobileTextareaGate(termRef, coarsePointer);
+  // Touch scrolling (issue #375): same flag, same install-once terminal.
+  useTouchScroll(termRef, coarsePointer);
 
   return (
     <div className="terminal-pane">
