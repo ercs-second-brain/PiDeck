@@ -128,9 +128,9 @@ export function reviewAccountSaveBody(settings: SettingsRead | null, username: s
  * returns it (mask-on-read), so the field stays blank and blank means "keep
  * what is stored"; both halves travel together on save (both-or-neither,
  * issue #424) and the daemon's 400s surface verbatim. Saves via its own
- * button; owns its own busy/saved/error state. Exported for tests.
+ * button; owns its own busy/saved/error state.
  */
-export function ReviewAccountSettings({ settings }: { settings: SettingsRead | null }) {
+function ReviewAccountSettings({ settings }: { settings: SettingsRead | null }) {
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
