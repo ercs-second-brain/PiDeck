@@ -128,3 +128,81 @@ describe("extended-keys on daemon-created sessions (issue #222)", () => {
     expect(fake.sessions.get(orch.tmuxSession)?.extendedKeys).toBe("on");
   });
 });
+
+describe("reviewer identity re-injection on relaunch (issue #423)", () => {
+  /** The `sh -c` env wrapper script Tmux embeds when a pane is given env. */
+  const envScript = (pane: { command: string[] } | undefined): string | undefined =>
+    pane?.command[0] === "sh" && pane.command[1] === "-c" ? pane.command[2] : undefined;
+
+  it("re-injects the fresh review account GH_TOKEN when relaunching a reviewer pane", async () => {
+    let token: string | null = "ghp_at_spawn";
+    const { manager, fake, stateDir } = makeSessionManager({
+      tmpPrefix: "pideck-relaunch-reviewer-",
+      reviewAccountToken: () => token,
+    });
+    const worktree = path.join(stateDir, "worktrees", "issue-423");
+    const spawned = await manager.spawnWorker("proj", {
+      issueNumber: 423,
+      cwd: worktree,
+      command: ["bash", "-c", "sleep 300"],
+      env: { GH_TOKEN: "ghp_spawn" },
+    });
+    // The identity is persisted on the session record, not just the pane.
+    expect(spawned.session.runsAsReviewIdentity).toBe(true);
+
+    fake.sessions.delete(spawned.session.tmuxSession); // pane died (user exited)
+    token = "ghp_fresh"; // settings rotated between spawn and relaunch
+
+    await manager.relaunchSession(spawned.session.id);
+
+    const script = envScript(fake.sessions.get(spawned.session.tmuxSession));
+    // The relaunch reads the token FRESH from settings (#46 pattern) — the
+    // relaunched reviewer runs `gh pr review` as the review identity and
+    // files real reviews, not the spawn-time (or stale) value.
+    expect(script).toContain("export GH_TOKEN=ghp_fresh");
+    expect(script).not.toContain("ghp_spawn");
+  });
+
+  it("does not inject GH_TOKEN when relaunching an ordinary worker pane", async () => {
+    const { manager, fake, stateDir } = makeSessionManager({
+      tmpPrefix: "pideck-relaunch-plain-",
+      reviewAccountToken: () => "ghp_review",
+    });
+    const worktree = path.join(stateDir, "worktrees", "issue-423-plain");
+    const spawned = await manager.spawnWorker("proj", {
+      issueNumber: 423,
+      cwd: worktree,
+      command: ["bash", "-c", "sleep 300"],
+    });
+    expect(spawned.session.runsAsReviewIdentity).toBeUndefined();
+
+    fake.sessions.delete(spawned.session.tmuxSession);
+    await manager.relaunchSession(spawned.session.id);
+
+    const script = envScript(fake.sessions.get(spawned.session.tmuxSession));
+    if (script !== undefined) {
+      // PATH/PD_NODE runtime exports are expected; GH_TOKEN is not.
+      expect(script).not.toContain("GH_TOKEN");
+    }
+  });
+
+  it("injects no GH_TOKEN when no review account is configured (single-account mode)", async () => {
+    const { manager, fake, stateDir } = makeSessionManager({
+      tmpPrefix: "pideck-relaunch-noacct-",
+      reviewAccountToken: () => null,
+    });
+    const worktree = path.join(stateDir, "worktrees", "issue-423-none");
+    const spawned = await manager.spawnWorker("proj", {
+      issueNumber: 423,
+      cwd: worktree,
+      command: ["bash", "-c", "sleep 300"],
+      env: { GH_TOKEN: "ghp_spawn" },
+    });
+
+    fake.sessions.delete(spawned.session.tmuxSession);
+    await manager.relaunchSession(spawned.session.id);
+
+    const script = envScript(fake.sessions.get(spawned.session.tmuxSession));
+    expect(script).not.toContain("GH_TOKEN");
+  });
+});

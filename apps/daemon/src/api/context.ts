@@ -273,7 +273,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const agentKindStore = new AgentKindStore(stateDir);
   const agentKinds = new AgentKindRegistry(agentKindStore);
   // Issue #318: pane-input readiness probe (test-overridable).
-  const sessions = new SessionManager({ tmux, registry, layout, personaAssets: agentAssets, agentKinds, paneReady: options.paneReady ?? ((name: string) => waitForPaneInputReady(tmux, name)), ...(options.git !== undefined ? { git: options.git } : {}) });
+  const sessions = new SessionManager({ tmux, registry, layout, personaAssets: agentAssets, agentKinds, paneReady: options.paneReady ?? ((name: string) => waitForPaneInputReady(tmux, name)), reviewAccountToken: () => settings.get().reviewAccountToken, ...(options.git !== undefined ? { git: options.git } : {}) });
 
   const gh = options.gh ?? ((_repoUrl: string) => new GhClient());
   const projectStore = new ProjectStore(stateDir);

@@ -28,13 +28,19 @@ export interface FakeSessionManager {
 }
 
 /** Builds a hermetic SessionManager over a fresh tmp state dir. */
-export function makeSessionManager({ tmpPrefix }: { tmpPrefix: string }): FakeSessionManager {
+export function makeSessionManager({ tmpPrefix, reviewAccountToken }: { tmpPrefix: string; reviewAccountToken?: () => string | null }): FakeSessionManager {
   const stateDir = mkdtempSync(path.join(tmpdir(), tmpPrefix));
   const fake = new FakeTmuxRunner();
   const git = new FakeGitRunner();
   const tmux = new Tmux({ runner: (args) => fake.run(args) });
   const layout = new ProjectLayout(stateDir);
   const registry = new SessionRegistry(layout.sessionsFilePath());
-  const manager = new SessionManager({ tmux, registry, layout, git: git.asRunner() });
+  const manager = new SessionManager({
+    tmux,
+    registry,
+    layout,
+    git: git.asRunner(),
+    ...(reviewAccountToken !== undefined ? { reviewAccountToken } : {}),
+  });
   return { manager, fake, git, registry, layout, stateDir };
 }

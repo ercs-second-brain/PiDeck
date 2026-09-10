@@ -38,6 +38,15 @@ export interface ReconcileDeps {
   tmux: Tmux;
   registry: SessionRegistry;
   layout: ProjectLayout;
+  /**
+   * Review account token (issue #423), read fresh per recreation decision
+   * (the #46 settings pattern): when a session is flagged
+   * `runsAsReviewIdentity` (issue #407 reviewer panes), the recreated pane
+   * is launched with `GH_TOKEN` pointing at the second GitHub account, so
+   * a resurrected/relaunched reviewer still files real reviews instead of
+   * running `gh` as the primary identity (HTTP 422 on decisive reviews).
+   */
+  reviewAccountToken?: () => string | null;
 }
 
 /**
@@ -59,14 +68,39 @@ export interface ReconcileDeps {
  *   (pi with the orchestrator prompt, issue #290) is `OrchestratorBootstrap`'s
  *   job, layered above this module.
  */
-export function launchPath(deps: ReconcileDeps, session: Session): { cwd: string; command?: string[] } {
+/**
+ * The env a recreated pane must start with (issue #423): reviewer panes
+ * carry the review account's `GH_TOKEN` (issue #407) — without it a
+ * resurrected/relaunched reviewer runs `gh` as the PRIMARY identity, whose
+ * decisive reviews get HTTP 422 (the review leg silently degrades to
+ * comment reviews). The token is read fresh per decision at recreation
+ * time; no flag or no configured account → no env override.
+ */
+function sessionLaunchEnv(deps: ReconcileDeps, session: Session): Record<string, string> | undefined {
+  if (session.runsAsReviewIdentity !== true) return undefined;
+  const token = deps.reviewAccountToken?.();
+  if (token === undefined || token === null || token.length === 0) return undefined;
+  return { GH_TOKEN: token };
+}
+
+export function launchPath(deps: ReconcileDeps, session: Session): {
+  cwd: string;
+  command?: string[];
+  /** Env the recreated pane must start with (reviewer GH_TOKEN re-injection, issue #423). */
+  env?: Record<string, string>;
+} {
   const cwd = session.cwd ??
     (session.role === "worker" ? deps.layout.cloneDir(session.projectId) : deps.layout.projectDir(session.projectId));
   if (session.agentKind !== undefined) return { cwd };
   const command = session.role === "worker"
     ? session.command !== undefined ? resurrectionCommand(deserializeCommand(session.command)) : [...RESURRECT_WORKER_COMMAND]
     : undefined;
-  return { cwd, ...(command === undefined ? {} : { command }) };
+  const env = sessionLaunchEnv(deps, session);
+  return {
+    cwd,
+    ...(command === undefined ? {} : { command }),
+    ...(env === undefined ? {} : { env }),
+  };
 }
 
 /** Whether a worker status is terminal (guards must never overwrite them). */
@@ -129,10 +163,11 @@ export async function reconcileSessions(deps: ReconcileDeps, options: { resurrec
       continue;
     }
     try {
-      const { cwd, command } = launchPath(deps, session);
+      const { cwd, command, env } = launchPath(deps, session);
       await tmux.newSession(session.tmuxSession, {
         cwd,
         ...(command === undefined ? {} : { command }),
+        ...(env === undefined ? {} : { env }),
       });
       result.resurrected.push(session);
     } catch (err) {
