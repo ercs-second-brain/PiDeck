@@ -61,7 +61,7 @@ export function agentKindHandlers(services: DaemonServices): Pick<EndpointRegist
       if (live.length > 0) {
         throw new HttpError(
           409,
-          `agent kind "${params.kind}" has ${live.length} live session(s) — terminate them before deleting the kind`,
+          `agent kind "${params.kind}" has ${live.length} live session(s) — delete them before deleting the kind`,
         );
       }
       services.agentKindStore.delete(params.kind);
