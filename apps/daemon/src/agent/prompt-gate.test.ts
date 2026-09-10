@@ -236,4 +236,19 @@ describe("PromptGate.queueSession (agent-kind sessions, docs/agent-kinds.md)", (
     expect(h.gate.sessionSize).toBe(1);
     expect(h.typed).toEqual([]);
   });
+
+  it("delivers worker and session entries in one pass over the single queue (issue #395)", async () => {
+    const h = harness();
+    h.gate.queue(h.workers.get("worker-1") as Worker, "w prompt");
+    h.gate.queueSession("sess-kind-3", "s prompt");
+    h.setReady(true);
+    await h.gate.deliverPending();
+    expect(h.typed).toEqual([
+      { sessionId: "sess-1", keys: "w prompt", enter: true },
+      { sessionId: "sess-kind-3", keys: "s prompt", enter: true },
+    ]);
+    expect(h.gate.size).toBe(0);
+    expect(h.gate.sessionSize).toBe(0);
+    expect((h.workers.get("worker-1") as Worker).status).toBe("running");
+  });
 });
