@@ -5,7 +5,7 @@
  * callerWaits caller-routed kind's calling pane is told a report is coming,
  * and a waitForInput kind spawned without input sits ready (nothing typed
  * beyond the persona launch line). The full 8-cell permutation matrix over
- * the pure decisions lives in `agent/prompt-gate-v2.test.ts`.
+ * the pure decisions lives in `agent/prompt-gate-kind-spec.test.ts`.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

@@ -240,7 +240,7 @@ id immediately, and the persona delivers the report asynchronously.
   the caller-completion notice above. The pure decisions live in
   `apps/daemon/src/agent/prompt-gate.ts` (`planAgentKindSpawn`) and
   `apps/daemon/src/sessions/agent-kinds.ts` (`agentKindExcludedTools`),
-  enumerated per config permutation in `agent/prompt-gate-v2.test.ts`.
+  enumerated per config permutation in `agent/prompt-gate-kind-spec.test.ts`.
 
 ## 10. Kind-id migration: `investigator` → `researcher` (issue #335)
 

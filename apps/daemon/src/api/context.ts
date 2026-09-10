@@ -289,7 +289,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   const projects = new ProjectService({
     store: projectStore,
     layout,
-    // agent/README.md: daemon-wide defaults seed new projects.
+    // Daemon-wide settings (`SettingsStore`) seed a new project's defaults.
     defaultSettings: () => ({
       workerConcurrency: settings.get().defaultWorkerConcurrency,
     }),
