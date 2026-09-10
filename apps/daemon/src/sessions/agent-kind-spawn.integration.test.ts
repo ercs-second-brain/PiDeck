@@ -114,11 +114,13 @@ describe("agent-kind launch on a real tmux server (docs/agent-kinds.md, issue #3
       parentSessionId: (await services.sessions.ensureOrchestrator(project)).id,
     });
 
-    // Real pane, in the project clone, carrying the typed persona launch.
+    // Real pane, in the session's own worktree (issue #365: the parent
+    // orchestrator has no git state in its project dir, so the
+    // fresh-origin fallback applies), carrying the typed persona launch.
     expect(await tmux.hasSession(session.tmuxSession)).toBe(true);
     await sleep(200);
     const pane = services.registry.getSession(session.id);
-    expect(pane?.cwd).toBe(new ProjectLayout(stateDir).cloneDir(project));
+    expect(pane?.cwd).toBe(new ProjectLayout(stateDir).worktreeDir(project, session.id));
 
     // The persona file sits next to the project state, lineage rendered.
     const persona = readFileSync(agentKindPromptFilePath(new ProjectLayout(stateDir), project, session.id), "utf8");
