@@ -444,6 +444,16 @@ export const sessionSchema = z.object({
   /** Set when `role` is `"worker"` and the session belongs to a worker. */
   workerId: idSchema.nullable(),
   createdAt: isoDateTimeSchema,
+  /**
+   * Archived-at timestamp (issue #357 B9): set when a persona agent
+   * (agent-kind session) is terminated from the webapp — its registry
+   * record is **kept** for history instead of hard-deleted (the worker
+   * archive semantics, issue #64, applied to sessions), with the pane
+   * scrollback captured alongside (the #104 pattern). Absent = live
+   * session; archived sessions are excluded from live listings, relaunch,
+   * and reconcile, and never resurrected.
+   */
+  archivedAt: isoDateTimeSchema.optional(),
 });
 export type Session = z.infer<typeof sessionSchema>;
 
@@ -579,3 +589,37 @@ export const archivedWorkerLogSchema = z.object({
   scrollback: z.string(),
 });
 export type ArchivedWorkerLog = z.infer<typeof archivedWorkerLogSchema>;
+
+// ---------------------------------------------------------------------------
+// Archived persona-agent session log (issue #357 B9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read-only archived log for a terminated persona agent (issue #357 B9):
+ * an agent-kind session terminated from the webapp is **archived**, not
+ * deleted — the registry record is kept (with {@link Session.archivedAt})
+ * and the tmux scrollback is captured at termination (the #104 pattern for
+ * workers). Served by the shape-contracted route
+ * `GET /api/sessions/:sessionId/log`.
+ */
+export const archivedAgentSessionLogSchema = z.object({
+  /** The archived session's id. */
+  sessionId: idSchema,
+  projectId: idSchema,
+  /** The persona kind (agent-kind sessions only). */
+  agentKind: agentKindIdSchema,
+  /** Sidebar label (`null` when the spawn did not record one). */
+  name: z.string().min(1).max(20).nullable(),
+  /** When the session was created. */
+  createdAt: isoDateTimeSchema,
+  /** When the persona agent was terminated. */
+  archivedAt: isoDateTimeSchema,
+  /**
+   * When the scrollback was captured (termination time). `null` when the
+   * pane was already gone at terminate time (nothing to capture).
+   */
+  capturedAt: isoDateTimeSchema.nullable(),
+  /** Captured pane scrollback (plain text). Empty when nothing was captured. */
+  scrollback: z.string(),
+});
+export type ArchivedAgentSessionLog = z.infer<typeof archivedAgentSessionLogSchema>;

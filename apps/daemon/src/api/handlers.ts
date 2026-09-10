@@ -197,6 +197,10 @@ async function relaunchSessionPayload(services: DaemonServices, sessionId: strin
   if (worker?.status === "archived") {
     throw new HttpError(409, `session ${existing.id} is archived — its log is read-only history`);
   }
+  // Issue #357 B9: archived persona agents are history, not relaunchable panes.
+  if (existing.archivedAt !== undefined) {
+    throw new HttpError(409, `session ${existing.id} is archived — its log is read-only history`);
+  }
   // Registry workers are mutated in place, so capture the status value.
   const statusBefore = worker?.status;
   const session = await services.sessions.relaunchSession(sessionId);

@@ -27,9 +27,10 @@ import type { PersonaLaunchAssets } from "../api/agent-assets.js";
 import { ProjectLayout } from "./layout.js";
 import { prepareWorkerWorkspace } from "./workspace.js";
 import { spawnAgentKindSession, type AgentKindSpawnRequest } from "./agent-kind-spawn.js";
+import { archiveAgentSession } from "./manager-archive.js";
 import { AgentKindRegistry, type AgentKindLookup } from "./agent-kinds.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
-import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
+import { ArchivedLogStore, ARCHIVED_SCROLLBACK_LINES, type ArchivedScrollback } from "./archived-logs.js";
 import { isArchivedWorkerSession, isTerminalWorkerStatus, launchPath, reconcileSessions, type ReconcileDeps, type ReconcileResult } from "./reconcile.js";
 import { confirmPaneSubmitted, waitForPaneInputReady } from "./pane-ready.js";
 import { Tmux } from "./tmux.js";
@@ -80,9 +81,9 @@ export interface SpawnedWorker {
 
 /**
  * How much scrollback to capture when archiving a worker (issue #104): the
- * tmux server's default history limit, so a full pane history fits.
+ * tmux server's default history limit, so a full pane history fits. Lives
+ * in `archived-logs.ts` (shared with the #357 persona-agent archive).
  */
-const ARCHIVED_SCROLLBACK_LINES = 2000;
 
 export class SessionManager {
   private readonly tmux: Tmux;
@@ -300,9 +301,16 @@ export class SessionManager {
     return this.registry.getSession(sessionId);
   }
 
-  /** Registry sessions (all projects, or one project's). */
+  /** Registry sessions (all projects, or one project's) — **live only**:
+   * archived persona agents (issue #357 B9) are excluded, exactly like
+   * archived workers are by their status; every live-listing consumer
+   * (the webapp session lists, the spawn concurrency count, the bootstrap
+   * sweep) reads through here. Archived records remain queryable via
+   * `registry.getSession` for the archived-log route. */
   listSessions(projectId?: string): Session[] {
-    return this.registry.listSessions(projectId ? { projectId } : {});
+    return this.registry
+      .listSessions(projectId ? { projectId } : {})
+      .filter((session) => session.archivedAt === undefined);
   }
 
   listWorkers(filter: { projectId?: string; status?: WorkerStatus } = {}): Worker[] {
@@ -387,13 +395,17 @@ export class SessionManager {
    * `running`. Terminal worker statuses are untouched (a `done` worker's
    * pipeline state must not regress because its pane was reloaded).
    *
-   * Throws for unknown sessions and rejects archived worker sessions —
+   * Throws for unknown sessions and rejects archived sessions — archived
+   * workers (issue #64) and archived persona agents (issue #357 B9) alike;
    * their history is the archived log view, not a relaunchable pane.
    */
   async relaunchSession(sessionId: string): Promise<Session> {
     const session = this.requireSession(sessionId);
     if (isArchivedWorkerSession(this.deps, session)) {
       throw new Error(`session ${sessionId} is archived: archived sessions cannot be relaunched`);
+    }
+    if (session.archivedAt !== undefined) {
+      throw new Error(`session ${sessionId} is archived: archived persona agents cannot be relaunched`);
     }
     if (await this.tmux.hasSession(session.tmuxSession)) {
       await this.tmux.killSession(session.tmuxSession);
@@ -428,6 +440,40 @@ export class SessionManager {
     }
     this.registry.deleteSession(session.id);
     return session;
+  }
+
+  /**
+   * Archives a persona agent session (issue #357 B9): kills its tmux pane,
+   * captures the scrollback at termination (the #104 pattern), and marks
+   * the registry record `archivedAt` instead of deleting it — the worker
+   * archive semantics applied to sessions, so the terminate is
+   * **recoverable via the archive**. Archived persona agents behave like
+   * archived workers: excluded from live listings ({@link listSessions}),
+   * never resurrected by reconcile, never relaunchable (their history is
+   * the archived log).
+   *
+   * Cascades (issue #357 B10): every **live descendant agent-kind session**
+   * (the parentSessionId lineage — children, grandchildren, …) is archived
+   * with it. Idempotent, safe on already-dead panes. Returns `null` for an
+   * unknown id; non-agent-kind sessions keep the {@link killSession}
+   * semantics. Mechanics live in `manager-archive.ts` (the
+   * agent-kind-spawn split pattern).
+   */
+  async archiveAgentSession(sessionId: string): Promise<Session | null> {
+    return archiveAgentSession(
+      { tmux: this.tmux, registry: this.registry, archivedLogs: this.archivedLogs },
+      sessionId,
+      (id) => this.killSession(id),
+    );
+  }
+
+  /**
+   * A persona agent's captured scrollback, if one was captured at its
+   * terminate time (issue #357 B9 — keyed by session id in the same store
+   * as the worker logs).
+   */
+  archivedAgentScrollback(sessionId: string): ArchivedScrollback | undefined {
+    return this.archivedLogs.get(sessionId);
   }
 
   /** Deletes the captured scrollback of the given workers (issue #172 project teardown). */
