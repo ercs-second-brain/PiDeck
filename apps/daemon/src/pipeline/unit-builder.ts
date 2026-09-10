@@ -18,7 +18,7 @@
 
 import path from "node:path";
 
-import type { Issue, IssueBlocker, KanbanColumn } from "@pideck/shared";
+import type { Issue, IssueBlocker } from "@pideck/shared";
 
 import type { GhClient, RepoRef } from "../github/gh.js";
 import { formatRepoRef, parseRepoUrl } from "../github/gh.js";
@@ -95,8 +95,6 @@ export interface ProjectUnit {
   prWatcher: PullRequestWatcher;
   tracker: PRTracker;
   prPipeline: PullRequestPipeline;
-  /** Last broadcast kanban column per PR card id (`from` for card.moved). */
-  lastColumns: Map<string, KanbanColumn>;
 }
 
 /** Everything {@link buildUnit} needs from the daemon context. */
@@ -204,6 +202,5 @@ export function buildUnit(deps: UnitBuilderDeps, projectId: string, repoUrl: str
     prWatcher,
     tracker,
     prPipeline,
-    lastColumns: new Map(),
   };
 }

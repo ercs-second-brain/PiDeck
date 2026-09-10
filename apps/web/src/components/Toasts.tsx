@@ -57,11 +57,22 @@ function eventKey(event: NotificationEvent): string {
     : `agent:${event.projectId}:${event.sessionId}`;
 }
 
-/** Toast headline: "kisstest #42 merged" / "kisstest #42 ready for merge"; project name when known. */
-export function toastText(projectName: string | undefined, toast: MergedPRToast | AgentReportToast): string {
-  const project = projectName ?? toast.projectId;
-  if ("prNumber" in toast) return toast.kind === "ready_for_merge" ? `${project} #${toast.prNumber} ready for merge` : `${project} #${toast.prNumber} merged`;
-  return `${project} ${toast.agentKind} report ready`;
+/** The headline source for a PR-lifecycle or agent-report toast/notification. */
+export type HeadlineSource = Pick<MergedPRToast, "projectId" | "prNumber" | "kind"> | Pick<AgentReportToast, "projectId" | "agentKind">;
+
+/**
+ * The ONE headline builder (KISS audit F11): toast and browser-notification
+ * render the same three strings — "kisstest #42 merged", "kisstest #42 ready
+ * for merge", "kisstest devex-audit report ready" — with the project name
+ * when known, the raw project id otherwise.
+ */
+export function headline(projectName: string | undefined, source: HeadlineSource): string {
+  const project = projectName ?? source.projectId;
+  return "prNumber" in source
+    ? source.kind === "ready_for_merge"
+      ? `${project} #${source.prNumber} ready for merge`
+      : `${project} #${source.prNumber} merged`
+    : `${project} ${source.agentKind} report ready`;
 }
 
 /** Appends an event as a toast, deduped by key and bounded — pure. */
@@ -101,7 +112,7 @@ export function ToastStack({ toasts, projects, onDismiss }: ToastStackProps) {
           title="Dismiss"
           onClick={() => onDismiss(toast.key)}
         >
-          <strong>{toastText(projects.find((p) => p.id === toast.projectId)?.name, toast)}</strong>
+          <strong>{headline(projects.find((p) => p.id === toast.projectId)?.name, toast)}</strong>
           <span className="toast-title">{toast.title}</span>
         </button>
       ))}
@@ -177,14 +188,11 @@ export function Toasts() {
 function maybeBrowserNotify(event: NotificationEvent, enabled: boolean): void {
   if (!enabled || typeof Notification === "undefined" || Notification.permission !== "granted") return;
   const project = boardStore.getState().projects.find((p) => p.id === event.projectId);
-  const name = project?.name ?? event.projectId;
-  const headline = isPrNotification(event)
-    ? event.type === "notification.pr.ready_for_merge"
-      ? `${name} #${event.prNumber} ready for merge`
-      : `${name} #${event.prNumber} merged`
-    : `${name} ${event.agentKind} report ready`;
+  const source: HeadlineSource = isPrNotification(event)
+    ? { projectId: event.projectId, prNumber: event.prNumber, kind: event.type === "notification.pr.ready_for_merge" ? "ready_for_merge" : "merged" }
+    : { projectId: event.projectId, agentKind: event.agentKind };
   try {
-    new Notification(headline, { body: event.title });
+    new Notification(headline(project?.name, source), { body: event.title });
   } catch {
     // Some environments throw on construction despite the permission check.
   }

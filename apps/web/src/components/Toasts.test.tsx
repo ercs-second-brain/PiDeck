@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { NotificationEvent, Project } from "@pideck/shared";
 
-import { appendToast, MAX_TOASTS, ToastStack, toastKey, toastText, type AppToast, type MergedPRToast } from "./Toasts";
+import { appendToast, headline, MAX_TOASTS, ToastStack, toastKey, type AgentReportToast, type AppToast, type MergedPRToast } from "./Toasts";
 
 const NOW = "2026-01-02T03:04:05.000Z";
 
@@ -30,7 +30,7 @@ const KISSTEST: Project = {
   updatedAt: NOW,
 };
 
-describe("toastKey / toastText (issue #111)", () => {
+describe("toastKey / headline (issue #111)", () => {
   it("keys toasts per project + PR", () => {
     expect(toastKey("kisstest", 42)).toBe("kisstest#42");
   });
@@ -41,13 +41,18 @@ describe("toastKey / toastText (issue #111)", () => {
 
   it("prefers the project name and falls back to the raw id", () => {
     const toast: MergedPRToast = { key: "kisstest#42", projectId: "kisstest", prNumber: 42, kind: "merged", title: "x" };
-    expect(toastText("kisstest", toast)).toBe("kisstest #42 merged");
-    expect(toastText(undefined, toast)).toBe("kisstest #42 merged");
+    expect(headline("kisstest", toast)).toBe("kisstest #42 merged");
+    expect(headline(undefined, toast)).toBe("kisstest #42 merged");
   });
 
   it("renders the ready-for-merge headline (issue #408)", () => {
     const ready: MergedPRToast = { key: "ready:kisstest#42", projectId: "kisstest", prNumber: 42, kind: "ready_for_merge", title: "x" };
-    expect(toastText("kisstest", ready)).toBe("kisstest #42 ready for merge");
+    expect(headline("kisstest", ready)).toBe("kisstest #42 ready for merge");
+  });
+
+  it("renders the agent-report headline (docs/agent-kinds.md, #300/#302)", () => {
+    const report: AgentReportToast = { key: "agent:kisstest:sess-agent-1", projectId: "kisstest", agentKind: "kiss-audit", title: "x" };
+    expect(headline("kisstest", report)).toBe("kisstest kiss-audit report ready");
   });
 });
 

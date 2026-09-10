@@ -15,10 +15,7 @@
 
 import type { Issue } from "@pideck/shared";
 
-/** Collapses whitespace so a prompt is always a single pane-safe line. */
-function oneLine(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
+import { oneLine } from "../prompt-line.js";
 
 /**
  * Builds the initial prompt for the worker auto-spawned for an issue:
