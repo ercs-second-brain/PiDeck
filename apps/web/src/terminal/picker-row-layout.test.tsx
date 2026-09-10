@@ -3,7 +3,7 @@
  * project rows the terminal-open buttons (the 💬 chat icons) sit on the
  * LEFT, immediately after the row's name, while the ⋯ context menu alone
  * keeps the row's far right. B21a/B21b: the desktop collapse toggle lives
- * on the workspace row, and the collapsed 36px rail keeps that toggle as
+ * on the workspace row, and the collapsed 34px rail keeps that toggle as
  * the sidebar's only visible control. The rows are pure (markup-order
  * assertions via renderToString); the placement rules live in terminal.css,
  * pinned here as source contracts.
