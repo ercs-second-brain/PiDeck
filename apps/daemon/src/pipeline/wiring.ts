@@ -31,6 +31,8 @@ import type { GhClient } from "../github/gh.js";
 import { IssueSpawnPipeline } from "./issues/pipeline.js";
 import type { ProjectSource, WorkerSpawner } from "./issues/ports.js";
 import { SessionManagerSpawner } from "./issues/ports.js";
+import type { AgentKindLookup } from "../sessions/agent-kinds.js";
+import { countProjectOccupants } from "../sessions/occupancy.js";
 import type { PRSessionControl } from "./prs/pipeline.js";
 import type { WorkerPipelineSettings } from "./prs/settings.js";
 import type { PRPipelineEvent } from "./prs/events.js";
@@ -96,6 +98,12 @@ export interface GithubAutomationOptions {
   piReady?: () => Promise<boolean>;
   /** Prompt gate (issue #56) holding review prompts until pi is ready. */
   promptGate?: Pick<PromptGate, "queue">;
+  /**
+   * Agent-kind registry (v2, issue #330): consulted by the session
+   * control's occupancy count so workerLike kind sessions gate the
+   * review-agent spawn cap exactly like the other spawn paths (issue #393).
+   */
+  agentKinds: AgentKindLookup;
   /** Master switch. Default: resolved from the environment (on). */
   enabled?: boolean;
   /** Poll interval for watchers and the PR loop. Default: 30s or env. */
@@ -164,6 +172,10 @@ export class GithubAutomation {
         return worker;
       },
       sendKeys: (sessionId, keys, sendOptions) => options.sessions.sendKeys(sessionId, keys, sendOptions),
+      // Issue #393: the review path gates the `workerConcurrency` cap with
+      // the SAME occupancy predicate as the CLI/agent-kind spawn paths —
+      // active workers + live workerLike kind sessions.
+      countProjectOccupants: (projectId) => countProjectOccupants(options.sessions, options.agentKinds, projectId),
       // Issue #106: terminate-on-merge archives the owning worker (kills its
       // pane); the wiring announces the terminal status like a manual terminate.
       archiveWorker: async (workerId, message) => {

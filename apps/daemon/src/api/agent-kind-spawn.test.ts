@@ -242,6 +242,22 @@ describe("agent-kind spawn: caps + route parity", () => {
     ).toBe(201);
   });
 
+  it("counts active workers toward the worker-like kind cap (issue #393, mixed occupancy)", async () => {
+    const { api, daemon } = server;
+    const { services } = daemon;
+    const projectId = await registerProject("capmix", { workerConcurrency: 2 });
+
+    // One real worker (spawning) + one worker-like kind session = cap 2.
+    await services.sessions.spawnWorker(projectId, { issueNumber: 1 });
+    expect((await api("POST", `/api/projects/${projectId}/spawn`, { kind: "kiss-audit", name: "a1" })).status).toBe(201);
+
+    // Third occupant — kind or worker alike — is past the cap.
+    expect((await api("POST", `/api/projects/${projectId}/spawn`, { kind: "devex-audit", name: "a2" })).status).toBe(409);
+    const capped = await api("POST", `/api/projects/${projectId}/spawn`, { name: "w2", prompt: "nope" });
+    expect(capped.status).toBe(409);
+    expect((capped.json as { error: string }).error).toContain("(2/2 active)");
+  });
+
   it("spawns kiss-audit from the menu into exactly ONE session (issue #310 double-fire guard)", async () => {
     const { api, daemon } = server;
     const projectId = await registerProject("single1");

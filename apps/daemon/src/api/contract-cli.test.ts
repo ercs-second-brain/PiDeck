@@ -69,6 +69,21 @@ describe("CLI action routes", () => {
     expect((third.json as { error: string }).error).toContain("concurrency cap");
   });
 
+  it("counts workerLike kind sessions toward the worker spawn cap (issue #393)", async () => {
+    const { api, daemon } = server;
+    // Cap 1, occupied by a workerLike agent-kind session (not a worker):
+    // before the unified occupancy predicate this path counted workers
+    // only and accepted the spawn past the cap.
+    daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/sp/kinds", settings: { workerConcurrency: 1 } });
+    const kind = await api("POST", "/api/projects/sp-kinds/spawn", { kind: "devex-audit", name: "audit" });
+    expect(kind.status).toBe(201);
+    expect(daemon.services.sessions.listWorkers({ projectId: "sp-kinds" })).toEqual([]);
+
+    const worker = await api("POST", "/api/projects/sp-kinds/spawn", { name: "blocked", prompt: "nope" });
+    expect(worker.status).toBe(409);
+    expect((worker.json as { error: string }).error).toContain("concurrency cap");
+  });
+
   it("delivers messages to a session's pane and 404s unknown sessions", async () => {
     const { api, daemon } = server;
     const { services } = daemon;
