@@ -9,7 +9,7 @@
  * - `GET  /api/pi-auth` — pi provider readiness probe (issue #57)
  */
 
-import { ACTIVE_WORKER_STATUSES, workerSchema, type Worker } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES, workerSchema, type Project, type Worker } from "@pideck/shared";
 
 import type { DaemonServices } from "./context.js";
 import { nodeStatus } from "./node-version.js";
@@ -18,11 +18,52 @@ import { NotFoundError } from "./projects.js";
 import { requireOr404 } from "./handlers.js";
 import { handleAgentKindSpawn } from "./agent-kind-spawn.js";
 import { projectSpawnSchema, sessionReportPrSchema, sessionSendSchema } from "./cli-routes.js";
+import { buildIssueSpawnPrompt } from "../pipeline/issues/prompts.js";
+import { mapRestIssue } from "../github/issues.js";
+import { formatRepoRef, parseRepoUrl } from "../github/gh.js";
+
+/**
+ * The initial prompt an issue-backed spawn delivers into the fresh pane when
+ * the caller supplied none (issue #378, the #266 parity for manual spawns):
+ * the orchestrator's canonical invocation (`pideck spawn --project X --issue
+ * N --name L`, per the shipped spawn-worker skill) carries no `--prompt`, so
+ * before this resolution the worker booted into pi and sat idle — the exact
+ * empty-idle-worker bug #266 fixed for auto-spawns, unfixed on the CLI path.
+ * The same builder the auto-spawn pipeline uses renders the issue context
+ * from the REST-fetched issue; a number that turns out to be a pull request
+ * (or any fetch failure) fails the spawn BEFORE the worker exists — never
+ * knowingly spawn an idle worker.
+ */
+async function issueSpawnPrompt(services: DaemonServices, project: Project, issueNumber: number): Promise<string> {
+  const ref = parseRepoUrl(project.repoUrl);
+  let raw: unknown;
+  try {
+    raw = await services.gh(project.repoUrl).apiJson(`/repos/${formatRepoRef(ref)}/issues/${issueNumber}`);
+  } catch (err) {
+    throw new HttpError(
+      502,
+      `cannot fetch issue #${issueNumber} for the worker's initial prompt (repo ${formatRepoRef(ref)}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  const record = mapRestIssue(project.id, raw);
+  if (record === null) {
+    throw new HttpError(400, `#${issueNumber} in ${formatRepoRef(ref)} is not an issue (it may be a pull request); spawn it freeform with --prompt instead`);
+  }
+  return buildIssueSpawnPrompt(record.issue);
+}
 
 /**
  * Spawns a worker via the SessionManager: `--issue` workers carry the issue
  * number; freeform (`--prompt` only) workers record `issueNumber: 0` (the
  * shared `workerSchema` documents 0 as the freeform-worker marker).
+ *
+ * Initial prompt resolution (issue #378, #266 parity): an explicit `--prompt`
+ * always wins; an issue-backed spawn without one gets the issue's context
+ * (the same prompt the auto-spawn pipeline types, issue #266) fetched and
+ * built BEFORE the worker exists, so every spawned worker has a prompt to
+ * deliver — the orchestrator's issue-backed spawns never boot a pane empty.
  *
  * Initial-prompt readiness gate (issue #56): the prompt is typed into the
  * pane only when the pi auth probe reports a ready provider. When it does
@@ -50,30 +91,37 @@ export async function spawnWorker(
       `worker concurrency cap reached for project "${projectId}" (${active.length}/${cap} active)`,
     );
   }
+  // Issue #378 (#266 parity): the initial prompt is resolved BEFORE the
+  // spawn — an explicit `--prompt` wins; an issue-backed spawn without one
+  // gets the issue's context (the same prompt the auto-spawn pipeline
+  // types) — so the built prompt lands on the worker record (issue #120)
+  // and rides the same gate below. A resolution failure (gh fetch, a
+  // pull-request number) fails the spawn before any worker exists.
+  const prompt = input.prompt ?? (input.issueNumber !== undefined ? await issueSpawnPrompt(services, project, input.issueNumber) : undefined);
   const { worker } = await services.sessions.spawnWorker(projectId, {
     issueNumber: input.issueNumber ?? 0,
-    ...(input.prompt !== undefined ? { statusMessage: "agent running; initial prompt queued", prompt: input.prompt } : {}),
+    ...(prompt !== undefined ? { statusMessage: "agent running; initial prompt queued", prompt } : {}),
   });
   const piAuth = await services.piAuth.payload();
   if (!piAuth.ready) {
     // Issue #56: never type a prompt into an agent that cannot run, and
     // never leave an unauthenticated worker at `running` — the gate holds
     // the worker at `spawning` with the precise fix in `statusMessage`.
-    services.promptGate.queue(worker, input.prompt);
-  } else if (input.prompt !== undefined) {
+    services.promptGate.queue(worker, prompt);
+  } else if (prompt !== undefined) {
     // Issue #56 parity: never type the prompt into an agent that cannot run.
     // Issue #318: even with auth ready, the pane was just created — deliver
     // through the readiness wait + submit confirmation (bare-Enter nudges
     // only; the text is never re-typed). On timeout the prompt is queued on
     // the gate instead; a typed-but-unconfirmed draft stays visible in the
     // composer and must NOT be queued (double delivery).
-    const delivered = await services.sessions.deliverPromptWhenReady(worker.sessionId, input.prompt);
+    const delivered = await services.sessions.deliverPromptWhenReady(worker.sessionId, prompt);
     if (delivered.typed) {
       services.sessions.updateWorkerStatus(worker.id, "running", delivered.accepted
         ? "agent running; initial prompt delivered"
         : "agent running; initial prompt typed (submit unconfirmed)");
     } else {
-      services.promptGate.queue(worker, input.prompt);
+      services.promptGate.queue(worker, prompt);
     }
   }
   const workerParsed = workerSchema.parse(services.sessions.getWorker(worker.id) ?? worker);
