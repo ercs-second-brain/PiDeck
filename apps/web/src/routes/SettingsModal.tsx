@@ -12,6 +12,7 @@ import type { Settings } from "@pideck/shared";
 import { apiUpdateSettings, apiGetSettings, errorMessage } from "../lib/api";
 import { useProject } from "../lib/use-project";
 import { BROWSER_NOTIFICATIONS_UNSUPPORTED, permissionState, requestNotificationPermission } from "../components/NotificationCenter";
+import { Toggle } from "../components/Toggle";
 import { SettingsForm } from "./ProjectSettingsForm";
 
 /**
@@ -28,7 +29,7 @@ export function GlobalSettingsModal({ onClose }: { onClose: () => void }) {
         <button type="button" className="modal-close" aria-label="Close global settings" onClick={onClose}>
           ×
         </button>
-        <h1 className="page-title">Global settings</h1>
+        <h1 className="modal-title">Global settings</h1>
         <p className="project-repo">Daemon-wide — applies to every project.</p>
         <GlobalWorkerSettings />
       </div>
@@ -57,7 +58,7 @@ export function ProjectSettingsModal({ projectId, onClose }: { projectId: string
           <p className="empty">{loaded ? `Project “${projectId}” not found.` : "Loading…"}</p>
         ) : (
           <>
-            <h1 className="page-title">{project.name} — settings</h1>
+            <h1 className="modal-title">{project.name} — settings</h1>
             <p className="project-repo">{project.repoUrl}</p>
             <GlobalWorkerSettings />
             <SettingsForm key={project.id} project={project} />
@@ -155,18 +156,18 @@ export function GlobalWorkerSettings() {
   };
 
   const renderToggle = (toggleDef: { key: ToggleKey; label: string; hint: string }) => (
-    <label key={toggleDef.key} className="toggle-row">
-      <input
-        type="checkbox"
-        checked={settings !== null && settings[toggleDef.key]}
-        disabled={savingKey !== null || settings === null}
-        onChange={(e) => void toggle(toggleDef.key, e.target.checked)}
-      />
-      <span>
-        {toggleDef.label}
-        <small className="field-hint"> {toggleDef.hint}</small>
-      </span>
-    </label>
+    <Toggle
+      key={toggleDef.key}
+      checked={settings !== null && settings[toggleDef.key]}
+      disabled={savingKey !== null || settings === null}
+      onToggle={(value) => void toggle(toggleDef.key, value)}
+      label={
+        <>
+          {toggleDef.label}
+          <small className="field-hint"> {toggleDef.hint}</small>
+        </>
+      }
+    />
   );
 
   return (
@@ -182,13 +183,17 @@ export function GlobalWorkerSettings() {
             localhost) — on plain-HTTP LAN deployments the toggle is disabled with an
             honest message instead of the impossible "allow them in browser settings". */}
         {permissionState() === "unsupported" ? (
-          <label className="toggle-row">
-            <input type="checkbox" checked={false} readOnly disabled />
-            <span>
-              {NOTIFICATION_TOGGLE.label}
-              <small className="field-hint"> {BROWSER_NOTIFICATIONS_UNSUPPORTED}</small>
-            </span>
-          </label>
+          <Toggle
+            checked={false}
+            onToggle={() => {}}
+            disabled
+            label={
+              <>
+                {NOTIFICATION_TOGGLE.label}
+                <small className="field-hint"> {BROWSER_NOTIFICATIONS_UNSUPPORTED}</small>
+              </>
+            }
+          />
         ) : (
           <div className="settings-form">{renderToggle(NOTIFICATION_TOGGLE)}</div>
         )}

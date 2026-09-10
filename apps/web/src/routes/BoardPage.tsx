@@ -29,12 +29,6 @@ export function BoardPage() {
             )}
           </span>
         </div>
-        <div className="board-actions">
-          {/* Issue #276: the live indicator is removed from the kanban — the
-              sidebar's own daemon status covers connectivity. Also issue
-              #175: no Settings button here — the project row's ⋯ menu (#167)
-              is the single path to the settings page. */}
-        </div>
       </div>
 
       {state.loadError !== null && <p className="error-note">Daemon unreachable: {state.loadError}</p>}

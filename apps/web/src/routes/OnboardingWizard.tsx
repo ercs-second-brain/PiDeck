@@ -82,7 +82,7 @@ function OnboardingWizard({ onRegistered }: { onRegistered: (project: Project) =
 
   return (
     <div className="wizard">
-      <h1 className="page-title">Connect a project</h1>
+      <h1 className="modal-title">Connect a project</h1>
       <p className="empty">Point PiDeck at a repository to start orchestrating agents.</p>
       <StepNav steps={PROJECT_STEPS} step={step} />
       {step === "source" && (

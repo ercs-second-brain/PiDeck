@@ -63,13 +63,30 @@ modals `24px 28px`. Gaps inside a row: 4–10px; between sections: 16–28px.
 ## Controls
 
 - Buttons: `.button` (+ `.button-primary`); hover = accent border + `--bg-hover`.
+- Toggles: ONE component, `components/Toggle.tsx` (issue #359) — a real
+  checkbox input (`role="switch"`, visually hidden but focusable: tab +
+  space are the platform's), a decorative track/thumb, and the row's label.
+  The track's on state is the accent; the focus-visible ring mirrors onto
+  the track. Never use a raw checkbox in the non-terminal UI.
 - Icon buttons (bell, hamburger, chat/⋯): 40×40 on touch viewports, quiet
   `--text-dim` glyph that takes accent on hover; destructive hover is red.
 - Touch targets ≥ 40×40 on `≤ 768px`; inline text affordances get padded,
-  negative-margined hit areas instead of visual growth.
+  negative-margined hit areas instead of visual growth. Toggle rows,
+  buttons, inputs, and selects are ≥ 40px tall there; the toggle switch
+  itself grows to 40×24.
 - Focus: the global `:focus-visible` outline (accent, 2px) is the only focus
   treatment — never `outline: none` without a replacement.
-- Inputs: 16px font on `≤ 768px` so iOS Safari does not zoom on focus.
+- Inputs/selects: shared `.field` chrome (1px `--border`, `--radius`, `--bg`);
+  16px font on `≤ 768px` so iOS Safari does not zoom on focus.
+
+## Modals
+
+- Chrome: `.modal-overlay` + `.modal-card` (`--shadow-modal`, `--border`
+  edge, `--radius`) + `.modal-close` — the AssetDialog standard every modal
+  shares (settings, agent assets, onboarding, nested dialogs, the update
+  modal, which only centers its card and runs on `--z-critical`).
+- Title: `.modal-title` (`--fs-xl`, weight 650). Section headings inside a
+  modal/panel stay `.section-title` (quiet uppercase `--fs-base`).
 
 ## Layout & responsiveness
 

@@ -26,6 +26,7 @@ import { PERSONAS, agentKindInfo, agentSkillIdSchema, type AgentAssets, type Age
 
 import { AssetDialog } from "./AssetDialog";
 import { AgentKindsSection } from "./AgentKindsSection";
+import { Toggle } from "../components/Toggle";
 import { apiDeleteAgentSkill, apiDeletePromptOverride, apiGetAgentAssets, apiSaveAgentSkill, apiSavePromptOverride, errorMessage } from "../lib/api";
 
 /**
@@ -78,7 +79,7 @@ export function AgentAssetsModal({ onClose }: { onClose: () => void }) {
         <button type="button" className="modal-close" aria-label="Close agent assets" onClick={onClose}>
           ×
         </button>
-        <h1 className="page-title">Agent assets</h1>
+        <h1 className="modal-title">Agent assets</h1>
         <p className="project-repo">
           Per-persona prompts, skills, and agent kinds — user-owned, stored by the daemon, applied when a session
           spawns. Shipped defaults stay as fallback.
@@ -163,14 +164,9 @@ function AssetLists(props: {
   );
 }
 
-/** One persona-skill checkbox row (the persona editor's assignment list). */
+/** One persona-skill toggle row (the persona editor's assignment list). */
 function SkillToggle(props: { skill: AgentSkill; persona: Persona; onToggle: () => void }) {
-  return (
-    <label className="toggle-row">
-      <input type="checkbox" checked={props.skill.personas.includes(props.persona)} onChange={props.onToggle} />
-      <span>{props.skill.id}</span>
-    </label>
-  );
+  return <Toggle checked={props.skill.personas.includes(props.persona)} onToggle={props.onToggle} label={props.skill.id} />;
 }
 
 /** The shared asset-content textarea (the two dialogs' duplicated chrome). */
@@ -188,7 +184,7 @@ function AssetContentTextarea(props: { value: string; onChange: (value: string) 
 
 /**
  * The persona-edit dialog (issues #358 B11+B13): the persona's prompt
- * override plus its skill assignment — one checkbox per skill, each toggle
+ * override plus its skill assignment — one toggle per skill, each toggle
  * saving immediately (the GlobalWorkerSettings toggle behavior). This is
  * where personas get skills, per B13.
  */
@@ -218,7 +214,7 @@ export function PersonaEditorDialog(props: {
             <SkillToggle key={skill.id} skill={skill} persona={persona} onToggle={() => props.onToggleSkill(skill)} />
           ))}
         </div>
-        <small className="field-hint">Toggles save immediately; the persona&apos;s next spawn loads the checked skills.</small>
+        <small className="field-hint">Toggles save immediately; the persona&apos;s next spawn loads the enabled skills.</small>
       </div>
     </AssetDialog>
   );

@@ -84,6 +84,9 @@ describe("settings modals (issue #264)", () => {
     expect(html).toContain("Worker pipeline (all projects)");
     // Issue #322: all four pipeline toggles render daemon-wide, incl. auto review.
     expect(html).toContain("Auto review agents");
+    // Issue #359: on/off controls are the shared Toggle switch, not checkboxes.
+    expect(html).toContain('role="switch"');
+    expect(html).toContain("toggle-switch");
     expect(html).toContain('aria-label="Close global settings"');
     // No page chrome, no back link.
     expect(html).not.toContain("back-link");
