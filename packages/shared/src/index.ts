@@ -13,7 +13,7 @@
  */
 
 export * from "./domain.js";
-export * from "./agent-kinds.js";
+export * from "./agent-kind-spec.js";
 export * from "./rest.js";
 export * from "./update-stages.js";
 export * from "./ws.js";

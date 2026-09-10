@@ -28,7 +28,7 @@ export type Id = z.infer<typeof idSchema>;
  * so it must be tmux-safe — lowercase-only, no `_`. This is intentionally
  * stricter than {@link agentSkillIdSchema}; do not align the two.
  * Lives with the domain primitives (the session schema uses it); the
- * spec-v2 schema and the shipped kinds live in `agent-kinds.ts`.
+ * spec-v2 schema and the shipped kinds live in `agent-kind-spec.ts`.
  */
 export const agentKindIdSchema = z
   .string()

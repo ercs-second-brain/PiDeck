@@ -33,7 +33,7 @@ import { NotFoundError } from "./projects.js";
 import { listAccessibleRepos } from "../github/repos.js";
 import { nodeStatus } from "./node-version.js";
 import { handleAgentKindSpawn } from "./agent-kind-spawn.js";
-import { agentKindHandlers } from "./agent-kinds.js";
+import { agentKindHandlers } from "./agent-kind-crud.js";
 import type { DaemonServices } from "./context.js";
 
 // ---------------------------------------------------------------------------

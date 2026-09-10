@@ -9,6 +9,31 @@ daemon's CRUD API, persisted under the daemon state dir (update-safe —
 never in the PiDeck checkout). Nothing in the spawn/relaunch/reconcile/
 ensure paths mentions a hardcoded kind name anymore.
 
+## Vocabulary (persona vs agent-kind vs workerKind)
+
+Three near-synonyms, three different things. A **persona** is one of the six
+boot personas PiDeck ships — the closed `PERSONAS` enum in
+`packages/shared/src/domain.ts` (`global-agent`, `orchestrator`, `worker`,
+`researcher`, `devex-audit`, `kiss-audit`) — and is the one vocabulary for
+prompt overrides and skill application (`agent/prompts/<persona>.md`, the
+`agent-assets` store, §3). An **agent-kind** (this doc) is a registry entry —
+user-definable since registry v2 — that spawns a session with a pre-baked
+persona prompt and a fixed report route; the shipped kinds happen to share
+names with personas, which is why the two words blur. A **workerKind**
+(`implementer`/`reviewer`) is a different axis again: PR-ownership semantics
+for worker sessions, not a persona and not a registry entry. Because
+`PERSONAS` is a closed enum, a **user-defined kind cannot have an
+agent-assets prompt override**: overrides are keyed per persona, and a user
+kind has no persona slot — its persona content lives in the spec's `persona`
+field and is edited through the CRUD API instead (§3; shipped kinds, being
+personas, do take overrides). The closed enum is documented and load-bearing:
+do not open it to make user kinds overridable. Two accepted divergences worth
+knowing: the internal API still says terminate (`/api/workers/:workerId/terminate`)
+while user-facing copy says Delete (issues #385/#389); and the installer's
+`resolve_canonical_node` (`install/lib/common.sh`) permanently accepts the
+legacy `PD_NODE_BIN` / `PD_NODE` env vars from older service-env generations —
+permanent deprecation debt, noted here on purpose, not slated for removal.
+
 ## 1. The spec-v2 schema (the downstream contract)
 
 Defined in `packages/shared/src/domain.ts`; this table is the contract
@@ -86,7 +111,7 @@ Rendering uses the same `{{PLACEHOLDER}}` machinery as worker prompts
 
 ## 4. The CRUD API
 
-`apps/daemon/src/api/agent-kinds.ts`, four endpoints (shared contract in
+`apps/daemon/src/api/agent-kind-crud.ts`, four endpoints (shared contract in
 `packages/shared/src/rest.ts`):
 
 | Endpoint | Semantics |
