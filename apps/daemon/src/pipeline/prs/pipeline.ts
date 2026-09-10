@@ -14,9 +14,17 @@
  *   `maxFixAttempts` (gated by the `autoFixCi` toggle, issue #106).
  * - New review comments → delivered to the worker (`addressing_review`;
  *   gated by `autoFixReviewComments`, issue #106).
+ * - A new GitHub review requesting changes → the worker is prompted to
+ *   address the findings (`addressing_review`, issue #407 — deterministic,
+ *   watermark-keyed; covers findings that ride only in the review body).
  * - Merged → card `done`; with `terminateOnMerge` (issue #106) the owning
  *   worker's pane is archived, otherwise the pane keeps running as `done`.
  * - Settled CI or any review decision → card `in_review`.
+ *
+ * Issue #407: the auto review cycle (agent, real GitHub reviews, the
+ * review-submission triggers) runs only when the review account is
+ * configured (`reviewAccountToken`); single-account mode is worker + CI
+ * only.
  *
  * Re-watch resilience: tracker state is persisted, so after a daemon
  * restart {@link reconcile} prunes PRs whose worker vanished and the poll
@@ -100,6 +108,13 @@ export interface PullRequestPipelineOptions {
    * spawns respect the cap); `undefined` = unbounded.
    */
   workerCap?: () => number | undefined;
+  /**
+   * Whether the review account is configured (issue #407): the review
+   * cycle — auto agent, real reviews, review-based triggers — runs only
+   * when true. Read fresh on every poll. Default false (single-account
+   * mode: worker + CI only).
+   */
+  reviewAccount?: () => boolean;
   /** Max consecutive CI-fix prompts per red streak. Default: {@link DEFAULT_MAX_FIX_ATTEMPTS}. */
   maxFixAttempts?: number;
   /** Age at which an unanswered fix/address prompt is treated as stale. Default: 15 min. */
@@ -222,7 +237,7 @@ export class PullRequestPipeline {
     const events: PRPipelineEvent[] = [];
     const raw = await this.gh.apiJson<unknown>(`/repos/${this.repo.owner}/${this.repo.repo}/pulls/${tracked.prNumber}`);
     const record = mapRestPull(tracked.projectId, raw);
-    const pr = await enrichPullRequest(this.gh, this.repo, record);
+    const { pullRequest: pr, latestReview } = await enrichPullRequest(this.gh, this.repo, record);
     tracked.updatedAt = this.now().toISOString();
     tracked.title = pr.title;
 
@@ -261,6 +276,13 @@ export class PullRequestPipeline {
         repo: `${this.repo.owner}/${this.repo.repo}`,
         // Issue #322: name the failing checks in the CI-fix prompt.
         failingChecks: (headSha) => getFailingChecks(this.gh, this.repo, headSha),
+        // Issue #407: the PR's latest review submission, from the same
+        // reviews call as the review decision — the address-findings
+        // trigger watermark source.
+        latestReview,
+        // Issue #407: the review cycle runs only with a configured review
+        // account (reviewer panes then run gh as that second identity).
+        reviewAccount: this.options.reviewAccount ?? (() => false),
         maxFixAttempts: this.maxFixAttempts,
         fixPromptTimeoutMs: this.fixPromptTimeoutMs,
         now: this.now,

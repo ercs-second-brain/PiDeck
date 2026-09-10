@@ -20,12 +20,22 @@
  * or request changes, with inline comments) via `gh` — see
  * `agent/skills/review-pr/SKILL.md`; the daemon never posts reviews on its
  * behalf.
+ *
+ * Issue #407: the review cycle (auto agent, real GitHub reviews, the
+ * review-submission watermark and the address-findings trigger) runs ONLY
+ * when a review account is configured (`reviewAccountToken` in the daemon
+ * settings): the reviewer pane runs `gh` as that second identity, which is
+ * what makes decisive reviews possible at all. Without it — single-account
+ * mode — the whole cycle is inert: no reviewer is spawned and review events
+ * trigger nothing; the PR loop is worker + CI only. #408's deterministic
+ * PR lifecycle keys further steps on the same watermark.
  */
 
-import { ACTIVE_WORKER_STATUSES, type PullRequest, type Worker } from "@pideck/shared";
+import { ACTIVE_WORKER_STATUSES, type PullRequest, type Worker, type WorkerStatus } from "@pideck/shared";
 
+import type { ReviewSubmission } from "../../github/reviews.js";
 import type { PRSessionControl } from "./pipeline.js";
-import { buildReReviewPrompt, buildReviewAgentPrompt, type ReviewAgentPromptOptions } from "./prompts.js";
+import { buildAddressReviewPrompt, buildReReviewPrompt, buildReviewAgentPrompt, type ReviewAgentPromptOptions } from "./prompts.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import type { TrackedPR } from "./tracker.js";
 
@@ -38,6 +48,20 @@ export interface ReviewContext {
   workerCap: () => number | undefined;
   /** `owner/name` of the PR's repository (for the reviewer's `gh --repo` calls). */
   repo: string;
+  /**
+   * Whether the review account is configured (issue #407): the review
+   * cycle — agent spawn, real reviews, triggers — runs only when true.
+   * Absent/false = single-account mode (worker + CI only).
+   */
+  reviewAccount?: () => boolean;
+  /** Injectable clock (issue #407 trigger bookkeeping). */
+  now: () => Date;
+  /**
+   * Latest review submission on the PR this poll (issue #407), `null` when
+   * there is none (or the lookup failed — the trigger degrades to the
+   * inline-comment path).
+   */
+  latestReview?: ReviewSubmission | null;
 }
 
 /**
@@ -46,19 +70,49 @@ export interface ReviewContext {
  * prompt) propagate to the pipeline's poll error sink — like the CI-fix
  * prompt path — and retry on the next poll.
  */
-export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: ReviewContext): Promise<void> {
+export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: ReviewContext, newReview: ReviewSubmission | null): Promise<void> {
+  // Issue #407: no review account configured → single-account mode: the
+  // review cycle (agent spawn, real reviews, review-based triggers) is
+  // entirely off — the platform cannot review its own PRs with the primary
+  // identity.
+  if (ctx.reviewAccount?.() !== true) return;
   if (pr.ciStatus !== "success") return;
   if (pr.reviewState === "approved") {
     await archiveReviewAgent(tracked, ctx.sessions, `PR #${tracked.prNumber} approved — review agent done`);
     return;
   }
   const settings = ctx.settings() ?? DEFAULT_WORKER_PIPELINE_SETTINGS;
-  if (!settings.autoReview) return;
   // Issue #322: a conflicted PR is not reviewable — GitHub cannot merge it
   // however green its checks are. Gate the spawn (and any re-round) until
   // the author rebases; the CI-green gate above already ran.
   if (pr.mergeConflicts === true) return;
 
+  await triggerFindingsAddress(tracked, pr, headSha, ctx, newReview, settings);
+  if (!settings.autoReview) return;
+  await driveReviewerRound(tracked, pr, headSha, ctx);
+}
+
+/**
+ * Issue #407: a completed review round deterministically triggers the
+ * PR-authoring worker. A NEW review submission (tracker watermark) that
+ * requests changes is actionable: prompt the author to address the findings
+ * unless a prompt is already in flight (state !== watching) or the
+ * review-addressing gate is off. Gated on `autoFixReviewComments`, NOT on
+ * `autoReview` — findings from any reviewer (auto agent, human) must reach
+ * the worker. The inline-comment delivery branch (drive.ts) covers the
+ * comments themselves; this covers review-body findings.
+ */
+async function triggerFindingsAddress(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: ReviewContext, newReview: ReviewSubmission | null, settings: WorkerPipelineSettings): Promise<void> {
+  if (newReview?.state !== "CHANGES_REQUESTED" || !settings.autoFixReviewComments || tracked.state !== "watching") return;
+  await ctx.sessions.sendKeys(tracked.sessionId, buildAddressReviewPrompt(pr), { enter: true });
+  tracked.state = "addressing";
+  tracked.lastPromptedAt = ctx.now().toISOString();
+  tracked.lastPromptedHeadSha = headSha;
+  setAuthorStatus(ctx, tracked.workerId, "addressing_review", `PR #${tracked.prNumber}: addressing review findings`);
+}
+
+/** The reviewer lifecycle for a green PR: re-prompt on pushes, else spawn. */
+async function driveReviewerRound(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: ReviewContext): Promise<void> {
   const reviewer = tracked.reviewWorkerId === null ? undefined : ctx.sessions.getWorker(tracked.reviewWorkerId);
   if (reviewer !== undefined && ACTIVE_WORKER_STATUSES.has(reviewer.status)) {
     await reReviewIfPushed(tracked, pr, headSha, reviewer, ctx);
@@ -87,6 +141,27 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
   tracked.reviewWorkerId = worker.id;
   tracked.reviewedHeadSha = headSha;
   noteAuthorStatus(ctx, tracked, `PR #${tracked.prNumber}: review agent ${worker.id} reviewing`);
+}
+
+/**
+ * Review-submission watermark (issue #407): records the PR's latest review
+ * submission in the tracker and reports whether it is NEW — a submission the
+ * platform has not observed before. The first observation pass records a
+ * review already present as pre-existing (it predates the loop's watch on
+ * this PR — loop start or restart resume) without triggering; `""` marks
+ * "observed, none yet", so a review arriving after that pass is new. The
+ * watermark never regresses. #408 keys further lifecycle steps on this
+ * signal.
+ */
+export function observeReview(tracked: TrackedPR, latest: ReviewSubmission | null): { isNew: ReviewSubmission | null } {
+  const prev = tracked.lastReviewSeenAt;
+  if (prev === null) {
+    tracked.lastReviewSeenAt = latest?.submittedAt ?? "";
+    return { isNew: null };
+  }
+  if (latest === null || latest.submittedAt <= prev) return { isNew: null };
+  tracked.lastReviewSeenAt = latest.submittedAt;
+  return { isNew: latest };
 }
 
 /**
@@ -140,6 +215,15 @@ function underCap(ctx: ReviewContext, projectId: string): boolean {
 
 function promptOptions(tracked: TrackedPR, ctx: ReviewContext): ReviewAgentPromptOptions {
   return { projectId: tracked.projectId, repo: ctx.repo };
+}
+
+/** Worker-status update that never throws (the record may have vanished). */
+function setAuthorStatus(ctx: ReviewContext, workerId: string, status: WorkerStatus, statusMessage: string): void {
+  try {
+    ctx.sessions.updateWorkerStatus(workerId, status, statusMessage);
+  } catch {
+    // The author record vanished between the read and the write.
+  }
 }
 
 /**

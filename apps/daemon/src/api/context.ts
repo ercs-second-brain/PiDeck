@@ -247,6 +247,19 @@ function buildUpdateChecker(options: DaemonContextOptions, stateDir: string): Up
   });
 }
 
+/**
+ * Kanban derives boards from gh + workers. The PR listing is batched +
+ * cached (issue #40) — the API layer shares the GitHub token, so it must
+ * not burn O(PR) calls.
+ */
+function buildKanban(deps: { gh: (repoUrl: string) => GhClient; sessions: SessionManager; pullListing: PullListingService }): KanbanService {
+  return new KanbanService({
+    gh: deps.gh,
+    listWorkers: () => deps.sessions.listWorkers(),
+    listPullRequests: (project) => deps.pullListing.list(project.id, project.repoUrl),
+  });
+}
+
 export function createDaemonContext(options: DaemonContextOptions = {}): DaemonServices {
   const stateDir = resolveStateDir(options.stateDir);
   const layout = new ProjectLayout(stateDir);
@@ -271,13 +284,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // Kanban derives boards from gh + workers; built before the project service
   // so deletion (issue #172) drops the board cache with the project.
   const pullListing = new PullListingService({ gh });
-  const kanban = new KanbanService({
-    gh,
-    listWorkers: () => sessions.listWorkers(),
-    // Batched + cached PR listing (issue #40) — the API layer shares the
-    // GitHub token, so it must not burn O(PR) calls.
-    listPullRequests: (project) => pullListing.list(project.id, project.repoUrl),
-  });
+  const kanban = buildKanban({ gh, sessions, pullListing });
 
   const projects = new ProjectService({
     store: projectStore,
@@ -318,8 +325,11 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     hub,
     gh,
     stateDir,
-    // Issues #106/#107: toggles and the pi-readiness gate are read fresh per decision.
+    // Issues #106/#107: toggles + the pi-readiness gate; #407: the review
+    // account (second identity) — all read fresh per decision.
     workerSettings: () => settings.get(),
+    reviewAccountToken: () => settings.get().reviewAccountToken,
+    reviewAccountUser: () => settings.get().reviewAccountUsername,
     piReady: () => piAuth.payload().then((payload) => payload.ready),
     promptGate,
     agentKinds, // #393: kind-aware occupancy for the review-agent spawn cap

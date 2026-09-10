@@ -263,8 +263,13 @@ export class Tmux {
    * into agent panes).
    */
   async newSession(name: string, options: NewSessionOptions = {}): Promise<void> {
-    const env = options.env ?? this.defaultSessionEnv;
-    const effective: NewSessionOptions = env === undefined
+    // Explicit env MERGES over the default session env (instead of replacing
+    // it, issue #407): a caller adding e.g. GH_TOKEN for a reviewer pane must
+    // not lose the canonical runtime env (PATH/PD_NODE) the default carries.
+    const env = options.env === undefined
+      ? this.defaultSessionEnv
+      : { ...this.defaultSessionEnv, ...options.env };
+    const effective: NewSessionOptions = env === undefined || Object.keys(env).length === 0
       ? options
       : { ...options, command: sessionCommandWithEnv(options.command, env) };
     await this.run(newSessionArgs(name, effective));

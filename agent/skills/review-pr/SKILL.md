@@ -11,6 +11,11 @@ it, and post a **GitHub review** — approve or request changes, with inline
 comments where warranted. The PR lifecycle loop re-runs you when the author
 pushes, and stops when you approve or the PR merges.
 
+Your pane runs `gh` as the platform's **review account** (a second GitHub
+identity — issue #407). That is what lets you file real reviews on PRs
+authored by the primary account; the platform triggers the author on review
+submissions, never on bare comments.
+
 ## 1. Read the PR and its diff
 
 ```bash
@@ -40,6 +45,10 @@ write access is the review itself.
 
 ## 3. Post the review
 
+Submit exactly **one** review per round, via `gh pr review` — bare PR
+comments (`gh pr comment`, standalone comment endpoints) are not a review
+and the platform cannot trigger on them.
+
 Decide between approve and request changes:
 
 - **No blocking problems** → approve:
@@ -48,26 +57,24 @@ Decide between approve and request changes:
   gh pr review <pr-number> --repo <owner/name> --approve --body "<summary>"
   ```
 
-- **Blocking problems** → request changes, one inline comment per problem via
-  the REST API (positional `line` is the line number in the *new* file; use
-  `subject_type: "FILE"` for file-level comments):
+- **Blocking problems** → request changes with one inline comment per
+  problem, attached to that same review submission via the reviews API with
+  a JSON body (a positional `line` is the line number in the *new* file;
+  use `subject_type: "FILE"` for file-level comments):
 
   ```bash
-  gh api "repos/<owner/name>/pulls/<pr-number>/reviews" \
-    -f event=REQUEST_CHANGES \
-    -f body="<summary of the requested changes>" \
-    -F 'comments[][path]=apps/daemon/src/example.ts' \
-    -F 'comments[][line]=42' \
-    -f 'comments[][body]=What is wrong and what to do about it'
+  printf '%s' '{"event":"REQUEST_CHANGES","body":"<summary>","comments":[{"path":"apps/daemon/src/example.ts","line":42,"body":"What is wrong and what to do about it"}]}' \
+    | gh api "repos/<owner/name>/pulls/<pr-number>/reviews" --input -
   ```
 
   `gh pr review --request-changes --body "<summary>"` is fine when you have
-  no inline comments.
+  no inline comments. Do NOT build the JSON with the `-F 'comments[][path]=…'
+  field syntax — `gh api -F` does not reliably support arrays of objects.
 
-- **Worth noting but not blocking** → fold it into the review body, or post a
-  `COMMENT` review (`gh pr review <pr-number> --repo <owner/name> --comment`).
-  Do not spam separate COMMENT reviews; the loop keys on approve /
-  request-changes decisions.
+- **Worth noting but not blocking** → fold it into the review body, or file
+  a `COMMENT` review (`gh pr review <pr-number> --repo <owner/name>
+  --comment`) — still a real review submission. Do not spam separate COMMENT
+  reviews; the loop keys on approve / request-changes decisions.
 
 ## 4. Re-review rounds
 

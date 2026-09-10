@@ -21,6 +21,12 @@
  *   was spawned/re-prompted for. A new round starts whenever the head moves
  *   (or the previous reviewer died without deciding); the reviewer is
  *   archived when the PR is approved, merged, closed, or failed.
+ * - `lastReviewSeenAt` (issue #407): watermark of the latest review
+ *   submission observed on the PR (any state — approve, request changes,
+ *   or comment). Each NEW submission is actionable exactly once: a new
+ *   request-changes review deterministically prompts the PR-authoring
+ *   worker to address the findings. #408's deterministic PR lifecycle keys
+ *   further steps on this same signal.
  *
  * State is persisted to a JSON file (same pattern as the session
  * registry) so a daemon restart reconciles tracked PRs instead of losing
@@ -49,6 +55,8 @@ const trackedPRSchema = z.object({
   reviewWorkerId: z.string().nullable().default(null),
   /** Head SHA the reviewer's latest round was spawned/re-prompted for. */
   reviewedHeadSha: z.string().nullable().default(null),
+  /** Latest review submission seen on the PR (issue #407 trigger watermark). Defaults keep pre-#407 files loadable. */
+  lastReviewSeenAt: z.string().nullable().default(null),
   headSha: z.string().nullable(),
   cardSignature: z.string().nullable(),
   updatedAt: z.string(),
@@ -99,6 +107,7 @@ export class PRTracker {
       lastSeenCommentId: null,
       reviewWorkerId: null,
       reviewedHeadSha: null,
+      lastReviewSeenAt: null,
       headSha: null,
       cardSignature: null,
       updatedAt: now.toISOString(),

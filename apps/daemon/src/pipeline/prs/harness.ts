@@ -211,6 +211,8 @@ export function makeHarness(
     trackerPath?: string;
     workerSettings?: () => WorkerPipelineSettings;
     workerCap?: () => number | undefined;
+    /** Review account configured (issue #407)? Default true — reviewer tests. */
+    reviewAccount?: () => boolean;
   } = {},
 ): Harness {
   const prs = new Map<number, FakePR>();
@@ -234,6 +236,9 @@ export function makeHarness(
     fixPromptTimeoutMs: options.fixPromptTimeoutMs,
     workerSettings: options.workerSettings,
     workerCap: options.workerCap,
+    // Issue #407: harness default = review account configured (the review
+    // cycle runs); tests pass `() => false` for single-account mode.
+    reviewAccount: options.reviewAccount ?? (() => true),
     now,
   });
   return {

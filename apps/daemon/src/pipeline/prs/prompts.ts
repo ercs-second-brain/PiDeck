@@ -82,18 +82,26 @@ export interface ReviewAgentPromptOptions {
  * agent reads the PR diff, reviews it, and posts a GitHub review (approve
  * or request changes) via `gh`. Single line — it is typed into an
  * interactive pi pane (see the module docblock).
+ *
+ * Issue #407: the review cycle (and this prompt) runs only when the review
+ * account is configured — the reviewer pane runs `gh` as that second
+ * identity, so `gh pr review` can file decisive reviews on the primary
+ * account's PR. Bare PR comments are never a substitute: the platform
+ * triggers on review submissions, not comments.
  */
 export function buildReviewAgentPrompt(pr: PullRequest, options: ReviewAgentPromptOptions): string {
+  const ghReview = (event: string) => `\`gh pr review ${pr.number} --repo ${options.repo} --${event} --body "<summary>"\``;
   const parts = [
     `[pideck] You are the review agent for PR #${pr.number} "${oneLine(pr.title)}" (${pr.url}) ` +
       `in project ${options.projectId}.`,
     `Follow your review-pr skill: read the diff (\`gh pr diff ${pr.number} --repo ${options.repo}\` ` +
       `or \`pideck diff --project ${options.projectId} ${pr.number}\`) and review it for correctness, ` +
       "bugs, and maintainability.",
-    `Then post your GitHub review: approve with ` +
-      `\`gh pr review ${pr.number} --repo ${options.repo} --approve --body "<summary>"\` or request changes with ` +
-      `\`gh pr review ${pr.number} --repo ${options.repo} --request-changes --body "<summary>"\` ` +
-      "plus inline comments via the gh api reviews endpoint (see the skill).",
+    `Then submit your findings as ONE real GitHub review — the platform triggers the PR author on review submissions, not on bare comments: ` +
+      `request changes with ${ghReview("request-changes")} when there are blocking problems, otherwise approve with ${ghReview("approve")}. ` +
+      `Attach inline comments to that SAME review submission via the reviews API with a JSON body: ` +
+      `\`gh api repos/${options.repo}/pulls/${pr.number}/reviews --input reviews.json\` (fields: event, body, comments[] with path/line/body). ` +
+      `If the decisive event is rejected, submit a COMMENT review (${ghReview("comment")}) — never standalone comments.`,
     "Do not push commits, do not open or close PRs. For codebase questions the diff alone cannot answer, spawn a researcher " +
       `(read-only, grounded report) with \`pideck spawn --project ${options.projectId} --kind researcher --question "<question>" --name "<label>"\` and wait for its report before posting your review. ` +
       "When done, reply with a short review summary.",
@@ -109,9 +117,28 @@ export function buildReReviewPrompt(pr: PullRequest, options: ReviewAgentPromptO
   const parts = [
     `[pideck] New commits were pushed to PR #${pr.number} "${oneLine(pr.title)}" (${pr.url}) ` +
       `since your last review.`,
-    `Re-review the updated diff (\`gh pr diff ${pr.number} --repo ${options.repo}\`) and post a fresh ` +
-      `GitHub review — approve or request changes — exactly as before (review-pr skill).`,
+    `Re-review the updated diff (\`gh pr diff ${pr.number} --repo ${options.repo}\`) and submit a fresh ` +
+      `GitHub review via \`gh pr review ${pr.number} --repo ${options.repo}\` — request changes or approve as the findings dictate, ` +
+      `or a real COMMENT review if GitHub rejects the decisive event (self-review) — exactly one submission, as before (review-pr skill).`,
     "Do not push commits, do not open or close PRs. Reply with a short summary when done.",
+  ];
+  return parts.map(oneLine).join(" ");
+}
+
+/**
+ * Builds the prompt sent to the PR-authoring worker when a completed review
+ * round requested changes (issue #407): the deterministic trigger that makes
+ * the reviewer's findings actionable even when they ride only in the review
+ * body rather than inline comments.
+ */
+export function buildAddressReviewPrompt(pr: PullRequest): string {
+  const parts = [
+    `[pideck] A GitHub review requested changes on your PR #${pr.number} "${oneLine(pr.title)}" (${pr.url}).`,
+    `Fetch the findings with your review-comments skill — the review body ` +
+      `(\`gh api repos/<owner>/<repo>/pulls/${pr.number}/reviews\`) as well as the inline comments; findings can ride in the body alone.`,
+    `Address every finding, commit, and push a follow-up commit to the PR branch \`${pr.headBranch}\`; ` +
+      `mark threads you resolved as resolved if the platform supports it.`,
+    "Do not open a new PR. When done, reply with a short summary of what you changed.",
   ];
   return parts.map(oneLine).join(" ");
 }

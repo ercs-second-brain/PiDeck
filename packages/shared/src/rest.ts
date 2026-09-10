@@ -95,6 +95,27 @@ export const settingsSchema = z.object({
   /** Spawn an auto review agent on green, unapproved PRs (issue #107). */
   autoReview: z.boolean().default(true),
   /**
+   * GitHub login of the review account (issue #407) — the second GitHub
+   * identity the review flow runs as. The worker/PR-assignment leg (#408's
+   * lifecycle, #416's assignment spawning) and review-user-keyed triggers
+   * key off this identity; it does NOT make issue assignments imply
+   * reviews — the review assignment is a separate role. `null` = not set.
+   */
+  reviewAccountUsername: z.string().min(1).nullable().default(null),
+  /**
+   * GitHub personal access token for the review account (issue #407). The
+   * review flow runs **only** when this is set: reviewer panes run `gh` as
+   * this second account (injected as `GH_TOKEN`), so the reviewer can file
+   * real GitHub reviews (`gh pr review`) on PRs authored by the primary
+   * account, and the PR loop's deterministic triggers key off review
+   * submissions. `null` (default) = single-account mode: no review agent is
+   * spawned at all — the PR loop is worker + CI only. Set it together with
+   * `reviewAccountUsername`. Stored in the daemon settings file (plaintext,
+   * like gh's own hosts.yml); the settings UI masks it on read (follow-up
+   * UI wiring).
+   */
+  reviewAccountToken: z.string().min(1).nullable().default(null),
+  /**
    * Browser Notification API for merged PRs (issue #111, mirrored from
    * agent-orchestrator's notification behavior). Default **off** — the
    * in-app toast always shows; this opt-in additionally fires an OS-level

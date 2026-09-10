@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { pullRequestSchema } from "@pideck/shared";
 
 import { GhClient } from "./gh.js";
-import { fetchReviewComments, getCiStatus, getReviewState, listOpenPullRequestsBatched, listPullRequests, listPullRequestsWithMeta, mapRestPull } from "./pulls.js";
+import { fetchReviewComments, getCiStatus, listOpenPullRequestsBatched, listPullRequests, listPullRequestsWithMeta, mapRestPull } from "./pulls.js";
+import { getReviewState } from "./reviews.js";
 
 const PROJECT = "proj";
 const REPO = { owner: "ercs-second-brain", repo: "agentsKISS" };

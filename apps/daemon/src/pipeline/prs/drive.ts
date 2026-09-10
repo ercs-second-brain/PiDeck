@@ -12,8 +12,9 @@
 import type { PullRequest, WorkerStatus } from "@pideck/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
+import type { ReviewSubmission } from "../../github/reviews.js";
 import { buildCiFixPrompt, buildReviewCommentsPrompt } from "./prompts.js";
-import { driveReview } from "./review.js";
+import { driveReview, observeReview } from "./review.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import type { PRSessionControl } from "./pipeline.js";
 import type { TrackedPR } from "./tracker.js";
@@ -35,6 +36,10 @@ export interface DriveContext {
    * prompt.
    */
   failingChecks?: (headSha: string) => Promise<string[]>;
+  /** Latest review submission on the PR this poll (issue #407). Optional: absent degrades to the inline-comment path. */
+  latestReview?: ReviewSubmission | null;
+  /** Whether the review account is configured (issue #407) — gates the whole review cycle. Absent = single-account mode. */
+  reviewAccount?: () => boolean;
   /** Max consecutive CI-fix prompts per red streak. */
   maxFixAttempts: number;
   /** Age at which an unanswered prompt is treated as stale. */
@@ -65,6 +70,12 @@ export async function driveLoop(
     tracked.state = "watching";
   }
 
+  // Issue #407: observe the PR's latest review submission once per poll —
+  // on red polls too, so a review landing during a CI streak is not
+  // re-treated as pre-existing once CI goes green. A NEW submission that
+  // requests changes triggers the worker in the green branch below.
+  const review = observeReview(tracked, ctx.latestReview ?? null);
+
   if (pr.ciStatus === "failure") {
     return driveCiFailure(tracked, pr, headSha, headChangedSincePrompt, newComments, ctx, events);
   }
@@ -72,7 +83,9 @@ export async function driveLoop(
   const greenEvents = await driveGreen(tracked, pr, headSha, newComments, ctx, events);
   // Issue #107: the auto review agent cycle runs on green PRs (after the
   // comment-delivery branch above, which owns the author's prompt state).
-  await driveReview(tracked, pr, headSha, ctx);
+  // Issue #407: `review.isNew` — a newly observed review submission — drives
+  // the deterministic address-findings trigger.
+  await driveReview(tracked, pr, headSha, ctx, review.isNew);
   return greenEvents;
 }
 
