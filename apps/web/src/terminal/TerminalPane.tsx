@@ -8,6 +8,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
+import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
 import { relaunchSession } from "../lib/api";
 import { InputBatcher } from "./input-batcher";
@@ -69,6 +71,39 @@ function useRelaunch(
   return { relaunching, relaunchError, relaunch };
 }
 
+/**
+ * Renderer selection (issue #376, agent-orchestrator's chain): prefer the
+ * WebGL renderer, fall back to 2D canvas, and keep xterm's DOM renderer as
+ * the last resort. Both canvas-based renderers rasterize box-drawing glyphs
+ * themselves onto a fixed cell grid; the DOM renderer does not, so TUI
+ * borders drift and background runs snap sub-pixel on fractional DPRs.
+ * WebGL contexts can be lost (hidden tabs, GPU resets) — `onContextLoss`
+ * swaps in the canvas renderer so the pane keeps rendering for the rest of
+ * its life. Loaded after {@link Terminal.open}.
+ */
+function loadRenderer(term: Terminal): void {
+  let canvasLoaded = false;
+  const loadCanvas = () => {
+    if (canvasLoaded) return;
+    canvasLoaded = true;
+    try {
+      term.loadAddon(new CanvasAddon());
+    } catch {
+      // No canvas either — the DOM renderer keeps the pane usable.
+    }
+  };
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => {
+      webgl.dispose();
+      loadCanvas();
+    });
+    term.loadAddon(webgl);
+  } catch {
+    loadCanvas();
+  }
+}
+
 export function TerminalPane({ sessionId }: { sessionId: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Live handle onto the pane's input path for the mobile key row (issue
@@ -93,17 +128,24 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
       fontSize: 14,
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
       cursorBlink: true,
-      // Terminal theme (issue #299): the app palette's ANSI counterpart —
-      // see DESIGN.md's terminal section for the derivation rules. Extracted
-      // to ./terminal-theme.ts so the palette is documented and testable.
+      // Terminal theme (issues #299 + #376): app surface + standard-hue ANSI
+      // palette — see ./terminal-theme.ts for the #376 root-cause notes.
       theme: TERMINAL_THEME,
-      // Issue #299: allow-priority contrast floor for dim ANSI foregrounds
-      // against the dark background; xterm adjusts colors that fall below it.
-      minimumContrastRatio: 4.5,
+      // Issue #376: no forced contrast transform — xterm's contrast feature
+      // rewrites each cell's foreground against its local background, so the
+      // same ANSI color shifted inside TUI highlight blocks/selections (the
+      // reported "colors move around"). The palette needs no rescue.
+      minimumContrastRatio: 1,
+      // Standard terminal semantics: bold selects the bright palette.
+      drawBoldTextInBrightColors: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
+    // Issue #376: rasterize on a fixed cell grid (agent-orchestrator's
+    // renderer chain) — the DOM renderer snaps per-span boxes on fractional
+    // device pixel ratios and drifts box-drawing glyphs.
+    loadRenderer(term);
 
     const connection = new TerminalConnection({
       onData: (data) => term.write(data),

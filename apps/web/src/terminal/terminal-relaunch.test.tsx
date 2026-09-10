@@ -11,6 +11,8 @@ import { renderToString } from "react-dom/server";
 // modules; stub them so the component can be imported in a node test env.
 vi.mock("@xterm/xterm", () => ({ Terminal: class {} }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
+vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: class {} }));
+vi.mock("@xterm/addon-canvas", () => ({ CanvasAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 import { StatusBar, relaunchOffered } from "./TerminalPane";

@@ -85,25 +85,31 @@ modals `24px 28px`. Gaps inside a row: 4–10px; between sections: 16–28px.
   edge-anchored surface (header top, key row/footer bottom, toasts).
 - Empty states: `--text-dim`, one short sentence, optionally one CTA button.
 
-## Terminal theme (issue #299)
+## Terminal theme (issues #299 + #376)
 
-The xterm pane (`src/terminal/terminal-theme.ts`) is part of the same design
-system — values are derived, not a foreign theme:
+The xterm pane (`src/terminal/terminal-theme.ts`) keeps the app's own surface
+but follows agent-orchestrator's terminal rule that the ANSI palette is
+*independent* from product colors — agent TUIs own the semantic meaning of
+the slots, so output colors match a native terminal:
 
-- `background`/`foreground`/`selectionBackground` are the app's `--bg`,
-  `--text`, and `--bg-hover` values; cursor = foreground, cursorAccent = bg.
-- The 16 ANSI colors keep their standard hues (tool output must stay
-  semantically readable) but are tuned for `#0f1216`: normal variants sit near
-  `--text-dim` brightness, bright variants near `--text` brightness and are
-  always lighter than their normal counterpart.
-- Semantic mapping from the app palette: `red` = accent `#e05d44` (errors are
-  the accent family), `blue` = issue `#4c8dff`, `green`/`yellow` = the app's
-  `--green`/`--amber`, `magenta` = `--pr`, grays = the text ramp (`brightBlack`
-  = `--text-dim`, `brightWhite` = `--text`).
-- `minimumContrastRatio: 4.5` — xterm lifts any too-dim foreground so output
-  stays readable on `#0f1216`.
-- Striped-background fix: DOM-renderer cell boxes snap sub-pixel short of
-  their row on fractional-DPR displays; `.xterm .xterm-rows > div > span`
-  overfills by 1px and the row's `overflow: hidden` clips it, so multiline
-  background runs connect into continuous blocks. Never remove that rule
-  without reintroducing the coverage guarantee another way.
+- `background`/`foreground` are the app's `--bg`/`--text`; cursor =
+  foreground, cursorAccent = bg; selection is a translucent wash of the app's
+  issue blue so selected text keeps its own colors.
+- The 16 ANSI colors are a standard-hue, One Dark–derived set
+  (agent-orchestrator's dark terminal palette; its `#101317` plate is a
+  near-identical surface to `#0f1216`). No slot is mapped to a product token
+  (the old accent-red/issue-blue mapping is gone); ANSI `black` collapses
+  into the plate so TUIs that fill rows with black don't paint stripes; each
+  normal slot that can appear as foreground text is readable on the plate on
+  its own, with brights lighter than their normals.
+- `minimumContrastRatio: 1` — NO forced contrast transform. xterm's contrast
+  feature rewrites each cell's foreground per render against that cell's
+  local background, so the same ANSI color rendered differently inside TUI
+  highlight blocks/selections and shifted as those moved (issue #376's
+  "colors move around"). The palette is readable without runtime rewriting.
+- Renderer: WebGL, falling back to 2D canvas, then xterm's DOM renderer
+  (`loadRenderer` in TerminalPane). Both canvas renderers rasterize
+  box-drawing on a fixed cell grid — no per-span boxes snapping on
+  fractional-DPR displays, so the old 1px-overfill seam fix only matters
+  when the DOM fallback path is live. Never remove that rule without
+  reintroducing the coverage guarantee another way.

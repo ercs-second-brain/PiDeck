@@ -12,6 +12,8 @@ import { MemoryRouter, Route, Routes } from "react-router";
 // pane component can be imported in a node test environment.
 vi.mock("@xterm/xterm", () => ({ Terminal: class {} }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
+vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: class {} }));
+vi.mock("@xterm/addon-canvas", () => ({ CanvasAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 import type { Session, Worker } from "@pideck/shared";
 import { makeProject } from "./test-fixtures";
