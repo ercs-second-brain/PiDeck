@@ -103,8 +103,9 @@ export const agentKindSpecObjectSchema = z.object({
   /**
    * Worker-like spawns occupy a real workspace — a fresh per-session
    * worktree (issue #287) — and count against the project's
-   * `workerConcurrency` cap. Cheap kinds (the researcher) run read-only in
-   * the project clone and are exempt.
+   * `workerConcurrency` cap. Cheap kinds (the researcher) are exempt from
+   * the cap (their per-session worktree is still created — issue #365's
+   * parent-state inheritance — but they do not occupy concurrency).
    */
   workerLike: z.boolean(),
 });

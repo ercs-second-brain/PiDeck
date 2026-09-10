@@ -9,12 +9,19 @@
  * to how orchestrator panes are launched), so every launch path (spawn,
  * relaunch, startup sweep) heals through ONE idempotent typing step.
  *
- * Workspace rules per kind spec (`agent-kinds.ts`): worker-like kinds get
- * a fresh per-session worktree branched off origin's default branch (the
- * #287 machinery, keyed by session id); cheap kinds run read-only in the
- * project clone. The resolved cwd is recorded (`setSessionCwd`) — the
- * persona's `{{PROJECT_PATH}}` and the relaunch/reconcile launch paths
- * (issues #27/#117) read it from the registry.
+ * Workspace rules per kind spec (`agent-kinds.ts`), with issue #365's
+ * parent-state inheritance: BOTH kind classes get a per-session worktree.
+ * The base is the **parent's checked-out commit** when the parent has a
+ * meaningful git state (its recorded cwd resolves to a HEAD — a worker's
+ * worktree, another kind's worktree), else the #287 fresh-origin fallback:
+ * fetch + a worktree off origin's current default branch (up-to-date
+ * main). This kills the "spawned researcher was 37 commits behind"
+ * surprise — cheap kinds no longer share the (possibly stale) project
+ * clone; worker-like kinds no longer branch off origin while the parent
+ * was mid-task on older code. The resolved cwd is recorded
+ * (`setSessionCwd`) — the persona's `{{PROJECT_PATH}}` and the
+ * relaunch/reconcile launch paths (issues #27/#117) read it from the
+ * registry.
  *
  * Split from `manager.ts` (kiss max-lines budget) following the
  * `reconcile.ts` pattern: explicit deps, free function; the
@@ -29,7 +36,7 @@ import type { ProjectLayout } from "./layout.js";
 import type { SessionRegistry } from "./registry.js";
 import type { Tmux } from "./tmux.js";
 import { nextTmuxSessionName } from "./tmux-commands.js";
-import { prepareWorkerWorkspace } from "./workspace.js";
+import { prepareWorkerWorkspace, resolveParentHead } from "./workspace.js";
 
 export interface AgentKindSpawnDeps {
   tmux: Tmux;
@@ -70,18 +77,18 @@ export async function spawnAgentKindSession(deps: AgentKindSpawnDeps, projectId:
     parentSessionId: request.parentSessionId,
   });
 
-  // Workspace per kind spec (docs/agent-kinds.md §5): worker-like kinds get
-  // the fresh-origin worktree (#287 — keyed by the unique session id);
-  // cheap kinds run read-only in the project clone. A fetch failure aborts
-  // the spawn — never start an audit on a stale base.
+  // Workspace per kind spec (docs/agent-kinds.md §5) with #365's
+  // parent-state inheritance: both kind classes get a per-session worktree
+  // (#287 machinery, keyed by the unique session id) based on the parent's
+  // checked-out commit when it has meaningful git state, else the
+  // fresh-origin fallback (fetch + origin's default branch — up-to-date
+  // main). A fetch failure on the fallback aborts the spawn — never start
+  // an audit on a stale base.
   let workspace: { path: string; discard: () => Promise<void> } | null = null;
   try {
-    if (spec.workerLike) {
-      workspace = await prepareWorkerWorkspace(deps.git, layout, projectId, session.id);
-      registry.setSessionCwd(session.id, workspace.path);
-    } else {
-      registry.setSessionCwd(session.id, layout.cloneDir(projectId));
-    }
+    const parentHead = await resolveParentHead(deps.git, registry.getSession(request.parentSessionId)?.cwd);
+    workspace = await prepareWorkerWorkspace(deps.git, layout, projectId, session.id, parentHead !== null ? { baseRef: parentHead } : {});
+    registry.setSessionCwd(session.id, workspace.path);
     // Bare shell: the bootstrap types the persona launch line (issue #290
     // pattern) — spawn, relaunch, and the startup sweep all heal identically.
     await tmux.newSession(name, { cwd: registry.getSession(session.id)?.cwd });

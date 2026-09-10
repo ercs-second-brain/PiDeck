@@ -21,6 +21,13 @@ export class FakeGitRunner {
   /** First matching command (exact first-arg match) fails with its error. */
   private readonly failures = new Map<string, Error>();
 
+  /**
+   * The `rev-parse HEAD` answer (issue #365's parent-state probe). Set = the
+   * fake "is a git repo" with that HEAD; unset = `rev-parse` is an unmatched
+   * invocation and fails ("no meaningful git state").
+   */
+  revParseHead: string | undefined = undefined;
+
   /** Scripts a failure for the next/all invocations of `git <command>`. */
   failOn(command: string, error: Error): this {
     this.failures.set(command, error);
@@ -34,6 +41,10 @@ export class FakeGitRunner {
       if (scripted !== undefined) throw scripted;
       if (args[0] === "fetch") return { stdout: "", stderr: "" };
       if (args[0] === "symbolic-ref") return { stdout: "origin/main\n", stderr: "" };
+      if (args[0] === "rev-parse")
+        return this.revParseHead !== undefined
+          ? { stdout: `${this.revParseHead}\n`, stderr: "" }
+          : (() => { throw new Error(`fake git: no rev-parse HEAD answer scripted (git ${args.join(" ")})`); })();
       if (args[0] === "worktree") return { stdout: "", stderr: "" };
       throw new Error(`fake git: unmatched invocation: git ${args.join(" ")}`);
     };

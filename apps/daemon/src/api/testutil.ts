@@ -106,7 +106,13 @@ export interface FakeGitOptions {
  */
 function fakeWorkspaceGit(args: string[]): { stdout: string; stderr: string } | null {
   if (args[0] === "fetch") return { stdout: "", stderr: "" };
-  if (args[0] === "worktree") return { stdout: "", stderr: "" };
+  if (args[0] === "worktree") {
+    // `worktree add -b <branch> <path> <base>` must create the dir: real
+    // tmux refuses a session whose cwd does not exist (issue #365 — the
+    // per-session worktree is the pane's cwd).
+    if (args[1] === "add") mkdirSync(args[4] ?? "", { recursive: true });
+    return { stdout: "", stderr: "" };
+  }
   if (args[0] === "symbolic-ref" && args.includes("refs/remotes/origin/HEAD")) return { stdout: "origin/main\n", stderr: "" };
   return null;
 }
