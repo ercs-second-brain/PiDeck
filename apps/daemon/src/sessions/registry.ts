@@ -76,7 +76,12 @@ interface PersistedState {
 
 const STATE_VERSION = 1;
 
-const EMPTY_STATE: PersistedState = { version: STATE_VERSION, sessions: [], workers: [] };
+/** Fresh literal per call — NEVER a shared module constant: the fallback is
+ * returned by reference on absent files, so a shared empty would leak state
+ * across registry instances in-process (issue #372, the AgentKindStore
+ * trap). `load()` only reads the fallback today, but the pattern is the
+ * same latent hazard. */
+const emptyState = (): PersistedState => ({ version: STATE_VERSION, sessions: [], workers: [] });
 
 /**
  * Validates a parsed registry file, dropping entries that no longer match
@@ -305,7 +310,7 @@ export class SessionRegistry {
 
   /** Re-reads state from the JSON file, replacing the in-memory maps. */
   load(): void {
-    const state = this.store.load(validatePersistedState, EMPTY_STATE);
+    const state = this.store.load(validatePersistedState, emptyState());
     this.sessions.clear();
     this.workers.clear();
     for (const session of state.sessions) this.sessions.set(session.id, session);
