@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { SHIPPED_AGENT_KINDS, type AgentKindSpec } from "@pideck/shared";
 
 import { apiCreateAgentKind, apiDeleteAgentKind, apiGetAgentAssets, apiListAgentKinds, apiUpdateAgentKind, errorMessage } from "../lib/api";
+import { AssetDialog } from "./AssetDialog";
 import { AgentKindForm, NEW_KIND_DRAFT, draftFromSpec, parseDraft, type KindDraft } from "./AgentKindForm";
 
 /** The editor's modal state: create, or edit one custom kind. */
@@ -143,6 +144,17 @@ async function restoreShippedKind(name: string, reload: () => Promise<void>): Pr
   await reload();
 }
 
+/** The "+ New kind" button (issue #358's dialog flow opens from here). */
+function NewKindButton(props: { onClick: () => void }) {
+  return (
+    <div className="wizard-actions">
+      <button type="button" className="button button-primary" onClick={props.onClick}>
+        + New kind
+      </button>
+    </div>
+  );
+}
+
 /** The self-fetching agent-kinds section (registry v2 via `GET /api/agent-kinds`). */
 export function AgentKindsSection() {
   const { kinds, loadError, reload } = useAgentKinds();
@@ -219,29 +231,28 @@ export function AgentKindsSection() {
           }}
         />
       )}
-      <div className="wizard-actions">
-        <button
-          type="button"
-          className="button button-primary"
-          onClick={() => {
-            setError(null);
-            setNote(null);
-            setEditor({ mode: "create", draft: { ...NEW_KIND_DRAFT } });
-          }}
-        >
-          + New kind
-        </button>
-      </div>
+      <NewKindButton onClick={() => {
+        setError(null);
+        setNote(null);
+        setEditor({ mode: "create", draft: { ...NEW_KIND_DRAFT } });
+      }} />
       {editor !== null && (
-        <AgentKindForm
-          draft={editor.draft}
-          editing={editor.mode === "edit"}
-          saving={saving}
-          error={error}
-          onChange={(draft) => setEditor({ ...editor, draft })}
-          onSave={saveEditor}
-          onCancel={() => setEditor(null)}
-        />
+        // Issue #358 B11: the kind editor opens as a proper nested dialog,
+        // not an inline append to the section.
+        <AssetDialog
+          ariaLabel={editor.mode === "edit" ? `Edit agent kind ${editor.name}` : "New agent kind"}
+          onClose={() => setEditor(null)}
+        >
+          <AgentKindForm
+            draft={editor.draft}
+            editing={editor.mode === "edit"}
+            saving={saving}
+            error={error}
+            onChange={(draft) => setEditor({ ...editor, draft })}
+            onSave={saveEditor}
+            onCancel={() => setEditor(null)}
+          />
+        </AssetDialog>
       )}
     </section>
   );

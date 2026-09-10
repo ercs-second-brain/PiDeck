@@ -53,7 +53,29 @@ export function registerSessionTerminateRoute(router: Router, services: DaemonSe
     } else {
       // Persona agents archive (issue #357 B9) instead of hard-deleting;
       // every other worker-less session keeps the #317 kill semantics.
+      // Issue #358 (the #370 broadcast-gap finding): announce each newly
+      // archived persona agent on the hub (the B10 cascade covers every
+      // lineage member) so open sidebars update instantly instead of on
+      // their next poll. The worker-backed path announces via the #64
+      // handler's worker.status.changed, so only this path needs the event.
+      const archivedBefore = new Set(
+        services.registry
+          .listSessions()
+          .filter((entry) => entry.archivedAt !== undefined)
+          .map((entry) => entry.id),
+      );
       after = await services.sessions.archiveAgentSession(session.id);
+      for (const entry of services.registry.listSessions()) {
+        if (entry.archivedAt === undefined || archivedBefore.has(entry.id) || entry.agentKind === undefined) continue;
+        services.hub.broadcast({
+          type: "session.archived",
+          at: new Date().toISOString(),
+          projectId: entry.projectId,
+          sessionId: entry.id,
+          agentKind: entry.agentKind,
+          rootSessionId: session.id,
+        });
+      }
     }
     return { body: after };
   });

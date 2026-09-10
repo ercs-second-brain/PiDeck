@@ -1,9 +1,10 @@
 /**
- * Agent-assets modal tests (issue #315): the per-persona asset editor is a
- * modal dialog over the current view — two lists (persona prompts with
- * override/default state; user skills with their applied personas) and an
- * in-modal textarea editor. Exercised with the api layer mocked (the
- * settings-modal test pattern).
+ * Agent-assets modal tests (issues #315/#358): the per-persona asset editor
+ * is a modal dialog over the current view — two lists (persona prompts with
+ * override/default state; user skills with their applied personas) and
+ * nested editor dialogs (B11): the persona edit with its skill assignment
+ * (B13 — toggles save immediately), the skill edit (id + content only).
+ * Exercised with the api layer mocked (the settings-modal test pattern).
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -19,7 +20,7 @@ vi.mock("../lib/api", () => ({
   errorMessage: (err: unknown) => String(err),
 }));
 
-import { AgentAssetsModal, AgentAssetsView, PERSONA_LABELS } from "./AgentAssetsModal";
+import { AgentAssetsModal, AgentAssetsView, PersonaEditorDialog, PERSONA_LABELS, SkillEditorDialog } from "./AgentAssetsModal";
 
 const { apiGetAgentAssets } = vi.mocked(await import("../lib/api"));
 
@@ -64,9 +65,73 @@ describe("agent-assets modal (issue #315)", () => {
     expect(html).toContain("Agent assets");
   });
 
-  it("shows an editor section only when opened (none by default)", () => {
+  it("shows an editor dialog only when opened (none by default)", () => {
     const html = renderToString(<AgentAssetsView assets={ASSETS} onReload={() => {}} />);
     expect(html).not.toContain("asset-editor-text");
+    expect(html).not.toContain("asset-dialog-overlay");
     expect(html).toContain("Edit");
+  });
+});
+
+describe("persona + skill editor dialogs (issues #358 B11+B13)", () => {
+  it("renders the persona edit as a nested dialog with the skill assignment (B13)", () => {
+    const html = renderToString(
+      <PersonaEditorDialog
+        editor={{ kind: "prompt", persona: "orchestrator", content: "Custom orchestrator" }}
+        assets={ASSETS}
+        saving={false}
+        error={null}
+        onChange={() => {}}
+        onSave={() => {}}
+        onToggleSkill={() => {}}
+      />,
+    );
+    // B11: a proper nested dialog, not an inline append.
+    expect(html).toContain("asset-dialog-overlay");
+    expect(html).toContain("Edit Orchestrator prompt");
+    expect(html).toContain("Custom orchestrator");
+    // B13: the persona's skills are checked here — prd is applied to the
+    // orchestrator (checked), idle is not (unchecked).
+    expect(html).toContain("Skills this persona loads");
+    expect(html).toContain("Toggles save immediately");
+    expect((html.match(/prd/g) ?? []).length).toBeGreaterThan(0);
+    expect(html).toContain("idle");
+    const checks = html.match(/<input type="checkbox"[^>]*>/g) ?? [];
+    expect(checks.some((tag) => tag.includes("checked"))).toBe(true); // prd → orchestrator
+    expect(checks.some((tag) => !tag.includes("checked"))).toBe(true); // idle
+  });
+
+  it("renders the skill edit as a nested dialog WITHOUT persona assignment (B13)", () => {
+    const html = renderToString(
+      <SkillEditorDialog
+        editor={{ kind: "skill", id: "prd", idEditable: false, content: "---\nname: prd\n---\n", personas: ["orchestrator"] }}
+        saving={false}
+        error={null}
+        onChange={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    expect(html).toContain("asset-dialog-overlay");
+    expect(html).toContain("Edit skill"); // quotes render as &quot; entities
+    // B13: no persona checkboxes — assignment moved to the persona edit.
+    expect(html).not.toContain("asset-persona-checks");
+    expect(html).not.toContain("Orchestrator");
+    expect(html).toContain("Assign personas from each persona");
+    // The assignment is carried through for the save (unchanged).
+    expect(html).toContain('value="prd"');
+  });
+
+  it("renders the new-skill dialog with the id editable", () => {
+    const html = renderToString(
+      <SkillEditorDialog
+        editor={{ kind: "skill", id: "", idEditable: true, content: "---\nname: \n---\n", personas: [] }}
+        saving={false}
+        error={null}
+        onChange={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    expect(html).toContain("New skill");
+    expect(html).not.toContain("disabled"); // id editable
   });
 });
