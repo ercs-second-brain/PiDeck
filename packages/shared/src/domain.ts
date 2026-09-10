@@ -23,10 +23,12 @@ export const idSchema = z.string().min(1);
 export type Id = z.infer<typeof idSchema>;
 
 /**
- * Agent-kind id (docs/agent-kinds.md): a kebab-case slug, safe as a
- * filename and a CLI-visible name. Lives with the domain primitives (the
- * session schema uses it); the spec-v2 schema and the shipped kinds live
- * in `agent-kinds.ts`.
+ * Agent-kind id (docs/agent-kinds.md): a kebab-case slug. Invariant: the
+ * id is used both as a filename and as a tmux session/window-name segment,
+ * so it must be tmux-safe — lowercase-only, no `_`. This is intentionally
+ * stricter than {@link agentSkillIdSchema}; do not align the two.
+ * Lives with the domain primitives (the session schema uses it); the
+ * spec-v2 schema and the shipped kinds live in `agent-kinds.ts`.
  */
 export const agentKindIdSchema = z
   .string()
@@ -292,7 +294,11 @@ export const promptOverrideSchema = z.object({
 });
 export type PromptOverride = z.infer<typeof promptOverrideSchema>;
 
-/** Slug-shaped asset id (skill): safe as a filename and a CLI-visible name. */
+/**
+ * Slug-shaped asset id (skill). Invariant: filename safety only — the id
+ * never appears in a tmux target, so unlike {@link agentKindIdSchema} it
+ * may use uppercase and `_`.
+ */
 export const agentSkillIdSchema = z
   .string()
   .min(1)

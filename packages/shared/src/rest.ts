@@ -37,10 +37,10 @@ import {
   savePromptOverrideRequestSchema,
   sessionSchema,
   workerSchema,
-  type PullRequest,
 } from "./domain.js";
 
-export const HTTP_METHODS = ["GET", "POST", "PATCH", "PUT", "DELETE"] as const;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally value-unused: the array exists as the single source of truth for HttpMethod via typeof; it is never read at runtime
+const HTTP_METHODS = ["GET", "POST", "PATCH", "PUT", "DELETE"] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
 
 // ---------------------------------------------------------------------------
@@ -256,10 +256,6 @@ export const updateApplyProgressSchema = z.object({
   error: z.string().min(1).optional(),
 });
 export type UpdateApplyProgress = z.infer<typeof updateApplyProgressSchema>;
-
-/** PR summary for lists/views; diff bodies are fetched separately. */
-export const pullRequestSummarySchema = pullRequestSchema;
-export type PullRequestSummary = PullRequest;
 
 /**
  * Result of a self-update check (issue #55): the daemon's local source
@@ -486,13 +482,14 @@ export const endpoints = {
     response: sessionSchema,
   },
 
-  // Pull requests
+  // Pull requests — list/view responses carry PR metadata only; diff
+  // bodies are fetched separately (see getPullRequestDiff).
   listProjectPullRequests: {
     method: "GET",
     path: "/api/projects/:projectId/pulls",
     params: z.object({ projectId: z.string().min(1) }),
     request: null,
-    response: z.array(pullRequestSummarySchema),
+    response: z.array(pullRequestSchema),
   },
   getPullRequestDiff: {
     method: "GET",
