@@ -16,7 +16,6 @@ describe("SettingsStore", () => {
     const dir = testDaemon().stateDir;
     const store = new SettingsStore(dir);
     expect(store.get()).toEqual({
-      autoAgentUsername: null,
       defaultWorkerConcurrency: 3,
       terminateOnMerge: true,
       autoFixCi: true,
@@ -26,21 +25,11 @@ describe("SettingsStore", () => {
       reviewAccountToken: null,
       browserMergeNotifications: false,
     });
-    store.update({ autoAgentUsername: "auto-agent" });
-    expect(store.get()).toEqual({
-      autoAgentUsername: "auto-agent",
-      defaultWorkerConcurrency: 3,
-      terminateOnMerge: true,
-      autoFixCi: true,
-      autoFixReviewComments: true,
-      autoReview: true,
-      reviewAccountUsername: null,
-      reviewAccountToken: null,
-      browserMergeNotifications: false,
-    });
+    store.update({ defaultWorkerConcurrency: 5 });
+    expect(store.get().defaultWorkerConcurrency).toBe(5);
 
     const reloaded = new SettingsStore(dir);
-    expect(reloaded.get().autoAgentUsername).toBe("auto-agent");
+    expect(reloaded.get().defaultWorkerConcurrency).toBe(5);
   });
 
   it("defaults the worker-pipeline toggles ON and persists changes (issue #106)", () => {
@@ -75,10 +64,11 @@ describe("SettingsStore", () => {
   it("fills the worker-pipeline toggles into a pre-#106 settings file (upgrade path)", () => {
     const dir = testDaemon().stateDir;
     mkdirSync(dir, { recursive: true });
-    writeFileSync(`${dir}/settings.json`, JSON.stringify({ autoAgentUsername: null, defaultWorkerConcurrency: 2, version: 1 }));
+    // A pre-#416 file still carrying the removed autoAgentUsername field
+    // upgrades on load (unknown keys are stripped).
+    writeFileSync(`${dir}/settings.json`, JSON.stringify({ autoAgentUsername: "old-bot", defaultWorkerConcurrency: 2, version: 1 }));
     const store = new SettingsStore(dir);
     expect(store.get()).toEqual({
-      autoAgentUsername: null,
       defaultWorkerConcurrency: 2,
       terminateOnMerge: true,
       autoFixCi: true,

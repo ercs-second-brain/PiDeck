@@ -149,10 +149,14 @@ export type KanbanUpdateEvent = z.infer<typeof kanbanUpdateEventSchema>;
  * redefined per package.
  */
 export const githubWatcherEventSchema = z.discriminatedUnion("type", [
-  /** A newly seen issue (authored by, or assigned to, the watched login). */
+  /** A newly seen open issue (any author — the issue pipeline does not spawn on creation). */
   z.object({ type: z.literal("issue.created"), at: isoDateTimeSchema, issue: issueSchema }),
-  /** The watched login became an assignee of a previously-seen issue. */
+  /** A previously-seen issue gained a new assignee (issue #416: this is the worker-spawn trigger). */
   z.object({ type: z.literal("issue.assigned"), at: isoDateTimeSchema, issue: issueSchema }),
+  /** A previously-seen assigned issue lost all its assignees (issue #416: retract). */
+  z.object({ type: z.literal("issue.unassigned"), at: isoDateTimeSchema, issue: issueSchema }),
+  /** A previously-seen open issue disappeared from the open-issues poll — closed (issue #416: retract). */
+  z.object({ type: z.literal("issue.closed"), at: isoDateTimeSchema, issue: issueSchema }),
   /** A PR was opened / newly seen by the PR watcher. */
   z.object({ type: z.literal("pull_request.opened"), at: isoDateTimeSchema, pullRequest: pullRequestSchema }),
   /** A previously-seen PR changed (title, state, CI status, or review decision). */

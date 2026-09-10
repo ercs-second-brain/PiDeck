@@ -1,13 +1,11 @@
 /**
- * The project onboarding wizard's cross-step form state and registration
- * call (issue #62): the repository source (clone vs create) captured in
- * step 1 and the auto-agent answer (with its GitHub username) captured in
- * step 2 both live here so the step components stay presentational and the
- * wizard parent keeps owning the state machine.
+ * The project onboarding wizard's form state and registration call (issue
+ * #62): the repository source (clone vs create) captured in the single
+ * step lives here so the step component stays presentational and the
+ * wizard parent keeps owning the state. (Issue #416: the auto-agent
+ * question is gone — worker spawning is assignment-driven by default.)
  */
 
-/** The project flow's step keys (issue #183: pi/gh auth moved to the global flow). */
-export type ProjectStep = "source" | "autoagent";
 import type { Project } from "@pideck/shared";
 import { apiRegisterProject } from "../../lib/api";
 import { boardStore } from "../../store/store";
@@ -18,9 +16,6 @@ export type WizardForm = {
   repoUrl: string;
   repoName: string;
   isPublic: boolean;
-  /** Step 2: should issues auto-create agents? */
-  autoAgent: "no" | "yes";
-  username: string;
 };
 
 export const INITIAL_FORM: WizardForm = {
@@ -28,8 +23,6 @@ export const INITIAL_FORM: WizardForm = {
   repoUrl: "",
   repoName: "",
   isPublic: false,
-  autoAgent: "no",
-  username: "",
 };
 
 /** Expands `owner/repo` shorthands to full GitHub https URLs. */
@@ -40,7 +33,7 @@ function normalizeRepoUrl(input: string): string {
   return value;
 }
 
-/** Step 3 validation: the clone flow needs a repo URL, the create flow a name. */
+/** Step validation: the clone flow needs a repo URL, the create flow a name. */
 export function sourceFormError(form: WizardForm): string | null {
   if (form.mode === "clone" && normalizeRepoUrl(form.repoUrl).trim().length === 0) {
     return "Select a repository to clone.";
@@ -51,27 +44,6 @@ export function sourceFormError(form: WizardForm): string | null {
   return null;
 }
 
-/** Step 4 validation: watching a username requires the username. */
-export function autoAgentFormError(form: WizardForm): string | null {
-  if (form.autoAgent === "yes" && form.username.trim().length === 0) {
-    return "Enter the GitHub username to watch (or choose No).";
-  }
-  return null;
-}
-
-/**
- * Prefills the auto-agent username with the authenticated GitHub login (the
- * account PiDeck is connected as, via `GET /api/gh-auth`): the add-project
- * flow offers the connected user instead of an empty field. Best-effort and
- * non-destructive — it only fills an empty username and never overwrites
- * user input; the field stays fully editable in the UI.
- */
-export function prefillUsername(form: WizardForm, login: string | null): WizardForm {
-  if (login === null || login.length === 0) return form;
-  if (form.username.trim().length > 0) return form;
-  return { ...form, username: login };
-}
-
 /**
  * Registers the project via the real `POST /api/projects` endpoint. On
  * success the returned project is seeded into the shared store (issue #203):
@@ -80,13 +52,10 @@ export function prefillUsername(form: WizardForm, login: string | null): WizardF
  */
 export async function registerProject(form: WizardForm): Promise<Project> {
   const trimmedName = form.repoName.trim();
-  const settings = {
-    autoAgentUsername: form.autoAgent === "yes" && form.username.trim().length > 0 ? form.username.trim() : null,
-  };
   const body =
     form.mode === "clone"
-      ? { mode: "clone" as const, repoUrl: normalizeRepoUrl(form.repoUrl), ...(trimmedName ? { name: trimmedName } : {}), settings }
-      : { mode: "create" as const, name: trimmedName, isPrivate: !form.isPublic, settings };
+      ? { mode: "clone" as const, repoUrl: normalizeRepoUrl(form.repoUrl), ...(trimmedName ? { name: trimmedName } : {}) }
+      : { mode: "create" as const, name: trimmedName, isPrivate: !form.isPublic };
   const project = await apiRegisterProject(body);
   boardStore.upsertProject(project);
   return project;

@@ -4,8 +4,8 @@
  * sidebar footer opens {@link GlobalSettingsModal} — there are no dedicated
  * settings routes or pages anymore, and no back links. The per-project vs
  * global distinction is unchanged: the project modal edits the project's
- * autoAgentUsername and workerConcurrency cap; both modals show the
- * daemon-wide {@link GlobalWorkerSettings} toggles.
+ * workerConcurrency cap; both modals show the daemon-wide {@link
+ * GlobalWorkerSettings} toggles.
  */
 import { useEffect, useState } from "react";
 import type { Settings } from "@pideck/shared";
@@ -35,7 +35,7 @@ export function GlobalSettingsModal({ onClose }: { onClose: () => void }) {
 
 /**
  * Project settings modal (issue #264, originally the project settings
- * page): auto-agent username and the worker concurrency cap, plus the
+ * page): the worker concurrency cap plus the
  * daemon-wide worker-pipeline toggles (issue #106) and the merged-PR
  * browser-notification toggle (issue #111). pi/gh auth is PiDeck-global,
  * configured once (issue #183) — it is no longer surfaced per project

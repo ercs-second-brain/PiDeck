@@ -3,7 +3,7 @@
  * over the current view — the global modal from the sidebar footer, the
  * project modal from the sidebar's ⋯ menu — with no dedicated routes and
  * no back links. The per-project vs global distinction is preserved
- * (autoAgentUsername / workerConcurrency are project-level; the worker
+ * (workerConcurrency is project-level; the worker
  * pipeline + notification toggles are daemon-wide).
  *
  * The notification toggle display ratchet (issue #204) keeps its tests at
@@ -40,7 +40,6 @@ import { GlobalSettingsModal, GlobalWorkerSettings, ProjectSettingsModal } from 
 import type { AppState } from "../store/store";
 
 const SETTINGS: Settings = {
-  autoAgentUsername: null,
   defaultWorkerConcurrency: 0,
   terminateOnMerge: true,
   autoFixCi: true,
@@ -69,7 +68,7 @@ const project: Project = projectSchema.parse({
   name: "Demo",
   repoUrl: "https://github.com/o/r",
   defaultBranch: "main",
-  settings: { autoAgentUsername: "octocat" },
+  settings: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 });
@@ -115,9 +114,7 @@ describe("settings modals (issue #264)", () => {
     expect(html).toContain(">Demo");
     expect(html).toContain("— settings");
     expect(html).toContain("https://github.com/o/r");
-    // The per-project distinction: autoAgentUsername prefilled from the project.
-    expect(html).toContain('id="auto-agent-username"');
-    expect(html).toContain('value="octocat"');
+    // The per-project distinction: the worker cap field.
     expect(html).toContain('id="worker-concurrency"');
     // Issue #322: the four tri-state per-project toggle overrides, defaulting
     // to "inherit" for a project with no overrides.

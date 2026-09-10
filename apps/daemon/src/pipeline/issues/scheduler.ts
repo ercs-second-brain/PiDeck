@@ -42,6 +42,13 @@ export interface SpawnRequest {
 export interface SpawnScheduler {
   /** Runs (or queues) one spawn task. Must not throw synchronously. */
   schedule(task: () => Promise<void>, request?: SpawnRequest): void;
+  /**
+   * Drops a queued spawn task (issue #416 retract: unassign/close must not
+   * spawn later). A task already started cannot be cancelled — the caller
+   * (the issue pipeline) handles that window with its retract mark.
+   * No-op when nothing is queued for the issue.
+   */
+  cancel(projectId: string, issueNumber: number): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +112,20 @@ export class QueueingScheduler implements SpawnScheduler {
     this.queues.set(projectId, queue);
     this.ensurePoll(projectId);
     void this.drain(projectId);
+  }
+
+  /**
+   * Drops queued spawn tasks for the issue (issue #416 retract). A task
+   * already started cannot be cancelled — the pipeline's retract mark
+   * covers that window. No-op when nothing is queued for the issue.
+   */
+  cancel(projectId: string, issueNumber: number): void {
+    const queue = this.queues.get(projectId);
+    if (queue === undefined) return;
+    const kept = queue.filter((queued) => queued.issueNumber !== issueNumber);
+    if (kept.length === queue.length) return;
+    if (kept.length === 0) this.queues.delete(projectId);
+    else this.queues.set(projectId, kept);
   }
 
   /**

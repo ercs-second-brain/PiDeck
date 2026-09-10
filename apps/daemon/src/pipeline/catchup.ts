@@ -15,8 +15,6 @@
  * handled by the running daemon are not re-swept on the next restart.
  */
 
-import type { Project } from "@pideck/shared";
-
 import type { GhClient } from "../github/gh.js";
 import { parseRepoUrl } from "../github/gh.js";
 import { listIssuesCreatedAfter } from "../github/issues.js";
@@ -34,8 +32,6 @@ export const CATCH_UP_BATCH_SIZE = 25;
 /** Everything the sweep needs from the owning {@link GithubAutomation}. */
 export interface CatchUpDeps {
   gh: (repoUrl: string) => GhClient;
-  /** The registered project for an id (username rule), or `undefined`. */
-  getProject: (projectId: string) => Project | undefined;
   /** The shared watcher-event router (feeds the spawn matrix, advances cursors). */
   handleWatcherEvent: (projectId: string, event: GithubWatcherEvent) => void;
   /** Whether the automation is running (a stopped unit re-sweeps). */
@@ -61,7 +57,7 @@ export class CatchUpSweep {
   async pollBatch(units: Iterable<ProjectUnit>, projectId?: string): Promise<void> {
     for (const unit of units) {
       if (projectId !== undefined && unit.projectId !== projectId) continue;
-      if (unit.issueWatcher === null || unit.issueCursor.lastSeenIssueNumber === null) continue;
+      if (unit.issueCursor.lastSeenIssueNumber === null) continue;
       if (await this.runBatch(unit)) this.stopLoop(unit);
     }
   }
@@ -76,7 +72,7 @@ export class CatchUpSweep {
    *   remain, spread the rest across the poll ticks.
    */
   async reconcileAfterBaseline(unit: ProjectUnit): Promise<void> {
-    const highest = unit.issueWatcher?.highestSeenIssueNumber ?? null;
+    const highest = unit.issueWatcher.highestSeenIssueNumber;
     const cursor = unit.issueCursor.lastSeenIssueNumber;
     if (cursor === null) {
       // First-ever start: baseline today's backlog instead of spawning it.
@@ -116,11 +112,13 @@ export class CatchUpSweep {
   /**
    * Runs one bounded catch-up batch for a unit (issue #50): fetches the
    * oldest open issues numbered above the cursor ({@link CATCH_UP_BATCH_SIZE}
-   * max), feeds each username-matching one through the normal spawn matrix
-   * (blocked/duplicate/cap semantics identical to the live path), then —
-   * only after the batch has been processed — advances the cursor past it.
-   * Issues ≤ the cursor are never spawned. Returns `true` when the sweep is
-   * complete (fewer than a full batch remained).
+   * max), feeds each **assigned** one through the normal spawn matrix as a
+   * synthesized `issue.assigned` event (blocked/duplicate/cap semantics
+   * identical to the live path), then — only after the batch has been
+   * processed — advances the cursor past it. Issues ≤ the cursor are never
+   * spawned; unassigned downtime-created issues never spawn (#416).
+   * Returns `true` when the sweep is complete (fewer than a full batch
+   * remained).
    */
   async runBatch(unit: ProjectUnit): Promise<boolean> {
     const cursor = unit.issueCursor.lastSeenIssueNumber;
@@ -131,14 +129,16 @@ export class CatchUpSweep {
       parseRepoUrl(unit.repoUrl),
       { afterNumber: cursor, first: CATCH_UP_BATCH_SIZE },
     );
-    const username = this.deps.getProject(unit.projectId)?.settings.autoAgentUsername ?? null;
     let highest = cursor;
     for (const record of records) {
-      // Same username rule as the live watcher (`IssueWatcher.matches`):
-      // created by or assigned to the auto-agent username.
-      if (username !== null && (record.author === username || record.assignees.includes(username))) {
+      // Assignment-driven spawning (#416): only issues that HAVE an
+      // assignee spawn a worker — synthesized as `issue.assigned` so they
+      // go through the same spawn matrix as the live watcher path. Issues
+      // created (but never assigned) while the daemon was down just
+      // advance the cursor: no assignment ⇒ no worker wanted.
+      if (record.assignees.length > 0) {
         this.deps.handleWatcherEvent(unit.projectId, {
-          type: "issue.created",
+          type: "issue.assigned",
           at: this.deps.now().toISOString(),
           issue: record.issue,
         });

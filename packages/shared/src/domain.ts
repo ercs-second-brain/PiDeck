@@ -71,8 +71,6 @@ export type KanbanColumn = (typeof KANBAN_COLUMNS)[number];
 
 /** Per-project automation settings. */
 export const projectSettingsSchema = z.object({
-  /** GitHub username whose newly created/assigned issues auto-spawn workers. `null` disables auto-spawn. */
-  autoAgentUsername: z.string().min(1).nullable(),
   /**
    * Max workers that may run concurrently for this project (issue #14).
    * Unset = unbounded: every unblocked issue spawns a worker immediately —

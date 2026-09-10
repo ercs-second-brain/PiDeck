@@ -97,7 +97,7 @@ describe("websocket: kanban updates", () => {
       name: "p",
       repoUrl: "https://github.com/example/example",
       defaultBranch: "main",
-      settings: { autoAgentUsername: null, workerConcurrency: 1 },
+      settings: { workerConcurrency: 1 },
       createdAt: NOW,
       updatedAt: NOW,
     };

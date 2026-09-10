@@ -124,8 +124,12 @@ export function RepoSourceStep(props: {
   error: string | null;
   onContinue: () => void;
   onBack?: () => void;
+  /** Disables the continue button while registration is in flight. */
+  submitting?: boolean;
+  /** Continue-button label (the wizard's last step says "finish"). */
+  continueLabel?: string;
 }) {
-  const { form, onChange, onError, error, onContinue, onBack } = props;
+  const { form, onChange, onError, error, onContinue, onBack, submitting = false, continueLabel = "Continue" } = props;
   return (
     <StepPanel title="Connect a repository">
       <div className="choice-row">
@@ -202,8 +206,8 @@ export function RepoSourceStep(props: {
 
       {error !== null && <p className="error-note">{error}</p>}
       <div className="wizard-actions">
-        <button type="button" className="button button-primary" onClick={onContinue}>
-          Continue
+        <button type="button" className="button button-primary" disabled={submitting} onClick={onContinue}>
+          {submitting ? "Registering…" : continueLabel}
         </button>
         {onBack !== undefined && (
           <button type="button" className="button" onClick={onBack}>

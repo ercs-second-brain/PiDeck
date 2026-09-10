@@ -25,7 +25,7 @@ const KISSTEST: Project = {
   name: "kisstest",
   repoUrl: "https://github.com/example/kisstest",
   defaultBranch: "main",
-  settings: { autoAgentUsername: null },
+  settings: {},
   createdAt: NOW,
   updatedAt: NOW,
 };

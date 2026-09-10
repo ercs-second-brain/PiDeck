@@ -20,7 +20,7 @@ const project = projectSchema.parse({
   name: "Demo",
   repoUrl: REPO_URL,
   defaultBranch: "main",
-  settings: { autoAgentUsername: null },
+  settings: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 });
@@ -210,7 +210,7 @@ describe("deriveBoard: archived workers (issue #102)", () => {
     name: "o-r",
     repoUrl: "https://github.com/o/r",
     defaultBranch: "main",
-    settings: { autoAgentUsername: null },
+    settings: {},
     createdAt: UPDATED_AT,
     updatedAt: UPDATED_AT,
   });
@@ -262,7 +262,7 @@ describe("deriveBoard: card url + diff counts (issue #261)", () => {
     name: "Demo",
     repoUrl: REPO_URL,
     defaultBranch: "main",
-    settings: { autoAgentUsername: null },
+    settings: {},
     createdAt: updatedAt,
     updatedAt,
   });

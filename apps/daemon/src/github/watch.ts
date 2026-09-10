@@ -159,16 +159,20 @@ abstract class WatcherBase<O extends WatcherBaseOptions> {
 // Issue watcher
 // ---------------------------------------------------------------------------
 
-export interface IssueWatcherOptions extends WatcherBaseOptions {
-  /**
-   * Username to watch for: emits `issue.created` for issues authored by or
-   * assigned to this login, and `issue.assigned` when the login becomes an
-   * assignee of a previously-seen issue. `null` watches every issue.
-   */
-  username: string | null;
-}
+/**
+ * Assignment-driven spawning (issue #416) watches every open issue — there
+ * is no per-user filter anymore; the pipeline spawns on any
+ * `issue.assigned` transition, so no extra options beyond the base.
+ */
+export type IssueWatcherOptions = WatcherBaseOptions;
 
-/** Watches issue created / assigned transitions. */
+/**
+ * Watches issue lifecycle transitions: `issue.created` for newly seen open
+ * issues, `issue.assigned` when an issue gains a new assignee (any user —
+ * issue #416's spawn trigger), `issue.unassigned` when a previously
+ * assigned issue loses all assignees, and `issue.closed` when a
+ * previously-seen open issue disappears from the open-issues poll.
+ */
 export class IssueWatcher extends WatcherBase<IssueWatcherOptions> {
   private readonly seen = new Map<number, IssueRecord>();
 
@@ -178,31 +182,34 @@ export class IssueWatcher extends WatcherBase<IssueWatcherOptions> {
 
   /** Runs one poll and returns the events it produced (without emitting). */
   async pollOnce(): Promise<GithubWatcherEvent[]> {
-    const { gh, projectId, repo, username, now = () => new Date() } = this.options;
+    const { gh, projectId, repo, now = () => new Date() } = this.options;
     const records = await listIssues(gh, projectId, repo, { state: "open" });
     const events: GithubWatcherEvent[] = [];
+    const seenNow = new Set<number>();
     for (const record of records) {
+      seenNow.add(record.issue.number);
       const prev = this.seen.get(record.issue.number);
       this.seen.set(record.issue.number, record);
       if (prev === undefined) {
-        if (this.matches(record)) {
-          events.push({ type: "issue.created", at: now().toISOString(), issue: record.issue });
-        }
+        events.push({ type: "issue.created", at: now().toISOString(), issue: record.issue });
         continue;
       }
-      const becameAssigned =
-        username !== null && record.assignees.includes(username) && !prev.assignees.includes(username);
-      if (becameAssigned) {
+      if (record.assignees.length > prev.assignees.length) {
         events.push({ type: "issue.assigned", at: now().toISOString(), issue: record.issue });
+      } else if (prev.assignees.length > 0 && record.assignees.length === 0) {
+        events.push({ type: "issue.unassigned", at: now().toISOString(), issue: record.issue });
+      }
+    }
+    // A previously-seen open issue that vanished from the open poll was
+    // closed (the poll fetches state:open only). Emit + forget so a reopen
+    // is seen as a fresh issue again.
+    for (const [number, record] of this.seen) {
+      if (!seenNow.has(number)) {
+        this.seen.delete(number);
+        events.push({ type: "issue.closed", at: now().toISOString(), issue: record.issue });
       }
     }
     return events;
-  }
-
-  private matches(record: IssueRecord): boolean {
-    const { username } = this.options;
-    if (username === null) return true;
-    return record.author === username || record.assignees.includes(username);
   }
 
   /**

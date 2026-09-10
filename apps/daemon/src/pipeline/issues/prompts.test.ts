@@ -75,6 +75,9 @@ function makePipeline() {
     async listActiveWorkerIssueNumbers() {
       return new Set<number>();
     },
+    async archiveWorkersForIssue() {
+      return [];
+    },
   };
   const pipeline = new IssueSpawnPipeline({
     projects: {
@@ -84,7 +87,7 @@ function makePipeline() {
           name: "Proj",
           repoUrl: "https://github.com/o/r",
           defaultBranch: "main",
-          settings: { autoAgentUsername: "kiss-bot" },
+          settings: {},
           createdAt: "2026-09-06T12:00:00Z",
           updatedAt: "2026-09-06T12:00:00Z",
         },

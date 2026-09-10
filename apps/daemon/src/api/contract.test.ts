@@ -119,7 +119,7 @@ describe("projects", () => {
     expect(project.repoUrl).toBe("https://github.com/o/r");
     // Issue #280: new projects are seeded with the daemon-wide default
     // worker concurrency (3).
-    expect(project.settings).toEqual({ autoAgentUsername: null, workerConcurrency: 3 });
+    expect(project.settings).toEqual({ workerConcurrency: 3 });
     expect(daemon.cloned.size).toBe(1);
 
     // duplicate registration → 409
@@ -137,11 +137,10 @@ describe("projects", () => {
 
     // updateProject
     const updated = await api("PATCH", formatPath("updateProject", { projectId: "o-r" }), {
-      settings: { autoAgentUsername: "auto-agent", workerConcurrency: 2 },
+      settings: { workerConcurrency: 2 },
     });
     expect(updated.status).toBe(200);
     const updatedProject = projectSchema.parse(updated.json);
-    expect(updatedProject.settings.autoAgentUsername).toBe("auto-agent");
     expect(updatedProject.settings.workerConcurrency).toBe(2);
     expect(updatedProject.updatedAt >= project.createdAt).toBe(true);
 
@@ -167,7 +166,7 @@ describe("projects", () => {
 
     // Empty field → the UI sends `settings.workerConcurrency: null`.
     const cleared = await api("PATCH", formatPath("updateProject", { projectId: "o-clear" }), {
-      settings: { autoAgentUsername: null, workerConcurrency: null },
+      settings: { workerConcurrency: null },
     });
     expect(cleared.status).toBe(200);
     const clearedProject = projectSchema.parse(cleared.json);
@@ -180,7 +179,7 @@ describe("projects", () => {
     // A field omitted from the patch still means "untouched" (keep the cap).
     await api("PATCH", formatPath("updateProject", { projectId: "o-clear" }), { settings: { workerConcurrency: 3 } });
     const untouched = await api("PATCH", formatPath("updateProject", { projectId: "o-clear" }), {
-      settings: { autoAgentUsername: "auto-agent" },
+      settings: { autoFixCi: false },
     });
     expect(projectSchema.parse(untouched.json).settings.workerConcurrency).toBe(3);
   });

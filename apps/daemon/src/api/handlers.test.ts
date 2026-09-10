@@ -22,7 +22,7 @@ function project(overrides: Partial<Project> = {}): Project {
     name: "o-r",
     repoUrl: "https://github.com/o/r",
     defaultBranch: "main",
-    settings: { autoAgentUsername: null, workerConcurrency: 1 },
+    settings: { workerConcurrency: 1 },
     createdAt: UPDATED_AT,
     updatedAt: UPDATED_AT,
     ...overrides,

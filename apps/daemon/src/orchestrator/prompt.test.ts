@@ -17,7 +17,7 @@ function fakeProject(overrides: Partial<Project> = {}): Project {
     name: "My Project",
     repoUrl: "https://github.com/o/r",
     defaultBranch: "main",
-    settings: { autoAgentUsername: null, workerConcurrency: 1 },
+    settings: { workerConcurrency: 1 },
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
