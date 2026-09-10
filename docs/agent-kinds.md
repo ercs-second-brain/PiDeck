@@ -183,7 +183,10 @@ id immediately, and the persona delivers the report asynchronously.
 - Sidebar ⋯ menu (web, issue #331): a "Spawn agent" submenu listing
   built-ins and user kinds, filtered by `spawnableBy` (§5).
 - Worker-concurrency settings apply to `workerLike` kinds (real
-  workspace, own session); non-worker-like kinds are cheap and exempt.
+  workspace, own session); non-worker-like (cheap) kinds stay exempt from
+  the cap, but every spawn — cheap kinds included — occupies its own
+  per-session worktree (issue #365's parent-state inheritance); only the
+  concurrency accounting differs (#384).
 
 ## 9. Downstream consumers of the schema
 

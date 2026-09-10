@@ -86,10 +86,13 @@
    is a slim rail; issue #373 (B21b): the rail keeps ONLY the workspace
    row's toggle visible (pointing right — with the hamburger gone on desktop
    it is the way back) while the rest of the panel hides. Scoped to the
-   desktop breakpoint so the ≤768px drawer (transform-based) is untouched. */
+   desktop breakpoint so the ≤768px drawer (transform-based) is untouched.
+   The rail width is the toggle's exact fit (4px padding + 26px toggle, the
+   same 26px icon-button box as the rows' chat/⋯ controls), so the toggle
+   sits centered with no dead slop. */
 @media (min-width: 769px) {
   .app:not(.sidebar-open) .session-picker {
-    width: 36px;
+    width: 34px;
   }
 
   /* The rail holds only the toggle: hide every other scroll-region child
@@ -467,7 +470,9 @@
 
 /* Issue #355 (B5): the rows' ⋯ menu — anchor wraps the toggle + menu so the
    menu drops under the toggle; the toggle takes the same quiet icon-button
-   chrome the ✕ had. The menu itself renders with the shared
+   chrome the ✕ had (shared chrome in index.css) at the same 26px box the
+   project row's chat/⋯ icons use, so every sidebar icon button is one
+   system. The menu itself renders with the shared
    .picker-context-menu chrome (see above); .picker-row-menu only marks it
    for the dismissal targeting in use-picker-state. */
 .picker-row-menu-anchor {
@@ -477,9 +482,9 @@
 }
 
 .picker-row-menu-toggle {
-  width: 22px;
+  width: 26px;
   color: var(--text-dim);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
 }
 
 .picker-row-menu-toggle:hover {
@@ -889,6 +894,10 @@
   background: var(--bg-raised);
 }
 
+/* The status bar is the pane's bottom-most bar, so it alone carries the
+   iOS home-indicator inset (DESIGN.md safe-area rule) — the composer and
+   key row above it drop theirs (see their mobile blocks). */
+
 /* Issue #294: status detail (retry timers, relaunch errors) can be long —
    wrap it inside the bar instead of pushing the relaunch button out. */
 .terminal-status-detail {
@@ -1111,26 +1120,37 @@
     padding: 10px 16px;
     font-size: var(--fs-md);
   }
+
+  /* The archived-log view keeps the desktop rhythm but tightens to the
+     page padding the rest of the app uses on touch viewports. */
+  .archived-log {
+    padding: 12px 14px;
+  }
 }
 
 /* --- Mobile terminal key row (issue #105) ------------------------------------
 
    Touch keyboards lack Esc/Tab/Ctrl/Enter and arrows; the key row supplies
-   them above the status bar. Hidden by default (desktop unchanged), shown only on
-   the #93 mobile breakpoint. Buttons send on pointerdown with
-   preventDefault so they never steal focus from the xterm textarea, and
-   touch-action rules keep taps from scrolling/zooming the page. */
+   them above the status bar. Hidden by default (desktop unchanged), shown on
+   the #93 mobile breakpoint — and on any coarse-pointer device, so the key
+   row is always present wherever the #374 composer is (they read as one
+   input system: same bar padding/gap, same 40px touch targets, same raised
+   surface). Buttons send on pointerdown with preventDefault so they never
+   steal focus from the xterm textarea, and touch-action rules keep taps
+   from scrolling/zooming the page. The safe-area bottom inset lives on the
+   status bar (the pane's bottom-most bar) alone — the key row and composer
+   sit above it and must not double the inset. */
 
 .terminal-keyrow {
   display: none;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (pointer: coarse) {
   .terminal-keyrow {
     display: flex;
     flex: none;
     gap: 6px;
-    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    padding: 6px 8px;
     border-top: 1px solid var(--border);
     background: var(--bg-raised);
     overflow-x: auto;
@@ -1155,9 +1175,42 @@
     color: var(--text);
   }
 
+  .terminal-key:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
   .terminal-key:active {
     border-color: var(--accent);
     color: var(--accent);
     background: var(--bg-hover);
+  }
+
+  /* The composer (issue #374, inline styles in mobile-input.tsx — frozen
+     module) carries the same bar chrome as the key row, but its inline
+     padding repeats the safe-area inset the status bar already owns. The
+     !important is the only way to override an inline style; when the key
+     row is present (always, for the composer — see the query above) the
+     composer must not add a second inset. Horizontal padding stays in the
+     inline style (same 8px rhythm as the key row). */
+  .terminal-composer {
+    padding-bottom: 6px !important;
+  }
+
+  /* One bar rhythm across the pane's bottom chrome: the composer and key
+     row use 8px side padding (inline + above), so the status bar matches
+     them here (desktop keeps its 12px). */
+  .terminal-statusbar {
+    padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* DESIGN.md input rule: 16px on touch so iOS Safari does not zoom on focus —
+   the composer's inline 14px (frozen module, mobile-input.tsx) would zoom.
+   !important overrides the inline style; scoped to coarse pointers, where
+   the composer exists. */
+@media (pointer: coarse) {
+  .terminal-composer-input {
+    font-size: var(--fs-lg) !important;
   }
 }

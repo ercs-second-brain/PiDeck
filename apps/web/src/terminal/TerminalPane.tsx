@@ -29,6 +29,7 @@ import { TERMINAL_THEME } from "./terminal-theme";
 import { TERMINAL_KEYS } from "./keys";
 import { MobileComposer, useCoarsePointer, useMobileTextareaGate } from "./mobile-input";
 import { createTouchScrollController } from "./touch-scroll";
+import { createLinkTapController } from "./terminal-link-taps";
 
 const STATUS_LABELS: Record<TerminalStatus, string> = {
   connecting: "Connecting…",
@@ -167,6 +168,24 @@ function useTouchScroll(
 }
 
 /**
+ * Tap-to-open links on touch devices: replays tap-qualified touches as the
+ * mouse sequence xterm 5.5's mouse-only linkifier needs (see
+ * ./terminal-link-taps.ts). Same install-once lifecycle and coarse-pointer
+ * gate as the touch-scroll takeover; purely additive wiring.
+ */
+function useLinkTaps(
+  termRef: RefObject<Terminal | null>,
+  coarsePointer: boolean,
+): void {
+  useEffect(() => {
+    const term = termRef.current;
+    if (!coarsePointer || !term?.element) return;
+    const controller = createLinkTapController({ element: term.element });
+    return () => controller.dispose();
+  }, [coarsePointer, termRef]);
+}
+
+/**
  * Relaunch state + handler (issue #117): calls the daemon's relaunch
  * endpoint (which kills any lingering tmux session and re-runs the
  * session's launch path), then re-attaches the terminal with the
@@ -271,6 +290,9 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
   useMobileTextareaGate(termRef, coarsePointer);
   // Touch scrolling (issue #375): same flag, same install-once terminal.
   useTouchScroll(termRef, coarsePointer);
+  // Tap-to-open links on those same devices (the takeover suppressed the
+  // browser's tap→click synthesis): same flag, same lifecycle.
+  useLinkTaps(termRef, coarsePointer);
 
   return (
     <div className="terminal-pane">
