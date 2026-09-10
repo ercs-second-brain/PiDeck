@@ -6,37 +6,18 @@
  * base (finding B26).
  */
 
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ProjectLayout } from "./layout.js";
 import { RESURRECT_WORKER_COMMAND, SessionManager, resurrectionCommand } from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeGitRunner } from "./testing/fake-git.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { Tmux } from "./tmux.js";
+import { makeSessionManager } from "./testing/fake-manager.js";
 
-let stateDir: string;
-
-beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-workspace-"));
-});
-
-function makeManager(): {
-  manager: SessionManager;
-  fake: FakeTmuxRunner;
-  git: FakeGitRunner;
-  registry: SessionRegistry;
-  layout: ProjectLayout;
-} {
-  const fake = new FakeTmuxRunner();
-  const git = new FakeGitRunner();
-  const tmux = new Tmux({ runner: (args) => fake.run(args) });
-  const layout = new ProjectLayout(stateDir);
-  const registry = new SessionRegistry(layout.sessionsFilePath());
-  return { manager: new SessionManager({ tmux, registry, layout, git: git.asRunner() }), fake, git, registry, layout };
-}
+const makeManager = () => makeSessionManager({ tmpPrefix: "pideck-workspace-" });
 
 describe("worker workspace preparation (issue #287)", () => {
   it("bases the default workspace on a fetched origin: fetch, then a per-worker worktree off origin/HEAD", async () => {
@@ -78,7 +59,7 @@ describe("worker workspace preparation (issue #287)", () => {
   });
 
   it("honors an explicit cwd without touching git", async () => {
-    const { manager, git, fake } = makeManager();
+    const { manager, git, fake, stateDir } = makeManager();
     const custom = path.join(stateDir, "custom", "workspace");
 
     const spawned = await manager.spawnWorker("proj", { issueNumber: 4, cwd: custom });
@@ -89,6 +70,7 @@ describe("worker workspace preparation (issue #287)", () => {
   });
 
   it("discards the prepared worktree when the tmux launch subsequently fails", async () => {
+    const { stateDir } = makeManager();
     const git = new FakeGitRunner();
     const fake = new FakeTmuxRunner();
     const layout = new ProjectLayout(stateDir);
@@ -112,7 +94,7 @@ describe("worker workspace preparation (issue #287)", () => {
 
 describe("SessionManager spawn cwd/command persistence (issue #27)", () => {
   it("records the launched cwd and command on the registry session and file", async () => {
-    const { manager, layout } = makeManager();
+    const { manager, layout, stateDir } = makeManager();
     const worktree = path.join(stateDir, "worktrees", "issue-7");
     const { session } = await manager.spawnWorker("proj", {
       issueNumber: 7,
@@ -135,7 +117,7 @@ describe("SessionManager spawn cwd/command persistence (issue #27)", () => {
   });
 
   it("resurrects a worker pane from its recorded cwd and command after a reboot", async () => {
-    const { manager, layout } = makeManager();
+    const { manager, layout, stateDir } = makeManager();
     const worktree = path.join(stateDir, "worktrees", "issue-9");
     const spawned = await manager.spawnWorker("proj", {
       issueNumber: 9,

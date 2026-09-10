@@ -5,22 +5,15 @@
  * Mechanics live in `manager-archive.ts`; the facade delegates.
  */
 
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
-import { ProjectLayout } from "./layout.js";
+import { describe, expect, it } from "vitest";
 import { SessionManager } from "./manager.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeGitRunner } from "./testing/fake-git.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { Tmux } from "./tmux.js";
+import { makeSessionManager } from "./testing/fake-manager.js";
 
-let stateDir: string;
-
-beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-archive-agent-"));
-});
+const makeManager = () => makeSessionManager({ tmpPrefix: "pideck-archive-agent-" });
 
 const fakePaneState = (command: string[], cwd: string | undefined) => ({
   command,
@@ -29,18 +22,6 @@ const fakePaneState = (command: string[], cwd: string | undefined) => ({
   cols: 80,
   rows: 24,
 });
-
-function makeManager(): { manager: SessionManager; fake: FakeTmuxRunner; layout: ProjectLayout } {
-  const fake = new FakeTmuxRunner();
-  const layout = new ProjectLayout(stateDir);
-  const manager = new SessionManager({
-    tmux: new Tmux({ runner: (args) => fake.run(args) }),
-    registry: new SessionRegistry(layout.sessionsFilePath()),
-    layout,
-    git: new FakeGitRunner().asRunner(),
-  });
-  return { manager, fake, layout };
-}
 
 describe("SessionManager.archiveAgentSession (issue #357 B9)", () => {
   it("archives a persona agent: scrollback captured, pane killed, record kept with archivedAt", async () => {

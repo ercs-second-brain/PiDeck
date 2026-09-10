@@ -7,32 +7,12 @@
  * relaunch, and the startup sweep.
  */
 
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
-import { ProjectLayout } from "./layout.js";
+import { describe, expect, it } from "vitest";
 import { SessionManager } from "./manager.js";
-import { SessionRegistry } from "./registry.js";
-import { FakeGitRunner } from "./testing/fake-git.js";
-import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { Tmux } from "./tmux.js";
+import { makeSessionManager } from "./testing/fake-manager.js";
 
-let stateDir: string;
-
-beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-agent-kind-"));
-});
-
-function makeManager() {
-  const fake = new FakeTmuxRunner();
-  const git = new FakeGitRunner();
-  const tmux = new Tmux({ runner: (args) => fake.run(args) });
-  const layout = new ProjectLayout(stateDir);
-  const registry = new SessionRegistry(layout.sessionsFilePath());
-  const manager = new SessionManager({ tmux, registry, layout, git: git.asRunner() });
-  return { manager, fake, git, registry, layout };
-}
+const makeManager = () => makeSessionManager({ tmpPrefix: "pideck-agent-kind-" });
 
 describe("agent-kind spawn (docs/agent-kinds.md, issue #365 workspace inheritance)", () => {
   it("spawns a cheap kind in its own worktree off fresh main when the parent has no git state (fallback path)", async () => {
@@ -111,10 +91,7 @@ describe("agent-kind spawn (docs/agent-kinds.md, issue #365 workspace inheritanc
   });
 
   it("aborts cleanly when the tmux launch fails: no session record, worktree discarded", async () => {
-    const fake = new FakeTmuxRunner();
-    const git = new FakeGitRunner();
-    const layout = new ProjectLayout(stateDir);
-    const registry = new SessionRegistry(layout.sessionsFilePath());
+    const { fake, git, registry, layout } = makeManager();
     const tmux = new Tmux({
       runner: async (args) => {
         if (args.includes("new-session")) throw new Error("tmux exploded");

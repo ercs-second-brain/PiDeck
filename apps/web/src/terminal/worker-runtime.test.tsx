@@ -7,32 +7,17 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { Session, Worker } from "@pideck/shared";
+import type { Worker } from "@pideck/shared";
 import { WorkerRow } from "./picker-rows";
+import { makeSession, makeWorker as makeWorkerFixture } from "./test-fixtures";
 
 const started = "2026-01-01T00:00:00.000Z";
 
-const session: Session = {
-  id: "sess-worker-1",
-  projectId: "proj",
-  role: "worker",
-  tmuxSession: "proj-worker-1",
-  workerId: "worker-1",
-  createdAt: started,
-};
+const session = makeSession({ id: "sess-worker-1", projectId: "proj", tmuxSession: "proj-worker-1", workerId: "worker-1", createdAt: started });
 
+/** The #182 fixture: worker-1 tied to sess-worker-1, started at `started`. */
 function makeWorker(status: Worker["status"], updatedAt = started): Worker {
-  return {
-    id: "worker-1",
-    projectId: "proj",
-    sessionId: "sess-worker-1",
-    issueNumber: 7,
-    prNumber: null,
-    status,
-    statusMessage: null,
-    startedAt: started,
-    updatedAt,
-  };
+  return makeWorkerFixture({ projectId: "proj", status, startedAt: started, updatedAt });
 }
 
 function renderRow(worker: Worker, overrides: Partial<Parameters<typeof WorkerRow>[0]> = {}): string {

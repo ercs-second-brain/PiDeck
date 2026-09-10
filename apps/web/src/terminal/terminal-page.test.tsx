@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { Session, Worker } from "@pideck/shared";
-import { makeProject } from "./test-fixtures";
+import { makeProject, makeSession, makeWorker } from "./test-fixtures";
 import { SessionPicker } from "./SessionPicker";
 import { RowOptionsMenu } from "./picker-rows";
 import { TerminateWorkerModal } from "./picker-modals";
@@ -19,37 +19,11 @@ import { TerminateWorkerModal } from "./picker-modals";
 const project = makeProject();
 
 const sessions: Session[] = [
-  {
-    id: "sess-orch-1",
-    projectId: "agentskiss",
-    role: "orchestrator",
-    tmuxSession: "pideck-agentskiss-orchestrator-1",
-    workerId: null,
-    createdAt: "2025-01-01T00:00:00.000Z",
-  },
-  {
-    id: "sess-worker-1",
-    projectId: "agentskiss",
-    role: "worker",
-    tmuxSession: "pideck-agentskiss-worker-1",
-    workerId: "worker-1",
-    createdAt: "2025-01-01T00:00:00.000Z",
-  },
+  makeSession({ id: "sess-orch-1", role: "orchestrator", tmuxSession: "pideck-agentskiss-orchestrator-1" }),
+  makeSession({ workerId: "worker-1" }),
 ];
 
-const workers: Worker[] = [
-  {
-    id: "worker-1",
-    projectId: "agentskiss",
-    sessionId: "sess-worker-1",
-    issueNumber: 7,
-    prNumber: null,
-    status: "running",
-    statusMessage: null,
-    startedAt: "2025-01-01T00:00:00.000Z",
-    updatedAt: "2025-01-01T00:00:00.000Z",
-  },
-];
+const workers: Worker[] = [makeWorker()];
 
 type PickerProps = Parameters<typeof SessionPicker>[0];
 

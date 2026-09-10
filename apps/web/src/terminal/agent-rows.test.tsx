@@ -17,21 +17,9 @@ import type { Session } from "@pideck/shared";
 import { SessionPicker, type ProjectEntry } from "./SessionPicker";
 import { RowOptionsMenu } from "./picker-rows";
 import { TerminateAgentSessionModal } from "./picker-modals";
-import { makeProject } from "./test-fixtures";
+import { makeProject, makeSession } from "./test-fixtures";
 
 const project = makeProject();
-
-function makeSession(overrides: Partial<Session> = {}): Session {
-  return {
-    id: "sess-x",
-    projectId: project.id,
-    role: "worker",
-    tmuxSession: "agentskiss-agent",
-    workerId: null,
-    createdAt: "2025-01-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
 
 const orchestrator = makeSession({ id: "sess-orch-1", role: "orchestrator", tmuxSession: "agentskiss-orchestrator" });
 const worker = makeSession({ id: "sess-worker-1", tmuxSession: "agentskiss-worker-a", workerId: "worker-1" });

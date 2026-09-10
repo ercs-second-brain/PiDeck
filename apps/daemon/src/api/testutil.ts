@@ -150,6 +150,23 @@ export function fakeGit(options: FakeGitOptions = {}): GitRunner {
 }
  
 
+/** Timestamp shared by the fake gh/git payloads below. */
+export const UPDATED_AT = "2026-01-01T00:00:00.000Z";
+
+/**
+ * A fake gh single-issue REST route (issue #378: the initial-prompt fetch);
+ * `pr` = pull-request payload (same number space). Returns a `[path, body]`
+ * entry for `FakeGhRoutes.api`.
+ */
+export function issueRoute(owner: string, repo: string, number: number, title: string, pr = false): [string, unknown] {
+  const url = `https://github.com/${owner}/${repo}/${pr ? "pull" : "issues"}/${number}`;
+  const base = { number, title, state: "open", user: { login: "someone" }, html_url: url, updated_at: UPDATED_AT };
+  return [
+    `/repos/${owner}/${repo}/issues/${number}`,
+    pr ? { ...base, pull_request: { html_url: url } } : { ...base, assignee: null, assignees: [] },
+  ];
+}
+
 export interface TestDaemon {
   services: DaemonServices;
   stateDir: string;

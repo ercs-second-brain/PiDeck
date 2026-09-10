@@ -6,35 +6,12 @@
  * record (identity/history). Archived sessions are rejected.
  */
 
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
-import { ProjectLayout } from "./layout.js";
-import { SessionManager } from "./manager.js";
+import { describe, expect, it } from "vitest";
 import { deserializeCommand, resurrectionCommand } from "./manager.js";
-import { SessionRegistry } from "./registry.js";
-import { FakeTmuxRunner } from "./testing/fake-tmux.js";
-import { FakeGitRunner } from "./testing/fake-git.js";
-import { Tmux } from "./tmux.js";
+import { makeSessionManager } from "./testing/fake-manager.js";
 
-let stateDir: string;
-
-beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-relaunch-"));
-});
-
-function makeManager(): {
-  manager: SessionManager;
-  fake: FakeTmuxRunner;
-  layout: ProjectLayout;
-} {
-  const fake = new FakeTmuxRunner();
-  const tmux = new Tmux({ runner: (args) => fake.run(args) });
-  const layout = new ProjectLayout(stateDir);
-  const registry = new SessionRegistry(layout.sessionsFilePath());
-  return { manager: new SessionManager({ tmux, registry, layout, git: new FakeGitRunner().asRunner() }), fake, layout };
-}
+const makeManager = () => makeSessionManager({ tmpPrefix: "pideck-relaunch-" });
 
 const fakePaneState = (command: string[], cwd: string | undefined) => ({
   command,
@@ -46,7 +23,7 @@ const fakePaneState = (command: string[], cwd: string | undefined) => ({
 
 describe("SessionManager.relaunchSession (issue #117)", () => {
   it("relaunches a dead worker pane from its recorded cwd/command, keeping identity", async () => {
-    const { manager, fake } = makeManager();
+    const { manager, fake, stateDir } = makeManager();
     const worktree = path.join(stateDir, "worktrees", "issue-117");
     const spawned = await manager.spawnWorker("proj", {
       issueNumber: 117,
@@ -129,7 +106,7 @@ describe("extended-keys on daemon-created sessions (issue #222)", () => {
     // pi warns (and modified Enter may not work) when the session-scoped
     // extended-keys option is off — tmux's server-wide default. Every path
     // that creates a daemon session must enable it.
-    const { manager, fake } = makeManager();
+    const { manager, fake, stateDir } = makeManager();
     const worktree = path.join(stateDir, "worktrees", "issue-222");
     const spawned = await manager.spawnWorker("proj", {
       issueNumber: 222,

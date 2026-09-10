@@ -1,7 +1,5 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ProjectLayout } from "./layout.js";
 import { SessionManager } from "./manager.js";
 import {
@@ -18,27 +16,9 @@ import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { FakeGitRunner } from "./testing/fake-git.js";
 import { Tmux, TmuxError } from "./tmux.js";
+import { makeSessionManager } from "./testing/fake-manager.js";
 
-let stateDir: string;
-
-beforeEach(() => {
-  stateDir = mkdtempSync(path.join(tmpdir(), "pideck-manager-"));
-});
-
-function makeManager(): {
-  manager: SessionManager;
-  fake: FakeTmuxRunner;
-  git: FakeGitRunner;
-  registry: SessionRegistry;
-  layout: ProjectLayout;
-} {
-  const fake = new FakeTmuxRunner();
-  const git = new FakeGitRunner();
-  const tmux = new Tmux({ runner: (args) => fake.run(args) });
-  const layout = new ProjectLayout(stateDir);
-  const registry = new SessionRegistry(layout.sessionsFilePath());
-  return { manager: new SessionManager({ tmux, registry, layout, git: git.asRunner() }), fake, git, registry, layout };
-}
+const makeManager = () => makeSessionManager({ tmpPrefix: "pideck-manager-" });
 
 describe("sanitizeTmuxSegment", () => {
   it("strips characters tmux forbids in session names", () => {
@@ -143,7 +123,7 @@ describe("SessionManager with a fake tmux server", () => {
   });
 
   it("honors cwd and command overrides and picks the next free name", async () => {
-    const { manager, fake } = makeManager();
+    const { manager, fake, stateDir } = makeManager();
     const worktree = path.join(stateDir, "wt");
     const first = await manager.spawnWorker("proj", {
       issueNumber: 1,
@@ -231,7 +211,7 @@ describe("SessionManager lifecycle passthroughs (kill/capture/resize/failed laun
   });
 
   it("marks workers failed and cleans up when tmux launch fails", async () => {
-    makeManager();
+    const { stateDir } = makeManager();
     const broken = new SessionManager({
       tmux: new Tmux({
         runner: (args) => {
@@ -308,6 +288,7 @@ describe("deliverPromptWhenReady (issue #318 — pi startup-input race)", () => 
 
   it("sends nothing when the pane never readies (caller queues instead)", async () => {
     const never = async () => false;
+    const { stateDir } = makeManager();
     const fake = new FakeTmuxRunner();
     const tmux = new Tmux({ runner: (args) => fake.run(args) });
     const layout = new ProjectLayout(stateDir);

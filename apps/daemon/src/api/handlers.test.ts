@@ -14,16 +14,7 @@ import { deriveBoard } from "./kanban.js";
 import { NotFoundError, ProjectStore, slugify } from "./projects.js";
 import { contractHandlers } from "./handlers.js";
 import { reportWorkerPr, spawnWorker } from "./cli-handlers.js";
-import { testDaemon } from "./testutil.js";
-
-const UPDATED_AT = "2026-01-01T00:00:00.000Z";
-
-/** A fake gh single-issue REST route (issue #378: the initial-prompt fetch); `pr` = pull-request payload. */
-function issueRoute(owner: string, repo: string, number: number, title: string, pr = false): [string, unknown] {
-  const url = `https://github.com/${owner}/${repo}/${pr ? "pull" : "issues"}/${number}`;
-  const base = { number, title, state: "open", user: { login: "someone" }, html_url: url, updated_at: UPDATED_AT };
-  return [`/repos/${owner}/${repo}/issues/${number}`, pr ? { ...base, pull_request: {} } : { ...base, assignee: null, assignees: [] }];
-}
+import { issueRoute, testDaemon, UPDATED_AT } from "./testutil.js";
 
 function project(overrides: Partial<Project> = {}): Project {
   return {
