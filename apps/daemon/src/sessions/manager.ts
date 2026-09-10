@@ -27,10 +27,10 @@ import type { PersonaLaunchAssets } from "../api/agent-assets.js";
 import { ProjectLayout } from "./layout.js";
 import { prepareWorkerWorkspace } from "./workspace.js";
 import { spawnAgentKindSession, type AgentKindSpawnRequest } from "./agent-kind-spawn.js";
-import { archiveAgentSession } from "./manager-archive.js";
+import { archiveAgentSession, captureArchivedScrollback } from "./manager-archive.js";
 import { AgentKindRegistry, type AgentKindLookup } from "./agent-kinds.js";
 import type { SessionRegistry, SessionRole } from "./registry.js";
-import { ArchivedLogStore, ARCHIVED_SCROLLBACK_LINES, type ArchivedScrollback } from "./archived-logs.js";
+import { ArchivedLogStore, type ArchivedScrollback } from "./archived-logs.js";
 import { isArchivedWorkerSession, isTerminalWorkerStatus, launchPath, reconcileSessions, type ReconcileDeps, type ReconcileResult } from "./reconcile.js";
 import { confirmPaneSubmitted, waitForPaneInputReady } from "./pane-ready.js";
 import { Tmux } from "./tmux.js";
@@ -348,24 +348,12 @@ export class SessionManager {
     const worker = this.registry.getWorker(workerId);
     if (!worker) return null;
     const session = this.registry.getSession(worker.sessionId);
-    if (session && (await this.tmux.hasSession(session.tmuxSession))) {
-      // Issue #104: capture the pane's scrollback *before* killing the tmux
-      // session — the bytes at termination — and persist it with the archived
-      // record so the webapp can show a read-only log afterwards. A capture
-      // failure must never block the terminate.
-      try {
-        const scrollback = await this.tmux.capturePane(session.tmuxSession, {
-          lines: ARCHIVED_SCROLLBACK_LINES,
-          // Issue #362: join hard-wrapped rows into logical lines so the
-          // archived log reflows at the viewing pane's width instead of
-          // wrapping mid-word at the capture-time pane width.
-          joinWrapped: true,
-        });
-        this.archivedLogs.save(worker.id, { capturedAt: new Date().toISOString(), scrollback });
-      } catch (err) {
-        console.error(`[sessions] scrollback capture failed for ${session.tmuxSession}:`, err);
-      }
-      await this.tmux.killSession(session.tmuxSession);
+    if (session) {
+      // Issue #104/#392: the shared capture-before-kill step (also used by
+      // the persona-agent archive) — scrollback captured with `-J` while the
+      // pane is alive, persisted, then the pane killed. A capture failure
+      // never blocks the terminate.
+      await captureArchivedScrollback({ tmux: this.tmux, archivedLogs: this.archivedLogs }, session.tmuxSession, worker.id);
     }
     return this.registry.updateWorkerStatus(worker.id, "archived", message);
   }

@@ -108,6 +108,23 @@ describe("SessionManager.archiveAgentSession (issue #357 B9)", () => {
     const { manager } = makeManager();
     expect(await manager.archiveAgentSession("sess-698a0314")).toBeNull();
   });
+
+  it("captures the archive scrollback with -J so logs reflow at the viewing width (issue #392)", async () => {
+    const { manager, fake } = makeManager();
+    const agent = await manager.spawnAgentKind("proj", { kind: "devex-audit", parentSessionId: "sess-parent-1", name: "audit" });
+
+    await manager.archiveAgentSession(agent.id);
+
+    // Regression (issue #392, the #362 twin for persona agents): without -J
+    // the capture bakes the capture-time pane width into the stored
+    // scrollback, so long-line agent reports hard-wrap mid-word in a narrow
+    // viewer. The shared capture helper (also used by the worker archive)
+    // must pass -J here too.
+    const capture = fake.invocations.find(
+      (inv) => inv.args[0] === "capture-pane" && inv.args.includes(agent.tmuxSession),
+    );
+    expect(capture?.args).toContain("-J");
+  });
 });
 
 describe("reconcile skips archived persona agents (issue #357 B9)", () => {
