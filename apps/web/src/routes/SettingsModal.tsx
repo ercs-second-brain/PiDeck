@@ -72,7 +72,7 @@ export function ProjectSettingsModal({ projectId, onClose }: { projectId: string
 const WORKER_TOGGLES: Array<{ key: "terminateOnMerge" | "autoFixCi" | "autoFixReviewComments" | "autoReview"; label: string; hint: string }> = [
   {
     key: "terminateOnMerge",
-    label: "Terminate workers on merge",
+    label: "Delete workers on merge",
     hint: "When a worker's PR merges, its terminal pane is killed and it is archived. Off: the worker stays as done.",
   },
   {

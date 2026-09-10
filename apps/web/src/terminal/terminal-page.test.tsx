@@ -279,18 +279,18 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
     expect(html).not.toContain("picker-row-menu-toggle");
   });
 
-  it("RowOptionsMenu: the ⋯ trigger opens the danger Terminate entry; no inline confirm (issue #355, B5)", () => {
-    const closed = renderToString(<RowOptionsMenu sessionId="s" open={false} entryLabel="Terminate worker…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />);
+  it("RowOptionsMenu: the ⋯ trigger opens the danger Delete entry; no inline confirm (issue #355, B5)", () => {
+    const closed = renderToString(<RowOptionsMenu sessionId="s" open={false} entryLabel="Delete worker…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />);
     expect(closed).toContain("picker-row-menu-toggle");
     expect(closed).toContain('aria-expanded="false"');
     // Closed by default — no menu until the toggle is clicked.
     expect(closed).not.toContain('class="picker-row-menu"');
-    const open = renderToString(<RowOptionsMenu sessionId="s" open entryLabel="Terminate worker…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />);
+    const open = renderToString(<RowOptionsMenu sessionId="s" open entryLabel="Delete worker…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />);
     expect(open).toContain("picker-row-menu");
     expect(open).toContain("picker-menu-danger");
-    expect(open).toContain("Terminate worker…");
+    expect(open).toContain("Delete worker…");
     // No inline confirm — the #268 modal owns it (#116/#355).
-    expect(open).not.toContain("Terminate?");
+    expect(open).not.toContain("Delete worker?");
     expect(open).not.toContain("keep");
     expect(open).not.toContain("terminate-modal");
   });
@@ -303,18 +303,18 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
     expect(html).toContain("terminate-modal-overlay");
     expect(html).toContain('role="dialog"');
     expect(html).toContain("terminate-modal");
-    expect(html).toContain("Terminate worker?");
+    expect(html).toContain("Delete worker?");
     expect(html).toContain("proj-worker-1");
-    expect(html).toContain("Terminate");
+    expect(html).toContain("Delete");
     // The explicit way out.
     expect(html).toContain("Cancel");
   });
 
-  it("shows the in-flight terminate as pending", () => {
+  it("shows the in-flight delete as pending", () => {
     const pending = renderToString(
       <TerminateWorkerModal sessionName="proj-worker-1" pending={true} onConfirm={() => {}} onCancel={() => {}} />,
     );
-    expect(pending).toContain("Terminating…");
+    expect(pending).toContain("Deleting…");
     expect(pending).toContain("disabled");
   });
 

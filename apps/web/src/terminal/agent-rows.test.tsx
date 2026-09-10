@@ -172,18 +172,18 @@ describe("agent-row ⋯ terminate menu (issue #355, B5 — #311 affordance moved
     expect(html).not.toContain("picker-row-menu-toggle");
   });
 
-  it("RowOptionsMenu renders its menu with the danger Terminate entry when open", () => {
+  it("RowOptionsMenu renders its menu with the danger Delete entry when open", () => {
     const open = renderToString(
-      <RowOptionsMenu sessionId="s" open pending entryLabel="Terminate session…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />,
+      <RowOptionsMenu sessionId="s" open pending entryLabel="Delete session…" entryTitle="t" onToggle={() => {}} onAskTerminate={() => {}} />,
     );
     expect(open).toContain("picker-row-menu");
     expect(open).toContain("picker-menu-danger");
-    expect(open).toContain("Terminate session…");
+    expect(open).toContain("Delete session…");
     // In-flight overlay: the entry is disabled while the request runs.
     expect(open).toContain("disabled");
   });
 
-  it("renders the agent terminate modal with label, kind, and no-archived-log copy", () => {
+  it("renders the agent delete modal with label, kind, and no-archived-log copy", () => {
     const html = renderToString(
       <TerminateAgentSessionModal
         sessionLabel="devex-audit"
@@ -193,17 +193,17 @@ describe("agent-row ⋯ terminate menu (issue #355, B5 — #311 affordance moved
         onCancel={() => {}}
       />,
     );
-    expect(html).toContain("Terminate session?");
+    expect(html).toContain("Delete session?");
     expect(html).toContain("<code>devex-audit</code>");
     expect(html).toContain("keep no archived log");
-    expect(html).toContain(">Terminate</button>");
+    expect(html).toContain(">Delete</button>");
   });
 
-  it("shows the in-flight and failure states inside the agent terminate modal", () => {
+  it("shows the in-flight and failure states inside the agent delete modal", () => {
     const pending = renderToString(
       <TerminateAgentSessionModal sessionLabel="x" agentKind="kiss-audit" pending onConfirm={() => {}} onCancel={() => {}} />,
     );
-    expect(pending).toContain("Terminating…");
+    expect(pending).toContain("Deleting…");
     const failed = renderToString(
       <TerminateAgentSessionModal sessionLabel="x" agentKind="kiss-audit" pending={false} error="no route for POST" onConfirm={() => {}} onCancel={() => {}} />,
     );

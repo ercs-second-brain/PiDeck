@@ -79,10 +79,10 @@ export function ArchivedLogPanel(props: { log: ArchivedWorkerLog; prUrl?: string
         </dl>
       </header>
       <pre className="archived-log-scrollback">
-        {log.scrollback.length > 0 ? log.scrollback : "(no scrollback captured — the pane was already gone at termination)"}
+        {log.scrollback.length > 0 ? log.scrollback : "(no scrollback captured — the pane was already gone at deletion)"}
       </pre>
       <p className="archived-log-hint">
-        Read-only: this worker's pane was terminated; the scrollback above was captured at termination.
+        Read-only: this worker's pane was deleted; the scrollback above was captured at deletion.
       </p>
     </div>
   );

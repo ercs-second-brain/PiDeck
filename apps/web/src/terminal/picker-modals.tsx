@@ -20,9 +20,9 @@ function ConfirmModal(props: {
   ariaLabel: string;
   title: string;
   body: ReactNode;
-  /** Labels the confirm button ("Terminate" / "Delete <project>"). */
+  /** Labels the confirm button ("Delete" / "Delete <project>"). */
   confirmLabel: string;
-  /** Label while the request is in flight ("Terminating…"). */
+  /** Label while the request is in flight ("Deleting…"). */
   pendingLabel: string;
   /** Failure message from a rejected confirm, shown inside the modal. */
   error?: string | null;
@@ -65,14 +65,15 @@ function ConfirmModal(props: {
 }
 
 /**
- * The terminate-confirmation modal (issue #116): small, centered, over a
- * dimmed backdrop — "Terminate worker X?" with Cancel/Terminate. Pure
+ * The worker-delete confirmation modal (issue #116, #377 renames the
+ * user-facing label from "Terminate" to "Delete"): small, centered, over a
+ * dimmed backdrop — "Delete worker X?" with Cancel/Delete. Pure
  * rendering on top of {@link ConfirmModal}.
  */
 export function TerminateWorkerModal(props: {
-  /** tmux session name of the worker about to be terminated. */
+  /** tmux session name of the worker about to be deleted (archived). */
   sessionName: string;
-  /** The terminate request is in flight (Terminate shows "Terminating…"). */
+  /** The delete request is in flight (Delete shows "Deleting…"). */
   pending: boolean;
   /** Failure from the daemon, shown inside the modal (issue #268). */
   error?: string | null;
@@ -81,16 +82,16 @@ export function TerminateWorkerModal(props: {
 }) {
   return (
     <ConfirmModal
-      ariaLabel="Terminate worker"
-      title="Terminate worker?"
+      ariaLabel="Delete worker"
+      title="Delete worker?"
       body={
         <p>
           <code>{props.sessionName}</code> will be killed and archived — its pane and agent stop, its history stays
           inspectable.
         </p>
       }
-      confirmLabel="Terminate"
-      pendingLabel="Terminating…"
+      confirmLabel="Delete"
+      pendingLabel="Deleting…"
       error={props.error}
       pending={props.pending}
       onConfirm={props.onConfirm}
@@ -101,7 +102,7 @@ export function TerminateWorkerModal(props: {
 
 /**
  * The delete-project confirmation modal (issue #172), same pattern as the
- * terminate modal (#116): states that the LOCAL project — terminals, state,
+ * worker-delete modal (#116): states that the LOCAL project — terminals, state,
  * board data — is removed while the GitHub repo is NOT, and confirms with
  * an explicit "Delete {name}" button. Pure rendering.
  */
@@ -135,7 +136,8 @@ export function DeleteProjectModal(props: {
 }
 
 /**
- * The agent-session terminate modal (issue #311, #268 modal pattern): the
+ * The agent-session delete modal (issue #311, #268 modal pattern; #377
+ * renames the user-facing label from "Terminate" to "Delete"): the
  * daemon kills the pane and removes the agent-kind session's record —
  * unlike workers there is no archived log (the report, already delivered,
  * stays in the session it was sent to). Pure rendering.
@@ -145,7 +147,7 @@ export function TerminateAgentSessionModal(props: {
   sessionLabel: string;
   /** The kind, shown for context ("devex-audit"). */
   agentKind: AgentKind;
-  /** The terminate request is in flight (confirm shows "Terminating…"). */
+  /** The delete request is in flight (confirm shows "Deleting…"). */
   pending: boolean;
   /** Failure from the daemon, shown inside the modal. */
   error?: string | null;
@@ -154,16 +156,16 @@ export function TerminateAgentSessionModal(props: {
 }) {
   return (
     <ConfirmModal
-      ariaLabel="Terminate agent session"
-      title="Terminate session?"
+      ariaLabel="Delete agent session"
+      title="Delete session?"
       body={
         <p>
           <code>{props.sessionLabel}</code> ({props.agentKind}) will be killed and removed from the sidebar. Agent-kind
           sessions keep no archived log — a report already delivered stays in the session it was sent to.
         </p>
       }
-      confirmLabel="Terminate"
-      pendingLabel="Terminating…"
+      confirmLabel="Delete"
+      pendingLabel="Deleting…"
       error={props.error}
       pending={props.pending}
       onConfirm={props.onConfirm}
