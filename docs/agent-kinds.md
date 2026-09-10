@@ -70,23 +70,29 @@ the CRUD API; the rest are derived or fixed.
 The three built-ins are data in `packages/shared/src/domain.ts`
 (`SHIPPED_AGENT_KINDS`) — PiDeck dogfoods its own registry. Their persona
 templates still ship as files under `agent/prompts/` (the spec's `persona`
-field is omitted for them; see §3), and their specs are immutable
-(§7). All three currently declare `spawnableBy` with all four roles
+field is omitted for them; see §3). Since issue #368 their specs are
+user-editable and user-deletable like any other kind: an edit stores an
+override that shadows the shipped spec; a delete tombstones the shipped
+kind (§7). All three currently declare `spawnableBy` with all four roles
 (back-compat with the pre-registry spawn surfaces).
 
 Resolution lives in `apps/daemon/src/sessions/agent-kinds.ts`
-(`AgentKindRegistry`): **user kinds first, then shipped** — a user kind
-may shadow nothing shipped (the CRUD layer rejects name collisions), so
-the ordering is about lookup cost, not precedence. `AGENT_KINDS`,
+(`AgentKindRegistry`): **stored kinds first, then shipped** — a stored
+spec whose name matches a shipped kind is that kind's **override**
+(issue #368) and shadows the shipped spec in both lookup and listing
+(the CRUD layer only rejects a duplicate *user*-kind name, and a
+shipped-name create is exactly how an override is made). `AGENT_KINDS`,
 `AGENT_KIND_INFO`, and `agentKindInfo(kind)` in `@pideck/shared` remain
 the presentation layer: shipped kinds contribute their rows, unknown/user
 ids get a synthesized fallback (label = id, restrictive defaults) so the
 web never crashes on a kind it hasn't seen.
 
 Persistence (`apps/daemon/src/sessions/agent-kind-store.ts`): user kinds
-live in `<stateDir>/agent-kinds.json` (`{version: 1, kinds: [...]}`) —
-user-owned, update-safe (the same rule as the agent-assets store, issue
-#315). The loader validates entry-at-a-time: a persisted spec that no
+live in `<stateDir>/agent-kinds.json` (`{version: 1, kinds: [...],
+tombstones: [...]}`) — user-owned, update-safe (the same rule as the
+agent-assets store, issue #315). The `tombstones` list marks shipped
+kinds the user deleted (§7); overrides and tombstones are mutually
+exclusive per name (saving an override lifts the tombstone). The loader validates entry-at-a-time: a persisted spec that no
 longer matches the schema is dropped with a logged warning, not a boot
 failure (forward compatibility, mirroring the session registry).
 
@@ -117,9 +123,9 @@ Rendering uses the same `{{PLACEHOLDER}}` machinery as worker prompts
 | Endpoint | Semantics |
 |---|---|
 | `GET /api/agent-kinds` | shipped kinds (in shipped order) then user kinds |
-| `POST /api/agent-kinds` | create; 409 on a shipped-name collision or duplicate id |
-| `PUT /api/agent-kinds/:kind` | update a user kind; 409 shipped (immutable — edit its persona via agent-assets instead), 404 unknown, 400 when the body's `name` doesn't match the URL kind (ids are immutable) |
-| `DELETE /api/agent-kinds/:kind` | delete a user kind; 409 shipped, 404 unknown, 409 when live sessions of the kind exist |
+| `POST /api/agent-kinds` | create a user kind; a shipped-name create stores an override that shadows the shipped spec and lifts any tombstone (issue #368); 409 on a duplicate user-kind name |
+| `PUT /api/agent-kinds/:kind` | update any kind (issue #368): a shipped name stores an override that shadows the shipped spec (persona content required, like every stored kind), 404 unknown, 400 when the body's `name` doesn't match the URL kind (ids are immutable) |
+| `DELETE /api/agent-kinds/:kind` | delete any kind (issue #368): a shipped kind is tombstoned (persisted, so the deletion sticks across reloads — re-creating the name lifts it), a user kind is removed; 404 unknown, 409 while live sessions of the kind exist |
 
 ## 5. spawnableBy: the caller-role mapping
 
@@ -190,9 +196,12 @@ id immediately, and the persona delivers the report asynchronously.
 
 ## 7. Guardrails
 
-- **Shipped kinds are immutable and undeletable** (409 on PUT/DELETE).
-  Their personas are user-editable via the agent-assets prompt overrides
-  (issue #315) instead.
+- **Shipped kinds are user-editable and user-deletable** (issue #368 —
+  the immutability design from #349/#350/#347 is reversed). An edit
+  stores an override that shadows the shipped spec; a delete tombstones
+  the shipped kind (persisted, so the deletion sticks across reloads),
+  and re-creating the name lifts the tombstone. The shipped-default
+  persona-override surface (issue #315) is unaffected.
 - **No deleting kinds with live sessions** (409; terminate first). The
   sessions keep working — a deleted kind only stops future spawns.
 - **Edits affect future spawns only** — and relaunched panes, like every
@@ -223,7 +232,7 @@ id immediately, and the persona delivers the report asynchronously.
 - **#332 — Persona editor v2 (web)**: the CRUD API above is its backend;
   the create/update request schema is the form's validation contract
   (persona required, trigger ⇔ taskTemplate, kebab-case immutable ids,
-  shipped kinds read-only with agent-assets overrides for persona edits).
+  shipped kinds editable like user kinds — stored overrides, issue #368).
 - **#333 — Prompt gate v2 (daemon, merged with this registry)**: the gate
   reads the spec, never a hardcoded kind list — `readOnly` → gated tool
   set (`--exclude-tools edit,write`; read-write kinds get the full set),

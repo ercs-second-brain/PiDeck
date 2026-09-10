@@ -58,7 +58,7 @@ describe("domain: project", () => {
       name: "p",
       repoUrl: "https://github.com/example/example",
       defaultBranch: "main",
-      settings: { autoAgentUsername: null },
+      settings: {},
       createdAt: NOW,
       updatedAt: NOW,
     });

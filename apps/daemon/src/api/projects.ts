@@ -134,10 +134,10 @@ export interface ProjectServiceDeps {
   store: ProjectStore;
   layout: ProjectLayout;
   /**
-   * Daemon-wide defaults seeded into newly registered projects
-   * (`agent/README.md`: default auto-agent username + default worker
-   * concurrency are applied to new projects). Defaults to disabled
-   * auto-spawn and an unbounded cap (issue #14 semantics).
+   * Daemon-wide defaults seeded into newly registered projects: the
+   * daemon's `defaultWorkerConcurrency` setting (issue #106) is applied
+   * to new projects. Defaults to an unbounded cap (no per-project
+   * override).
    */
   defaultSettings?: () => ProjectSettings;
   /** GhClient factory; overridable in tests. */
