@@ -21,10 +21,10 @@ import { UpdateApplyModal } from "./UpdateApplyModal";
  *   polling loops), so new updates show up within seconds of visiting the
  *   page instead of up to an hour.
  * - 'Up to date' is deliberately quiet — no banner at all.
- * - The update button is disabled (with a hint) while any worker is in an
- *   active status; the count comes from the daemon (same
- *   `ACTIVE_WORKER_STATUSES` gate the apply endpoint enforces server-side).
- *   Orchestrator sessions are not workers and never block.
+ * - The update button is disabled while any worker is in an active status;
+ *   the count comes from the daemon (same `ACTIVE_WORKER_STATUSES` gate the
+ *   apply endpoint enforces server-side). Orchestrator sessions are not
+ *   workers and never block.
  *
  * Updating state machine (issue #89 — survives the daemon restart; the
  * polling/backoff machines live in update-polling.ts):
@@ -285,7 +285,15 @@ function NodeTooOldStrip({ nodeVersion, minVersion }: { nodeVersion: string; min
   );
 }
 
-/** The offer to apply a detected update, with the server's worker gate. */
+/**
+ * The offer to apply a detected update, with the server's worker gate (issue
+ * #410): one compact row — a primary Update now button, no body text. While
+ * agents are active the button is disabled and the gate warning lives in a
+ * CSS tooltip (`.update-tooltip`, revealed on hover/focus-within), linked to
+ * the button via `aria-describedby` so assistive tech reads it too; the full
+ * `repo@ref` rides as a native title on the short SHA. The apply failure
+ * stays a visible red line — it must not hide behind a hover (issue #221).
+ */
 function UpdateAvailableStrip({
   remoteSha,
   repo,
@@ -302,17 +310,29 @@ function UpdateAvailableStrip({
   onApply: () => void;
 }) {
   const blocked = activeWorkers > 0;
+  const hintId = "update-blocked-hint";
   return (
-    <div className="update-banner" role="status">
-      Update available — new version <code>{remoteSha.slice(0, 7)}</code> on{" "}
-      <code>{`${repo}@${ref}`}</code>.
-      {error !== null && <span className="update-banner-error"> {error}</span>}
-      <button className="update-apply" type="button" onClick={onApply} disabled={blocked}>
-        Update now
-      </button>
-      {blocked && (
-        <span className="update-banner-hint">{` ${activeWorkers} agent${activeWorkers === 1 ? "" : "s"} still working — updating waits until all agents are idle.`}</span>
-      )}
+    <div className="update-banner update-offer" role="status">
+      <span className="update-offer-label">
+        Update available <code title={`${repo}@${ref}`}>{remoteSha.slice(0, 7)}</code>
+      </span>
+      {error !== null && <span className="update-banner-error">{error}</span>}
+      <span className="update-apply-wrap">
+        <button
+          className="update-apply"
+          type="button"
+          onClick={onApply}
+          disabled={blocked}
+          aria-describedby={blocked ? hintId : undefined}
+        >
+          Update now
+        </button>
+        {blocked && (
+          <span id={hintId} role="tooltip" className="update-tooltip">
+            {`${activeWorkers} agent${activeWorkers === 1 ? "" : "s"} still working — updating waits until all agents are idle.`}
+          </span>
+        )}
+      </span>
     </div>
   );
 }

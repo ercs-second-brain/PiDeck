@@ -56,22 +56,30 @@ function view(overrides: Partial<UpdateBannerViewProps> = {}): string {
 }
 
 describe("UpdateBannerView — update available (idle)", () => {
-  it("renders the new short SHA and an enabled update button when all agents are idle", () => {
+  it("renders a compact offer: short SHA plus an enabled primary button when all agents are idle", () => {
     const html = view();
     // Issue #260: the strips live in a compact popup wrapper (anchored
-    // above the sidebar's settings entry by the footer CSS).
+    // above the sidebar's settings entry by the footer CSS). Issue #410:
+    // one row — label + short SHA + button, no body text; the full ref
+    // rides as a title on the SHA, the gate warning as a tooltip only.
     expect(html).toContain("update-popup");
-    expect(html).toContain("update-banner");
+    expect(html).toContain("update-offer");
     expect(html).toContain("b".repeat(7));
-    expect(html).toContain("ercs-second-brain/agentsKISS@main");
+    expect(html).toContain('title="ercs-second-brain/agentsKISS@main"');
     expect(html).toContain("Update now");
     expect(html).not.toContain("disabled");
-    expect(html).not.toContain("update-banner-hint");
+    expect(html).not.toContain("aria-describedby");
+    expect(html).not.toContain("update-tooltip");
   });
 
-  it("disables the button with a hint while workers are active", () => {
+  it("disables the button and carries the gate warning as an accessible tooltip while workers are active", () => {
     const html = view({ status: status({ activeWorkers: 2 }) });
     expect(html).toContain("disabled");
+    // Issue #410: the warning is a tooltip (role=tooltip) linked from the
+    // disabled button via aria-describedby — not body text.
+    expect(html).toContain('aria-describedby="update-blocked-hint"');
+    expect(html).toContain('role="tooltip"');
+    expect(html).toContain("update-tooltip");
     expect(html).toContain("2 agents still working");
     expect(html).toContain("until all agents are idle");
   });
