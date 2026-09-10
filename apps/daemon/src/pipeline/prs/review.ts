@@ -29,6 +29,12 @@
  * mode — the whole cycle is inert: no reviewer is spawned and review events
  * trigger nothing; the PR loop is worker + CI only. #408's deterministic
  * PR lifecycle keys further steps on the same watermark.
+ *
+ * Issue #411 (B35): the reviewer's status is platform-derived, not
+ * agent-reported: `running` is set at prompt delivery (spawn/re-review) and
+ * ends at the reviewer's own review submission (the #418 watermark) — the
+ * resting `awaiting_ci` state — or at the PR's approval/merge/failure,
+ * which archive it.
  */
 
 import { ACTIVE_WORKER_STATUSES, type PullRequest, type Worker, type WorkerStatus } from "@pideck/shared";
@@ -124,7 +130,7 @@ async function triggerFindingsAddress(tracked: TrackedPR, pr: PullRequest, headS
   tracked.state = "addressing";
   tracked.lastPromptedAt = ctx.now().toISOString();
   tracked.lastPromptedHeadSha = headSha;
-  setAuthorStatus(ctx, tracked.workerId, "addressing_review", `PR #${tracked.prNumber}: addressing review findings`);
+  setWorkerStatusQuietly(ctx, tracked.workerId, "addressing_review", `PR #${tracked.prNumber}: addressing review findings`);
 }
 
 /** The reviewer lifecycle for a green PR: re-prompt on pushes, else spawn. */
@@ -181,6 +187,32 @@ export function observeReview(tracked: TrackedPR, latest: ReviewSubmission | nul
 }
 
 /**
+ * Issue #411 (B35): the reviewer's own review submission is platform truth
+ * that its round has ENDED — the `running` status set at prompt delivery
+ * must not outlive the round (B35: "the reviewer says running but it has
+ * finished"). The reviewer drops to the PR loop's resting status
+ * (`awaiting_ci`) until the author's push re-prompts it (back to `running`,
+ * prompt delivery) or the PR settles (archive). The review-user attribution
+ * (#407) makes this deterministic: with a configured review user, only that
+ * login's submission settles the reviewer (its `gh` identity); on legacy
+ * hosts without one, any new submission while this PR's reviewer is
+ * mid-round counts — the reviewer is the only agent posting reviews. A PR
+ * that is already approved skips this: the archival path owns the
+ * reviewer's terminal transition. Gated on status `running` so gate-held
+ * (`spawning`) or already-resting reviewers are untouched.
+ */
+export function settleReviewerRound(tracked: TrackedPR, pr: PullRequest, newReview: ReviewSubmission, ctx: ReviewContext): void {
+  if (pr.reviewState === "approved") return;
+  const reviewUser = ctx.reviewUser?.() ?? null;
+  if (reviewUser !== null && newReview.author !== reviewUser) return; // someone else's review
+  const reviewerId = tracked.reviewWorkerId;
+  if (reviewerId === null) return;
+  const reviewer = ctx.sessions.getWorker(reviewerId);
+  if (reviewer === undefined || reviewer.status !== "running") return;
+  setWorkerStatusQuietly(ctx, reviewerId, "awaiting_ci", `PR #${tracked.prNumber}: review posted — awaiting author changes`);
+}
+
+/**
  * Re-review prompt when the author pushed since the reviewer's last round.
  * A gate-held reviewer (still `spawning`, issue #56) is not typed into
  * directly — its queued initial prompt already targets the latest head, and
@@ -190,6 +222,10 @@ async function reReviewIfPushed(tracked: TrackedPR, pr: PullRequest, headSha: st
   if (tracked.reviewedHeadSha === headSha || reviewer.status === "spawning") return;
   await ctx.sessions.sendKeys(reviewer.sessionId, buildReReviewPrompt(pr, promptOptions(tracked, ctx)), { enter: true });
   tracked.reviewedHeadSha = headSha;
+  // Issue #411 (B35): the re-review prompt is platform-delivered work — the
+  // reviewer deterministically leaves its resting status for `running`
+  // (the mirror of settleReviewerRound's round-end transition).
+  setWorkerStatusQuietly(ctx, reviewer.id, "running", `PR #${tracked.prNumber}: re-review requested`);
   noteAuthorStatus(ctx, tracked, `PR #${tracked.prNumber}: re-review requested from the review agent`);
 }
 
@@ -234,7 +270,7 @@ function promptOptions(tracked: TrackedPR, ctx: ReviewContext): ReviewAgentPromp
 }
 
 /** Worker-status update that never throws (the record may have vanished). */
-function setAuthorStatus(ctx: ReviewContext, workerId: string, status: WorkerStatus, statusMessage: string): void {
+function setWorkerStatusQuietly(ctx: ReviewContext, workerId: string, status: WorkerStatus, statusMessage: string): void {
   try {
     ctx.sessions.updateWorkerStatus(workerId, status, statusMessage);
   } catch {

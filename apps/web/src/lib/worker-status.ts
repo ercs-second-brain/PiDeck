@@ -9,6 +9,11 @@
  * solid neutral. The agent is actively working while spawning/running and
  * while fixing/addressing — those tones pulse slowly; green (waiting on CI/
  * review) and the neutral tones stay solid.
+ *
+ * Issue #411: statuses are platform-derived. `awaiting_ci` is the resting
+ * "PR open, passively watched" state (watching CI, or a reviewer resting
+ * between rounds); `done` also covers "CI green — awaiting review/merge"
+ * after a completed build round, not just terminal outcomes.
  */
 
 import type { WorkerStatus } from "@pideck/shared";

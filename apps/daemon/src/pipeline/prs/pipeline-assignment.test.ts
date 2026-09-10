@@ -52,7 +52,9 @@ describe("PullRequestPipeline: PR assignment leg (issue #408)", () => {
     const h = greenHarness({ reviewAccountUser: () => REVIEW_USER, failAssignees: true });
     const events = await h.poll();
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ prNumber: 12 });
-    expect(h.sessions.statuses.at(-1)).toMatchObject({ status: "awaiting_ci" });
+    // Issue #411: CI passed at discovery — the author rests at `done`, not
+    // the stale `awaiting_ci` (B34).
+    expect(h.sessions.statuses.at(-1)).toMatchObject({ status: "done" });
     expect(prEvents(events).length).toBeGreaterThanOrEqual(0); // the loop kept emitting cards
   });
 });

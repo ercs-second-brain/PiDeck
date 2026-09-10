@@ -58,13 +58,16 @@ describe("PullRequestPipeline", () => {
     expect(h.sessions.prompts).toHaveLength(1);
 
     // Poll 3: worker pushed, CI green → no prompt, attempt counter reset.
+    // Issue #411: CI passing is platform truth — the passively watching
+    // author leaves `awaiting_ci` for the resting `done` status in the same
+    // poll (a red CI or review findings wake it deterministically).
     const fake = h.prs.get(12)!;
     fake.pull = restPull(12, { sha: "sha-2" });
     fake.checkRuns = checkRuns("success");
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(1);
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ state: "watching", fixAttempts: 0 });
-    expect(h.sessions.statuses.at(-1)).toMatchObject({ status: "awaiting_ci" });
+    expect(h.sessions.statuses.at(-1)).toMatchObject({ status: "done", statusMessage: expect.stringContaining("CI green") });
 
     // Poll 4: approved → the card already sits in in_review (settled CI) per
     // the shared kanban mapping — no new card event, no further prompts.
