@@ -1,13 +1,15 @@
 /**
  * Pull request operations: REST list/mapping onto the shared
- * {@link PullRequest} contract, CI (checks) status, review decision, and
- * review comments.
+ * {@link PullRequest} contract, CI (checks) status, and review comments.
+ * Review retrieval (decision + submissions, issue #407) lives in
+ * `reviews.ts`.
  */
 
 import { z } from "zod";
 import { ciStatusSchema, reviewStateSchema, pullRequestSchema, type PullRequest } from "@pideck/shared";
 
 import type { GhClient, RepoRef } from "./gh.js";
+import { fetchReviews, latestSubmissionFrom, reviewDecisionFrom, type ReviewSubmission } from "./reviews.js";
 import { graphqlNodeSchema } from "./graphql-node.js";
 
 /** Derived from the shared schemas (shared does not export these as named types). */
@@ -284,39 +286,6 @@ export async function getFailingChecks(gh: GhClient, repo: RepoRef, headSha: str
 }
 
 // ---------------------------------------------------------------------------
-// Review decision
-// ---------------------------------------------------------------------------
-
-const reviewsSchema = z.array(
-  z.object({
-    user: z.object({ login: z.string() }).nullable(),
-    state: z.enum(["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED", "PENDING"]),
-    submitted_at: z.string().nullable(),
-  }),
-);
-
-/**
- * Latest review decision on a PR, mapped onto the shared {@link ReviewState}
- * enum. Computed from the reviews list with latest-review-per-user semantics
- * (mirrors GitHub's reviewDecision): any user's latest decisive review being
- * CHANGES_REQUESTED wins, then APPROVED, otherwise `"none"`.
- */
-export async function getReviewState(gh: GhClient, repo: RepoRef, prNumber: number): Promise<ReviewState> {
-  const reviews = reviewsSchema.parse(await gh.apiJson(`/repos/${repo.owner}/${repo.repo}/pulls/${prNumber}/reviews`));
-  // Reviews come in submission order; keep the latest decisive one per user.
-  const latest = new Map<string, string>();
-  for (const review of reviews) {
-    if (review.user === null) continue;
-    if (review.state === "COMMENTED" || review.state === "PENDING") continue;
-    latest.set(review.user.login, review.state);
-  }
-  const states = [...latest.values()];
-  if (states.includes("CHANGES_REQUESTED")) return "changes_requested";
-  if (states.includes("APPROVED")) return "approved";
-  return "none";
-}
-
-// ---------------------------------------------------------------------------
 // Review comments
 // ---------------------------------------------------------------------------
 
@@ -368,17 +337,29 @@ export async function fetchReviewComments(gh: GhClient, repo: RepoRef, prNumber:
 // Enrichment
 // ---------------------------------------------------------------------------
 
-/** Fills in CI status and review decision for one PR (two API calls). */
-export async function enrichPullRequest(gh: GhClient, repo: RepoRef, record: PullRequestRecord): Promise<PullRequest> {
-  const [ciStatus, reviewState] = await Promise.all([
-    getCiStatus(gh, repo, record.headSha),
-    getReviewState(gh, repo, record.pullRequest.number),
-  ]);
-  return { ...record.pullRequest, ciStatus: ciStatusSchema.parse(ciStatus), reviewState: reviewStateSchema.parse(reviewState) };
+/** One PR's enriched poll state: the shared contract plus review-submission meta. */
+/** One PR's enriched poll state (shared contract + review submission meta). */
+export interface EnrichedPull {
+  pullRequest: PullRequest;
+  /** Latest review submission (any state) — the trigger watermark (issue #407). */
+  latestReview: ReviewSubmission | null;
+}
+
+/** Fills in CI status and review decision (the reviews call also yields the latest submission). */
+export async function enrichPullRequest(gh: GhClient, repo: RepoRef, record: PullRequestRecord): Promise<EnrichedPull> {
+  const [ciStatus, reviews] = await Promise.all([getCiStatus(gh, repo, record.headSha), fetchReviews(gh, repo, record.pullRequest.number)]);
+  return {
+    pullRequest: {
+      ...record.pullRequest,
+      ciStatus: ciStatusSchema.parse(ciStatus),
+      reviewState: reviewStateSchema.parse(reviewDecisionFrom(reviews)),
+    },
+    latestReview: latestSubmissionFrom(reviews),
+  };
 }
 
 /** Lists open PRs with CI status and review decision resolved (parallel). */
 export async function listPullRequestsWithMeta(gh: GhClient, projectId: string, repo: RepoRef): Promise<PullRequest[]> {
   const records = await listPullRequests(gh, projectId, repo, "open");
-  return Promise.all(records.map((r) => enrichPullRequest(gh, repo, r)));
+  return Promise.all(records.map(async (r) => (await enrichPullRequest(gh, repo, r)).pullRequest));
 }

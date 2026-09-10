@@ -94,6 +94,18 @@ export interface GithubAutomationOptions {
    * decision so a toggle lands without a daemon restart. Default: all ON.
    */
   workerSettings?: () => WorkerPipelineSettings;
+  /**
+   * Review account (issue #407), read fresh. `reviewAccountToken`: set =
+   * reviewer panes run `gh` as that second GitHub account (real `gh pr
+   * review` submissions on primary-account PRs) and the PR loop's
+   * review-based triggers run; null = single-account mode (no review cycle
+   * at all). `reviewAccountUser` is the second account's login — the
+   * identity the PR-assignment leg (#408 lifecycle, #416 assignment
+   * spawning) and review-user-keyed triggers key off; it does NOT make
+   * issue assignments imply reviews.
+   */
+  reviewAccountToken?: () => string | null;
+  reviewAccountUser?: () => string | null;
   /** Pi auth readiness for review-agent prompt gating (issue #107). */
   piReady?: () => Promise<boolean>;
   /** Prompt gate (issue #56) holding review prompts until pi is ready. */
@@ -200,6 +212,7 @@ export class GithubAutomation {
       spawnReviewAgent: (projectId, request) =>
         spawnReviewAgentImpl(projectId, request, {
           sessions: options.sessions,
+          reviewGhToken: options.reviewAccountToken?.() ?? null,
           broadcastSpawned: (worker) => {
             this.bridge.broadcast(
               { type: "worker.spawned", at: this.now().toISOString(), worker: workerSchema.parse(worker) },
@@ -385,6 +398,7 @@ export class GithubAutomation {
           pollIntervalMs: this.pollIntervalMs,
           sessionControl: this.sessionControl,
           workerSettings: this.options.workerSettings,
+          reviewAccountToken: this.options.reviewAccountToken,
           onWatcherEvent: (projectId, event) => this.handleWatcherEvent(projectId, event),
           onPrEvent: (projectId, event) => {
             if (this.units.get(projectId) !== undefined) this.broadcastPrEvent(projectId, event);

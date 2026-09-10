@@ -74,6 +74,17 @@ describe("REST endpoint map", () => {
     expect(settings.autoFixCi).toBe(true);
     expect(settings.autoFixReviewComments).toBe(true);
     expect(settings.browserMergeNotifications).toBe(false);
+    expect(settings.reviewAccountUsername).toBeNull();
+    expect(settings.reviewAccountToken).toBeNull();
+    // Issue #407: the review account round-trips through the contract.
+    const withReviewAccount = settingsSchema.parse({
+      autoAgentUsername: null,
+      defaultWorkerConcurrency: 1,
+      reviewAccountUsername: "review-bot",
+      reviewAccountToken: "ghp_x",
+    });
+    expect(withReviewAccount.reviewAccountUsername).toBe("review-bot");
+    expect(withReviewAccount.reviewAccountToken).toBe("ghp_x");
     expect(settingsSchema.safeParse({ autoAgentUsername: "eric", defaultWorkerConcurrency: 0 }).success).toBe(false);
     expect(settingsSchema.parse({ autoAgentUsername: null, defaultWorkerConcurrency: 1, autoFixCi: false }).autoFixCi).toBe(false);
   });

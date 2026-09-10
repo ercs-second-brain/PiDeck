@@ -22,6 +22,8 @@ describe("SettingsStore", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      reviewAccountUsername: null,
+      reviewAccountToken: null,
       browserMergeNotifications: false,
     });
     store.update({ autoAgentUsername: "auto-agent" });
@@ -32,6 +34,8 @@ describe("SettingsStore", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      reviewAccountUsername: null,
+      reviewAccountToken: null,
       browserMergeNotifications: false,
     });
 
@@ -57,6 +61,17 @@ describe("SettingsStore", () => {
     expect(new SettingsStore(dir).get().browserMergeNotifications).toBe(true);
   });
 
+  it("defaults the review account OFF (single-account mode) and persists it (issue #407)", () => {
+    const dir = testDaemon().stateDir;
+    const store = new SettingsStore(dir);
+    expect(store.get().reviewAccountToken).toBeNull();
+    expect(store.get().reviewAccountUsername).toBeNull();
+    store.update({ reviewAccountToken: "ghp_review", reviewAccountUsername: "review-bot" });
+    const reloaded = new SettingsStore(dir);
+    expect(reloaded.get().reviewAccountToken).toBe("ghp_review");
+    expect(reloaded.get().reviewAccountUsername).toBe("review-bot");
+  });
+
   it("fills the worker-pipeline toggles into a pre-#106 settings file (upgrade path)", () => {
     const dir = testDaemon().stateDir;
     mkdirSync(dir, { recursive: true });
@@ -69,6 +84,8 @@ describe("SettingsStore", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      reviewAccountUsername: null,
+      reviewAccountToken: null,
       browserMergeNotifications: false,
     });
   });

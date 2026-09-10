@@ -22,6 +22,11 @@ const DEFAULT_SETTINGS: Settings = {
   autoFixReviewComments: true,
   autoReview: true,
   browserMergeNotifications: false,
+  // Issue #407: null (default) = single-account mode — the review flow is
+  // entirely off. Username + token configure the second GitHub identity the
+  // reviewer panes run as (GH_TOKEN) and the review-user-keyed legs.
+  reviewAccountUsername: null,
+  reviewAccountToken: null,
 };
 
 export class SettingsStore {

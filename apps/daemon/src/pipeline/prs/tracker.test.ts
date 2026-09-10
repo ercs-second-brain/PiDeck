@@ -31,6 +31,8 @@ describe("PRTracker", () => {
     expect(tracked.fixAttempts).toBe(0);
     expect(tracked.lastPromptedAt).toBeNull();
     expect(tracked.lastSeenCommentId).toBeNull();
+    expect(tracked.lastReviewSeenAt).toBeNull();
+    expect(tracked.reviewWorkerId).toBeNull();
     expect(prCardId("proj", 12)).toBe("pr:proj:12");
     expect(tracker.get("proj", 12)).toBe(tracked);
   });
@@ -42,6 +44,7 @@ describe("PRTracker", () => {
     tracked.fixAttempts = 2;
     tracked.lastPromptedHeadSha = "sha-2";
     tracked.lastSeenCommentId = 101;
+    tracked.lastReviewSeenAt = "2026-09-06T12:05:00Z";
     tracker.save();
 
     const reloaded = new PRTracker(filePath);
@@ -56,6 +59,7 @@ describe("PRTracker", () => {
       fixAttempts: 2,
       lastPromptedHeadSha: "sha-2",
       lastSeenCommentId: 101,
+      lastReviewSeenAt: "2026-09-06T12:05:00Z",
     });
   });
 

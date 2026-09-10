@@ -72,6 +72,13 @@ export interface SpawnWorkerOptions {
   prNumber?: number;
   /** Initial prompt typed into the pane at spawn; persisted on the worker (issue #120). */
   prompt?: string;
+  /**
+   * Extra env exported into the pane before the agent starts (issue #407):
+   * merged over the canonical runtime env ({@link agentSessionEnv}). Used to
+   * give a reviewer pane the review account's `GH_TOKEN` — the second gh
+   * identity that lets it file real reviews on primary-account PRs.
+   */
+  env?: Record<string, string>;
 }
 
 export interface SpawnedWorker {
@@ -266,7 +273,9 @@ export class SessionManager {
     const command = options.command ?? this.defaultWorkerCommand();
 
     try {
-      await this.tmux.newSession(name, { cwd, command });
+      // env flows through even when absent — Tmux merges it over the
+      // canonical runtime env when present (issue #407 reviewer panes).
+      await this.tmux.newSession(name, { cwd, env: options.env, command });
     } catch (err) {
       this.registry.updateWorkerStatus(worker.id, "failed", `tmux launch failed: ${err instanceof Error ? err.message : String(err)}`);
       this.registry.deleteSession(session.id);

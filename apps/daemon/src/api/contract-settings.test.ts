@@ -31,6 +31,8 @@ describe("settings", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      reviewAccountUsername: null,
+      reviewAccountToken: null,
       browserMergeNotifications: false,
     });
 
@@ -43,6 +45,8 @@ describe("settings", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      reviewAccountUsername: null,
+      reviewAccountToken: null,
       browserMergeNotifications: false,
     });
 

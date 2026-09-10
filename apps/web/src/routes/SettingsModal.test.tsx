@@ -46,6 +46,8 @@ const SETTINGS: Settings = {
   autoFixCi: true,
   autoFixReviewComments: true,
   autoReview: true,
+  reviewAccountUsername: null,
+  reviewAccountToken: null,
   browserMergeNotifications: false,
 };
 

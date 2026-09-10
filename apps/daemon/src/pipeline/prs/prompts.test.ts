@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PullRequest } from "@pideck/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
-import { buildCiFixPrompt, buildReReviewPrompt, buildReviewAgentPrompt, buildReviewCommentsPrompt } from "./prompts.js";
+import { buildAddressReviewPrompt, buildCiFixPrompt, buildReReviewPrompt, buildReviewAgentPrompt, buildReviewCommentsPrompt } from "./prompts.js";
 
 const PR: PullRequest = {
   projectId: "proj",
@@ -80,8 +80,12 @@ describe("PR prompts", () => {
     expect(prompt).toContain("--kind researcher");
     expect(prompt).toContain("wait for its report before posting your review");
     expect(prompt).toContain("gh pr diff 12 --repo o/r");
-    expect(prompt).toContain("--approve");
-    expect(prompt).toContain("--request-changes");
+    // Issue #407: the round ends in ONE real review via gh pr review, with
+    // inline comments attached to that same submission via a JSON body.
+    expect(prompt).toContain("gh pr review 12 --repo o/r --request-changes");
+    expect(prompt).toContain("gh pr review 12 --repo o/r --approve");
+    expect(prompt).toContain("gh pr review 12 --repo o/r --comment");
+    expect(prompt).toContain("--input reviews.json");
     expect(prompt).toContain("Do not push commits");
   });
 
@@ -90,5 +94,15 @@ describe("PR prompts", () => {
     expect(prompt).not.toContain("\n");
     expect(prompt).toContain("New commits were pushed to PR #12");
     expect(prompt).toContain("Re-review the updated diff");
+    expect(prompt).toContain("gh pr review 12 --repo o/r");
+  });
+
+  it("address-review prompt tells the author to fetch findings from the review body too", () => {
+    const prompt = buildAddressReviewPrompt(PR);
+    expect(prompt).not.toContain("\n");
+    expect(prompt).toContain("requested changes on your PR #12");
+    expect(prompt).toContain("review-comments skill");
+    expect(prompt).toContain("`agent/issue-7`");
+    expect(prompt).toContain("Do not open a new PR");
   });
 });

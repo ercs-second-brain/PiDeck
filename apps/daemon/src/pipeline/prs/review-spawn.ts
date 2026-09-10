@@ -29,6 +29,15 @@ export interface ReviewSpawnDeps {
   sessions: SessionManager;
   /** Announces the spawned reviewer on the WS hub (workers/kanban UI). */
   broadcastSpawned: (worker: Worker) => void;
+  /**
+   * Review account token (issue #407): when set, the reviewer pane is
+   * started with `GH_TOKEN` pointing at the second GitHub account, so its
+   * `gh pr review` calls file real reviews as that account instead of the
+   * PR author's primary identity (which cannot review its own PR). `null`/
+   * `undefined` = single-account mode — the review flow does not run at all
+   * (the pipeline gates it), so the value never matters in practice.
+   */
+  reviewGhToken?: string | null;
   /** Pi auth readiness probe; absent = assume ready (tests/legacy hosts). */
   piReady?: () => Promise<boolean>;
   /** Holds the prompt until pi auth becomes ready (issue #56 parity). */
@@ -50,6 +59,7 @@ export async function spawnReviewAgent(projectId: string, request: ReviewSpawnRe
       parentWorkerId: request.parentWorkerId,
       prompt: request.prompt,
       statusMessage: "review agent launching",
+      ...(deps.reviewGhToken ? { env: { GH_TOKEN: deps.reviewGhToken } } : {}),
     });
     deps.broadcastSpawned(worker);
     const ready = deps.piReady === undefined ? true : await deps.piReady();

@@ -110,6 +110,14 @@ export interface UnitBuilderDeps {
   sessionControl: PRSessionControl;
   /** Worker-pipeline toggles (issue #106), read fresh on each decision. */
   workerSettings?: () => WorkerPipelineSettings;
+  /**
+   * Review account accessors (issue #407), read fresh: the token gates the
+   * review flow (set = reviewer panes run gh as the second account and file
+   * real reviews); the username is the review-user identity the
+   * PR-assignment leg (#408 lifecycle, #416 assignment spawning) keys off.
+   */
+  reviewAccountToken?: () => string | null;
+  reviewAccountUser?: () => string | null;
   /** Routes a watcher event into the automation (the shared event router). */
   onWatcherEvent: (projectId: string, event: GithubWatcherEvent) => void;
   /** Routes a PR pipeline event onto the kanban broadcast bridge. */
@@ -176,6 +184,9 @@ export function buildUnit(deps: UnitBuilderDeps, projectId: string, repoUrl: str
     // Issue #107: review-agent spawns respect the project's worker cap,
     // read fresh so a settings change lands without a restart.
     workerCap: () => deps.projects.get(projectId)?.settings.workerConcurrency ?? undefined,
+    // Issue #407: the review cycle (agent, real reviews, triggers) runs
+    // only with a configured review account, read fresh per poll.
+    reviewAccount: () => (deps.reviewAccountToken?.() ?? null) !== null,
     onError: (err) => deps.onError(err, `pr-pipeline:${projectId}`),
   });
   return {

@@ -66,6 +66,18 @@ describe("tmux session env wrapper (stale tmux server env, issue #253)", () => {
     expect(fake.invocations.some((inv) => inv.args[0] === "setenv")).toBe(false);
   });
 
+  it("merges explicit env over the default session env instead of replacing it (issue #407)", async () => {
+    // The review account token reaches a reviewer pane as GH_TOKEN; the
+    // canonical runtime env (PATH/PD_NODE) must survive the merge.
+    const fake = new FakeTmuxRunner();
+    const tmux = new Tmux({ sendEnterDelayMs: 0, defaultSessionEnv: ENV, runner: (args) => fake.run(args) });
+    await tmux.newSession("reviewer", { cwd: "/tmp/ws", command: ["pi"], env: { GH_TOKEN: "ghp_review" } });
+    const script = fake.sessions.get("reviewer")?.command?.[2] ?? "";
+    expect(script).toContain(`export PATH=${ENV.PATH}`);
+    expect(script).toContain(`export PD_NODE=${ENV.PD_NODE}`);
+    expect(script).toContain("export GH_TOKEN=ghp_review");
+  });
+
   it("wraps plain-shell panes too: orchestrator panes exec the user's login shell with the env", async () => {
     // Orchestrator sessions start a plain interactive shell and pi is typed
     // into it later (sendKeys) — the shell that resolves pi must already
