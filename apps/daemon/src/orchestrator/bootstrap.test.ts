@@ -52,7 +52,23 @@ interface Harness {
 }
 
 async function harness(options: { isAgentRunning?: (tmuxSession: string) => Promise<boolean> } = {}): Promise<Harness> {
-  const daemon = testDaemon();
+  const daemon = testDaemon({
+    // Issue #378: the orchestrator's canonical spawn (`pideck spawn --issue`
+    // — no --prompt) fetches the issue for the #266 context prompt; the fake
+    // gh serves the single-issue REST fetch end-to-end.
+    api: {
+      "/repos/o/r/issues/5": {
+        number: 5,
+        title: "End-to-end spawn item",
+        state: "open",
+        user: { login: "someone" },
+        assignee: null,
+        assignees: [],
+        html_url: "https://github.com/o/r/issues/5",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+    },
+  });
   const project = await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
   const promptPath = path.join(daemon.stateDir, "fixtures", "orchestrator.md");
   mkdirSync(path.dirname(promptPath), { recursive: true });
@@ -308,6 +324,12 @@ describe("end-to-end: chat-requested spawn reaches the daemon spawn path", () =>
     // Default worker command (issue #356): discovery off + shipped
     // integration skills; no per-persona shaping without stored assets.
     expect(workerSessions[0]?.[1].command).toEqual([...DEFAULT_WORKER_COMMAND, ...shippedGlobalSkillArgs()]);
+
+    // 4b. Issue #378: the worker pane RECEIVED the issue context — the
+    //     orchestrator's issue-backed spawn (no --prompt) delivers the
+    //     #266 context prompt instead of booting an idle pane.
+    expect(workers[0]?.prompt).toContain("worker for issue #5");
+    expect(workerSessions[0]?.[1].paneLines.join("\n")).toContain("worker for issue #5");
 
     // 5. The orchestrator session itself is untouched: still exactly one,
     //    and the worker is a separate session in the same project.

@@ -18,6 +18,13 @@ import { testDaemon } from "./testutil.js";
 
 const UPDATED_AT = "2026-01-01T00:00:00.000Z";
 
+/** A fake gh single-issue REST route (issue #378: the initial-prompt fetch); `pr` = pull-request payload. */
+function issueRoute(owner: string, repo: string, number: number, title: string, pr = false): [string, unknown] {
+  const url = `https://github.com/${owner}/${repo}/${pr ? "pull" : "issues"}/${number}`;
+  const base = { number, title, state: "open", user: { login: "someone" }, html_url: url, updated_at: UPDATED_AT };
+  return [`/repos/${owner}/${repo}/issues/${number}`, pr ? { ...base, pull_request: {} } : { ...base, assignee: null, assignees: [] }];
+}
+
 function project(overrides: Partial<Project> = {}): Project {
   return {
     id: "o-r",
@@ -222,7 +229,10 @@ describe("terminateWorker (issue #64)", () => {
   });
 
   it("frees the worker's concurrency slot (archived is not active)", async () => {
-    const daemon = testDaemon();
+    const daemon = testDaemon({
+      // Issue #378: the fake gh serves the single-issue REST fetches below.
+      api: Object.fromEntries([issueRoute("tw", "rw", 1, "Slot one"), issueRoute("tw", "rw", 2, "Slot two")]),
+    });
     await daemon.services.projects.register({
       mode: "clone",
       repoUrl: "https://github.com/tw/rw",
@@ -279,7 +289,9 @@ describe("spawnWorker pi-auth readiness gate (issue #56)", () => {
   /** Flippable fake pi CLI + daemon with the gate in manual-delivery mode. */
   function gatedDaemon() {
     const pi = { ready: false };
-    const daemon = testDaemon({}, {
+    const daemon = testDaemon({
+      api: Object.fromEntries([issueRoute("o", "r", 4, "Idle worker regression")]),
+    }, {
       piRunner: async () => {
         if (!pi.ready) throw new Error("pi: not authenticated");
         return { stdout: '{"status":"ready"}', stderr: "" };
@@ -321,7 +333,7 @@ describe("spawnWorker pi-auth readiness gate (issue #56)", () => {
     expect(daemon.services.promptGate.size).toBe(0);
   });
 
-  it("holds prompt-less (issue-backed) spawns too, then releases them on auth", async () => {
+  it("holds prompt-less (issue-backed) spawns too, then releases them on auth (issue #378: with the built issue context)", async () => {
     const { pi, daemon } = gatedDaemon();
     await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
     const worker = await spawnWorker(daemon.services, "o-r", { issueNumber: 4, name: "w2" });
@@ -332,7 +344,10 @@ describe("spawnWorker pi-auth readiness gate (issue #56)", () => {
     await daemon.services.promptGate.deliverPending();
     const released = daemon.services.sessions.getWorker(worker.id);
     expect(released?.status).toBe("running");
-    expect(released?.statusMessage).toBe("agent running in tmux session");
+    expect(released?.statusMessage).toBe("agent running; initial prompt delivered");
+    // Issue #378: the pane received the issue context — not silence.
+    const pane = await daemon.services.sessions.capturePane(worker.sessionId);
+    expect(pane).toContain("worker for issue #4");
   });
 
   it("types the prompt immediately when pi auth is ready (unchanged ready path)", async () => {
