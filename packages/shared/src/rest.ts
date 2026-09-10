@@ -112,9 +112,10 @@ export const settingsSchema = z.object({
    * `reviewAccountUsername` (issue #424): the daemon settings store rejects
    * an update that sets one without the other, so the review account is
    * always fully configured or fully off. Stored in the daemon settings
-   * file (plaintext,
-   * like gh's own hosts.yml); the settings UI masks it on read (follow-up
-   * UI wiring).
+   * file (plaintext, like gh's own hosts.yml). MASK-ON-READ (issue #428):
+   * this raw field exists in the persisted settings and in PUT request
+   * bodies only — API responses carry `reviewAccountTokenConfigured` (see
+   * {@link settingsReadSchema}) and never the token itself.
    */
   reviewAccountToken: z.string().min(1).nullable().default(null),
   /**
@@ -130,6 +131,22 @@ export type Settings = z.infer<typeof settingsSchema>;
 
 export const updateSettingsRequestSchema = settingsSchema.partial();
 export type UpdateSettingsRequest = z.infer<typeof updateSettingsRequestSchema>;
+
+/**
+ * Webapp-facing settings read shape (issue #428, audit F12): the shape
+ * GET/PUT /api/settings respond with. Identical to {@link settingsSchema}
+ * except the review-account token is replaced by a boolean — the raw token
+ * never leaves the daemon in a response; the UI can replace or clear it via
+ * PUT (which still accepts the raw token in the request body) but can never
+ * display what is stored.
+ */
+export const settingsReadSchema = settingsSchema
+  .omit({ reviewAccountToken: true })
+  .extend({
+    /** Whether a review-account token is stored on the daemon. */
+    reviewAccountTokenConfigured: z.boolean(),
+  });
+export type SettingsRead = z.infer<typeof settingsReadSchema>;
 
 /** GitHub repo accessible via the daemon's gh auth (issue #217): the clone URL derives verbatim from owner/name — no case transformation (#216). */
 export const accessibleRepoSchema = z.object({ owner: z.string().min(1), name: z.string().min(1), isPrivate: z.boolean() }); export type AccessibleRepo = z.infer<typeof accessibleRepoSchema>;
@@ -544,14 +561,15 @@ export const endpoints = {
     response: updateApplyResponseSchema,
   },
 
-  // Settings
-  getSettings: { method: "GET", path: "/api/settings", params: z.object({}), request: null, response: settingsSchema },
+  // Settings — responses use the masked read shape (issue #428): the raw
+  // review-account token travels only in the PUT request body.
+  getSettings: { method: "GET", path: "/api/settings", params: z.object({}), request: null, response: settingsReadSchema },
   updateSettings: {
     method: "PUT",
     path: "/api/settings",
     params: z.object({}),
     request: updateSettingsRequestSchema,
-    response: settingsSchema,
+    response: settingsReadSchema,
   },
   listAccessibleRepos: { method: "GET", path: "/api/gh/repos", params: z.object({}), request: null, response: z.array(accessibleRepoSchema) }, // issue #217
 

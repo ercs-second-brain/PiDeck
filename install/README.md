@@ -79,6 +79,20 @@ Results are recorded in `~/.pideck/onboarding.json` +
 `PIDECK_MODEL` in `~/.pideck/env` and remembered across restarts.
 Re-run any time with `pideck onboard`.
 
+### Review account (after onboarding)
+
+Shell onboarding configures the daemon's *primary* GitHub identity. The PR
+loop's **review leg** (issue #407) needs a **second** GitHub account: review
+agents file real PR reviews as that account, and with a single account the
+loop has no review leg at all (nothing can review the primary account's
+PRs). This is a webapp setting, not a shell-onboarding step: open the
+webapp → sidebar footer → **Global settings** → *Review account*, and enter
+the second account's username + a personal access token (repo + PR
+read/write). The token is stored on the daemon and masked on read — the API
+and the settings UI never return or display it; you can replace or clear it
+any time. The review flow runs only when username and token are both set
+(they are saved together, enforced server-side).
+
 ### pi auth gating after install
 
 Onboarding can end with pi auth incomplete (skipped flags, non-interactive

@@ -26,6 +26,8 @@ import {
   workerSchema,
   type EndpointName,
   type Project,
+  type Settings,
+  type SettingsRead,
 } from "@pideck/shared";
 
 import { HttpError, Router } from "./router.js";
@@ -228,6 +230,17 @@ async function relaunchSessionPayload(services: DaemonServices, sessionId: strin
 /** Workers in an active status — the click-to-update gate (issue #76), via
  * the shared `ACTIVE_WORKER_STATUSES` (issue #70). Orchestrator sessions are
  * not workers (they persist across updates and never block). */
+/**
+ * MASK-ON-READ (issue #428, audit F12): strip the review-account token from a
+ * settings record before it becomes an API response — the raw token travels
+ * only in PUT request bodies; GET and PUT responses report whether one is
+ * stored via `reviewAccountTokenConfigured` instead.
+ */
+function toSettingsRead(settings: Settings): SettingsRead {
+  const { reviewAccountToken, ...rest } = settings;
+  return { ...rest, reviewAccountTokenConfigured: reviewAccountToken !== null };
+}
+
 function countActiveWorkers(services: DaemonServices): number {
   return services.sessions.listWorkers().filter((worker) => ACTIVE_WORKER_STATUSES.has(worker.status)).length;
 }
@@ -371,12 +384,12 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
       return services.diffs.getDiff(project.id, project.repoUrl, params.prNumber);
     },
 
-    getSettings: () => services.settings.get(),
+    getSettings: () => toSettingsRead(services.settings.get()),
 
     /** Accessible repos for the onboarding selector (issue #217). */
     listAccessibleRepos: () => listAccessibleRepos(services.gh("https://github.com/list")),
 
-    updateSettings: ({ body }) => services.settings.update(updateSettingsRequestSchema.parse(body)),
+    updateSettings: ({ body }) => toSettingsRead(services.settings.update(updateSettingsRequestSchema.parse(body))),
 
     ...agentAssetHandlers(services),
     ...agentKindHandlers(services),

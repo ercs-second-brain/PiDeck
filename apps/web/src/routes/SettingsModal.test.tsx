@@ -12,7 +12,7 @@
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { renderToString } from "react-dom/server";
-import { projectSchema, type Project, type Settings } from "@pideck/shared";
+import { projectSchema, type Project, type SettingsRead } from "@pideck/shared";
 
 vi.mock("../lib/api", () => ({
   apiGetSettings: vi.fn(),
@@ -36,17 +36,17 @@ vi.mock("../store/store", () => ({
   },
 }));
 
-import { GlobalSettingsModal, GlobalWorkerSettings, ProjectSettingsModal } from "./SettingsModal";
+import { GlobalSettingsModal, GlobalWorkerSettings, ProjectSettingsModal, reviewAccountSaveBody, reviewTokenPlaceholder } from "./SettingsModal";
 import type { AppState } from "../store/store";
 
-const SETTINGS: Settings = {
+const SETTINGS: SettingsRead = {
   defaultWorkerConcurrency: 0,
   terminateOnMerge: true,
   autoFixCi: true,
   autoFixReviewComments: true,
   autoReview: true,
   reviewAccountUsername: null,
-  reviewAccountToken: null,
+  reviewAccountTokenConfigured: false,
   browserMergeNotifications: false,
 };
 
@@ -127,6 +127,43 @@ describe("settings modals (issue #264)", () => {
     expect(html).toContain("Worker pipeline (all projects)");
     expect(html).toContain('aria-label="Close project settings"');
     expect(html).not.toContain("back-link");
+  });
+});
+
+describe("review account (issue #428)", () => {
+  it("renders username + write-only token fields in the global settings", () => {
+    const html = renderToString(<GlobalWorkerSettings />);
+    expect(html).toContain("Review account (all projects)");
+    expect(html).toContain('id="review-account-username"');
+    expect(html).toContain('id="review-account-token"');
+    expect(html).toContain('type="password"');
+    expect(html).toContain("Save review account");
+    // Before settings load the token field is a plain write-only input.
+    expect(html).toContain("personal access token");
+  });
+
+  it("reviewTokenPlaceholder never reveals a stored token — only its configured-ness", () => {
+    expect(reviewTokenPlaceholder(null)).toBe("personal access token");
+    expect(reviewTokenPlaceholder({ ...SETTINGS, reviewAccountTokenConfigured: false })).toBe("personal access token");
+    expect(reviewTokenPlaceholder({ ...SETTINGS, reviewAccountTokenConfigured: true })).toBe("configured — type to replace");
+  });
+
+  it("reviewAccountSaveBody keeps the stored token when the token field is blank", () => {
+    const configured: SettingsRead = { ...SETTINGS, reviewAccountTokenConfigured: true };
+    // Rename only: username travels, token is left out (the daemon merges and
+    // keeps the stored half — both-or-neither holds).
+    expect(reviewAccountSaveBody(configured, "new-name", "")).toEqual({ reviewAccountUsername: "new-name" });
+    // Typed token replaces the stored one — both halves together.
+    expect(reviewAccountSaveBody(configured, "new-name", " ghp_new ")).toEqual({
+      reviewAccountUsername: "new-name",
+      reviewAccountToken: "ghp_new",
+    });
+    // Clearing the username while configured clears both halves (#424).
+    expect(reviewAccountSaveBody(configured, "", "")).toEqual({ reviewAccountUsername: null, reviewAccountToken: null });
+    // Not configured: setting a username without a token sends the username —
+    // the daemon's both-or-neither refine rejects it with a 400 the UI shows.
+    expect(reviewAccountSaveBody(SETTINGS, "new-name", "")).toEqual({ reviewAccountUsername: "new-name" });
+    expect(reviewAccountSaveBody(SETTINGS, "", "")).toEqual({ reviewAccountUsername: null });
   });
 });
 

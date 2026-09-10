@@ -8,7 +8,7 @@
  * GlobalWorkerSettings} toggles.
  */
 import { useEffect, useState } from "react";
-import type { Settings } from "@pideck/shared";
+import type { SettingsRead, UpdateSettingsRequest } from "@pideck/shared";
 import { apiUpdateSettings, apiGetSettings, errorMessage } from "../lib/api";
 import { useProject } from "../lib/use-project";
 import { BROWSER_NOTIFICATIONS_UNSUPPORTED, permissionState, requestNotificationPermission } from "../components/NotificationCenter";
@@ -94,16 +94,128 @@ const NOTIFICATION_TOGGLE: { key: "browserMergeNotifications"; label: string; hi
 type ToggleKey = (typeof WORKER_TOGGLES)[number]["key"] | (typeof NOTIFICATION_TOGGLE)["key"];
 
 /**
- * Daemon-wide toggles (issues #106, #111): global for all projects,
- * persisted by the daemon, read fresh on every pipeline decision — a
- * change here takes effect without a daemon restart. Each toggle saves
- * immediately. Enabling browser notifications first asks the browser for
+ * The token field's placeholder (issue #428): a configured token is only ever
+ * announced as "configured" — the stored value itself never reaches the DOM.
+ * Exported for tests.
+ */
+export function reviewTokenPlaceholder(settings: SettingsRead | null): string {
+  return settings?.reviewAccountTokenConfigured ? "configured — type to replace" : "personal access token";
+}
+
+/**
+ * The PUT body for a review-account save (issue #428), honoring the daemon
+ * settings store's both-or-neither rule (issue #424 — one half without the
+ * other is a 400 the UI surfaces): a typed token replaces/clears the stored
+ * one wholesale (both fields travel together); a blank token field keeps
+ * whatever is stored — unless the username is also cleared, which must send
+ * both halves to take the account offline. Exported for tests.
+ */
+export function reviewAccountSaveBody(settings: SettingsRead | null, username: string, token: string): UpdateSettingsRequest {
+  const nextUsername = username.trim() === "" ? null : username.trim();
+  if (token.trim() !== "") {
+    return { reviewAccountUsername: nextUsername, reviewAccountToken: token.trim() };
+  }
+  if (nextUsername === null && (settings?.reviewAccountTokenConfigured ?? false)) {
+    return { reviewAccountUsername: null, reviewAccountToken: null };
+  }
+  return { reviewAccountUsername: nextUsername };
+}
+
+/**
+ * Review-account section (issues #407, #428): the username + write-only token
+ * fields configuring the second GitHub identity the PR loop's reviewer runs
+ * as. The token is write-only from the webapp's side — the daemon never
+ * returns it (mask-on-read), so the field stays blank and blank means "keep
+ * what is stored"; both halves travel together on save (both-or-neither,
+ * issue #424) and the daemon's 400s surface verbatim. Saves via its own
+ * button; owns its own busy/saved/error state. Exported for tests.
+ */
+export function ReviewAccountSettings({ settings }: { settings: SettingsRead | null }) {
+  const [username, setUsername] = useState("");
+  const [token, setToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async (): Promise<void> => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const updated = await apiUpdateSettings(reviewAccountSaveBody(settings, username, token));
+      setUsername(updated.reviewAccountUsername ?? "");
+      setToken("");
+      setSaved(true);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="global-worker-settings">
+      <h2 className="section-title">Review account (all projects)</h2>
+      <div className="settings-form">
+        <div className="field">
+          <label htmlFor="review-account-username">Review account username</label>
+          <input
+            id="review-account-username"
+            type="text"
+            placeholder="second GitHub account's login, e.g. pideck-reviewer"
+            value={username}
+            onChange={(e) => {
+              setUsername(e.target.value);
+              setSaved(false);
+            }}
+          />
+          <small className="field-hint">
+            A second GitHub account the PR loop&apos;s reviewer runs as — it files real PR reviews the primary account can react to. Empty = no review leg.
+          </small>
+        </div>
+        <div className="field">
+          <label htmlFor="review-account-token">Review account token</label>
+          <input
+            id="review-account-token"
+            type="password"
+            placeholder={reviewTokenPlaceholder(settings)}
+            value={token}
+            onChange={(e) => {
+              setToken(e.target.value);
+              setSaved(false);
+            }}
+          />
+          <small className="field-hint">
+            {settings?.reviewAccountTokenConfigured
+              ? "A token is stored on the daemon and never displayed back. Leave blank to keep it; clearing both fields removes the account."
+              : "GitHub personal access token for the review account (repo + PR read/write). Stored on the daemon; never displayed back."}
+          </small>
+        </div>
+      </div>
+      <div className="wizard-actions">
+        <button type="button" className="button button-primary" disabled={saving || settings === null} onClick={() => void save()}>
+          {saving ? "Saving…" : "Save review account"}
+        </button>
+        {saved && <span className="saved-note">Saved ✓</span>}
+      </div>
+      {error !== null && <p className="error-note">{error}</p>}
+    </section>
+  );
+}
+
+/**
+ * Daemon-wide settings controls (issues #106, #111, #428): global for all
+ * projects, persisted by the daemon, read fresh on every pipeline decision —
+ * a change here takes effect without a daemon restart. The toggles save
+ * immediately; the review-account fields (issue #407/#428, their own
+ * {@link ReviewAccountSettings} section) save via their own button.
+ * Enabling browser notifications first asks the browser for
  * Notification permission (a denied grant keeps the toggle off). Rendered
  * by both settings modals (issue #264). Exported for tests (the
  * toggle-display ratchet in SettingsModal.test.tsx).
  */
 export function GlobalWorkerSettings() {
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<SettingsRead | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -189,6 +301,7 @@ export function GlobalWorkerSettings() {
           <div className="settings-form">{renderToggle(NOTIFICATION_TOGGLE)}</div>
         )}
       </section>
+      <ReviewAccountSettings settings={settings} />
       {error !== null && <p className="error-note">{error}</p>}
     </>
   );
