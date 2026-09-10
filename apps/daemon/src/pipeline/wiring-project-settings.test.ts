@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TestDaemon } from "../api/testutil.js";
 import { makePullRequest as sharedMakePullRequest, restPull } from "../testing/fixtures.js";
-import { emptyRoutes, registeredDaemon } from "./wiring.test.js";
+import { emptyRoutes, registeredDaemon } from "./wiring-routing.test.js";
 
 const PROJECT = "octo-repo";
 const NOW = "2026-09-06T12:00:00.000Z";
