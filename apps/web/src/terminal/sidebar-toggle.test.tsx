@@ -1,9 +1,12 @@
 /**
- * Issue #354: the sidebar's inline collapse toggle (desktop). When the shell
- * wires `onToggleSidebar`, the sidebar renders a small toggle icon at its
- * top right — pointing left while open, right while collapsed — replacing
- * the header hamburger on desktop (which stays mobile-only, CSS-side). Pure
- * render tests: the toggle's presence, direction, and aria state.
+ * Issues #354/#373: the sidebar's inline collapse toggle (desktop). When the
+ * shell wires `onToggleSidebar`, the WORKSPACE ROW hosts a small toggle icon
+ * at its right edge (issue #373 B21a — the former top bar is gone) —
+ * pointing left while open, right while collapsed — replacing the header
+ * hamburger on desktop (which stays mobile-only, CSS-side). Pure render
+ * tests: presence, placement, direction, and aria state. The collapsed-rail
+ * visibility contract (B21b: the toggle outlives the rest of the panel) is
+ * pinned in picker-row-layout.test.tsx.
  */
 
 import { describe, expect, it } from "vitest";
@@ -27,67 +30,50 @@ const sessions: Session[] = [
 
 const workers: Worker[] = [];
 
-describe("inline sidebar toggle (issue #354)", () => {
+function renderPicker(props: { sidebarOpen?: boolean; onToggleSidebar?: () => void }): string {
+  return renderToString(
+    <SessionPicker
+      entries={[{ project, sessions, workers }]}
+      error={null}
+      selectedSessionId={null}
+      sidebarOpen={props.sidebarOpen}
+      onToggleSidebar={props.onToggleSidebar}
+      onSelectSession={() => {}}
+      onSelectProject={() => {}}
+      onOpenSettings={() => {}}
+      onSelectAllProjects={() => {}}
+      onOpenGlobalSettings={() => {}}
+      onStartOnboarding={() => {}}
+      onStartOrchestrator={() => {}}
+    />,
+  );
+}
+
+describe("inline sidebar toggle (issues #354/#373)", () => {
   it("omits the toggle when no callback is wired (mobile drawer keeps the header hamburger)", () => {
-    const html = renderToString(
-      <SessionPicker
-        entries={[{ project, sessions, workers }]}
-        error={null}
-        selectedSessionId={null}
-        onSelectSession={() => {}}
-        onSelectProject={() => {}}
-        onOpenSettings={() => {}}
-        onSelectAllProjects={() => {}}
-        onOpenGlobalSettings={() => {}}
-        onStartOnboarding={() => {}}
-        onStartOrchestrator={() => {}}
-      />,
-    );
-    expect(html).not.toContain("sidebar-toggle");
+    expect(renderPicker({})).not.toContain("sidebar-toggle");
+  });
+
+  it("lives on the workspace row (B21a) — the former top bar is gone", () => {
+    const html = renderPicker({ sidebarOpen: true, onToggleSidebar: () => {} });
+    expect(html).toContain("picker-global-row");
+    expect(html).toContain("sidebar-toggle");
+    // The toggle renders inside the workspace row, after its terminal-open
+    // chat icon (the row's right edge) — no separate .picker-topbar.
     expect(html).not.toContain("picker-topbar");
+    expect(html.indexOf("picker-global-row")).toBeLessThan(html.indexOf("sidebar-toggle"));
+    expect(html.indexOf("picker-project-chat")).toBeLessThan(html.indexOf("sidebar-toggle"));
   });
 
   it("renders pointing left (expandable → collapsible) while open", () => {
-    const html = renderToString(
-      <SessionPicker
-        entries={[{ project, sessions, workers }]}
-        error={null}
-        selectedSessionId={null}
-        sidebarOpen={true}
-        onToggleSidebar={() => {}}
-        onSelectSession={() => {}}
-        onSelectProject={() => {}}
-        onOpenSettings={() => {}}
-        onSelectAllProjects={() => {}}
-        onOpenGlobalSettings={() => {}}
-        onStartOnboarding={() => {}}
-        onStartOrchestrator={() => {}}
-      />,
-    );
-    expect(html).toContain("picker-topbar");
-    expect(html).toContain("sidebar-toggle");
+    const html = renderPicker({ sidebarOpen: true, onToggleSidebar: () => {} });
     expect(html).toContain("‹");
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("Collapse the sidebar");
   });
 
   it("renders pointing right (reopen affordance) while collapsed", () => {
-    const html = renderToString(
-      <SessionPicker
-        entries={[{ project, sessions, workers }]}
-        error={null}
-        selectedSessionId={null}
-        sidebarOpen={false}
-        onToggleSidebar={() => {}}
-        onSelectSession={() => {}}
-        onSelectProject={() => {}}
-        onOpenSettings={() => {}}
-        onSelectAllProjects={() => {}}
-        onOpenGlobalSettings={() => {}}
-        onStartOnboarding={() => {}}
-        onStartOrchestrator={() => {}}
-      />,
-    );
+    const html = renderPicker({ sidebarOpen: false, onToggleSidebar: () => {} });
     expect(html).toContain("›");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Expand the sidebar");

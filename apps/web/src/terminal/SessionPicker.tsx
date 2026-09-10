@@ -41,7 +41,7 @@ import {
   AgentRow,
   ArchivedSection,
   ProjectRow,
-  SidebarToggleBar,
+  SidebarToggle,
   WorkerRow,
   workerFor,
 } from "./picker-rows";
@@ -289,9 +289,11 @@ export interface SessionPickerProps {
    */
   sidebarOpen?: boolean;
   /**
-   * Issue #354: toggles the sidebar. When provided, the sidebar renders its
-   * own small toggle icon at its top right (desktop collapse control — the
-   * header hamburger stays mobile-only; the CSS hides this bar there).
+   * Issue #354: toggles the sidebar. When provided, the workspace row hosts
+   * the small collapse icon at its right edge (issue #373 B21a — desktop
+   * collapse control; the header hamburger stays mobile-only and the CSS
+   * hides the button there, and the collapsed rail keeps only the toggle
+   * visible, B21b).
    */
   onToggleSidebar?: () => void;
 }
@@ -328,14 +330,25 @@ function PickerFooter(props: { updateSlot?: ReactNode; onOpenAgentAssets?: () =>
   );
 }
 
+/**
+ * Issue #373 (B21a): the desktop collapse toggle slotted into the workspace
+ * row's right edge — module-level so SessionPicker stays within budget.
+ * Undefined when no toggle callback is wired (mobile keeps the header
+ * hamburger).
+ */
+function workspaceToggle(props: SessionPickerProps): ReactNode {
+  return props.onToggleSidebar !== undefined ? (
+    <SidebarToggle open={props.sidebarOpen === true} onToggle={props.onToggleSidebar} />
+  ) : undefined;
+}
+
 /** Sidebar: project name opens the board, chat icon the orchestrator (#173), workers nested beneath. */
 export function SessionPicker(props: SessionPickerProps) {
   const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
   const now = useTickingNow();
   // Issues #297/#300/#302: direct audit spawns from the ⋯ menu (no modal —
-  // their persona is the whole prompt). A rejected spawn (daemon unreachable,
-  // kind plumbing not live yet) surfaces above the footer, like the
-  // daemon-unreachable error.
+  // their persona is the whole prompt). A rejected spawn surfaces above the
+  // footer, like the daemon-unreachable error.
   const [spawnError, setSpawnError] = useState<string | null>(null);
   // Issue #311: in-flight ✕ overlay targets the confirming agent session.
   const pendingAgentTerminateId =
@@ -350,16 +363,15 @@ export function SessionPicker(props: SessionPickerProps) {
 
   return (
     <aside className="session-picker">
-      {props.onToggleSidebar !== undefined && <SidebarToggleBar open={props.sidebarOpen === true} onToggle={props.onToggleSidebar} />}
       {/* Issue #327: the project list scrolls inside its own region — the
           footer lives outside the scroll container, so its full-width
           buttons span the sidebar's whole visible width (a scrollbar inside
           the old all-scrolling sidebar shifted the footer — and the
           settings button — left of the sidebar's visual center). */}
       <div className="picker-scroll">
-        {/* Issue #259: the Workspace row (renamed global-agent entry) — name
-            opens the all-projects board, chat attaches/starts the workspace
-            agent; disabled until at least one project exists (B3). */}
+        {/* Issue #259: the Workspace row — name opens the all-projects
+            board, chat attaches/starts the workspace agent (B3: disabled
+            until a project exists). Issue #373: hosts the collapse toggle. */}
         <GlobalAgentRow
           session={props.globalAgent ?? null}
           selected={props.globalAgent?.id === props.selectedSessionId}
@@ -368,6 +380,7 @@ export function SessionPicker(props: SessionPickerProps) {
           starting={props.startingGlobalAgent === true}
           onSelectBoard={props.onSelectAllProjects}
           onStart={() => props.onStartGlobalAgent?.()}
+          toggle={workspaceToggle(props)}
         />
         {props.entries.map((entry) => (
           <ProjectSection

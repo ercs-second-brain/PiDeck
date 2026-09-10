@@ -237,9 +237,11 @@ export function AgentRow(props: {
 }
 
 /**
- * The project row (issue #108 + #114 + #167 + #173): collapse chevron, the
- * project NAME as the kanban entry, the chat icon as the orchestrator entry
- * (starting it when absent), and the ⋯ context menu. Pure rendering.
+ * The project row (issue #108 + #114 + #167 + #173 + #373): collapse chevron,
+ * the project NAME as the kanban entry, the chat icon as the orchestrator
+ * entry (starting it when absent) — on the LEFT, immediately after the name
+ * (B20) — and the ⋯ context menu, alone at the row's far right. Pure
+ * rendering.
  */
 export function ProjectRow(props: {
   projectName: string;
@@ -359,24 +361,24 @@ export function ArchivedSection(props: {
 }
 
 /**
- * Issue #354: the desktop collapse toggle — a slim bar at the sidebar's top
- * with a small icon at its right edge (pointing left while open, right while
- * collapsed). Mobile keeps the header hamburger; the CSS hides this bar on
- * the drawer breakpoint. Pure rendering.
+ * Issue #354/#373 (B21a): the desktop collapse toggle — a small icon hosted
+ * by the workspace row (the sidebar's first row) at its right edge, pointing
+ * left while open, right while collapsed; SessionPicker passes it into
+ * GlobalAgentRow's toggle slot. Mobile keeps the header hamburger (the CSS
+ * hides this button on the drawer breakpoint), and the collapsed rail keeps
+ * it as the sidebar's only visible control (B21b). Pure rendering.
  */
-export function SidebarToggleBar(props: { open: boolean; onToggle: () => void }) {
+export function SidebarToggle(props: { open: boolean; onToggle: () => void }) {
   return (
-    <div className="picker-topbar">
-      <button
-        type="button"
-        className="sidebar-toggle"
-        aria-label={props.open ? "Collapse the sidebar" : "Expand the sidebar"}
-        aria-expanded={props.open}
-        title="Toggle the sidebar"
-        onClick={props.onToggle}
-      >
-        {props.open ? "‹" : "›"}
-      </button>
-    </div>
+    <button
+      type="button"
+      className="sidebar-toggle"
+      aria-label={props.open ? "Collapse the sidebar" : "Expand the sidebar"}
+      aria-expanded={props.open}
+      title="Toggle the sidebar"
+      onClick={props.onToggle}
+    >
+      {props.open ? "‹" : "›"}
+    </button>
   );
 }
