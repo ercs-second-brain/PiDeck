@@ -4,6 +4,8 @@
  *
  * - `GET  /api/status` — daemon liveness
  * - `POST /api/projects/:projectId/spawn` — spawn a worker
+ * - `POST /api/projects/:projectId/assign` — assign an issue to the gh account
+ *   (auto-triggers a worker; unassign + re-assign when already assigned, #491)
  * - `POST /api/sessions/:sessionId/send` — deliver a message into a tmux pane
  * - `GET  /api/pi-auth` — pi provider readiness probe (issue #57)
  *
@@ -15,6 +17,9 @@
 import { workerSchema, type Worker } from "@pideck/shared";
 
 import { countProjectOccupants } from "../sessions/occupancy.js";
+import { getAuthStatus } from "../github/auth.js";
+import { mapRestIssue } from "../github/issues.js";
+import { formatRepoRef, parseRepoUrl } from "../github/gh.js";
 import type { DaemonServices } from "./context.js";
 import { nodeStatus } from "./node-version.js";
 import { HttpError, Router } from "./router.js";
@@ -22,7 +27,7 @@ import { NotFoundError } from "./projects.js";
 import { requireOr404 } from "./handlers.js";
 import { handleAgentKindSpawn } from "./agent-kind-spawn.js";
 import { deliverSpawnPrompt } from "../agent/prompt-gate.js";
-import { projectSpawnSchema, sessionSendSchema } from "./cli-routes.js";
+import { projectAssignSchema, projectSpawnSchema, sessionSendSchema, type ProjectAssignResult } from "./cli-routes.js";
 import { issueSpawnPrompt, retaskReusableWorker } from "./spawn-reuse.js";
 
 /**
@@ -120,6 +125,79 @@ async function sendToSession(services: DaemonServices, sessionId: string, messag
 }
 
 /**
+ * Assigns an issue to the daemon's gh account (issue #491) — the ONE way
+ * agents trigger a worker for an existing issue: assignment-driven spawning
+ * (issue #416) reacts to the `issue.assigned` watcher transition and the
+ * issue pipeline spawns, so the assign route never spawns a worker itself.
+ *
+ * Re-trigger semantics (issue #491): GitHub fires `issue.assigned` only on a
+ * transition, so re-assigning an already-assigned issue is a no-op up there.
+ * When the gh account is already assigned, the route first removes it (the
+ * watcher then reports `issue.unassigned`) and re-adds it — the re-assignment
+ * re-triggers the worker. Otherwise it just assigns.
+ *
+ * The route reports `retriggered: true` for the unassign+re-assign path so
+ * the CLI output can say which of the two happened.
+ */
+export async function assignIssue(
+  services: DaemonServices,
+  projectId: string,
+  issueNumber: number,
+): Promise<ProjectAssignResult> {
+  const project = requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
+  const ref = parseRepoUrl(project.repoUrl);
+  const gh = services.gh(project.repoUrl);
+
+  // The assignee is the daemon's own gh account (the one the watcher polls
+  // with): resolving it first also fails fast when gh is unauthenticated.
+  const auth = await getAuthStatus(gh);
+  if (!auth.authenticated || auth.login === null) {
+    throw new HttpError(409, "gh is not authenticated; run 'gh auth login' (or set GH_TOKEN/GITHUB_TOKEN) on the daemon host to assign issues");
+  }
+  const login = auth.login;
+
+  // The current-assignment check reads the issue itself: an unknown number,
+  // a pull-request number (the issues endpoint also serves PRs), or a gh
+  // failure all fail the route before any mutation.
+  let raw: unknown;
+  try {
+    raw = await gh.apiJson(`/repos/${formatRepoRef(ref)}/issues/${issueNumber}`);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new HttpError(502, `cannot fetch issue #${issueNumber} (repo ${formatRepoRef(ref)}): ${detail}`);
+  }
+  const record = mapRestIssue(project.id, raw);
+  if (record === null) {
+    throw new HttpError(400, `#${issueNumber} in ${formatRepoRef(ref)} is a pull request, not an issue — assign works on issues only`);
+  }
+
+  const assigneesPath = `/repos/${formatRepoRef(ref)}/issues/${issueNumber}/assignees`;
+  const alreadyAssigned = record.assignees.includes(login);
+  if (alreadyAssigned) {
+    // Unassign first so the re-assignment below is a fresh `issue.assigned`
+    // transition (the watcher fires on assignee-count growth, not on no-op
+    // writes of the same assignee set).
+    try {
+      await gh.exec(["api", "--method", "DELETE", assigneesPath, "-f", `assignees[]=${login}`]);
+    } catch (err) {
+      throw new HttpError(
+        502,
+        `cannot unassign ${login} from issue #${issueNumber} (repo ${formatRepoRef(ref)}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  try {
+    await gh.apiPost(assigneesPath, { assignees: [login] });
+  } catch (err) {
+    throw new HttpError(
+      502,
+      `cannot assign ${login} to issue #${issueNumber} (repo ${formatRepoRef(ref)}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  return { ok: true, issueNumber, assignee: login, retriggered: alreadyAssigned };
+}
+
+/**
  * Mounts `GET /api/pi-auth` on the router. Non-contract route like
  * `/api/gh-auth`: a daemon-side capability probe (which pi providers have
  * ready credentials, and which startup model pi is configured with), not a
@@ -190,4 +268,15 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
       body: { ok: true },
     }));
   });
+
+  // Issue #491: assignment is the worker trigger for existing issues — the
+  // route mutates the GitHub issue only; the issue pipeline spawns.
+  router.add("POST", "/api/projects/:projectId/assign", (ctx) =>
+    Promise.resolve(projectAssignSchema.parse(ctx.body)).then((input) =>
+      assignIssue(services, ctx.params["projectId"] as string, input.issueNumber).then((result) => ({
+        status: 200,
+        body: result,
+      })),
+    ),
+  );
 }
