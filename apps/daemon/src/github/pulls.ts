@@ -40,6 +40,10 @@ const restPullSchema = z.object({
   // Issue #408: the PR's assignees — the review-user assignment gate keys
   // off this. Optional so unexpected shapes degrade to none.
   assignees: z.array(z.object({ login: z.string() })).optional(),
+  // Issue #439: the PR body — the issue-refs claiming heuristic scans it
+  // for issue references (`Closes #N`). Optional so unexpected shapes
+  // degrade to "no extra references" instead of failing.
+  body: z.string().nullable().optional(),
 });
 
 export interface PullRequestRecord {
@@ -71,6 +75,7 @@ export function mapRestPull(projectId: string, raw: unknown): PullRequestRecord 
       ? { additions: r.additions, deletions: r.deletions }
       : {}),
     ...(r.mergeable !== undefined && r.mergeable !== null ? { mergeConflicts: !r.mergeable } : {}),
+    ...(r.body ? { body: r.body } : {}),
   });
   return { pullRequest, headSha: r.head.sha, assignees: r.assignees?.map((a) => a.login) ?? [] };
 }
@@ -108,6 +113,7 @@ query($owner: String!, $name: String!, $first: Int!) {
       nodes {
         number
         title
+        body
         url
         updatedAt
         author { login }
@@ -140,6 +146,10 @@ const graphqlPullsSchema = z.object({
           author: z.object({ login: z.string() }).nullable(),
           headRefName: z.string(),
           baseRefName: z.string(),
+          // Issue #439: the PR body — the issue-refs claiming heuristic
+          // scans it for issue references (`Closes #N`). Optional so
+          // unexpected shapes degrade to "no extra references".
+          body: z.string().nullish(),
           headRefOid: z.string(),
           reviewDecision: z.enum(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"]).nullable(),
           // Optional so unexpected shapes degrade (issue #261 pattern) — the
@@ -223,6 +233,7 @@ export async function listOpenPullRequestsBatched(gh: GhClient, projectId: strin
       updatedAt: node.updatedAt,
       additions: node.additions,
       deletions: node.deletions,
+      ...(node.body ? { body: node.body } : {}),
       ...(node.mergeable === "CONFLICTING" ? { mergeConflicts: true } : {}),
     }),
   );

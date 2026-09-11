@@ -1,7 +1,7 @@
 /**
  * Regression tests for issue #378: the orchestrator's canonical worker spawn
  * (`pideck spawn --project X --issue N --name L` — issue-backed, no
- * `--prompt`, per the shipped spawn-worker skill) left the worker pane
+ * `--prompt`) left the worker pane
  * EMPTY — the initial-prompt delivery only ran for explicit `--prompt`
  * spawns, so orchestrator-spawned workers booted into pi and sat idle.
  *

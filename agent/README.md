@@ -40,14 +40,7 @@ agent/
 │   ├── orchestrator.md        # orchestrator system prompt (daemon assembles)
 │   ├── global-agent.md        # workspace-level global agent prompt (daemon assembles)
 │   └── worker.md              # worker system prompt (daemon assembles)
-└── skills/                    # pi skill dirs (SKILL.md + optional commands/)
-    ├── using-pideck/      # daemon CLI catalog (SKILL.md + commands/)
-    ├── create-issue/          # file a GitHub issue via gh
-    ├── spawn-worker/          # request a worker spawn via the daemon CLI
-    ├── report-pr/             # worker self-report of an opened PR (issue #49)
-    ├── ci-status/             # CI status lookup
-    ├── review-comments/       # review-comment retrieval
-    ├── review-pr/             # auto review agent: review a PR, post the GitHub review (issue #107)
+└── skills/                    # pi skill dirs (SKILL.md)
     ├── bash-triage/           # findings → issues → worker batch (orchestrator default, issue #338)
     ├── concept-brief/         # raw idea → one-page verbatim brief (orchestrator default, issue #338)
     ├── prd/                   # interview → one-page PRD (orchestrator default, issue #338)
@@ -62,7 +55,7 @@ Skills follow pi's skill conventions (frontmatter with `name`/`description`, loa
 
 ### Launch-time skill enforcement (issue #356)
 
-Every PiDeck-launched pi pane (orchestrator, global agent, agent kind, worker) runs with `--no-skills`: pi's global skill discovery — including the installer's `~/.pi/agent/skills/` symlinks of this very directory, which pi would auto-load in every session on the machine — is off, so a skill restricted to one persona in the settings can never appear loaded in another persona's pane. Panes receive exactly two kinds of explicit `--skill` args instead: the store skills assigned to their persona, and the shipped **integration skills** (`SHIPPED_GLOBAL_SKILLS` in `packages/shared/src/domain.ts`: `using-pideck`, `create-issue`, `spawn-worker`, `report-pr`, `ci-status`, `review-comments`, `review-pr` — PiDeck's own CLI/plumbing documentation, unconditionally available because it describes how any PiDeck agent talks to the daemon). The two shipped tables must exactly partition `agent/skills/` (drift-guarded in `apps/daemon/src/agent/shipped-skills.test.ts`); the settings redesign (#358) may later move the global table into the per-persona assignment model. The installer's global symlinks stay: they serve pi sessions the user starts outside PiDeck, which PiDeck does not manage.
+Every PiDeck-launched pi pane (orchestrator, global agent, agent kind, worker) runs with `--no-skills`: pi's global skill discovery — including the installer's `~/.pi/agent/skills/` symlinks of this very directory, which pi would auto-load in every session on the machine — is off, so a skill restricted to one persona in the settings can never appear loaded in another persona's pane. Panes receive explicit `--skill` args for exactly the store skills assigned to their persona (issue #439: PiDeck ships no ride-every-pane "integration" skills — anything the `pideck`/`gh` CLI does deterministically lives in daemon code or the CLI's own `--help`, and procedural text lives in the persona prompts, not skills). The shipped table must exactly cover `agent/skills/` (drift-guarded in `apps/daemon/src/agent/shipped-skills.test.ts`), so every skill loadable by a pane appears in the Prompts & Skills settings. The installer's global symlinks stay: they serve pi sessions the user starts outside PiDeck, which PiDeck does not manage.
 
 ## Prompts
 
@@ -87,7 +80,7 @@ Runtime environment: the daemon sets `PD_SESSION_ID` in every agent session so w
 The skills shell out to two CLIs:
 
 1. **`gh`** (GitHub CLI) for things GitHub serves directly and the daemon only observes: issue creation, per-check CI detail, review comment bodies. No daemon involvement; auth comes from onboarding.
-2. **`pideck`** (the daemon CLI, implemented in issue #9) for daemon-owned state and actions. Every command invocation lives in exactly one place — a skill's SKILL.md or one `using-pideck/commands/*.md` page — so #9 can match names and flags.
+2. **`pideck`** (the daemon CLI, implemented in issue #9) for daemon-owned state and actions. With the integration skills gone (issue #439), the CLI's own `--help` is the command documentation and the persona prompts carry the invocations agents actually need.
 
 ### pideck CLI surface
 
@@ -105,7 +98,6 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 | `pideck diff --project <id> <pr>` | — | `GET /api/projects/:projectId/pulls/:prNumber/diff` | Returns `PullRequestDiff` |
 | `pideck spawn` | `--project <id>`, (`--issue <number>` \| `--kind <agent-kind> [--question <q>]`), `--name <label ≤20>`, `--prompt <task>` | `POST /api/projects/:projectId/spawn` | Daemon action; rejects with 409 past the project's `workerConcurrency` cap; emits `worker.spawned` (`packages/shared/src/ws.ts`). The initial `--prompt` is gated on pi auth readiness (issue #56): with no ready provider the worker holds at `spawning` (statusMessage names the fix) and the prompt is queued and delivered automatically once auth is ready. `--kind` spawns a preset-prompt agent-kind session (docs/agent-kinds.md): `researcher` requires `--question` and reports back to the calling session; `devex-audit`/`kiss-audit` report to the project orchestrator; agent kinds never take `--prompt`/`--issue` (the persona is the prompt); audit kinds additionally receive their auto-task on spawn (issue #329) — the researcher is task-less and waits for `--question` |
 | `pideck send` | `--session <id>`, `--message <text>` | `POST /api/sessions/:sessionId/send` | Delivers into the session's tmux pane (typed, then Enter) |
-| `pideck report-pr <pr>` | — | `POST /api/sessions/report-pr` | Worker session self-reports its PR (resolved from its tmux pane context); explicit report wins over the title/branch heuristic, which stays as fallback (issue #49) |
 
 `GET /api/status` (daemon liveness, the `status` backing), project mutation endpoints (`POST`/`PATCH`/`DELETE /api/projects...`), `POST /api/projects/:projectId/orchestrator` (start a project's orchestrator from the webapp terminals sidebar, issue #53), `GET`/`PUT /api/settings`, `GET /api/gh-auth` (onboarding wizard), `GET /api/update` (self-update check behind the webapp banner, issue #55), and `POST /api/update/apply` (click-to-update, gated on all workers idle — issue #76) are webapp/owner operations — no skill invokes them.
 
@@ -115,19 +107,19 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 - Status vocabularies used verbatim in prompts and skills: kanban columns `backlog`, `in_progress`, `in_review`, `done` (`KANBAN_COLUMNS`); worker statuses `spawning`, `running`, `awaiting_ci`, `fixing_ci`, `addressing_review`, `done`, `failed`, `stopped` (`workerStatusSchema`); CI `pending`, `running`, `success`, `failure`, `unknown` (`ciStatusSchema`); review `none`, `pending`, `approved`, `changes_requested` (`reviewStateSchema`).
 - `packages/shared` is the source of truth; this directory consumes the contract conceptually and must not edit or duplicate it.
 
-### Where each invocation lives
+### Where each invocation lives (issue #439)
+
+With the integration skills removed, canonical locations are the persona prompts (`agent/prompts/`), the shipped methodology skills below, and the CLIs' own docs:
 
 | Invocation | Canonical location |
 |---|---|
-| `gh issue create ...` | `skills/create-issue/SKILL.md` (bulk creation with labels/relations: `skills/bash-triage/SKILL.md`, `skills/spec-to-issues/SKILL.md`) |
-| `gh label create ...` | `skills/bash-triage/SKILL.md` (type/rank labels), `skills/spec-to-issues/SKILL.md` (phase labels) |
-| `pideck spawn ...` | `skills/spawn-worker/SKILL.md` (reference doc: `skills/using-pideck/commands/spawn.md`) |
-| `pideck pulls ...`, `pideck diff ...` | `skills/ci-status/SKILL.md` |
-| `gh pr checks ...`, `gh run view ...`, `gh api .../pulls/<n>/comments`, `gh pr view --comments` | `skills/review-comments/SKILL.md` |
-| `gh pr diff ...`, `gh pr review ...`, `gh api .../pulls/<n>/reviews` | `skills/review-pr/SKILL.md` (auto review agent, issue #107) |
-| all other `pideck` read commands | `skills/using-pideck/commands/state.md`, `commands/project.md` |
-| `pideck send ...` | `skills/using-pideck/commands/send.md` |
-| `pideck report-pr <pr>` | `skills/report-pr/SKILL.md` |
+| `gh issue create ...`, `gh label create ...` | `skills/bash-triage/SKILL.md`, `skills/spec-to-issues/SKILL.md` (single invocations: `agent/prompts/orchestrator.md`) |
+| `pideck spawn ...` | `agent/prompts/orchestrator.md`, `skills/bash-triage/SKILL.md`, `skills/spec-to-issues/SKILL.md` |
+| `pideck pulls ...`, `pideck diff ...` | `agent/prompts/orchestrator.md`, `skills/bash-triage/SKILL.md` |
+| `gh pr checks ...`, `gh run view ...`, `gh api .../pulls/<n>/comments`, `gh pr view --comments` | `agent/prompts/orchestrator.md`, `skills/bash-triage/SKILL.md` |
+| `gh pr diff ...`, `gh pr review ...`, `gh api .../pulls/<n>/reviews` | the daemon's generated review prompts (`apps/daemon/src/pipeline/prs/prompts.ts`) |
+| all other `pideck` read commands, `pideck send ...` | `pideck --help` / `pideck <command> --help` |
+| PR→worker claiming | deterministic daemon code — `apps/daemon/src/pipeline/issue-refs.ts` (no worker self-report exists; issue #439) |
 
 ## Installer notes
 

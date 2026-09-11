@@ -101,7 +101,8 @@ describe("PR prompts", () => {
     const prompt = buildAddressReviewPrompt(PR);
     expect(prompt).not.toContain("\n");
     expect(prompt).toContain("requested changes on your PR #12");
-    expect(prompt).toContain("review-comments skill");
+    expect(prompt).toContain("Fetch the findings");
+    expect(prompt).not.toContain("review-comments skill");
     expect(prompt).toContain("`agent/issue-7`");
     expect(prompt).toContain("Do not open a new PR");
   });

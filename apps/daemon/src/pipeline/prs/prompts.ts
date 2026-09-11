@@ -90,7 +90,7 @@ export function buildReviewAgentPrompt(pr: PullRequest, options: ReviewAgentProm
   const parts = [
     `[pideck] You are the review agent for PR #${pr.number} "${oneLine(pr.title)}" (${pr.url}) ` +
       `in project ${options.projectId}.`,
-    `Follow your review-pr skill: read the diff (\`gh pr diff ${pr.number} --repo ${options.repo}\` ` +
+    `Read the diff (\`gh pr diff ${pr.number} --repo ${options.repo}\` ` +
       `or \`pideck diff --project ${options.projectId} ${pr.number}\`) and review it for correctness, ` +
       "bugs, and maintainability.",
     `Then submit your findings as ONE real GitHub review — the platform triggers the PR author on review submissions, not on bare comments: ` +
@@ -115,7 +115,7 @@ export function buildReReviewPrompt(pr: PullRequest, options: ReviewAgentPromptO
       `since your last review.`,
     `Re-review the updated diff (\`gh pr diff ${pr.number} --repo ${options.repo}\`) and submit a fresh ` +
       `GitHub review via \`gh pr review ${pr.number} --repo ${options.repo}\` — request changes or approve as the findings dictate, ` +
-      `or a real COMMENT review if GitHub rejects the decisive event (self-review) — exactly one submission, as before (review-pr skill).`,
+      `or a real COMMENT review if GitHub rejects the decisive event (self-review) — exactly one submission.`,
     "Do not push commits, do not open or close PRs. Reply with a short summary when done.",
   ];
   return parts.map(oneLine).join(" ");
@@ -130,7 +130,7 @@ export function buildReReviewPrompt(pr: PullRequest, options: ReviewAgentPromptO
 export function buildAddressReviewPrompt(pr: PullRequest): string {
   const parts = [
     `[pideck] A GitHub review requested changes on your PR #${pr.number} "${oneLine(pr.title)}" (${pr.url}).`,
-    `Fetch the findings with your review-comments skill — the review body ` +
+    `Fetch the findings — the review body ` +
       `(\`gh api repos/<owner>/<repo>/pulls/${pr.number}/reviews\`) as well as the inline comments; findings can ride in the body alone.`,
     `Address every finding, commit, and push a follow-up commit to the PR branch \`${pr.headBranch}\`; ` +
       `mark threads you resolved as resolved if the platform supports it.`,

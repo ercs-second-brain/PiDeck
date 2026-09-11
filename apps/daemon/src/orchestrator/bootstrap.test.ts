@@ -24,7 +24,6 @@ import { DEFAULT_WORKER_COMMAND } from "../sessions/tmux-commands.js";
 import { Tmux, type TmuxRunner } from "../sessions/tmux.js";
 
 import { OrchestratorBootstrap, orchestratorLaunchCommand, paneCommandProbe } from "./bootstrap.js";
-import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 import { shQuote } from "../sessions/manager.js";
 
 /** Prompt template fixture carrying the documented placeholders (#12). */
@@ -112,10 +111,10 @@ describe("OrchestratorBootstrap.ensureForProject", () => {
     expect(rendered).not.toMatch(/\{\{[A-Z0-9_]+\}\}/);
 
     // pi launched in the pane with the rendered prompt + its session id,
-    // skill discovery off + the shipped integration skills (issue #356).
+    // skill discovery off (issue #356; issue #439: no shipped globals ride).
     const pane = h.daemon.tmux.sessions.get(session.tmuxSession);
     expect(pane?.paneLines).toEqual([
-      orchestratorLaunchCommand({ sessionId: session.id, promptFile: h.promptFile, skillArgs: shippedGlobalSkillArgs() }),
+      orchestratorLaunchCommand({ sessionId: session.id, promptFile: h.promptFile }),
     ]);
     expect(pane?.paneLines[0]).toContain("--no-skills");
     expect(pane?.paneLines[0]).toContain("--append-system-prompt");
@@ -218,7 +217,7 @@ describe("OrchestratorBootstrap.ensureGlobalAgent", () => {
 
     const pane = h.daemon.tmux.sessions.get(session.tmuxSession);
     expect(pane?.paneLines).toEqual([
-      orchestratorLaunchCommand({ sessionId: session.id, promptFile, skillArgs: shippedGlobalSkillArgs() }),
+      orchestratorLaunchCommand({ sessionId: session.id, promptFile }),
     ]);
     expect(pane?.paneLines[0]).toContain("pi --no-skills --append-system-prompt");
   });
@@ -300,8 +299,8 @@ describe("end-to-end: chat-requested spawn reaches the daemon spawn path", () =>
     const pane = h.daemon.tmux.sessions.get(orch.tmuxSession);
     expect(pane?.paneLines.at(-1)).toContain("Please spawn a worker for issue #5.");
 
-    // 3. The orchestrator agent answers by invoking the spawn-worker
-    //    skill's pinned CLI invocation (agent/skills/spawn-worker). This is
+    // 3. The orchestrator agent answers by invoking the canonical spawn
+    //    invocation (`pideck spawn --project X --issue N --name L`). This is
     //    the real CLI's spawn path over the real HTTP API — fake CLI exec.
     const exit = await run(
       ["spawn", "--project", h.project.id, "--issue", "5", "--name", "issue-5"],
@@ -321,9 +320,9 @@ describe("end-to-end: chat-requested spawn reaches the daemon spawn path", () =>
 
     const workerSessions = [...h.daemon.tmux.sessions.entries()].filter(([name]) => name.endsWith("-worker-1"));
     expect(workerSessions).toHaveLength(1);
-    // Default worker command (issue #356): discovery off + shipped
-    // integration skills; no per-persona shaping without stored assets.
-    expect(workerSessions[0]?.[1].command).toEqual([...DEFAULT_WORKER_COMMAND, ...shippedGlobalSkillArgs()]);
+    // Default worker command (issue #356): discovery off; no persona
+    // shaping without stored assets (issue #439: no shipped globals).
+    expect(workerSessions[0]?.[1].command).toEqual([...DEFAULT_WORKER_COMMAND]);
 
     // 4b. Issue #378: the worker pane RECEIVED the issue context — the
     //     orchestrator's issue-backed spawn (no --prompt) delivers the

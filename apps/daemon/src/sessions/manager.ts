@@ -35,7 +35,6 @@ import { isArchivedWorkerSession, isTerminalWorkerStatus, launchPath, reconcileS
 import { confirmPaneSubmitted, waitForPaneInputReady } from "./pane-ready.js";
 import { Tmux } from "./tmux.js";
 import { DEFAULT_WORKER_COMMAND, nextTmuxSessionName, serializeCommand } from "./tmux-commands.js";
-import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 
 export { type ReconcileResult } from "./reconcile.js";
 
@@ -127,8 +126,7 @@ export class SessionManager {
      * Per-persona user assets (issue #315): the default worker command gains
      * the worker persona's deployed prompt override (`--append-system-prompt`)
      * and applied skills (`--skill <file>`). Absent (default): shipped
-     * defaults only (`pi --no-skills` + shipped integration skills, issue
-     * #356).
+     * defaults only (`pi --no-skills`, issue #356).
      */
     personaAssets?: PersonaLaunchAssets;
     /**
@@ -214,16 +212,14 @@ export class SessionManager {
    * The default worker pane command (issue #315): pi (discovery off, issue
    * #356) plus the worker persona's user assets — the deployed prompt
    * override (via `--append-system-prompt`; no override = no appended
-   * prompt, the shipped worker conventions stay prompt-level), applied
-   * skills (`--skill`), and PiDeck's shipped integration skills (explicit
-   * `--skill <dir>`; pi's global discovery is off — issue #356). Recorded
+   * prompt, the shipped worker conventions stay prompt-level) and applied
+   * skills (`--skill`; issue #439: no shipped globals ride along). Recorded
    * on the session, so relaunch/reconcile re-run the identical command
    * (issues #27/#117).
    */
   private defaultWorkerCommand(): string[] {
     return [
       ...DEFAULT_WORKER_COMMAND,
-      ...shippedGlobalSkillArgs(),
       ...(this.personaAssets?.promptLaunchArgs("worker") ?? []),
       ...(this.personaAssets?.skillLaunchArgs("worker") ?? []),
     ];

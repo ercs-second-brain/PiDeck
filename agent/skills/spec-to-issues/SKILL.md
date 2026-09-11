@@ -8,7 +8,7 @@ trigger: "Turning a PRD into a phased, worker-ready GitHub issue graph."
 
 Turn a concept brief + PRD into a phased issue breakdown where PiDeck workers can proceed in parallel and rarely collide. The skill's core discipline: **plan the whole graph before creating anything**, and treat file-level ownership as a first-class constraint, not an afterthought.
 
-You are the curator: you plan, file, verify, and report to the human — you never implement. Execution is workers' work (the `spawn-worker` skill), spawned in file-disjoint waves once the graph exists.
+You are the curator: you plan, file, verify, and report to the human — you never implement. Execution is workers' work (`pideck spawn`), spawned in file-disjoint waves once the graph exists.
 
 ## Inputs
 
@@ -72,7 +72,7 @@ gh label create phase-0 --color 1D76DB --force       # once per phase label
 gh issue create -R OWNER/REPO --title "..." --body-file - --label phase-1
 ```
 
-- **Create in dependency (topological) order** so issue numbers exist when you reference them. Express relations as task-list items (`- [ ] #12`) in the "Depends on" section, and add native "blocked by" relationship links for edges the daemon should enforce (see the `create-issue` skill): PiDeck does not spawn workers for issues with unresolved blockers, so honest relations keep the first spawnable wave accurate. After creating all issues, edit Phase 0–2 issues to add a "Blocks" task list pointing forward, so both directions are navigable.
+- **Create in dependency (topological) order** so issue numbers exist when you reference them. Express relations as task-list items (`- [ ] #12`) in the "Depends on" section, and add native "blocked by" relationship links for edges the daemon should enforce: PiDeck does not spawn workers for issues with unresolved blockers, so honest relations keep the first spawnable wave accurate. After creating all issues, edit Phase 0–2 issues to add a "Blocks" task list pointing forward, so both directions are navigable.
 - Phases get labels (`phase-0`…`phase-3`); milestones only if the repo already uses them.
 - Batch-verify after creation: `gh issue list --label phase-1 --json number,title` etc.
 
@@ -84,7 +84,7 @@ Before declaring done, check the created graph:
 - **PRD coverage** — every P0 feature maps to ≥1 issue; P1s accounted for; P2s parked or consciously dropped.
 - **Parallelism sanity** — report width per phase ("Phase 1: 5 issues runnable concurrently") and flag any chain deeper than 3.
 
-Close with a summary table: issue #, title, phase, depends on, and the first wave of issues a worker could start **right now** (no unresolved dependencies) — then offer to run the batch, bash-triage-style: spawn one worker per runnable issue (`pideck spawn --project {{PROJECT_ID}} --issue <number> --name "<label>"`), refill freed capacity as merges land, and report progress to the human after each wave. See the `spawn-worker` skill for the invocation and its pre-flight checks.
+Close with a summary table: issue #, title, phase, depends on, and the first wave of issues a worker could start **right now** (no unresolved dependencies) — then offer to run the batch, bash-triage-style: spawn one worker per runnable issue (`pideck spawn --project {{PROJECT_ID}} --issue <number> --name "<label>"`), refill freed capacity as merges land, and report progress to the human after each wave. Pre-flight: check for an existing live worker first, keep `--name` ≤ 20 chars, and respect `settings.workerConcurrency` from `pideck project get {{PROJECT_ID}} --json`.
 
 ## Anti-patterns
 

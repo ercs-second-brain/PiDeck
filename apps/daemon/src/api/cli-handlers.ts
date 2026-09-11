@@ -5,8 +5,11 @@
  * - `GET  /api/status` — daemon liveness
  * - `POST /api/projects/:projectId/spawn` — spawn a worker
  * - `POST /api/sessions/:sessionId/send` — deliver a message into a tmux pane
- * - `POST /api/sessions/report-pr` — worker session self-reports its PR (issue #49)
  * - `GET  /api/pi-auth` — pi provider readiness probe (issue #57)
+ *
+ * PR→worker association has no CLI route (issue #439): claiming is
+ * deterministic daemon code (pipeline/issue-refs.ts), so there is no
+ * worker self-report path at all.
  */
 
 import { workerSchema, type Project, type Worker } from "@pideck/shared";
@@ -19,7 +22,7 @@ import { NotFoundError } from "./projects.js";
 import { requireOr404 } from "./handlers.js";
 import { handleAgentKindSpawn } from "./agent-kind-spawn.js";
 import { deliverSpawnPrompt } from "../agent/prompt-gate.js";
-import { projectSpawnSchema, sessionReportPrSchema, sessionSendSchema } from "./cli-routes.js";
+import { projectSpawnSchema, sessionSendSchema } from "./cli-routes.js";
 import { buildIssueSpawnPrompt } from "../pipeline/issues/prompts.js";
 import { mapRestIssue } from "../github/issues.js";
 import { formatRepoRef, parseRepoUrl } from "../github/gh.js";
@@ -28,8 +31,8 @@ import { formatRepoRef, parseRepoUrl } from "../github/gh.js";
  * The initial prompt an issue-backed spawn delivers into the fresh pane when
  * the caller supplied none (issue #378, the #266 parity for manual spawns):
  * the orchestrator's canonical invocation (`pideck spawn --project X --issue
- * N --name L`, per the shipped spawn-worker skill) carries no `--prompt`, so
- * before this resolution the worker booted into pi and sat idle — the exact
+ * N --name L`) carries no `--prompt`, so before this resolution the worker
+ * booted into pi and sat idle — the exact
  * empty-idle-worker bug #266 fixed for auto-spawns, unfixed on the CLI path.
  * The same builder the auto-spawn pipeline uses renders the issue context
  * from the REST-fetched issue; a number that turns out to be a pull request
@@ -128,36 +131,6 @@ export async function spawnWorker(
   return workerParsed;
 }
 
-/**
- * Explicit PR→worker report (`pideck report-pr`, issue #49): the calling
- * worker session reports the PR it opened. The CLI self-identifies the tmux
- * session from its own pane context, so the daemon resolves the worker
- * behind that session — no session id to guess or mistype.
- *
- * Precedence (issue #49): an explicit report **wins**. The wiring's
- * title/branch heuristic (`associateWorkerPr`) stays as the fallback and
- * only ever fills workers whose `prNumber` is still null; `setWorkerPr`
- * overwrites any stale heuristic value, and the heuristic never re-claims a
- * worker that already has a PR recorded.
- */
-export async function reportWorkerPr(
-  services: DaemonServices,
-  input: { tmuxSession: string; prNumber: number },
-): Promise<Worker> {
-  const session = requireOr404(
-    services.sessions.listSessions().find((s) => s.tmuxSession === input.tmuxSession),
-    `unknown tmux session: ${input.tmuxSession}`,
-  );
-  if (session.role !== "worker" || session.workerId === null) {
-    throw new HttpError(403, `session ${session.id} is not a worker session; report-pr is worker-only`);
-  }
-  const worker = requireOr404(
-    services.sessions.getWorker(session.workerId),
-    `worker ${session.workerId} (session ${session.id}) not found`,
-  );
-  return workerSchema.parse(services.sessions.setWorkerPr(worker.id, input.prNumber));
-}
-
 /** Delivers a message into a session's tmux pane (typed, then Enter). */
 async function sendToSession(services: DaemonServices, sessionId: string, message: string): Promise<void> {
   const session = services.sessions.listSessions().find((s) => s.id === sessionId);
@@ -234,14 +207,6 @@ export function registerCliRoutes(router: Router, services: DaemonServices): voi
     return sendToSession(services, ctx.params["sessionId"] as string, body.message).then(() => ({
       status: 200,
       body: { ok: true },
-    }));
-  });
-
-  router.add("POST", "/api/sessions/report-pr", (ctx) => {
-    const body = sessionReportPrSchema.parse(ctx.body);
-    return reportWorkerPr(services, body).then((worker) => ({
-      status: 200,
-      body: worker,
     }));
   });
 }

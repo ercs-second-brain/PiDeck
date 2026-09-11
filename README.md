@@ -103,7 +103,7 @@ With a project connected (onboarding wizard), this is what works end to end toda
 
 1. `pideck status` — daemon is up.
 2. Open the webapp → your project's board; issues and open PRs (with `ciStatus`/`reviewState`) appear as kanban cards pulled live from GitHub.
-3. `pideck sessions --project <id>` — the project's orchestrator session exists; open **Terminals** in the webapp and hold a conversation with it. It can file issues (`create-issue` skill) and spawn workers (`spawn-worker` skill).
+3. `pideck sessions --project <id>` — the project's orchestrator session exists; open **Terminals** in the webapp and hold a conversation with it. It can file issues (`gh`) and spawn workers (`pideck spawn`).
 4. Assignment-driven spawn (issue #416) — file an issue, then assign any GitHub user to it when you want a worker (and it is not blocked via native blocked-by links). Within a poll interval the daemon spawns a worker on its own: a worker tmux session appears in **Terminals** and the issue's card moves to `in_progress`. Re-assigning never double-spawns; unassigning or closing the issue archives its workers. (Manual spawning still works: from the orchestrator chat, or `pideck spawn --project <id> --issue <n> --name "my-worker"`.)
 5. When the worker pushes a PR, it appears on the board (`in_review`, with combined CI status); read the full diff at `projects/:id/pulls/:n` in the webapp or `pideck diff --project <id> <n>`.
 6. CI auto-fix and review addressing — if the PR's CI fails, the daemon prompts the worker to fix it (bounded retries); a new review comment is delivered to the worker for a follow-up commit. Both show up in the worker's terminal and the PR card tracks state until merge (or the attempt limit is exhausted).

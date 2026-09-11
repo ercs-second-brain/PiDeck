@@ -22,7 +22,7 @@ export const projectSpawnSchema = z
   .object({
     /** GitHub issue the worker works; omitted for freeform (`--prompt`) workers. */
     issueNumber: refNumberSchema.optional(),
-    /** Sidebar label, ≤ 20 characters (pinned by the spawn-worker skill). */
+    /** Sidebar label, ≤ 20 characters (pinned by `pideck spawn --help`). */
     name: z.string().min(1).max(20),
     /** Initial task prompt delivered into the worker's pane. */
     prompt: z.string().min(1).optional(),
@@ -49,15 +49,3 @@ export const sessionSendSchema = z.object({
   message: z.string().min(1),
 });
 
-/**
- * `POST /api/sessions/report-pr` — a worker session reports the PR it
- * opened (issue #49). The CLI resolves `tmuxSession` from its own pane
- * context (`TMUX` + `tmux display-message`), so the body carries the
- * calling session's identity, not a caller-chosen id.
- */
-export const sessionReportPrSchema = z.object({
-  /** Tmux session name the calling CLI self-identified from its pane. */
-  tmuxSession: z.string().min(1),
-  /** PR number the worker opened. */
-  prNumber: refNumberSchema,
-});

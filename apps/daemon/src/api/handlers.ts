@@ -12,7 +12,8 @@
  * - `cli-handlers.ts` — the CLI action routes finalized in issue #9
  *   (documented in agent/README.md): `GET /api/status`,
  *   `POST /api/projects/:projectId/spawn`, `POST /api/sessions/:sessionId/send`,
- *   `POST /api/sessions/report-pr` (issue #49), plus the pi-auth probe;
+ *   plus the pi-auth probe. PR→worker claiming has no route (issue #439):
+ *   it is deterministic daemon code, not a worker self-report.
  * - `gh-auth.ts` — the gh auth/repo-creation probe (`GET /api/gh-auth`).
  */
 

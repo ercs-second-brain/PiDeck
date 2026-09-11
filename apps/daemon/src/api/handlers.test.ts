@@ -13,7 +13,7 @@ import { workerSchema } from "@pideck/shared";
 import { deriveBoard } from "./kanban.js";
 import { NotFoundError, ProjectStore, slugify } from "./projects.js";
 import { contractHandlers } from "./handlers.js";
-import { reportWorkerPr, spawnWorker } from "./cli-handlers.js";
+import { spawnWorker } from "./cli-handlers.js";
 import { issueRoute, testDaemon, UPDATED_AT } from "./testutil.js";
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -117,52 +117,6 @@ describe("deriveBoard", () => {
     const card = board.columns.find((c) => c.column === "in_progress")?.cards[0];
     expect(card?.workerId).toBe("worker-1");
     expect(card?.column).toBe("in_progress");
-  });
-});
-
-describe("reportWorkerPr (explicit PR→worker report, issue #49)", () => {
-  /** Spawns one issue worker in the test daemon and returns it with its session. */
-  async function spawnedWorker(daemon: ReturnType<typeof testDaemon>) {
-    const { session, worker } = await daemon.services.sessions.spawnWorker("o-r", { issueNumber: 7 });
-    return { session, worker };
-  }
-
-  it("associates a worker session's explicit PR report", async () => {
-    const daemon = testDaemon();
-    const { session, worker } = await spawnedWorker(daemon);
-    // Before the report the heuristic fallback may still claim the worker.
-    expect(daemon.services.sessions.getWorker(worker.id)?.prNumber).toBeNull();
-    const updated = await reportWorkerPr(daemon.services, { tmuxSession: session.tmuxSession, prNumber: 42 });
-    expect(updated.prNumber).toBe(42);
-    expect(daemon.services.sessions.getWorker(worker.id)?.prNumber).toBe(42);
-  });
-
-  it("explicit report overrides a stale heuristic association", async () => {
-    const daemon = testDaemon();
-    const { session, worker } = await spawnedWorker(daemon);
-    // Simulate a stale heuristic value (wrong PR recorded by the wiring).
-    daemon.services.sessions.setWorkerPr(worker.id, 7);
-    const updated = await reportWorkerPr(daemon.services, { tmuxSession: session.tmuxSession, prNumber: 42 });
-    expect(updated.prNumber).toBe(42);
-  });
-
-  it("workers without a report keep prNumber null (heuristic fallback stays in charge)", async () => {
-    const daemon = testDaemon();
-    const { worker } = await spawnedWorker(daemon);
-    // The wiring's title/branch heuristic (wiring.test.ts) claims exactly
-    // these unassociated workers; the report path must not pre-fill them.
-    expect(daemon.services.sessions.getWorker(worker.id)?.prNumber).toBeNull();
-  });
-
-  it("rejects non-worker sessions and unknown tmux sessions", async () => {
-    const daemon = testDaemon();
-    const orchestrator = await daemon.services.sessions.ensureOrchestrator("o-r");
-    await expect(
-      reportWorkerPr(daemon.services, { tmuxSession: orchestrator.tmuxSession, prNumber: 1 }),
-    ).rejects.toThrow(/not a worker session/);
-    await expect(
-      reportWorkerPr(daemon.services, { tmuxSession: "pideck-x-worker-99", prNumber: 1 }),
-    ).rejects.toThrow(NotFoundError);
   });
 });
 

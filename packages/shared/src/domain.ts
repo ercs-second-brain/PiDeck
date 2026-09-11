@@ -199,6 +199,14 @@ export const pullRequestSchema = z.object({
   /** Lines deleted across the PR's diff — see {@link pullRequestSchema `additions`}. */
   deletions: z.number().int().nonnegative().optional(),
   /**
+   * PR body (description), when the producer fetched it (issue #439): the
+   * worker↔PR association scans it for issue references (`Closes #46`),
+   * so a PR whose title/head branch does not name the issue is still
+   * claimed deterministically. Optional: consumers must treat an absent
+   * body as "no extra references".
+   */
+  body: z.string().optional(),
+  /**
    * Whether GitHub reports the PR as conflicting with its base branch
    * (issue #322). Only the explicit-conflict producer sets it; `undefined`
    * (legacy payloads, GitHub still computing) means "not known to
@@ -373,34 +381,6 @@ export const SHIPPED_DEFAULT_SKILLS = [
 
 /** Ids of the shipped skills that are per-persona assignable (the store-seeded table above). */
 export type ShippedDefaultSkillId = (typeof SHIPPED_DEFAULT_SKILLS)[number]["name"];
-
-/**
- * The shipped integration skills that are NOT per-persona assignable (issue
- * #356): they describe how agents talk to PiDeck itself (the `pideck` CLI
- * catalog, spawn/report/review plumbing), so they ride EVERY PiDeck-launched
- * pane as an explicit `--skill <dir>` argv pair — not just the personas a
- * store row happens to list.
- *
- * Enforcement model (issue #356): every PiDeck-launched pi pane runs with
- * `--no-skills` — pi's global skill discovery (e.g. the installer's
- * `~/.pi/agent/skills/` symlinks) is OFF for PiDeck panes, so the
- * per-persona assignment in the agent-assets store is the single source of
- * truth for what a pane loads. Explicit `--skill` args still load: the
- * persona's assigned store skills plus these shipped integration skills.
- * The two shipped tables must exactly partition `agent/skills/` (drift
- * guard: apps/daemon/src/agent/shipped-skills.test.ts). The settings
- * redesign (#358) may later move these into the per-persona assignment
- * model; until then they stay unconditionally available on every pane.
- */
-export const SHIPPED_GLOBAL_SKILLS = [
-  "using-pideck",
-  "create-issue",
-  "spawn-worker",
-  "report-pr",
-  "ci-status",
-  "review-comments",
-  "review-pr",
-] as const satisfies readonly string[];
 
 // ---------------------------------------------------------------------------
 // Session (tmux-backed terminal sessions)
