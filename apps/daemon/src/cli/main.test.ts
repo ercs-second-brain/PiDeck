@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CliError, parseArgs, positional, requireFlag } from "./args.js";
 import { DaemonClient } from "./client.js";
 import { run } from "./main.js";
-import { currentTmuxSession } from "./tmux-context.js";
 import type { Project } from "@pideck/shared";
 
 describe("parseArgs", () => {
@@ -99,20 +98,6 @@ describe("run() command dispatch", () => {
     override async send(sessionId: string, message: string) {
       this.calls.push(["send", { sessionId, message }]);
     }
-    override async reportPr(tmuxSession: string, prNumber: number) {
-      this.calls.push(["reportPr", { tmuxSession, prNumber }]);
-      return {
-        id: "worker-1",
-        projectId: "p1",
-        sessionId: "sess-1",
-        issueNumber: 5,
-        prNumber,
-        status: "running" as const,
-        statusMessage: null,
-        startedAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      };
-    }
   }
 
   let logSpy: ReturnType<typeof vi.spyOn>;
@@ -146,7 +131,7 @@ describe("run() command dispatch", () => {
     expect(client.calls.at(-1)).toEqual(["send", { sessionId: "sess-1", message: "hello" }]);
   });
 
-  it("rejects a >20 char --name (pinned by the spawn-worker skill)", async () => {
+  it("rejects a >20 char --name (pinned by pideck spawn --help)", async () => {
     const client = new StubClient();
     await expect(run(["spawn", "--project", "p1", "--name", "x".repeat(21)], client)).rejects.toThrow(/≤ 20/);
     expect(client.calls).toHaveLength(0);
@@ -167,57 +152,6 @@ describe("run() command dispatch", () => {
     await expect(run(["diff", "--project", "p1", "abc"], client)).rejects.toThrow(/pr-number/);
   });
 
-  it("report-pr sends the self-identified tmux session and PR number (issue #49)", async () => {
-    const client = new StubClient();
-    const code = await run(
-      ["report-pr", "42"],
-      client,
-      { tmuxSession: async () => "pideck-p1-worker-1" },
-    );
-    expect(code).toBe(0);
-    expect(client.calls.at(-1)).toEqual(["reportPr", { tmuxSession: "pideck-p1-worker-1", prNumber: 42 }]);
-  });
-
-  it("report-pr requires a numeric PR argument and a tmux context", async () => {
-    const client = new StubClient();
-    await expect(run(["report-pr", "abc"], client, { tmuxSession: async () => "s" })).rejects.toThrow(/pr-number/);
-    await expect(
-      run(["report-pr"], client, { tmuxSession: async () => "s" }),
-    ).rejects.toThrow(/pr-number/);
-    // No tmux context → the CLI refuses before talking to the daemon.
-    await expect(
-      run(["report-pr", "42"], client, {
-        tmuxSession: async () => {
-          throw new CliError("report-pr must run inside an pideck worker tmux session");
-        },
-      }),
-    ).rejects.toThrow(/tmux session/);
-    expect(client.calls).toHaveLength(0);
-  });
-});
-
-describe("currentTmuxSession (report-pr context resolution)", () => {
-  it("throws when not inside tmux (no TMUX env)", async () => {
-    await expect(currentTmuxSession({})).rejects.toThrow(/inside an pideck worker tmux session/);
-  });
-
-  it("resolves the session name via tmux display-message in the pane's context", async () => {
-    const calls: string[][] = [];
-    const name = await currentTmuxSession({ TMUX: "/tmp/tmux-0/default,1,0" }, async (args) => {
-      calls.push(args);
-      return "pideck-p1-worker-1\n";
-    });
-    expect(name).toBe("pideck-p1-worker-1");
-    expect(calls).toEqual([["display-message", "-p", "#S"]]);
-  });
-
-  it("maps tmux failures to a CliError", async () => {
-    await expect(
-      currentTmuxSession({ TMUX: "/tmp/tmux-0/default,1,0" }, async () => {
-        throw new Error("no server running");
-      }),
-    ).rejects.toThrow(CliError);
-  });
 });
 
 describe("DaemonClient against a live daemon", () => {

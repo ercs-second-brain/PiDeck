@@ -62,7 +62,7 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
     h.advance(5 * 60_000);
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(1);
-    expect(h.sessions.prompts[0]!.keys).toContain("review-comments skill");
+    expect(h.sessions.prompts[0]!.keys).toContain("Fetch the findings");
   });
 
   it("a review landing alongside its inline comments is delivered once (comments branch wins)", async () => {

@@ -6,7 +6,7 @@ trigger: "Turning an idea or concept brief into a PRD."
 
 # PRD Builder
 
-Turn a rough idea into a one-page PRD that a busy human can skim in 2 minutes. The work happens in conversation: interview, challenge, then write. You are the curator having this conversation with the human — implementation itself is later delegated to workers (typically via the `spec-to-issues` skill filing the graph, then `spawn-worker` running it).
+Turn a rough idea into a one-page PRD that a busy human can skim in 2 minutes. The work happens in conversation: interview, challenge, then write. You are the curator having this conversation with the human — implementation itself is later delegated to workers (typically via the `spec-to-issues` skill filing the graph, then `pideck spawn` running it).
 
 ## Process
 

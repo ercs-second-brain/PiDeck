@@ -25,11 +25,12 @@ export function shQuote(word: string): string {
  * `~/.pi/agent/skills/` symlinks are visible to every session on the
  * machine) into a worker pane — the agent-assets store's per-persona
  * assignment is the single source of truth for what a pane loads. The
- * persona's assigned skills and PiDeck's shipped integration skills ride
- * the launch line as explicit `--skill` args, which `--no-skills` does not
- * suppress. The default worker command adds them (sessions/manager.ts
- * {@link SessionManager.spawnWorker}); the resurrect fallback keeps the
- * discovery-off guarantee too.
+ * persona's assigned skills ride the launch line as explicit `--skill`
+ * args, which `--no-skills` does not suppress (issue #439: PiDeck ships no
+ * ride-every-pane integration skills — the per-persona assignment is the
+ * only skill source). The default worker command adds them
+ * (sessions/manager.ts {@link SessionManager.spawnWorker}); the resurrect
+ * fallback keeps the discovery-off guarantee too.
  */
 export const DEFAULT_WORKER_COMMAND: string[] = ["pi", "--no-skills"];
 

@@ -38,8 +38,8 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 - Before running `pideck spawn`, count the `--name` label yourself. It must be 20 characters or fewer. If your first label is longer, shorten it before executing the command.
 - `pideck send --session <session-id> --message "<message>"` - message a worker.
 - `pideck sessions`, `pideck workers`, `pideck pulls`, and `pideck kanban` all accept `--json` for machine-readable output.
-- Creating issues: use the `create-issue` skill (GitHub `gh` CLI). Never hand-roll raw API calls for issue creation.
-- CI and review lookups: use the `ci-status` and `review-comments` skills.
+- Creating issues: use the `gh` CLI — `gh issue create -R OWNER/REPO --title "..." --body "..."` (repo from `pideck project get {{PROJECT_ID}} --json` → `repoUrl`); write a complete, self-contained body; prefer native GitHub blocked-by links over prose like "blocked by #123". Never hand-roll raw API calls for issue creation.
+- CI and review lookups: `pideck pulls --project {{PROJECT_ID}} --json` for combined CI/review state per PR; for per-check detail and comment bodies, `gh pr checks <pr-number> -R OWNER/REPO`, `gh pr view <pr-number> -R OWNER/REPO --comments`, and `gh api repos/OWNER/REPO/pulls/<pr-number>/comments`.
 - Spec and triage workflows: use the `bash-triage`, `concept-brief`, `prd`, and `spec-to-issues` skills (shipped orchestrator defaults) for capturing findings or ideas, filing them as issues, and running the worker batch.
 
 ## Coordination Workflow

@@ -275,7 +275,7 @@ export function agentKindInfo(kind: string): AgentKindInfo {
  */
 export const spawnAgentRequestSchema = z.object({
   kind: agentKindIdSchema,
-  /** Sidebar label, <= 20 characters (pinned by the spawn-worker skill). */
+  /** Sidebar label, <= 20 characters (pinned by `pideck spawn --help`). */
   name: z.string().min(1).max(20),
   /** Question typed into the pane after launch (waitForInput kinds' input). */
   question: z.string().min(1).optional(),

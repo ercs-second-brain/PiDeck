@@ -4,7 +4,7 @@
  * prompt`) and applied skills (`--skill`) — recorded on the session so
  * relaunch/reconcile re-run the identical command. An explicit `command`
  * option still wins, and with no assets the command is discovery-off pi
- * plus PiDeck's shipped integration skills (issue #356).
+ * (issue #356; issue #439: no shipped integration skills ride along).
  *
  * Enforcement (issue #356): pi's global skill discovery is OFF
  * (`--no-skills`) on every PiDeck-launched pane, so a skill restricted to
@@ -21,7 +21,6 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { testDaemon, type TestDaemon } from "../api/testutil.js";
-import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 import { DEFAULT_WORKER_COMMAND, serializeCommand } from "./manager.js";
 
 describe("worker pane persona assets (issue #315)", () => {
@@ -47,8 +46,8 @@ describe("worker pane persona assets (issue #315)", () => {
   it("keeps the shipped-defaults-only command when no worker assets are applied", async () => {
     const daemon: TestDaemon = testDaemon();
     const { session } = await daemon.services.sessions.spawnWorker("p1", { issueNumber: 8 });
-    // Discovery off + the shipped integration skills; no persona shaping.
-    expect(session.command).toBe(serializeCommand([...DEFAULT_WORKER_COMMAND, ...shippedGlobalSkillArgs()]));
+    // Discovery off; no persona shaping (issue #439: no shipped globals).
+    expect(session.command).toBe(serializeCommand([...DEFAULT_WORKER_COMMAND]));
   });
 
   it("enforces the persona restriction: an orchestrator-only skill never rides a worker pane (issue #356)", async () => {

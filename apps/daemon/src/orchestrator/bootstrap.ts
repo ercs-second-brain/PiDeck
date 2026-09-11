@@ -23,9 +23,9 @@
  *   daemon boot never doubles a live conversation; after a reboot the
  *   reconcile-resurrected plain shell is detected and pi is relaunched.
  *
- * The orchestrator's actions (create issues via the `create-issue` skill,
- * spawn workers via the `spawn-worker` skill → `pideck spawn`) flow
- * through the daemon CLI/API; this module only puts the agent in the pane.
+ * The orchestrator's actions (issue filing via `gh`, worker spawns via
+ * `pideck spawn`) flow through the daemon CLI/API; this module only puts
+ * the agent in the pane.
  */
 
 import { readFileSync } from "node:fs";
@@ -41,7 +41,6 @@ import { serializeCommand, shQuote, type SessionManager } from "../sessions/mana
 import type { Tmux } from "../sessions/tmux.js";
 
 import { findAgentPromptPath, orchestratorPromptValues, renderGlobalAgentPrompt, renderOrchestratorPrompt, renderTemplate } from "./prompt.js";
-import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 
 /** Rendered prompt file written into the project's state dir. */
 const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
@@ -62,6 +61,9 @@ const AGENT_PANE_COMMANDS = new Set(["pi", "node"]);
  * skills, so pi's global skill locations (e.g. the installer's
  * `~/.pi/agent/skills/` symlinks, visible to every session on the machine)
  * must not leak other personas' skills into the pane.
+ *
+ * PiDeck ships no ride-every-pane integration skills (issue #439): the
+ * panes' `--skill` args are exactly the persona's assigned store skills.
  */
 export function orchestratorLaunchCommand(options: { sessionId: string; promptFile: string; skillArgs?: string[] }): string {
   return [
@@ -88,8 +90,7 @@ export interface OrchestratorBootstrapDeps {
    * Per-persona user assets (issue #315): prompt overrides take precedence
    * over the shipped templates; applied skills ride the launch lines as
    * `--skill <file>`. Absent (default): shipped defaults, no persona
-   * shaping (panes still run with discovery off + shipped integration
-   * skills — issue #356).
+   * shaping (panes still run with discovery off — issue #356).
    */
   agentAssets?: PersonaLaunchAssets;
   /**
@@ -209,9 +210,8 @@ export class OrchestratorBootstrap {
   /**
    * The orchestrator-pane launch line for one persona (orchestrator or
    * global agent): pi with the rendered prompt file plus the persona's
-   * applied user skills (issue #315) and PiDeck's shipped integration
-   * skills (issue #356 — discovery is off, so they ride the line
-   * explicitly).
+   * applied user skills (issue #315 — discovery is off, so they ride the
+   * line explicitly; issue #439: no shipped globals ride along).
    */
   private personaLaunchLine(persona: Persona): (sessionId: string, promptFile: string) => string {
     return (sessionId, promptFile) =>
@@ -223,12 +223,12 @@ export class OrchestratorBootstrap {
   }
 
   /**
-   * The full `--skill` argv for a persona's pane: the shipped integration
-   * skills (every PiDeck pane gets them; issue #356) followed by the store
-   * skills assigned to the persona (issue #315).
+   * The full `--skill` argv for a persona's pane: the store skills assigned
+   * to the persona (issue #315). PiDeck ships no ride-every-pane skills
+   * (issue #439) — the per-persona assignment is the only skill source.
    */
   private skillLaunchArgs(persona: string): string[] {
-    return [...shippedGlobalSkillArgs(), ...(this.agentAssets?.skillLaunchArgs(persona) ?? [])];
+    return this.agentAssets?.skillLaunchArgs(persona) ?? [];
   }
 
   /**

@@ -11,7 +11,6 @@ import {
   sanitizeTmuxSegment,
   serializeCommand,
 } from "./manager.js";
-import { shippedGlobalSkillArgs } from "../agent/shipped-skills.js";
 import { SessionRegistry } from "./registry.js";
 import { FakeTmuxRunner } from "./testing/fake-tmux.js";
 import { FakeGitRunner } from "./testing/fake-git.js";
@@ -119,7 +118,7 @@ describe("SessionManager with a fake tmux server", () => {
     expect(pane?.cwd).toBe(session.cwd);
     // Issue #287: the default workspace is a per-worker worktree, not the clone.
     expect(session.cwd).toContain(path.join("worktrees", "worker-"));
-    expect(pane?.command).toEqual([...DEFAULT_WORKER_COMMAND, ...shippedGlobalSkillArgs()]);
+    expect(pane?.command).toEqual([...DEFAULT_WORKER_COMMAND]);
   });
 
   it("honors cwd and command overrides and picks the next free name", async () => {

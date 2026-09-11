@@ -131,15 +131,6 @@ export class DaemonClient {
     await this.request("POST", `/api/sessions/${encodeURIComponent(sessionId)}/send`, { message });
   }
 
-  /**
-   * `pideck report-pr` — a worker session reports the PR it opened
-   * (issue #49). The daemon resolves the worker from the tmux session name
-   * the CLI self-identified from its own pane context.
-   */
-  async reportPr(tmuxSession: string, prNumber: number): Promise<Worker> {
-    return this.request("POST", "/api/sessions/report-pr", { tmuxSession, prNumber }, workerSchema);
-  }
-
   // -- Contract endpoints (validated against the shared schemas) -------------
 
   async listProjects(): Promise<Project[]> {

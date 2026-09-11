@@ -1,13 +1,14 @@
 /**
- * Worker↔PR association by issue reference (issue #46 wiring, extracted).
+ * Worker↔PR association by issue reference (issue #46 wiring, extracted;
+ * fully deterministic since issue #439).
  *
- * Workers don't report PRs themselves, so the wiring performs the
- * association when the PR watcher reports a PR: if the PR's title/head
- * branch references the issue a non-terminal, unassociated worker is
- * working on (`#46`, `issue 46`, `issue-46`, …), the worker is recorded as
- * the PR owner (`SessionManager.setWorkerPr`). The explicit
- * `report-pr` endpoint (issue #49) wins over this heuristic — it only ever
- * fills workers whose `prNumber` is still null.
+ * Workers don't report PRs — there is no self-report path. The wiring
+ * performs the association when the PR watcher reports a PR: if the PR's
+ * title, head branch, or body references the issue a non-terminal,
+ * unassociated worker is working on (`#46`, `issue 46`, `issue-46`, or the
+ * prompt-mandated `Closes #46` closing keyword in the body), the worker is
+ * recorded as the PR owner (`SessionManager.setWorkerPr`). This is the
+ * only claiming path: deterministic daemon code keyed on platform truth.
  */
 
 import type { PullRequest, Worker, WorkerStatus } from "@pideck/shared";
@@ -32,10 +33,11 @@ function referencedIssueNumbers(text: string): Set<number> {
 }
 
 /**
- * Associates a PR with its owning worker: if the PR's title/head branch
- * references the issue an unassociated, non-terminal worker is working
- * on, record the worker as the PR owner (`setWorkerPr`) — the PR loop's
- * tracker resolves ownership from the registry.
+ * Associates a PR with its owning worker: if the PR's title, head branch,
+ * or body references the issue an unassociated, non-terminal worker is
+ * working on, record the worker as the PR owner (`setWorkerPr`) — the PR
+ * loop's tracker resolves ownership from the registry. Only ever fills
+ * workers whose `prNumber` is still null.
  */
 export function associateWorkerPr(
   tracker: PRTracker,
@@ -45,7 +47,7 @@ export function associateWorkerPr(
 ): void {
   if (tracker.get(pr.projectId, pr.number) !== undefined) return;
   if (workers.some((worker) => worker.prNumber === pr.number)) return;
-  const refs = referencedIssueNumbers(`${pr.title} ${pr.headBranch}`);
+  const refs = referencedIssueNumbers(`${pr.title} ${pr.headBranch} ${pr.body ?? ""}`);
   if (refs.size === 0) return;
   const owner = workers.find(
     (worker) =>

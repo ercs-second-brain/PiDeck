@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * `pideck` CLI — the daemon-facing commands the pi orchestration skills
- * invoke (agent/README.md "pideck CLI surface"; the exact invocations
- * live in agent/skills/):
+ * `pideck` CLI — the daemon-facing commands the PiDeck agents invoke
+ * (agent/README.md "pideck CLI surface"; the invocations agents need live
+ * in the persona prompts and the CLI's own `--help`, issue #439):
  *
  *   pideck status [--json]
  *   pideck project get <id> [--json] | pideck project ls [--json]
@@ -13,7 +13,10 @@
  *   pideck diff --project <id> <pr-number>
  *   pideck spawn --project <id> [--issue <number> | --kind <agent-kind> [--question <q>]] --name <label ≤20> [--prompt <task>]
  *   pideck send --session <id> --message <text>
- *   pideck report-pr <pr-number>   (worker panes only: self-identifies via tmux)
+ *
+ * (No `report-pr` command since issue #439: PR→worker claiming is
+ * deterministic daemon code — pipeline/issue-refs.ts — so there is no
+ * worker self-report path at all.)
  *
  * Agent kinds (docs/agent-kinds.md): preset-persona, read-only sessions —
  * `researcher` (needs --question; report returns to the calling session)
@@ -30,13 +33,9 @@ import { pathToFileURL } from "node:url";
 import { CliError, optionalFlag, parseArgs, positional, requireFlag, type ParsedArgs } from "./args.js";
 import { DaemonClient } from "./client.js";
 import { PI_NODE_MIN_VERSION } from "../api/node-version.js";
-import { currentTmuxSession } from "./tmux-context.js";
 
-/** Injectables for tests (defaults: the live tmux context). */
-export interface RunDeps {
-  /** Resolves the calling tmux session's name (issue #49 report path). */
-  tmuxSession?: () => Promise<string>;
-}
+/** Injectables for tests. */
+export type RunDeps = Record<string, never>;
 
 const USAGE = `pideck — talk to the PiDeck daemon
 
@@ -51,7 +50,6 @@ Usage:
   pideck diff --project <id> <pr-number>
   pideck spawn --project <id> [--issue <n> | --kind <agent-kind> [--question <q>]] --name <label> [--prompt <task>]
   pideck send --session <id> --message <text>
-  pideck report-pr <pr-number>
 
 Agent kinds (preset persona, read-only; docs/agent-kinds.md):
   researcher      --kind researcher --question "<q>"  (report → calling session)
@@ -316,20 +314,6 @@ async function cmdSend(ctx: CommandContext): Promise<number> {
   return 0;
 }
 
-async function cmdReportPr(ctx: CommandContext): Promise<number> {
-  // Worker self-report of an opened PR (issue #49). The tmux session
-  // name is resolved from the calling pane's own context, not from a
-  // flag — the daemon associates the worker behind that session.
-  const prRaw = ctx.rest[0] ?? optionalFlag(ctx.parsed.flags, "pr");
-  if (prRaw === undefined || !/^\d+$/.test(prRaw)) {
-    throw new CliError("usage: pideck report-pr <pr-number>");
-  }
-  const tmuxSession = await (ctx.deps.tmuxSession ?? currentTmuxSession)();
-  const worker = await ctx.client.reportPr(tmuxSession, Number(prRaw));
-  emit(ctx.json, worker, () => console.log(`worker ${worker.id} now owns PR #${worker.prNumber}`));
-  return 0;
-}
-
 /** Command table (issue #134): run() dispatches, each handler stays small. */
 const commands: Record<string, Command> = {
   status: cmdStatus,
@@ -341,7 +325,6 @@ const commands: Record<string, Command> = {
   diff: cmdDiff,
   spawn: cmdSpawn,
   send: cmdSend,
-  "report-pr": cmdReportPr,
 };
 
 /** Prints the usage text (`pideck`, `pideck help|--help|-h`). */

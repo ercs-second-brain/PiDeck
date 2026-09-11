@@ -22,11 +22,15 @@ describe("buildIssueSpawnPrompt (issue #266)", () => {
     expect(prompt).toContain("assigned to kiss-bot");
   });
 
-  it("tells the worker to implement the issue and open a linked PR", () => {
+  it("tells the worker to implement the issue and open a linked PR — with no self-report step", () => {
     const prompt = buildIssueSpawnPrompt(makeIssue(1));
     expect(prompt).toContain("gh issue view 1");
-    expect(prompt).toContain("report-pr");
+    expect(prompt).toContain("Closes #1");
     expect(prompt).toContain("#1");
+    // Issue #439: deterministic steps are daemon work — the prompt must not
+    // instruct the worker to run `pideck report-pr` or notify anyone.
+    expect(prompt).not.toContain("report-pr");
+    expect(prompt).not.toMatch(/notify/i);
   });
 });
 

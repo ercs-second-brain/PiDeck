@@ -8,7 +8,7 @@ trigger: "Turning a session's findings into GitHub issues and running the worker
 
 Turn a session's stream of findings — a bug bash, a feature bash, or a mix — into a clean, confirmed list, then triage it into GitHub issues and run the batch to done. Two distinct modes with a hard boundary: **collect** (fidelity — record what the human said, nothing more) and **triage** (judgment — type it, dedupe, cluster, rank, file, then orchestrate workers). Never mix them; don't reword, type, or prioritize while still collecting, and don't collect new findings after triage has started. New discoveries made during execution re-enter as new B# items, not chat noise.
 
-You are the curator. You never implement: no code changes, commits, or PRs from your session — workers execute (see the `spawn-worker` skill), and their PR-ready/blocked reports flow back through you to the human.
+You are the curator. You never implement: no code changes, commits, or PRs from your session — workers execute (`pideck spawn`), and their PR-ready/blocked reports flow back through you to the human.
 
 ## Mode 1: Collect
 
@@ -85,7 +85,7 @@ gh issue create -R OWNER/REPO --title "..." --body-file - --label bug --label se
 ```
 
 - **Search before creating** — a bash frequently rediscovers known bugs; comment on the existing issue instead of filing a duplicate.
-- **Create in dependency order** so issue numbers exist when referenced. Express relations as task-list items (`- [ ] #12`) and, for blocking relations the daemon should honor, native "blocked by" links (see the `create-issue` skill): PiDeck does not spawn workers for issues with unresolved blockers.
+- **Create in dependency order** so issue numbers exist when referenced. Express relations as task-list items (`- [ ] #12`) and, for blocking relations the daemon should honor, native "blocked by" links: PiDeck does not spawn workers for issues with unresolved blockers.
 - Batch-verify after creation: `gh issue list --label bug --json number,title --limit 50`.
 
 ### 4. Verify and report
@@ -100,9 +100,9 @@ Close with a summary table: issue #, title, type, rank, source B# IDs, and count
 You are now the curator-orchestrator for the batch. You coordinate; workers implement. Run the loop until every batch issue is done, without stopping to ask permission between waves — the human confirmed the plan in step 1. Report progress to the human after each wave.
 
 1. **Assess** — `pideck kanban --project {{PROJECT_ID}} --json` and `pideck workers --project {{PROJECT_ID}} --json`: which batch issues are still open, unblocked, and unowned? What workers are active?
-2. **Spawn in waves** — one worker per runnable issue: `pideck spawn --project {{PROJECT_ID}} --issue <number> --name "<label>"` (see the `spawn-worker` skill: check for an existing live worker first, keep `--name` ≤ 20 chars, respect `settings.workerConcurrency` from `pideck project get {{PROJECT_ID}} --json`). A wave = a batch of unblocked, file-disjoint issues, up to 3–5 concurrent workers. **Never co-spawn two workers whose issues share a `Touches` file** — sequence them instead. If two in-flight issues turn out to touch the same files, don't kill them; make one wait and note the collision.
-3. **Collect status** — workers claim the issue, then report PR-ready (`pideck report-pr`, visible in `pideck pulls --project {{PROJECT_ID}} --json` with `ciStatus`/`reviewState`) or blocked. A worker that finds a new bug or oddity mid-fix reports it as a new B# finding — you record it, file it in the same format, and route it into the loop.
-4. **Review & route** — on a PR-ready report, verify rather than trust: `pideck diff --project {{PROJECT_ID}} <pr>` against the issue's expected behavior and `Touches` (did the worker drift into files it doesn't own?), and check `ciStatus`. Green and on-scope → report ready-to-merge to the human (merge only if the project's rules authorize you). Failures and review comments go back to the owning worker via `pideck send --session <id>` (see `ci-status` and `review-comments`).
+2. **Spawn in waves** — one worker per runnable issue: `pideck spawn --project {{PROJECT_ID}} --issue <number> --name "<label>"` (pre-flight: check for an existing live worker first, keep `--name` ≤ 20 chars, respect `settings.workerConcurrency` from `pideck project get {{PROJECT_ID}} --json`). A wave = a batch of unblocked, file-disjoint issues, up to 3–5 concurrent workers. **Never co-spawn two workers whose issues share a `Touches` file** — sequence them instead. If two in-flight issues turn out to touch the same files, don't kill them; make one wait and note the collision.
+3. **Collect status** — workers claim the issue, then report PR-ready (the daemon claims their PR automatically — it shows in `pideck pulls --project {{PROJECT_ID}} --json` with `ciStatus`/`reviewState`) or blocked. A worker that finds a new bug or oddity mid-fix reports it as a new B# finding — you record it, file it in the same format, and route it into the loop.
+4. **Review & route** — on a PR-ready report, verify rather than trust: `pideck diff --project {{PROJECT_ID}} <pr>` against the issue's expected behavior and `Touches` (did the worker drift into files it doesn't own?), and check `ciStatus`. Green and on-scope → report ready-to-merge to the human (merge only if the project's rules authorize you). Failures and review comments go back to the owning worker via `pideck send --session <id>`; per-check CI detail and comment bodies come from `gh` (`gh pr checks <pr-number> -R OWNER/REPO`, `gh pr view <pr-number> --comments`).
 5. **Refill & repeat** — every merge closes an issue and frees capacity; immediately fill freed slots from the newly runnable set. If nothing is runnable, spawn the cheapest unblocking work rather than idling.
 
 Done means: all batch issues closed (or consciously parked with a written reason), CI green, and a final report to the human — what shipped per type/rank, new B# findings discovered during work and where they landed, anything left parked.
