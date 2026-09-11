@@ -2,44 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type PullRequest } from "@pideck/shared";
 
 import { GhClient } from "./gh.js";
-import type { IssueRecord } from "./issues.js";
 import { makeIssueRecord, makePullRequest } from "../testing/fixtures.js";
 import { DEFAULT_POLL_INTERVAL_MS, IssueWatcher, PollLoop, PullRequestWatcher, type GithubWatcherEvent } from "./watch.js";
+import { restIssue, scriptedGh } from "./watch-fixtures.js";
 
 const PROJECT = "proj";
 const REPO = { owner: "o", repo: "r" };
-
-// REST-shaped payloads as the gh api endpoints would return them.
-function restIssue(rec: IssueRecord): Record<string, unknown> {
-  return {
-    number: rec.issue.number,
-    title: rec.issue.title,
-    state: rec.issue.state,
-    user: rec.author === null ? null : { login: rec.author },
-    assignee: rec.assignees.length > 0 ? { login: rec.assignees[0] } : null,
-    assignees: rec.assignees.map((login) => ({ login })),
-    html_url: rec.issue.url,
-    updated_at: rec.issue.updatedAt,
-  };
-}
-
-/**
- * GhClient driven by a sequence of poll snapshots (REST issue lists, used by
- * IssueWatcher tests).
- */
-function scriptedGh(snapshots: Array<{ issues?: Record<string, unknown>[] }>): GhClient {
-  let poll = 0;
-  const at = (i: number) => snapshots[Math.min(Math.max(i, 0), snapshots.length - 1)] ?? {};
-  return new GhClient(async (args) => {
-    const path = args[1] ?? "";
-    if (path.includes("/issues?state=open")) {
-      const snap = at(poll);
-      poll++;
-      return { stdout: JSON.stringify(snap.issues ?? []), stderr: "" };
-    }
-    throw new Error(`unexpected args: ${JSON.stringify(args)}`);
-  });
-}
 
 /**
  * GraphQL pullRequest node in the batched-listing shape (fixture style from
@@ -99,8 +67,11 @@ describe("IssueWatcher", () => {
     ]);
     const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
     const events = await watcher.pollOnce();
-    expect(events.map((e) => e.type)).toEqual(["issue.created", "issue.created", "issue.created"]);
-    expect(events.map((e) => (e.type === "issue.created" ? e.issue.number : null))).toEqual([1, 2, 3]);
+    // Issue #504: #3 is first seen already assigned — its assignment
+    // transition is emitted alongside the creation so the spawn trigger
+    // never depends on a later assignee-count growth.
+    expect(events.map((e) => e.type)).toEqual(["issue.created", "issue.created", "issue.created", "issue.assigned"]);
+    expect(events.map((e) => (e.type === "issue.created" ? e.issue.number : e.type === "issue.assigned" ? e.issue.number : null))).toEqual([1, 2, 3, 3]);
   });
 
   it("emits issue.assigned when any assignee is added — the spawn trigger (#416)", async () => {
@@ -121,7 +92,8 @@ describe("IssueWatcher", () => {
       { issues: [restIssue(makeIssueRecord(1))] },
     ]);
     const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
-    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created"]);
+    // Baseline first sight of an already-assigned issue (#504): created + assigned.
+    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created", "issue.assigned"]);
     const events = await watcher.pollOnce();
     expect(events.map((e) => e.type)).toEqual(["issue.unassigned"]);
   });
@@ -132,7 +104,7 @@ describe("IssueWatcher", () => {
       { issues: [restIssue(makeIssueRecord(1, { assignees: ["octocat"] }))] },
     ]);
     const watcher = new IssueWatcher({ gh, projectId: PROJECT, repo: REPO, emit: () => {} });
-    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created"]);
+    expect((await watcher.pollOnce()).map((e) => e.type)).toEqual(["issue.created", "issue.assigned"]);
     expect(await watcher.pollOnce()).toEqual([]);
   });
 
