@@ -144,3 +144,33 @@ describe("associateWorkerPr (deterministic PR claiming, issue #439)", () => {
     expect(claimed).toEqual([]);
   });
 });
+
+describe("associateWorkerPr evidence tiers (issue #441)", () => {
+  it("does not claim from a bare body mention of another worker's issue", () => {
+    const { tracker, claimed, setWorkerPr } = harness();
+    // "Depends on #46" is a cross-reference, not ownership evidence — with
+    // parallel workers it associated the PR (and the auto reviewer nested
+    // under it) to the wrong worker.
+    associateWorkerPr(tracker, [makeWorker()], setWorkerPr, makePr({ body: "Depends on #46" }));
+    expect(claimed).toEqual([]);
+  });
+
+  it("prefers the title-referenced issue over a body mention of another worker's issue", () => {
+    const { tracker, claimed, setWorkerPr } = harness();
+    const author = makeWorker({ id: "worker-author", issueNumber: 441 });
+    const referenced = makeWorker({ id: "worker-other", issueNumber: 440 });
+    associateWorkerPr(
+      tracker,
+      [referenced, author],
+      setWorkerPr,
+      makePr({ title: "Fix the loop (#441)", body: "Depends on #440" }),
+    );
+    expect(claimed).toEqual([["worker-author", 7]]);
+  });
+
+  it("falls back to the body closing keyword when title/branch carry no reference", () => {
+    const { tracker, claimed, setWorkerPr } = harness();
+    associateWorkerPr(tracker, [makeWorker()], setWorkerPr, makePr({ body: "Fixes the loop.\n\nCloses #46" }));
+    expect(claimed).toEqual([["worker-1", 7]]);
+  });
+});

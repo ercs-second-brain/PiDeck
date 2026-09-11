@@ -101,11 +101,15 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
   // entirely off — the platform cannot review its own PRs with the primary
   // identity.
   if (ctx.reviewAccount?.() !== true) return;
-  if (pr.ciStatus !== "success") return;
+  // Issue #441 (B5): approval is the reviewer's terminal state regardless
+  // of CI — the round's work is done, so the archive must not be gated on
+  // CI being green (it previously sat BELOW the green gate, leaving a
+  // finished reviewer `running` for as long as CI stayed red or pending).
   if (pr.reviewState === "approved") {
     await archiveReviewAgent(tracked, ctx.sessions, `PR #${tracked.prNumber} approved — review agent done`);
     return;
   }
+  if (pr.ciStatus !== "success") return;
   const settings = ctx.settings() ?? DEFAULT_WORKER_PIPELINE_SETTINGS;
   // Issue #322: a conflicted PR is not reviewable — GitHub cannot merge it
   // however green its checks are. Gate the spawn (and any re-round) until
@@ -238,8 +242,16 @@ export async function archiveReviewAgent(tracked: TrackedPR, sessions: PRSession
   try {
     await sessions.archiveWorker(reviewerId, message);
   } catch {
-    // Archival failed (e.g. a dead pane's kill race); the linkage is
-    // already cleared and the record's terminal status is best-effort.
+    // Archival failed (e.g. a dead pane's kill race, issue #441 B5): the
+    // linkage is already cleared, so no poll would retry — fall back to a
+    // quiet terminal status write so the reviewer never stays `running` on
+    // the board after its round ended. The record may have vanished
+    // between the read and the write; that throw is swallowed too.
+    try {
+      sessions.updateWorkerStatus(reviewerId, "archived", message);
+    } catch {
+      // The reviewer record vanished — nothing left to transition.
+    }
   }
 }
 

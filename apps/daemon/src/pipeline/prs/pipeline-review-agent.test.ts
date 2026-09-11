@@ -206,4 +206,37 @@ describe("PullRequestPipeline: auto review agent — re-review and lifecycle (is
     await closed.poll();
     expect(closed.sessions.archived).toContain("worker-reviewer-1");
   });
+
+  it("archives the reviewer on approval even while CI is red (issue #441 B5)", async () => {
+    const h = greenHarness();
+    await h.poll();
+    await h.poll();
+    const reviewerId = h.tracker.get(PROJECT, 12)!.reviewWorkerId!;
+    // The reviewer approves while CI is failing (a re-run went red) — the
+    // approval is the round's end, so the reviewer must leave `running`
+    // even though the CI-gated spawn gate no longer holds.
+    h.prs.get(12)!.checkRuns = checkRuns("failure");
+    h.prs.get(12)!.reviews = [{ user: { login: REVIEW_USER }, state: "APPROVED", submitted_at: "2026-09-06T12:05:00Z" }];
+    await h.poll();
+    expect(h.sessions.archived).toContain("worker-reviewer-1");
+    expect(h.sessions.control.getWorker(reviewerId)!.status).toBe("archived");
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: null, reviewedHeadSha: null });
+  });
+
+  it("falls back to a terminal status when archival fails at merge (issue #441 B5)", async () => {
+    const h = greenHarness();
+    await h.poll();
+    await h.poll();
+    const reviewerId = h.tracker.get(PROJECT, 12)!.reviewWorkerId!;
+    // The pane's archive kills race-fails at merge — the linkage is cleared
+    // either way, so no later poll would retry: the status write must still
+    // land, or the reviewer idles forever as `running` on the board.
+    h.sessions.control.archiveWorker = async () => {
+      throw new Error("tmux kill-server failed");
+    };
+    h.prs.get(12)!.pull = assignedPull({ sha: "sha-2", closed: true, merged: true });
+    await h.poll();
+    expect(h.sessions.control.getWorker(reviewerId)!.status).toBe("archived");
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: null });
+  });
 });

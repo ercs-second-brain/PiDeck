@@ -113,7 +113,13 @@ export async function driveLoop(
   }
 
   if (pr.ciStatus === "failure") {
-    return driveCiFailure(tracked, pr, headSha, headChangedSincePrompt, newComments, ctx, events);
+    // Issue #441 (B5): the failure branch returns early, but the review
+    // cycle's terminal transitions must still run — an approved PR's
+    // reviewer is done even while CI is red (driveReview's internal green
+    // gate keeps the spawn/re-review legs off red polls).
+    const failureEvents = await driveCiFailure(tracked, pr, headSha, headChangedSincePrompt, newComments, ctx, events);
+    await driveReview(tracked, pr, headSha, ctx);
+    return failureEvents; // the same array as `events` (driveCiFailure pushes into it)
   }
   if (pr.ciStatus === "success") tracked.fixAttempts = 0; // the previous red streak ended green
   const greenEvents = await driveGreen(tracked, pr, headSha, newComments, ctx, events);
