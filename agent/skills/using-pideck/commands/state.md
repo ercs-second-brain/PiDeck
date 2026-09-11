@@ -22,10 +22,10 @@ pideck kanban --project <id> [--json]
 
 ## pideck sessions
 
-List a project's agent sessions (orchestrator and workers). Use this to find session ids for `pideck send`.
+List agent sessions. Without `--project`, every session daemon-wide (including the global agent); with it, one project's sessions. Use this to find session ids for `pideck send`.
 
 ```
-pideck sessions --project <id> [--json]
+pideck sessions [--project <id>] [--json]
 ```
 
 → `GET /api/projects/:projectId/sessions`

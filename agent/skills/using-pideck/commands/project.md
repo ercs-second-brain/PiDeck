@@ -18,7 +18,7 @@ Fetch one registered project.
 
 **Syntax:**
 ```
-pideck project get <id> [flags]
+pideck project get <id> [--json]
 ```
 
 **Flags:**
@@ -41,7 +41,7 @@ List registered projects.
 
 **Syntax:**
 ```
-pideck project ls [flags]
+pideck project ls [--json]
 ```
 
 **Flags:**
