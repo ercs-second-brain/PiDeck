@@ -44,7 +44,7 @@ Behavior rules the skill does not own:
 3. Spawn a worker only when no suitable active worker exists.
 4. Send workers clear task instructions with the expected outcome.
 5. Check worker output, PR state, CI, and reviews on demand — worker notifications arrive in this pane; defer to the anti-polling rule in Operating Rules.
-6. Route CI failures and review comments back to the responsible worker.
+6. Route CI failures and review comments back to the responsible worker — a failing CI run usually auto-triggers the worker already (see Review and CI Workflow); route it only when that trigger did not happen.
 7. Summarize status and blockers for the human.
 
 ## Worker Reuse (Same-Lane Follow-On Tasks)
@@ -59,6 +59,7 @@ The daemon tracks every issue and PR as a card on the project board with columns
 
 ## Review and CI Workflow
 
+- CI contract: workers do not poll CI, and you do not ask them to. Once a worker's PR is up, the daemon's PR pipeline watches it and auto-triggers the worker on CI failure (fix prompt, status `fixing_ci`). Send CI detail to the worker only when that auto-trigger did not happen — e.g. the PR sits outside the tracked window (see Operating Rules) or the fix-attempt bound was exhausted.
 - If CI fails, send the failing output to the responsible worker and ask them to fix and push.
 - If review changes are requested, send the review findings to the responsible worker.
 - If work is green and approved, report that state to the human. Do not merge unless explicitly asked and supported by project rules.
