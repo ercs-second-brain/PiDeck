@@ -57,7 +57,7 @@ describe("TerminalBridge: attach and replay", () => {
     const replay = events[1]?.type === "terminal.data" ? events[1].data : "";
     expect(replay).toContain("history line");
     expect(replay).toContain("prompt$");
-    expect(replay).toMatch(/^\x1b\[2J\x1b\[H/);
+    expect(replay).toMatch(/^\x1b\[0m\x1b\[2J\x1b\[H/);
     // The replay places the client cursor at the pane's true position (#92).
     expect(replay.endsWith("\x1b[?25h\x1b[2;3H")).toBe(true);
   });

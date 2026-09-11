@@ -26,7 +26,12 @@
 /** Escape sequence wrapping an update in a synchronized (flicker-free) repaint. */
 const SYNC_START = "\x1b[?2026h";
 const SYNC_END = "\x1b[?2026l";
-const CLEAR_SCREEN = "\x1b[2J\x1b[H";
+/** SGR reset: capture-pane -e lines are attribute diffs that assume default state. */
+const RESET_SGR = "\x1b[0m";
+// The reset must precede 2J: EL/ED erase fills with the parser's *current*
+// background, so a frame that ends mid-SGR (e.g. on an action-chip row)
+// would otherwise plate the cleared screen with that stale background.
+const CLEAR_SCREEN = RESET_SGR + "\x1b[2J\x1b[H";
 
 /** Wraps a frame update so xterm.js paints it in one atomic step. */
 export function withSynchronizedUpdate(update: string): string {
@@ -92,6 +97,10 @@ function detectScroll(prev: string[], next: string[]): number {
  */
 function scrollUpdate(rows: number, k: number, next: string[]): string {
   return (
+    // Reset before the scroll fill: the newlines blank the scrolled-in rows
+    // with the parser's current background, which is whatever the previous
+    // frame's last rewrite left behind (e.g. a red action chip).
+    RESET_SGR +
     `\x1b[${rows};1H` +
     "\r\n".repeat(k) +
     `\x1b[${rows - k + 1};1H` +
@@ -103,7 +112,11 @@ function scrollUpdate(rows: number, k: number, next: string[]): string {
 function rewriteUpdate(prev: string[], next: string[]): string {
   let out = "";
   for (let i = 0; i < next.length; i++) {
-    if (prev[i] !== next[i]) out += `\x1b[${i + 1};1H\x1b[2K${next[i]}`;
+    // Reset before the erase: EL2 fills with the parser's current background
+    // (often the previous row's action chip), and rows whose capture line
+    // starts with default-attribute cells emit no SGR of their own and would
+    // inherit it (issue #442).
+    if (prev[i] !== next[i]) out += `\x1b[${i + 1};1H${RESET_SGR}\x1b[2K${next[i]}`;
   }
   return out;
 }
