@@ -180,11 +180,15 @@ describe("PullRequestPipeline: auto review agent — re-review and lifecycle (is
     expect(h.sessions.spawned).toHaveLength(2);
     expect(h.tracker.get(PROJECT, 12)!.reviewWorkerId).toBe("worker-reviewer-2");
 
-    // But a dead reviewer that DID decide (changes requested) waits for the author to push.
+    // But a dead reviewer that DID decide (changes requested) waits for the
+    // author to push — and the decision itself prompts the author to fix
+    // (issue #440), so the loop restarts instead of stalling.
     h.prs.get(12)!.reviews = [{ user: { login: "worker-reviewer-2" }, state: "CHANGES_REQUESTED", submitted_at: "2026-09-06T12:06:00Z" }];
     h.sessions.control.updateWorkerStatus("worker-reviewer-2", "stopped", "pane died");
     await h.poll();
     expect(h.sessions.spawned).toHaveLength(2);
+    expect(h.sessions.prompts.some((p) => p.sessionId === "sess-1" && p.keys.includes("requested changes on your PR #12"))).toBe(true);
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ state: "addressing", reviewFixAttempts: 1 });
   });
 
   it("archives the reviewer when the PR merges, closes, or the loop fails", async () => {

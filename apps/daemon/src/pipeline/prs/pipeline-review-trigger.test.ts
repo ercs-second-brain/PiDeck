@@ -1,10 +1,9 @@
 /**
- * PR-pipeline review-trigger tests (issue #407): with a review account
- * configured, a completed GitHub review round deterministically wakes the
+ * PR-pipeline review-trigger tests (issues #407/#440): a completed GitHub
+ * review round that requests changes deterministically wakes the
  * PR-authoring worker to address the findings — even when the findings ride
- * only in the review body (no inline comments). Without the review account,
- * the whole review cycle (agent spawn + triggers) is off. Shared fakes:
- * `harness.ts`.
+ * only in the review body (no inline comments) — with a bounded fix cycle
+ * like the CI-fix one (#440). Shared fakes: `harness.ts`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -28,7 +27,7 @@ function assignedPull(overrides: Parameters<typeof restPull>[1] = {}): Record<st
 
 const CHANGES_REQUESTED = (submittedAt: string) => [{ user: { login: "reviewer" }, state: "CHANGES_REQUESTED", submitted_at: submittedAt }];
 
-describe("PullRequestPipeline: review-trigger (issue #407)", () => {
+describe("PullRequestPipeline: review-trigger delivery (issues #407/#440)", () => {
   it("a new request-changes review prompts the author once to address the findings", async () => {
     const h = greenHarness();
     await h.poll(); // discover + track
@@ -46,6 +45,8 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
       state: "addressing",
       lastPromptedHeadSha: "sha-1",
       lastReviewSeenAt: "2026-09-06T12:05:00Z",
+      pendingReviewDecision: false,
+      reviewFixAttempts: 1,
     });
     expect(h.sessions.statuses.at(-1)).toMatchObject({ workerId: "worker-1", status: "addressing_review" });
 
@@ -65,7 +66,7 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
     expect(h.sessions.prompts[0]!.keys).toContain("Fetch the findings");
   });
 
-  it("a review landing alongside its inline comments is delivered once (comments branch wins)", async () => {
+  it("a review landing alongside its inline comments still prompts the decision round after the comment round (issue #440)", async () => {
     const h = greenHarness();
     await h.poll();
     await h.poll();
@@ -73,13 +74,26 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
     h.prs.get(12)!.reviews = CHANGES_REQUESTED("2026-09-06T12:05:00Z");
     h.advance(5 * 60_000);
     await h.poll();
-    // The inline-comment delivery branch owns the author's prompt state.
+    // The inline-comment delivery branch owns the author's first prompt.
     expect(h.sessions.prompts).toHaveLength(1);
     expect(h.sessions.prompts[0]!.keys).toContain("1 new review comment(s)");
-    // The review is recorded (observed) — it never re-fires later.
+    // The review is recorded (observed) and its decision stays pending.
     expect(h.tracker.get(PROJECT, 12)!.lastReviewSeenAt).toBe("2026-09-06T12:05:00Z");
     await h.poll();
-    expect(h.sessions.prompts).toHaveLength(1);
+    expect(h.sessions.prompts).toHaveLength(1); // the comment prompt is in flight
+
+    // The author pushes → watching again → the parked decision delivers its
+    // own bounded fix round; the reviewer's re-review prompt rides the same
+    // poll (decision branch first, then the reviewer cycle).
+    h.prs.get(12)!.pull = assignedPull({ sha: "sha-2" });
+    await h.poll();
+    expect(h.sessions.prompts).toHaveLength(3);
+    expect(h.sessions.prompts[1]!.sessionId).toBe("sess-1");
+    expect(h.sessions.prompts[1]!.keys).toContain("requested changes on your PR #12");
+    expect(h.sessions.prompts[2]!.sessionId).toBe("sess-reviewer-1");
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ state: "addressing", reviewFixAttempts: 1, pendingReviewDecision: false });
+    await h.poll();
+    expect(h.sessions.prompts).toHaveLength(3); // no duplicates
   });
 
   it("each review round triggers exactly once — a fresh round re-prompts", async () => {
@@ -104,8 +118,11 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(3);
     expect(h.tracker.get(PROJECT, 12)!.lastReviewSeenAt).toBe("2026-09-06T12:10:00Z");
+    expect(h.tracker.get(PROJECT, 12)!.reviewFixAttempts).toBe(2);
   });
+});
 
+describe("PullRequestPipeline: review-trigger — watermark semantics", () => {
   it("a pre-existing review (loop start / restart resume) is recorded without triggering", async () => {
     const h = greenHarness();
     h.prs.set(12, {
@@ -119,9 +136,10 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(0);
     expect(h.tracker.get(PROJECT, 12)!.lastReviewSeenAt).toBe("2026-09-06T11:00:00Z");
+    expect(h.tracker.get(PROJECT, 12)!.pendingReviewDecision).toBe(false);
   });
 
-  it("an approval is not a findings trigger", async () => {
+  it("an approval is not a findings trigger and resets the decision bound", async () => {
     const h = greenHarness();
     await h.poll();
     await h.poll();
@@ -131,11 +149,83 @@ describe("PullRequestPipeline: review-trigger (issue #407)", () => {
     expect(h.sessions.prompts).toHaveLength(0);
     // The reviewer is archived; the cycle ends.
     expect(h.sessions.archived).toEqual(["worker-reviewer-1"]);
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ pendingReviewDecision: false, reviewFixAttempts: 0 });
   });
 });
 
-describe("PullRequestPipeline: review-trigger — gating (issue #407)", () => {
-  it("single-account mode: no reviewer spawns and review events trigger nothing", async () => {
+describe("PullRequestPipeline: review-trigger — bounded fix cycle (issue #440)", () => {
+  it("a decision observed mid-prompt is parked and delivered once the author is idle again", async () => {
+    // The regression from the report: a review decision consumed while the
+    // author is still working (state !== watching) used to be lost — the
+    // loop stalled. The parked decision must deliver afterwards.
+    const h = greenHarness();
+    await h.poll();
+    await h.poll();
+    // The reviewer requests changes while the author is addressing earlier
+    // review comments (a prompt is in flight).
+    h.prs.get(12)!.comments = [restComment(101, "Rename this variable")];
+    h.advance(5 * 60_000);
+    await h.poll();
+    expect(h.tracker.get(PROJECT, 12)!.state).toBe("addressing");
+    h.prs.get(12)!.reviews = CHANGES_REQUESTED("2026-09-06T12:06:00Z");
+    await h.poll();
+    // Consumed mid-prompt: no prompt now, but the decision is parked.
+    expect(h.sessions.prompts).toHaveLength(1);
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({
+      state: "addressing",
+      pendingReviewDecision: true,
+      reviewFixAttempts: 0,
+    });
+
+    // The author pushes → watching → the parked decision delivers its
+    // bounded fix round (the reviewer's re-review prompt rides the same poll).
+    h.prs.get(12)!.pull = assignedPull({ sha: "sha-2" });
+    await h.poll();
+    expect(h.sessions.prompts).toHaveLength(3);
+    expect(h.sessions.prompts[1]!.sessionId).toBe("sess-1");
+    expect(h.sessions.prompts[1]!.keys).toContain("requested changes on your PR #12");
+    expect(h.sessions.prompts[2]!.sessionId).toBe("sess-reviewer-1");
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ state: "addressing", reviewFixAttempts: 1, pendingReviewDecision: false });
+  });
+
+  it("a delivered decision prompt that goes stale without a push re-prompts (bounded)", async () => {
+    const h = greenHarness({ fixPromptTimeoutMs: 1000 });
+    await h.poll();
+    await h.poll();
+    h.prs.get(12)!.reviews = CHANGES_REQUESTED("2026-09-06T12:05:00Z");
+    await h.poll();
+    expect(h.sessions.prompts).toHaveLength(1);
+
+    // The author never pushes; the prompt goes stale → the standing
+    // decision re-prompts instead of stalling.
+    h.advance(2000);
+    await h.poll();
+    expect(h.sessions.prompts).toHaveLength(2);
+    expect(h.sessions.prompts[1]!.keys).toContain("Fix round 2 of 5");
+    expect(h.tracker.get(PROJECT, 12)!.reviewFixAttempts).toBe(2);
+  });
+
+  it("decision-round exhaustion is terminal like the CI bound (issue #440)", async () => {
+    const h = greenHarness({ maxFixAttempts: 2, fixPromptTimeoutMs: 1000 });
+    await h.poll();
+    await h.poll();
+    h.prs.get(12)!.reviews = CHANGES_REQUESTED("2026-09-06T12:05:00Z");
+    await h.poll(); // round 1
+    h.advance(2000);
+    await h.poll(); // stale → round 2
+    expect(h.tracker.get(PROJECT, 12)!.reviewFixAttempts).toBe(2);
+    h.advance(2000);
+    const events = await h.poll(); // stale again → bound exhausted
+    expect(h.sessions.prompts).toHaveLength(2); // no third prompt
+    expect(h.tracker.get(PROJECT, 12)!.state).toBe("failed");
+    expect(h.sessions.statuses.at(-1)).toMatchObject({ workerId: "worker-1", status: "failed" });
+    expect(events.filter((e) => e.type === "kanban.pr.failed")).toHaveLength(1);
+    expect(JSON.stringify(events)).toContain("review_fix_attempt_limit_exhausted");
+  });
+});
+
+describe("PullRequestPipeline: review-trigger — gating (issues #407/#440)", () => {
+  it("single-account mode: no reviewer spawns, but a human's changes-requested decision still reaches the worker (issue #440)", async () => {
     const h = greenHarness({ reviewAccount: () => false });
     await h.poll();
     await h.poll();
@@ -144,11 +234,14 @@ describe("PullRequestPipeline: review-trigger — gating (issue #407)", () => {
     h.prs.get(12)!.reviews = CHANGES_REQUESTED("2026-09-06T12:05:00Z");
     h.advance(5 * 60_000);
     await h.poll();
-    expect(h.sessions.prompts).toHaveLength(0);
-    expect(h.tracker.get(PROJECT, 12)!.state).toBe("watching");
+    // Issue #440: the decision branch is account-independent — findings
+    // from any reviewer (auto agent, human) must reach the worker.
+    expect(h.sessions.prompts).toHaveLength(1);
+    expect(h.sessions.prompts[0]!.keys).toContain("requested changes on your PR #12");
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ state: "addressing", reviewFixAttempts: 1 });
   });
 
-  it("autoFixReviewComments off: the trigger is skipped, the review still recorded", async () => {
+  it("autoFixReviewComments off: the trigger is skipped, the parked decision survives", async () => {
     const h = greenHarness({
       workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: false, autoReview: true }),
     });
@@ -161,10 +254,16 @@ describe("PullRequestPipeline: review-trigger — gating (issue #407)", () => {
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({
       state: "watching",
       lastReviewSeenAt: "2026-09-06T12:05:00Z",
+      pendingReviewDecision: true,
+    });
+    // The gated notice is the truthful status — not flipped back to done.
+    expect(h.sessions.statuses.at(-1)).toMatchObject({
+      status: "awaiting_ci",
+      statusMessage: expect.stringContaining("review requested changes — auto-fix review comments disabled"),
     });
   });
 
-  it("a review landing during a red CI streak is recorded once and left to the re-review round", async () => {
+  it("a review landing during a red CI streak is parked and delivers once the fix lands (issue #440)", async () => {
     const h = greenHarness();
     await h.poll(); // track
     h.prs.get(12)!.checkRuns = checkRuns("failure");
@@ -172,13 +271,19 @@ describe("PullRequestPipeline: review-trigger — gating (issue #407)", () => {
     h.prs.get(12)!.reviews = CHANGES_REQUESTED("2026-09-06T12:05:00Z");
     h.advance(5 * 60_000);
     await h.poll();
-    // Recorded deterministically (once per submission), but the red branch
-    // owns the author's prompt (the CI-fix prompt carries inline comments);
-    // review-body findings reach the author via the reviewer's next round.
+    // Recorded deterministically (the watermark consumes once) and parked —
+    // the red branch owns the author's prompt while CI is red.
     expect(h.tracker.get(PROJECT, 12)!.lastReviewSeenAt).toBe("2026-09-06T12:05:00Z");
+    expect(h.tracker.get(PROJECT, 12)!.pendingReviewDecision).toBe(true);
+    expect(h.sessions.prompts.some((p) => p.keys.includes("requested changes"))).toBe(false);
+
+    // The author's CI fix lands → green → the parked decision delivers its
+    // bounded fix round instead of being lost (the B6 stall, issue #440).
+    h.prs.get(12)!.pull = assignedPull({ sha: "sha-2" });
     h.prs.get(12)!.checkRuns = checkRuns("success");
     await h.poll();
-    expect(h.sessions.prompts.some((p) => p.keys.includes("requested changes"))).toBe(false);
+    expect(h.sessions.prompts.some((p) => p.sessionId === "sess-1" && p.keys.includes("requested changes"))).toBe(true);
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ state: "addressing", pendingReviewDecision: false, reviewFixAttempts: 1 });
   });
 
   it("delivers inline review comments unchanged alongside the trigger path", async () => {

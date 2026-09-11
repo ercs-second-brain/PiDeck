@@ -33,6 +33,8 @@ describe("PRTracker", () => {
     expect(tracked.lastSeenCommentId).toBeNull();
     expect(tracked.lastReviewSeenAt).toBeNull();
     expect(tracked.reviewWorkerId).toBeNull();
+    expect(tracked.pendingReviewDecision).toBe(false);
+    expect(tracked.reviewFixAttempts).toBe(0);
     expect(prCardId("proj", 12)).toBe("pr:proj:12");
     expect(tracker.get("proj", 12)).toBe(tracked);
   });

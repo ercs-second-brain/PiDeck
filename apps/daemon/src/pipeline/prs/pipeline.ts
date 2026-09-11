@@ -14,9 +14,10 @@
  *   `maxFixAttempts` (gated by the `autoFixCi` toggle, issue #106).
  * - New review comments → delivered to the worker (`addressing_review`;
  *   gated by `autoFixReviewComments`, issue #106).
- * - A new GitHub review requesting changes → the worker is prompted to
- *   address the findings (`addressing_review`, issue #407 — deterministic,
- *   watermark-keyed; covers findings that ride only in the review body).
+ * - A new GitHub review requesting changes → a bounded fix round for the
+ *   worker (`addressing_review`, issue #407/#440 — deterministic,
+ *   watermark-keyed, bounded by `maxFixAttempts`; covers findings that ride
+ *   only in the review body).
  * - Issue #408 (the deterministic PR lifecycle): worker PRs are assigned to
  *   the review user on submission (`reviewAccountUsername`); a CI-green PR
  *   assigned to that user drives the review-agent cycle; and a green +

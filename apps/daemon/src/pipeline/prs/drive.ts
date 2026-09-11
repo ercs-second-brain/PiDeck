@@ -4,16 +4,18 @@
  *
  * Driven per tracked PR by the pipeline's poll: CI failure → bounded fix
  * prompts to the owning worker; new review comments → delivery to the
- * worker; pushes re-arm evaluation. The `autoFixCi` /
- * `autoFixReviewComments` toggles (issue #106) skip the respective step —
- * the worker's status message reflects why nothing is driven.
+ * worker; a review decision requesting changes → a bounded fix round
+ * (issue #440, the decision twin of the CI-fix cycle); pushes re-arm
+ * evaluation. The `autoFixCi` / `autoFixReviewComments` toggles (issue
+ * #106) skip the respective step — the worker's status message reflects
+ * why nothing is driven.
  */
 
 import { ACTIVE_WORKER_STATUSES, type PullRequest, type WorkerStatus } from "@pideck/shared";
 
 import type { PRReviewComment } from "../../github/pulls.js";
 import type { ReviewSubmission } from "../../github/reviews.js";
-import { buildCiFixPrompt, buildReviewCommentsPrompt } from "./prompts.js";
+import { buildAddressReviewPrompt, buildCiFixPrompt, buildReviewCommentsPrompt } from "./prompts.js";
 import { driveReview, observeReview, settleReviewerRound } from "./review.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import type { PRSessionControl } from "./pipeline.js";
@@ -86,7 +88,8 @@ export async function driveLoop(
   // Issue #407: observe the PR's latest review submission once per poll —
   // on red polls too, so a review landing during a CI streak is not
   // re-treated as pre-existing once CI goes green. A NEW submission that
-  // requests changes triggers the worker in the green branch below.
+  // requests changes parks a pending fix round delivered by the green
+  // branch below (issue #440).
   const review = observeReview(tracked, ctx.latestReview ?? null);
   // Issue #408: a fresh review round re-arms the ready-for-merge trigger —
   // a changes-requested round that ends in a fresh approval notifies again
@@ -98,6 +101,16 @@ export async function driveLoop(
     // consumes there), so the reviewer's status never trails behind it.
     settleReviewerRound(tracked, pr, review.isNew, ctx);
   }
+  // Issue #440: the decision must reach the author deterministically —
+  // including when it is observed on a red poll or mid-prompt (the
+  // watermark consumes exactly once, so record the pending round here);
+  // the green branch delivers it once the author is idle. A resolved
+  // decision (approved) clears the pending round and resets the bound.
+  if (review.isNew?.state === "CHANGES_REQUESTED") tracked.pendingReviewDecision = true;
+  if (pr.reviewState === "approved") {
+    tracked.pendingReviewDecision = false;
+    tracked.reviewFixAttempts = 0;
+  }
 
   if (pr.ciStatus === "failure") {
     return driveCiFailure(tracked, pr, headSha, headChangedSincePrompt, newComments, ctx, events);
@@ -108,10 +121,11 @@ export async function driveLoop(
   // watching author leaves `awaiting_ci` once CI has passed.
   driveCiPassedAuthor(tracked, pr, newComments.length, ctx);
   // Issue #107: the auto review agent cycle runs on green PRs (after the
-  // comment-delivery branch above, which owns the author's prompt state).
-  // Issue #407: `review.isNew` — a newly observed review submission — drives
-  // the deterministic address-findings trigger.
-  await driveReview(tracked, pr, headSha, ctx, review.isNew);
+  // comment-delivery and decision branches above, which own the author's
+  // prompt state). Issue #407: `review.isNew` — a newly observed review
+  // submission — settles the reviewer's round (above); the reviewer's own
+  // re-round trigger keys on the head.
+  await driveReview(tracked, pr, headSha, ctx);
   // Issue #408: green + approved + both agents idle → the orchestrator is
   // notified the PR is ready for merge (merging stays human-approved).
   const ready = driveReadyForMerge(tracked, pr, headSha, ctx);
@@ -159,7 +173,9 @@ function driveReadyForMerge(tracked: TrackedPR, pr: PullRequest, headSha: string
  * cannot see whether the agent is still typing) is left alone too.
  */
 function driveCiPassedAuthor(tracked: TrackedPR, pr: PullRequest, newCommentCount: number, ctx: DriveContext): void {
-  if (pr.ciStatus !== "success" || tracked.state !== "watching" || newCommentCount > 0) return;
+  // An undelivered decision parks the author on the gated notice below (the
+  // pending round is work the CI-passed rest must not paper over, issue #440).
+  if (pr.ciStatus !== "success" || tracked.state !== "watching" || newCommentCount > 0 || tracked.pendingReviewDecision) return;
   const author = ctx.sessions.getWorker(tracked.workerId);
   if (author === undefined || author.status !== "awaiting_ci") return;
   setStatusQuietly(ctx, tracked.workerId, "done", `PR #${tracked.prNumber}: CI green — awaiting review/merge`);
@@ -209,7 +225,8 @@ async function driveCiFailure(
   return events;
 }
 
-/** CI green branch: deliver review comments (gated) and re-arm on pushes. */
+/** CI green branch: deliver review comments (gated), drive the bounded
+ * changes-requested fix cycle (issue #440), and re-arm on pushes. */
 async function driveGreen(
   tracked: TrackedPR,
   pr: PullRequest,
@@ -218,7 +235,17 @@ async function driveGreen(
   ctx: DriveContext,
   events: PRPipelineEvent[],
 ): Promise<PRPipelineEvent[]> {
-  if (tracked.state === "watching" && newComments.length > 0) {
+  if (
+    (tracked.state === "fixing" || tracked.state === "addressing") &&
+    tracked.lastPromptedHeadSha !== null &&
+    headSha !== tracked.lastPromptedHeadSha
+  ) {
+    // The worker pushed after being prompted — back to watching.
+    tracked.state = "watching";
+    setStatusQuietly(ctx, tracked.workerId, "awaiting_ci", `PR #${tracked.prNumber}: watching CI`);
+  }
+  if (tracked.state !== "watching") return events;
+  if (newComments.length > 0) {
     // Issue #106: `autoFixReviewComments` OFF means the pipeline skips
     // delivering review comments; the worker's status reflects why.
     if (!settingsOf(ctx).autoFixReviewComments) {
@@ -238,16 +265,80 @@ async function driveGreen(
     setStatusQuietly(ctx, tracked.workerId, "addressing_review", `PR #${tracked.prNumber}: addressing ${newComments.length} review comment(s)`);
     return events;
   }
-  if (
-    (tracked.state === "fixing" || tracked.state === "addressing") &&
-    tracked.lastPromptedHeadSha !== null &&
-    headSha !== tracked.lastPromptedHeadSha
-  ) {
-    // The worker pushed after being prompted — back to watching.
-    tracked.state = "watching";
-    setStatusQuietly(ctx, tracked.workerId, "awaiting_ci", `PR #${tracked.prNumber}: watching CI`);
+  return driveReviewDecision(tracked, pr, headSha, ctx, events);
+}
+
+/**
+ * Changes-requested decision branch (issue #440): a requires-changes review
+ * deterministically prompts the PR-authoring worker to fix the PR and
+ * restarts the loop — the decision twin of the CI-fail fix cycle. The
+ * trigger is the pending decision parked in driveLoop (recorded whenever
+ * the submission watermark consumed a new changes-requested submission, on
+ * red polls and mid-prompt too) or a delivered decision prompt that went
+ * stale without the author pushing (the review still stands — re-prompt,
+ * bounded). Gated on `autoFixReviewComments`, NOT on the review account or
+ * `autoReview`: findings from any reviewer (auto agent, human) must reach
+ * the worker. Bounded by `maxFixAttempts` decision rounds — exhaustion is
+ * terminal, like the CI-fix bound. The head SHA the prompt was sent for
+ * separates "author still working" from "author pushed" — a push hands the
+ * loop to the reviewer's re-review round (review.ts).
+ */
+async function driveReviewDecision(
+  tracked: TrackedPR,
+  pr: PullRequest,
+  headSha: string,
+  ctx: DriveContext,
+  events: PRPipelineEvent[],
+): Promise<PRPipelineEvent[]> {
+  if (!decisionOutstanding(tracked, pr, headSha, ctx)) return events;
+  // Issue #106: `autoFixReviewComments` OFF means the pipeline skips the
+  // decision-driven fix; the worker's status reflects why, and the pending
+  // decision survives (delivery resumes when the setting is turned on).
+  if (!settingsOf(ctx).autoFixReviewComments) {
+    setStatusIfChanged(
+      ctx,
+      tracked.workerId,
+      "awaiting_ci",
+      `PR #${tracked.prNumber}: review requested changes — auto-fix review comments disabled (setting)`,
+    );
+    return events;
   }
+  if (tracked.reviewFixAttempts >= ctx.maxFixAttempts) {
+    tracked.pendingReviewDecision = false;
+    events.push(
+      ...ctx.fail(
+        tracked,
+        `review_fix_attempt_limit_exhausted (${tracked.reviewFixAttempts} rounds)`,
+        "failed",
+        `PR #${tracked.prNumber}: review fix attempt limit (${ctx.maxFixAttempts}) exhausted — manual intervention required`,
+      ),
+    );
+    return events;
+  }
+  const attempt = tracked.reviewFixAttempts + 1;
+  await ctx.sessions.sendKeys(tracked.sessionId, buildAddressReviewPrompt(pr, { attempt, maxAttempts: ctx.maxFixAttempts }), { enter: true });
+  tracked.reviewFixAttempts = attempt;
+  tracked.pendingReviewDecision = false;
+  tracked.state = "addressing";
+  tracked.lastPromptedAt = ctx.now().toISOString();
+  tracked.lastPromptedHeadSha = headSha;
+  setStatusQuietly(
+    ctx,
+    tracked.workerId,
+    "addressing_review",
+    `PR #${tracked.prNumber}: addressing review findings (fix round ${attempt}/${ctx.maxFixAttempts})`,
+  );
   return events;
+}
+
+/** Whether a changes-requested decision demands an author prompt right now. */
+function decisionOutstanding(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: DriveContext): boolean {
+  if (tracked.pendingReviewDecision) return true;
+  // Delivered but unanswered: the decision still stands (reviewState) and
+  // the head has not moved (a push hands the loop to the re-review round).
+  if (pr.reviewState !== "changes_requested" || tracked.lastPromptedHeadSha !== headSha) return false;
+  const promptedAt = tracked.lastPromptedAt === null ? null : Date.parse(tracked.lastPromptedAt);
+  return promptedAt !== null && ctx.now().getTime() - promptedAt > ctx.fixPromptTimeoutMs;
 }
 
 function markCommentsSeen(tracked: TrackedPR, comments: PRReviewComment[]): void {

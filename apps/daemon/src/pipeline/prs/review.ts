@@ -16,19 +16,26 @@
  * - the PR got approved (or reaches any terminal state): the reviewer is
  *   archived — the loop stops re-running, per the issue.
  *
+ * Issue #407/#440: reacting to review OUTCOMES (a changes-requested decision
+ * prompting the author) lives in `drive.ts` (`driveReviewDecision`) — this
+ * module owns the reviewer lifecycle only: spawning, re-reviewing, settling,
+ * archiving.
+ *
  * The reviewer itself reads the diff and posts the GitHub review (approve
  * or request changes, with inline comments) via `gh` — see
  * `agent/skills/review-pr/SKILL.md`; the daemon never posts reviews on its
  * behalf.
  *
- * Issue #407: the review cycle (auto agent, real GitHub reviews, the
- * review-submission watermark and the address-findings trigger) runs ONLY
- * when a review account is configured (`reviewAccountToken` in the daemon
- * settings): the reviewer pane runs `gh` as that second identity, which is
- * what makes decisive reviews possible at all. Without it — single-account
- * mode — the whole cycle is inert: no reviewer is spawned and review events
- * trigger nothing; the PR loop is worker + CI only. #408's deterministic
- * PR lifecycle keys further steps on the same watermark.
+ * Issue #407: the reviewer cycle (auto agent, real GitHub reviews, the
+ * review-submission watermark) runs ONLY when a review account is
+ * configured (`reviewAccountToken` in the daemon settings): the reviewer
+ * pane runs `gh` as that second identity, which is what makes decisive
+ * reviews possible at all. Without it — single-account mode — the reviewer
+ * cycle is inert: no reviewer is spawned. The PR loop itself (CI fixes,
+ * inline-comment delivery, and since issue #440 the changes-requested
+ * decision branch) still runs — a human reviewer's decision reaches the
+ * worker in single-account mode too. #408's deterministic PR lifecycle
+ * keys further steps on the same watermark.
  *
  * Issue #411 (B35): the reviewer's status is platform-derived, not
  * agent-reported: `running` is set at prompt delivery (spawn/re-review) and
@@ -41,7 +48,7 @@ import { ACTIVE_WORKER_STATUSES, type PullRequest, type Worker, type WorkerStatu
 
 import type { ReviewSubmission } from "../../github/reviews.js";
 import type { PRSessionControl } from "./pipeline.js";
-import { buildAddressReviewPrompt, buildReReviewPrompt, buildReviewAgentPrompt, type ReviewAgentPromptOptions } from "./prompts.js";
+import { buildReReviewPrompt, buildReviewAgentPrompt, type ReviewAgentPromptOptions } from "./prompts.js";
 import { DEFAULT_WORKER_PIPELINE_SETTINGS, type WorkerPipelineSettings } from "./settings.js";
 import type { TrackedPR } from "./tracker.js";
 
@@ -88,7 +95,7 @@ export interface ReviewContext {
  * prompt) propagate to the pipeline's poll error sink — like the CI-fix
  * prompt path — and retry on the next poll.
  */
-export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: ReviewContext, newReview: ReviewSubmission | null): Promise<void> {
+export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: ReviewContext): Promise<void> {
   // Issue #407: no review account configured → single-account mode: the
   // review cycle (agent spawn, real reviews, review-based triggers) is
   // entirely off — the platform cannot review its own PRs with the primary
@@ -105,7 +112,6 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
   // the author rebases; the CI-green gate above already ran.
   if (pr.mergeConflicts === true) return;
 
-  await triggerFindingsAddress(tracked, pr, headSha, ctx, newReview, settings);
   if (!settings.autoReview) return;
   // Issue #408: the reviewer spawns only for PRs assigned to the review
   // user — the pipeline's assignment leg marks worker PRs on submission, and
@@ -116,25 +122,6 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
   // applies.
   if (!(ctx.prAssignees ?? []).includes(ctx.reviewAccountUsername())) return;
   await driveReviewerRound(tracked, pr, headSha, ctx);
-}
-
-/**
- * Issue #407: a completed review round deterministically triggers the
- * PR-authoring worker. A NEW review submission (tracker watermark) that
- * requests changes is actionable: prompt the author to address the findings
- * unless a prompt is already in flight (state !== watching) or the
- * review-addressing gate is off. Gated on `autoFixReviewComments`, NOT on
- * `autoReview` — findings from any reviewer (auto agent, human) must reach
- * the worker. The inline-comment delivery branch (drive.ts) covers the
- * comments themselves; this covers review-body findings.
- */
-async function triggerFindingsAddress(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: ReviewContext, newReview: ReviewSubmission | null, settings: WorkerPipelineSettings): Promise<void> {
-  if (newReview?.state !== "CHANGES_REQUESTED" || !settings.autoFixReviewComments || tracked.state !== "watching") return;
-  await ctx.sessions.sendKeys(tracked.sessionId, buildAddressReviewPrompt(pr), { enter: true });
-  tracked.state = "addressing";
-  tracked.lastPromptedAt = ctx.now().toISOString();
-  tracked.lastPromptedHeadSha = headSha;
-  setWorkerStatusQuietly(ctx, tracked.workerId, "addressing_review", `PR #${tracked.prNumber}: addressing review findings`);
 }
 
 /** The reviewer lifecycle for a green PR: re-prompt on pushes, else spawn. */
