@@ -14,7 +14,8 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 
 import { TerminateWorkerModal } from "./picker-modals";
-import { runTerminateConfirm } from "./use-picker-state";
+import { runTerminateConfirm, routesThroughSessionTerminate } from "./use-picker-state";
+import type { Session, Worker } from "@pideck/shared";
 
 function deferred() {
   let resolve!: () => void;
@@ -79,6 +80,45 @@ describe("runTerminateConfirm (issue #268)", () => {
 
     expect(terminate).not.toHaveBeenCalled();
     expect(hooks.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("terminate routing: listing/registry agreement (issue #488)", () => {
+  const workerSession = (workerId: string | null) =>
+    ({ id: "sess-1", projectId: "proj", role: "worker", tmuxSession: "pideck-proj-worker-1", workerId, createdAt: "" }) as Session;
+  const workerRecord = (id: string) =>
+    ({
+      id,
+      projectId: "proj",
+      sessionId: "sess-1",
+      issueNumber: 1,
+      prNumbers: [],
+      status: "running",
+      statusMessage: null,
+      startedAt: "",
+      updatedAt: "",
+    }) as Worker;
+
+  it("routes a known worker record through the worker-id path", () => {
+    const session = workerSession("worker-1");
+    expect(routesThroughSessionTerminate(session, [workerRecord("worker-1")])).toBe(false);
+  });
+
+  it("routes a dangling worker pointer (registry lost the record) through the session-id path", () => {
+    // Issue #488: the sidebar lists the session, but the daemon's registry
+    // no longer holds the worker — the worker-id terminate call 404s, the
+    // #317 session route kills the pane instead.
+    const session = workerSession("worker-gone");
+    expect(routesThroughSessionTerminate(session, [workerRecord("worker-1")])).toBe(true);
+    expect(routesThroughSessionTerminate(session, [])).toBe(true);
+  });
+
+  it("routes a worker-less row (workerId null) through the session-id path (#482 parity)", () => {
+    expect(routesThroughSessionTerminate(workerSession(null), [workerRecord("worker-1")])).toBe(true);
+  });
+
+  it("keeps the worker path for an unresolved confirm target (stale modal dismisses)", () => {
+    expect(routesThroughSessionTerminate(undefined, [])).toBe(false);
   });
 });
 
