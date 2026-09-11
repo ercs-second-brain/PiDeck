@@ -81,25 +81,36 @@ describe("Tmux against a fake server", () => {
     const { tmux } = makeTmux();
     expect(await tmux.hasSession("nope")).toBe(false);
   });
+});
 
+describe("Tmux.capturePane against a fake server", () => {
   it("captures pane contents", async () => {
     const { tmux, fake } = makeTmux({ initialPaneLines: ["hello", "from", "pane"] });
     await tmux.newSession("sess");
     expect(await tmux.capturePane("sess")).toBe("hello\nfrom\npane");
+    const capture = fake.invocations.find((inv) => inv.args[0] === "capture-pane");
+    // Escape sequences are kept (issue #443): archived logs must preserve
+    // the pane's colors.
+    expect(capture?.args).toContain("-e");
     // Default capture keeps hard-wrapped rows as-is: no -J flag.
-    expect(
-      fake.invocations.find((inv) => inv.args[0] === "capture-pane")?.args.includes("-J"),
-    ).toBe(false);
+    expect(capture?.args.includes("-J")).toBe(false);
     await expect(tmux.capturePane("missing")).rejects.toBeInstanceOf(TmuxError);
+  });
+
+  it("passes SGR attributes through verbatim (issue #443)", async () => {
+    const colored = "\x1b[1;32mbuilding…\x1b[0m";
+    const { tmux } = makeTmux({ initialPaneLines: [colored, "done"] });
+    await tmux.newSession("sess");
+    expect(await tmux.capturePane("sess")).toContain(colored);
   });
 
   it("passes -J when joinWrapped is set (issue #362)", async () => {
     const { tmux, fake } = makeTmux({ initialPaneLines: ["hello", "from", "pane"] });
     await tmux.newSession("sess");
     expect(await tmux.capturePane("sess", { joinWrapped: true })).toBe("hello\nfrom\npane");
-    expect(
-      fake.invocations.find((inv) => inv.args[0] === "capture-pane")?.args,
-    ).toEqual(["capture-pane", "-p", "-J", "-t", "sess", "-S", "-500"]);
+    expect(fake.invocations.find((inv) => inv.args[0] === "capture-pane")?.args).toEqual(
+      ["capture-pane", "-p", "-e", "-J", "-t", "sess", "-S", "-500"],
+    );
   });
 
   it("resizes the session window", async () => {

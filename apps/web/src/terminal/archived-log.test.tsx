@@ -16,6 +16,7 @@ vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: class {} }));
 vi.mock("@xterm/addon-canvas", () => ({ CanvasAddon: class {} }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 import type { Worker } from "@pideck/shared";
+import type { ArchivedWorkerLog } from "@pideck/shared";
 import { makeProject, makeSession, makeWorker } from "./test-fixtures";
 import { ArchivedLogPanel, ArchivedLogView } from "./ArchivedLogView";
 import { TerminalPage } from "./TerminalPage";
@@ -116,6 +117,66 @@ describe("ArchivedLogPanel (issue #104)", () => {
     expect(html).toContain("freeform task");
     expect(html).not.toContain("archived-log-prompt");
     expect(html).not.toContain("PR");
+  });
+});
+
+describe("ArchivedLogPanel ANSI scrollback (issue #443)", () => {
+  const baseLog: Omit<ArchivedWorkerLog, "scrollback"> = {
+    workerId: "worker-1",
+    projectId: "agentskiss",
+    issueNumber: 443,
+    prNumber: null,
+    prompt: null,
+    finalStatus: "archived",
+    finalStatusMessage: null,
+    startedAt: "2025-01-01T00:00:00.000Z",
+    updatedAt: "2025-01-02T00:00:00.000Z",
+    capturedAt: "2025-01-02T00:00:00.000Z",
+  };
+
+  it("renders SGR-colored text as styled spans, never as raw escapes", () => {
+    const html = renderToString(
+      <ArchivedLogPanel
+        log={{
+          ...baseLog,
+          scrollback: "\x1b[1;32mbuilding…\x1b[0m plain \x1b[48;2;60;40;40mchip\x1b[0m tail",
+        }}
+      />,
+    );
+    expect(html).toContain("building\u2026");
+    expect(html).toContain("plain");
+    expect(html).toContain("chip");
+    expect(html).toContain("font-weight:700");
+    expect(html).toContain("color:#4e9a06");
+    expect(html).toContain("background-color:rgb(60,40,40)");
+    expect(html).not.toContain("\x1b[");
+    // The reset clears the style: "tail" renders outside a styled span.
+    expect(html).toContain("</span> tail");
+  });
+
+  it("maps 256-color and truecolor foregrounds/backgrounds", () => {
+    const html = renderToString(
+      <ArchivedLogPanel
+        log={{
+          ...baseLog,
+          scrollback:
+            "\x1b[38;5;196mA\x1b[39m\x1b[38;2;138;190;183mB\x1b[49m \x1b[100mH\x1b[0m",
+        }}
+      />,
+    );
+    // 256-color 196 → cube red (5,0,0); truecolor passes through; bg cleared by 49.
+    expect(html).toContain("color:rgb(255,0,0)");
+    expect(html).toContain("color:rgb(138,190,183)");
+    expect(html).toContain("background-color:#555753");
+    expect(html).not.toContain("\x1b[");
+  });
+
+  it("renders pre-#443 plain-text archives unchanged", () => {
+    const html = renderToString(
+      <ArchivedLogPanel log={{ ...baseLog, scrollback: "line one\nline two" }} />,
+    );
+    expect(html).toContain("line one\nline two");
+    expect(html).not.toContain("<span style");
   });
 });
 

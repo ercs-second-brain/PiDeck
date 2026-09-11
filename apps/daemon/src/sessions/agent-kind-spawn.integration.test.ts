@@ -168,8 +168,12 @@ describe("agent-kind launch on a real tmux server (docs/agent-kinds.md, issue #3
     // a question submitted to persona-carrying pi.
     const deadline = Date.now() + 30_000;
     let pane = "";
-    const flat = () => pane.replace(/\n/g, "");
-    const hasInputBox = () => pane.split("\n").filter((l) => /─{10,}/.test(l)).length >= 2;
+    // capture-pane keeps escape sequences now (issue #443), and pi's colored
+    // output interleaves SGR resets between wrapped rows — match on plain
+    // text.
+    const plain = () => pane.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+    const flat = () => plain().replace(/\n/g, "");
+    const hasInputBox = () => plain().split("\n").filter((l) => /─{10,}/.test(l)).length >= 2;
     while (Date.now() < deadline) {
       pane = await tmux.capturePane(session.tmuxSession, { lines: 500 });
       if (hasInputBox() && flat().includes("--append-system-prompt")) break;
@@ -185,11 +189,11 @@ describe("agent-kind launch on a real tmux server (docs/agent-kinds.md, issue #3
     // pre-fix race left it typed-but-never-sent in a fresh pane).
     while (Date.now() < deadline) {
       pane = await tmux.capturePane(session.tmuxSession, { lines: 500 });
-      if (flat().includes(question) && !inputArea(pane).replace(/\n/g, "").includes(question)) break;
+      if (flat().includes(question) && !inputArea(plain()).replace(/\n/g, "").includes(question)) break;
       await sleep(200);
     }
     expect(flat()).toContain(question);
-    expect(inputArea(pane).replace(/\n/g, "")).not.toContain(question);
+    expect(inputArea(plain()).replace(/\n/g, "")).not.toContain(question);
   });
 });
 

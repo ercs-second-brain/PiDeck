@@ -30,9 +30,22 @@ const PROBE_LINES = 12;
 /** The input-box border: a horizontal rule wide enough to be TUI chrome. */
 const BORDER = /─{10,}/;
 
+/**
+ * ANSI escape sequences (CSI + a couple of C0 controls). Captures now carry
+ * SGR attributes (`capture-pane -e`, issue #443), so text matching on pane
+ * content must ignore them — a colored transcript interleaves resets
+ * between the rows of a wrapped prompt.
+ */
+const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+
+/** Removes ANSI escape sequences from a capture (idempotent on plain text). */
+function stripAnsi(capture: string): string {
+  return capture.replace(ANSI, "");
+}
+
 /** True when a `capture-pane` payload shows pi's input box (ready state). */
 export function paneInputReady(capture: string): boolean {
-  return BORDER.test(capture);
+  return BORDER.test(stripAnsi(capture));
 }
 
 /**
@@ -41,7 +54,7 @@ export function paneInputReady(capture: string): boolean {
  * plain shell pane has no composer, so a visible message IS the transcript.
  */
 export function paneInputArea(capture: string): string {
-  const lines = capture.split("\n");
+  const lines = stripAnsi(capture).split("\n");
   const borders: number[] = [];
   lines.forEach((line, i) => {
     if (BORDER.test(line)) borders.push(i);
@@ -60,9 +73,10 @@ export function paneInputArea(capture: string): string {
  * mid-token, and a wrap only inserts newlines, not characters.
  */
 export function paneSubmitted(capture: string, text: string): boolean {
-  const flat = capture.replace(/\n/g, "");
+  const plain = stripAnsi(capture);
+  const flat = plain.replace(/\n/g, "");
   if (!flat.includes(text)) return false;
-  return !paneInputArea(capture).replace(/\n/g, "").includes(text);
+  return !paneInputArea(plain).replace(/\n/g, "").includes(text);
 }
 
 export interface PaneReadyWaitOptions {
