@@ -33,11 +33,45 @@ function referencedIssueNumbers(text: string): Set<number> {
 }
 
 /**
- * Associates a PR with its owning worker: if the PR's title, head branch,
- * or body references the issue an unassociated, non-terminal worker is
- * working on, record the worker as the PR owner (`setWorkerPr`) — the PR
- * loop's tracker resolves ownership from the registry. Only ever fills
- * workers whose `prNumber` is still null.
+ * GitHub's closing keywords (issue #441): only these body mentions claim
+ * ownership. A bare `#N` in the body — "Depends on #440", "related to #12" —
+ * is not evidence the PR belongs to the worker on issue #N; with parallel
+ * workers such cross-references made the first-match sweep associate a PR
+ * to a worker that is merely referenced (the reviewer then nested under
+ * the wrong owner).
+ */
+const CLOSING_KEYWORD_REFS = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;
+
+function closingKeywordRefs(body: string): Set<number> {
+  const refs = new Set<number>();
+  for (const match of body.matchAll(CLOSING_KEYWORD_REFS)) refs.add(Number(match[1]));
+  return refs;
+}
+
+/**
+ * First unassociated, non-terminal worker whose issue is referenced in
+ * `refs` — the candidate scan for one evidence tier.
+ */
+function ownerForRefs(workers: Worker[], refs: Set<number>): Worker | undefined {
+  if (refs.size === 0) return undefined;
+  return workers.find(
+    (worker) =>
+      worker.prNumber === null && worker.issueNumber !== 0 && refs.has(worker.issueNumber) && PR_OWNABLE_STATUSES.has(worker.status),
+  );
+}
+
+/**
+ * Associates a PR with its owning worker: an unassociated, non-terminal
+ * worker whose issue the PR references is recorded as the PR owner
+ * (`setWorkerPr`) — the PR loop's tracker resolves ownership from the
+ * registry. Only ever fills workers whose `prNumber` is still null.
+ *
+ * Evidence is tiered (issue #441): a title/head-branch reference — the PR
+ * headline names its own issue — outranks the body, and the body claims
+ * only through GitHub's closing keywords (`Closes #N`), the #439-mandated
+ * self-report. Bare body mentions ("Depends on #N") never claim: with
+ * parallel workers on related issues they picked the wrong owner, and the
+ * auto reviewer then nested under that wrong worker.
  */
 export function associateWorkerPr(
   tracker: PRTracker,
@@ -47,11 +81,8 @@ export function associateWorkerPr(
 ): void {
   if (tracker.get(pr.projectId, pr.number) !== undefined) return;
   if (workers.some((worker) => worker.prNumber === pr.number)) return;
-  const refs = referencedIssueNumbers(`${pr.title} ${pr.headBranch} ${pr.body ?? ""}`);
-  if (refs.size === 0) return;
-  const owner = workers.find(
-    (worker) =>
-      worker.prNumber === null && worker.issueNumber !== 0 && refs.has(worker.issueNumber) && PR_OWNABLE_STATUSES.has(worker.status),
-  );
+  const owner =
+    ownerForRefs(workers, referencedIssueNumbers(`${pr.title} ${pr.headBranch}`)) ??
+    (pr.body === undefined ? undefined : ownerForRefs(workers, closingKeywordRefs(pr.body)));
   if (owner !== undefined) setWorkerPr(owner.id, pr.number);
 }
