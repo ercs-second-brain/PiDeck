@@ -251,11 +251,11 @@ export function AgentRow(props: {
 }
 
 /**
- * The project row (issue #108 + #114 + #167 + #173 + #373): collapse chevron,
- * the project NAME as the kanban entry, the chat icon as the orchestrator
- * entry (starting it when absent) — on the LEFT, immediately after the name
- * (B20) — and the ⋯ context menu, alone at the row's far right. Pure
- * rendering.
+ * The project row (issue #108 + #114 + #167 + #173 + #373/#449): collapse
+ * chevron, the project NAME as the kanban entry, the chat icon as the
+ * orchestrator entry (starting it when absent) — on the RIGHT, adjacent to
+ * the ⋯ context menu (issue #449, B10: one icon cluster at the row's far
+ * right, the name clean on the left). Pure rendering.
  */
 export function ProjectRow(props: {
   projectName: string;
