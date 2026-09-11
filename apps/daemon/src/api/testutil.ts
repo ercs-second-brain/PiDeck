@@ -65,13 +65,27 @@ function simpleRoutes(routes: FakeGhRoutes, args: string[]): GhRunResult | undef
   return undefined;
 }
 
-/** Matches the `gh api <path>` invocations (REST route table). */
+/** Matches the `gh api <path>` invocations (REST route table). Handles the
+ * plain form (`gh api <path>`), the header form (`gh api -i <path>`), and
+ * the method form (`gh api --method POST|DELETE <path> -f k=v ...`) — all
+ * keyed by path prefix before `?` (issue #491: the assign route's
+ * `-i /user` auth probe and `--method` assignee writes). */
 function apiRoute(routes: FakeGhRoutes, args: string[]): GhRunResult | undefined {
   if (args[0] !== "api" || typeof args[1] !== "string" || args[1] === "graphql") return undefined;
-  const basePath = args[1].split("?")[0] ?? "";
+  let path: string | undefined;
+  if (args[1] === "-i") path = args[2];
+  else if (args[1] === "--method") path = args[3];
+  else path = args[1];
+  if (typeof path !== "string") return undefined;
+  const basePath = path.split("?")[0] ?? "";
   if (routes.errors?.[basePath] !== undefined) throw new Error(routes.errors[basePath]);
   const response = routes.api?.[basePath];
   if (response === undefined) return undefined;
+  // `-i` (headers form, e.g. the auth probe's GET /user) needs a header
+  // block for apiWithHeaders to split on; other calls get the bare JSON.
+  if (args[1] === "-i") {
+    return { stdout: `HTTP/1.1 200 OK\r\n\r\n${JSON.stringify(response)}`, stderr: "" };
+  }
   return { stdout: JSON.stringify(response), stderr: "" };
 }
 

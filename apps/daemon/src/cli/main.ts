@@ -32,6 +32,7 @@ import { pathToFileURL } from "node:url";
 
 import { CliError, optionalFlag, parseArgs, positional, requireFlag, type ParsedArgs } from "./args.js";
 import { DaemonClient } from "./client.js";
+import { cmdAssign } from "./assign.js";
 import { PI_NODE_MIN_VERSION } from "../api/node-version.js";
 
 /** Injectables for tests. */
@@ -55,6 +56,7 @@ Usage:
   pideck workers --project <id> [--json]
   pideck pulls --project <id> [--json]
   pideck diff --project <id> <pr-number>
+  pideck assign --project <id> --issue <n>
   pideck spawn --project <id> [--issue <n> | --kind <agent-kind> [--question <q>]] --name <label> [--prompt <task>]
   pideck send --session <id> --message <text>
 
@@ -358,6 +360,7 @@ export const commands: Record<string, Command> = {
   workers: cmdWorkers,
   pulls: cmdPulls,
   diff: cmdDiff,
+  assign: cmdAssign,
   spawn: cmdSpawn,
   send: cmdSend,
 };

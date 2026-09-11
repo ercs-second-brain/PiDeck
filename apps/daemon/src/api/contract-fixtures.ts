@@ -65,6 +65,9 @@ const ghRoutes = {
     },
   },
   api: {
+    // gh account login (issue #491: the assign route assigns this account;
+    // served for the `-i /user` auth-probe form).
+    "/user": { login: "auto-agent" },
     "/repos/o/r/pulls/9": {
       number: 9,
       title: "Fix the flaky test",
@@ -99,6 +102,20 @@ const ghRoutes = {
       html_url: "https://github.com/sp/rp/issues/8",
       updated_at: UPDATED_AT,
     },
+    // Issue-assignee writes + an already-assigned issue (issue #491: the
+    // assign route's fresh-assign and unassign+re-assign paths).
+    "/repos/sp/rp/issues/5/assignees": { assignees: [{ login: "auto-agent" }] },
+    "/repos/sp/rp/issues/9": {
+      number: 9,
+      title: "Pre-assigned work",
+      state: "open",
+      user: { login: "someone" },
+      assignee: { login: "auto-agent" },
+      assignees: [{ login: "auto-agent" }],
+      html_url: "https://github.com/sp/rp/issues/9",
+      updated_at: UPDATED_AT,
+    },
+    "/repos/sp/rp/issues/9/assignees": { assignees: [{ login: "auto-agent" }] },
     "/repos/sp/gate/issues/1": {
       number: 1,
       title: "Gate work item",

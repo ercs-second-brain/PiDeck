@@ -57,3 +57,28 @@ export const sessionSendSchema = z.object({
   message: z.string().min(1),
 });
 
+/**
+ * `POST /api/projects/:projectId/assign` (issue #491) — assign an issue to
+ * the daemon's gh account, which auto-triggers a worker (assignment-driven
+ * spawning, issue #416): the watcher sees the `issue.assigned` transition
+ * and the issue pipeline spawns.
+ */
+export const projectAssignSchema = z.object({
+  issueNumber: refNumberSchema,
+});
+
+/**
+ * Response of the assign route (issue #491): who got assigned, whether the
+ * account was ALREADY assigned (the route unassigned first and re-assigned
+ * — the re-assignment is what re-triggers the worker).
+ */
+export const projectAssignResultSchema = z.object({
+  ok: z.literal(true),
+  issueNumber: refNumberSchema,
+  /** The gh account login the issue was (re-)assigned to. */
+  assignee: z.string().min(1),
+  /** True when the account was already assigned — unassign + re-assign happened. */
+  retriggered: z.boolean(),
+});
+export type ProjectAssignResult = z.infer<typeof projectAssignResultSchema>;
+

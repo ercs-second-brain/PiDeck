@@ -30,6 +30,7 @@ import {
 } from "@pideck/shared";
 
 import { CliError } from "./args.js";
+import { projectAssignResultSchema } from "../api/cli-routes.js";
 
 /** Default daemon port when neither `PD_DAEMON_URL` nor `PD_WEB_PORT` is set. */
 export const DEFAULT_DAEMON_PORT = "8321";
@@ -135,6 +136,21 @@ export class DaemonClient {
   /** `pideck send` — deliver a message into a session's tmux pane. */
   async send(sessionId: string, message: string): Promise<void> {
     await this.request("POST", `/api/sessions/${encodeURIComponent(sessionId)}/send`, { message });
+  }
+
+  /**
+   * `pideck assign` (issue #491) — assign an issue to the daemon's gh
+   * account, auto-triggering a worker. When the account is already assigned
+   * the daemon unassigns and re-assigns (the re-assignment re-triggers);
+   * the result says which path happened via `retriggered`.
+   */
+  async assign(projectId: string, issueNumber: number): Promise<{ ok: boolean; issueNumber: number; assignee: string; retriggered: boolean }> {
+    return this.request(
+      "POST",
+      `/api/projects/${encodeURIComponent(projectId)}/assign`,
+      { issueNumber },
+      projectAssignResultSchema,
+    );
   }
 
   // -- Contract endpoints (validated against the shared schemas) -------------

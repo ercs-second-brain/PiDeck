@@ -84,6 +84,43 @@ describe("CLI action routes", () => {
     expect((worker.json as { error: string }).error).toContain("concurrency cap");
   });
 
+  it("assigns an issue to the gh account, re-triggering when already assigned (issue #491)", async () => {
+    const { api, daemon } = server;
+    // sp-rp is registered by the spawn test above; register defensively so
+    // this test holds on its own too.
+    let project = daemon.services.projects.get("sp-rp");
+    if (project === undefined) {
+      project = await daemon.services.projects.register({ mode: "clone", repoUrl: "https://github.com/sp/rp" });
+    }
+    const projectId = project.id;
+
+    // Fresh: not assigned yet → a plain assign (the watcher's
+    // `issue.assigned` transition auto-triggers the worker).
+    const fresh = await api("POST", `/api/projects/${projectId}/assign`, { issueNumber: 5 });
+    expect(fresh.status).toBe(200);
+    expect(fresh.json).toEqual({ ok: true, issueNumber: 5, assignee: "auto-agent", retriggered: false });
+
+    // Already assigned → unassign + re-assign (the re-assignment re-triggers).
+    const retrigger = await api("POST", `/api/projects/${projectId}/assign`, { issueNumber: 9 });
+    expect(retrigger.status).toBe(200);
+    expect(retrigger.json).toEqual({ ok: true, issueNumber: 9, assignee: "auto-agent", retriggered: true });
+
+    // Unknown project → 404; unknown issue number → 502 (gh fetch failure).
+    expect((await api("POST", "/api/projects/nope/assign", { issueNumber: 5 })).status).toBe(404);
+    expect((await api("POST", `/api/projects/${projectId}/assign`, { issueNumber: 1234 })).status).toBe(502);
+
+    // CLI surface end-to-end.
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((line: string) => logs.push(line));
+    try {
+      const client = new DaemonClient(server.base);
+      expect(await run(["assign", "--project", projectId, "--issue", "5"], client)).toBe(0);
+      expect(logs.join("\n")).toContain("assigned to auto-agent");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it("delivers messages to a session's pane and 404s unknown sessions", async () => {
     const { api, daemon } = server;
     const { services } = daemon;

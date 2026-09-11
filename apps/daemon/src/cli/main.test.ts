@@ -49,57 +49,61 @@ describe("parseArgs", () => {
   });
 });
 
-describe("run() command dispatch", () => {
-  class StubClient extends DaemonClient {
-    readonly calls: Array<[string, unknown]> = [];
-    override async status() {
-      this.calls.push(["status", null]);
-      return { ok: true, name: "pideck-daemon", projects: 2, sessions: 3, at: "2026-01-01T00:00:00.000Z" };
-    }
-    override async getProject(id: string): Promise<Project> {
-      this.calls.push(["getProject", id]);
-      return {
-        id,
-        name: id,
-        repoUrl: `https://github.com/o/${id}`,
-        defaultBranch: "main",
-        settings: { workerConcurrency: 1 },
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      };
-    }
-    override async kanban(projectId: string) {
-      this.calls.push(["kanban", projectId]);
-      return {
-        projectId,
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        columns: [
-          { column: "backlog" as const, cards: [] },
-          { column: "in_progress" as const, cards: [] },
-          { column: "in_review" as const, cards: [] },
-          { column: "done" as const, cards: [] },
-        ],
-      };
-    }
-    override async spawn(projectId: string, input: { issueNumber?: number; name: string; prompt?: string }) {
-      this.calls.push(["spawn", { projectId, input }]);
-      return {
-        id: "worker-1",
-        projectId,
-        sessionId: "sess-1",
-        issueNumber: input.issueNumber ?? 0,
-        prNumbers: [],
-        status: "running" as const,
-        statusMessage: null,
-        startedAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      };
-    }
-    override async send(sessionId: string, message: string) {
-      this.calls.push(["send", { sessionId, message }]);
-    }
+class StubClient extends DaemonClient {
+  readonly calls: Array<[string, unknown]> = [];
+  override async status() {
+    this.calls.push(["status", null]);
+    return { ok: true, name: "pideck-daemon", projects: 2, sessions: 3, at: "2026-01-01T00:00:00.000Z" };
   }
+  override async getProject(id: string): Promise<Project> {
+    this.calls.push(["getProject", id]);
+    return {
+      id,
+      name: id,
+      repoUrl: `https://github.com/o/${id}`,
+      defaultBranch: "main",
+      settings: { workerConcurrency: 1 },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+  override async kanban(projectId: string) {
+    this.calls.push(["kanban", projectId]);
+    return {
+      projectId,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      columns: [
+        { column: "backlog" as const, cards: [] },
+        { column: "in_progress" as const, cards: [] },
+        { column: "in_review" as const, cards: [] },
+        { column: "done" as const, cards: [] },
+      ],
+    };
+  }
+  override async spawn(projectId: string, input: { issueNumber?: number; name: string; prompt?: string }) {
+    this.calls.push(["spawn", { projectId, input }]);
+    return {
+      id: "worker-1",
+      projectId,
+      sessionId: "sess-1",
+      issueNumber: input.issueNumber ?? 0,
+      prNumbers: [],
+      status: "running" as const,
+      statusMessage: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+  override async send(sessionId: string, message: string) {
+    this.calls.push(["send", { sessionId, message }]);
+  }
+  override async assign(projectId: string, issueNumber: number) {
+    this.calls.push(["assign", { projectId, issueNumber }]);
+    return { ok: true, issueNumber, assignee: "auto-agent", retriggered: false };
+  }
+}
 
+describe("run() command dispatch", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let writeSpy: ReturnType<typeof vi.spyOn>;
 
@@ -135,6 +139,14 @@ describe("run() command dispatch", () => {
     const client = new StubClient();
     await expect(run(["spawn", "--project", "p1", "--name", "x".repeat(21)], client)).rejects.toThrow(/≤ 20/);
     expect(client.calls).toHaveLength(0);
+  });
+
+  it("maps assign and rejects non-numeric --issue (issue #491)", async () => {
+    const client = new StubClient();
+    await run(["assign", "--project", "p1", "--issue", "5"], client);
+    expect(client.calls.at(-1)).toEqual(["assign", { projectId: "p1", issueNumber: 5 }]);
+    await expect(run(["assign", "--project", "p1"], client)).rejects.toThrow(/--issue/);
+    await expect(run(["assign", "--project", "p1", "--issue", "x"], client)).rejects.toThrow(/positive number/);
   });
 
   it("rejects spawn without --issue or --prompt", async () => {
