@@ -96,6 +96,9 @@ describe("TerminalBridge: event-driven output", () => {
     for (const capture of captures) {
       const sIdx = capture.args.indexOf("-S");
       expect(capture.args[sIdx + 1]).toBe("-24");
+      // Trailing spaces are preserved so full-width bg bars capture with
+      // their cells (issue #442).
+      expect(capture.args).toContain("-N");
     }
   });
 

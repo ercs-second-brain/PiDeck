@@ -312,6 +312,11 @@ export class TerminalBridge {
         "capture-pane",
         "-p",
         "-e",
+        // Preserve trailing spaces (issue #442): without -N, full-width
+        // background bars capture as SGR-only lines and every row's end
+        // state depends on trimmed cells, so bars render only when the
+        // client parser's background happens to match.
+        "-N",
         "-t",
         session.tmuxSession,
         "-S",
