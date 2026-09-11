@@ -166,6 +166,26 @@ function migrateSessionKind(entry: unknown): unknown {
   return raw["agentKind"] === "investigator" ? { ...raw, agentKind: "researcher" } : entry;
 }
 
+/**
+ * Write-time validation (issue #494): the loader ({@link validatePersistedState})
+ * drops records that fail their schema — loudly, with dangling-pointer repair
+ * (issue #489) — but that only fires at boot, after the bad record was already
+ * persisted. This guard runs on every write path instead: a schema-invalid
+ * shape fails at spawn/persist time, so the file on disk never contains a
+ * record the loader will have to drop. Intentionally the SAME schemas (no
+ * schema or forward-compat policy change): anything this rejects is exactly
+ * what the loader would have silently dropped.
+ */
+function assertParsable(kind: "session" | "worker", record: unknown): void {
+  const schema = kind === "session" ? sessionSchema : workerSchema;
+  const parsed = schema.safeParse(record);
+  if (!parsed.success) {
+    throw new Error(
+      `[pideck] registry: refusing to write invalid ${kind} record (the loader would drop it): ${JSON.stringify(record)} — ${parsed.error.message}`,
+    );
+  }
+}
+
 function newId(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
@@ -197,6 +217,7 @@ export class SessionRegistry {
     if (input.parentSessionId !== undefined) session.parentSessionId = input.parentSessionId;
     if (input.name !== undefined) session.name = input.name;
     if (input.runsAsReviewIdentity !== undefined) session.runsAsReviewIdentity = input.runsAsReviewIdentity;
+    assertParsable("session", session);
     this.sessions.set(session.id, session);
     this.save();
     return session;
@@ -302,6 +323,7 @@ export class SessionRegistry {
     if (input.parentWorkerId !== undefined && input.parentWorkerId !== null) {
       worker.parentWorkerId = input.parentWorkerId;
     }
+    assertParsable("worker", worker);
     this.workers.set(worker.id, worker);
     this.save();
     return worker;
@@ -387,13 +409,21 @@ export class SessionRegistry {
 
   // -- persistence -----------------------------------------------------------
 
-  /** Writes current state to the JSON file (atomic via {@link JsonStore}). */
+  /**
+   * Writes current state to the JSON file (atomic via {@link JsonStore}).
+   * Every record is schema-validated first (issue #494): save() is the one
+   * choke point all write paths funnel through, so the in-place mutators
+   * (status/PR/retask/cwd/command/… updates) are covered here even though
+   * only the two factory methods can build a bad record today.
+   */
   save(): void {
     const state: PersistedState = {
       version: STATE_VERSION,
       sessions: [...this.sessions.values()],
       workers: [...this.workers.values()],
     };
+    for (const session of state.sessions) assertParsable("session", session);
+    for (const worker of state.workers) assertParsable("worker", worker);
     this.store.save(state);
   }
 
