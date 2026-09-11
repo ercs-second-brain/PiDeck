@@ -1,12 +1,14 @@
 /**
- * Issue #373 sidebar row-layout contracts. B20: on the workspace and
- * project rows the terminal-open buttons (the 💬 chat icons) sit on the
- * LEFT, immediately after the row's name, while the ⋯ context menu alone
- * keeps the row's far right. B21a/B21b: the desktop collapse toggle lives
- * on the workspace row, and the collapsed 34px rail keeps that toggle as
- * the sidebar's only visible control. The rows are pure (markup-order
- * assertions via renderToString); the placement rules live in terminal.css,
- * pinned here as source contracts.
+ * Issue #373 sidebar row-layout contracts, placement reversed by issue #449
+ * (B10): on the workspace and project rows the 💬 terminal-open button sits
+ * on the RIGHT, adjacent to the row's existing right-side control (the ⋯
+ * context menu on project rows, the desktop collapse toggle on the
+ * workspace row) — one icon cluster at the far right, the row name clean on
+ * the left. B21a/B21b: the desktop collapse toggle lives on the workspace
+ * row, and the collapsed 34px rail keeps that toggle as the sidebar's only
+ * visible control. The rows are pure (markup-order assertions via
+ * renderToString); the placement rules live in terminal.css, pinned here as
+ * source contracts.
  */
 
 import { readFileSync } from "node:fs";
@@ -71,7 +73,7 @@ function renderWorkspaceRow(): string {
   );
 }
 
-describe("terminal-open buttons beside the name (issue #373 B20)", () => {
+describe("terminal-open buttons beside the name (issue #373 B20; right-clustered per #449 B10)", () => {
   it("workspace row: the name, then the terminal-open chat icon, then the collapse toggle", () => {
     const html = renderWorkspaceRow();
     expect(html).toContain("picker-global-name");
@@ -86,13 +88,17 @@ describe("terminal-open buttons beside the name (issue #373 B20)", () => {
     expect(html.indexOf("picker-project-chat")).toBeLessThan(html.indexOf("picker-project-menu"));
   });
 
-  it("CSS keeps the ⋯ menu alone at the row's far right while the name hugs the icon", () => {
-    // The name must not grow (that would push the chat icon to the menu) …
+  it("CSS keeps the ⋯ menu far right with the chat icon clustered beside it (issue #449 B10)", () => {
+    // The name must not grow (that would drag the cluster apart) …
     expect(cssBlock(".picker-project-name")).toContain("flex: 0 1 auto");
     expect(cssBlock(".picker-project-name")).not.toContain("flex: 1");
-    // … and the auto left margin is what pushes the ⋯ menu to the far right
-    // (scanned: the selector first appears in the shared chat/menu rule).
-    expect(css).toMatch(/\.picker-project-menu\s*\{[^}]*margin-left:\s*auto/);
+    // … and the auto left margin now lives on the 💬 chat icon: it pushes
+    // the right-hand icon cluster (💬 + ⋯, or 💬 + collapse toggle on the
+    // workspace row) to the row's far right.
+    expect(cssBlock(".picker-project-chat")).toContain("margin-left: auto");
+    // The ⋯ menu keeps only its dropdown anchor — no margin of its own.
+    expect(cssBlock(".picker-project-menu")).not.toContain("margin-left");
+    expect(css).toMatch(/\.picker-project-menu\s*\{[^}]*position:\s*relative/);
   });
 });
 

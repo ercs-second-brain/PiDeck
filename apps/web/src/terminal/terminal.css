@@ -56,9 +56,10 @@
 }
 
 /* Issue #354/#373 (B21a): the sidebar's own collapse toggle (desktop) — a
-   small icon at the workspace row's right edge (the auto left margin pushes
-   it across from the row's name + terminal-open chat buttons). Hidden on
-   the mobile drawer breakpoint, where the header hamburger remains. */
+   small icon at the workspace row's right edge, after the row's 💬
+   terminal-open button (issue #449 B10: the chat icon owns the auto left
+   margin that pushes the right-hand icon cluster across). Hidden on the
+   mobile drawer breakpoint, where the header hamburger remains. */
 .sidebar-toggle {
   display: inline-flex;
   align-items: center;
@@ -66,7 +67,6 @@
   flex: none;
   width: 26px;
   height: 26px;
-  margin-left: auto;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -154,9 +154,9 @@
 
 .picker-project-name {
   display: block;
-  /* Issue #373 (B20): shrink-to-fit (with ellipsis), never grow — the
-     terminal-open buttons keep their place beside the name, not beside the
-     row's far-right menu. */
+  /* Issue #373 (B20), placement reversed by issue #449 (B10): shrink-to-fit
+     (with ellipsis), never grow — the row's name stays clean on the left
+     while the 💬 terminal-open icon joins the right-side icon cluster. */
   flex: 0 1 auto;
   min-width: 0;
   padding: 2px 4px;
@@ -183,10 +183,8 @@
 
 /* The workspace-level agent row (issue #259: labeled "Workspace", name =
    all-projects board entry): same row anatomy as a project row, first in
-   the sidebar above the project list. Issue #373: the terminal-open chat
-   icon hugs the name (B20) and the row may also host the desktop collapse
-   toggle at its right edge (B21a — the .sidebar-toggle rules carry the
-   auto left margin). */
+   the sidebar above the project list. Issue #449 (B10): the 💬 chat icon
+   sits on the row's right, next to the desktop collapse toggle (B21a). */
 .picker-global-row {
   margin-bottom: 12px;
 }
@@ -232,13 +230,18 @@
   cursor: pointer;
 }
 
+.picker-project-chat {
+  /* Issue #449 (B10): the 💬 terminal-open icon sits on the row's RIGHT,
+     adjacent to the existing right-side control (the ⋯ context menu on
+     project rows, the desktop collapse toggle on the workspace row) — one
+     icon cluster at the far right, the row name clean on the left. The
+     auto margin absorbs the space between the name and the cluster. */
+  margin-left: auto;
+}
+
 .picker-project-menu {
   /* Anchors the ::after hit-target ghost and the row's dropdown. */
   position: relative;
-  /* Issue #373 (B20): the ⋯ context menu alone sits at the row's far
-     right — the auto margin absorbs the space left between the chat icon
-     and the menu. */
-  margin-left: auto;
 }
 
 .picker-project-menu::after {
