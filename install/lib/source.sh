@@ -82,8 +82,21 @@ build_from_source() {
   fi
   (
     cd "$PD_SRC" || exit 1
-    run pnpm install --frozen-lockfile
-    run pnpm build
+    # Issue #484: this function runs inside the installer's / the update
+    # apply's process, whose environment exports the whole PD_* namespace
+    # (PD_HOME, PD_SRC, PD_PI_DIR, PD_NODE*, … — common.sh, update.sh). The
+    # build's `pnpm -r build` runs install/'s plain-shell test suite, whose
+    # fixtures pin their OWN PD_* values — the leaked ambient PD_PI_DIR made
+    # the asset-reconcile test (#460 follow-up) link its fixture skills into
+    # the REAL agent dir and fail, so every apply/bootstrap build died with
+    # "build failed" on the box while CI (no ambient PD_*) stayed green.
+    # Strip the installer variables so the build sees a CI-like environment;
+    # PATH, HOME and network settings pass through untouched.
+    _bf_scrub=$(printenv | sed -n 's/^\(PD_[A-Za-z0-9_]*\)=.*/-u \1/p; s/^\(UPDATE_[A-Za-z0-9_]*\)=.*/-u \1/p')
+    # shellcheck disable=SC2046,SC2086 # -u NAME flags: bare names, safe to split
+    run env $_bf_scrub pnpm install --frozen-lockfile
+    # shellcheck disable=SC2046,SC2086 # -u NAME flags: bare names, safe to split
+    run env $_bf_scrub pnpm build
   ) || die "build failed"
   [ -f "$PD_SRC/apps/daemon/dist/index.js" ] || die "build produced no daemon entry at apps/daemon/dist/index.js"
   ok "build complete"
