@@ -150,20 +150,32 @@ pnpm typecheck
 # Everything CI runs (lint, typecheck, build, test, kiss) in one go
 pnpm check
 
+# The same checks, but only what the changed files need (what the pre-push
+# hook and CI run). Accepts --base <ref> to diff against a specific ref.
+pnpm check:selective
+
 # KISS hygiene ratchet (dead code, complexity budgets, duplication)
 pnpm kiss
 ```
 
-The same steps run in CI (`.github/workflows/ci.yml`) on every pull request — CI calls `pnpm check`, the same script the pre-push hook below uses.
+CI (`.github/workflows/ci.yml`) and the pre-push hook both call `pnpm check:selective` (`scripts/check-selective.mjs`), which picks the cheapest sufficient checks from the changed files:
+
+| Changed files                                                                 | What runs                              |
+| ----------------------------------------------------------------------------- | -------------------------------------- |
+| `apps/`, `packages/`, `scripts/`, `kiss-baseline/`, root configs, lockfiles  | `pnpm check` (full CI parity)          |
+| `install/` only                                                               | install shell suite (shellcheck + tests) |
+| docs, `agent/` prompts, `.github/`, `.md` files                               | nothing                                |
+
+Anything outside these categories (or an undeterminable base ref) falls through to the full check — the selection only skips work it cannot break.
 
 ## Git hooks
 
 Husky hooks are installed automatically by `pnpm install` (the `prepare` script) and live in the source checkout under `.husky/` — installed copies created by the one-line installer are unaffected.
 
-- **`pre-push`** runs `pnpm check` (lint, typecheck, build, test, kiss) — the exact same script CI runs, so what passes locally passes in CI. Bypass it with `git push --no-verify` when you really must; CI is the backstop.
+- **`pre-push`** runs `pnpm check:selective` — the changed files pick what runs, so docs-only pushes skip the heavy checks and code pushes keep full CI parity. Bypass it with `git push --no-verify` when you really must; CI is the backstop.
 - **`pre-commit`** is cheap-only: [lint-staged](https://github.com/lint-staged/lint-staged) runs `eslint --fix` on staged files only (sub-second). The expensive checks deliberately stay on push.
 
-Full suite runtime is well under two minutes; if it ever grows past that, split `pre-push` into a documented subset rather than silently slowing every push.
+Full suite runtime is well under two minutes; selective runs are cheaper still. If the full suite ever grows past that, split `pnpm check` into a documented subset rather than silently slowing every code push.
 
 ## KISS hygiene (CI "kiss" checks)
 
