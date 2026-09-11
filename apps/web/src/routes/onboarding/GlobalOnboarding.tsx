@@ -70,6 +70,11 @@ function GlobalOnboarding({ onFinished }: { onFinished: () => void }) {
     <div className="wizard">
       <h1 className="page-title">Welcome to PiDeck</h1>
       <p className="empty">Set up the daemon's agent credentials once — every project reuses them.</p>
+      {/* Issue #428: pointer only — the review account (issue #407) stays out
+          of the wizard to keep it lean; it is configured in global settings. */}
+      <p className="perm-detail">
+        PR reviews run as a second GitHub account — set it up afterwards under Global settings → Review account.
+      </p>
       {recorded !== null && <RecordedNote recorded={recorded} />}
       <StepNav steps={GLOBAL_STEPS} step={step} doneSteps={doneSteps} />
       {step === "pi" && (

@@ -16,7 +16,7 @@ import {
   pullRequestDiffSchema,
   pullRequestSchema,
   sessionSchema,
-  settingsSchema,
+  settingsReadSchema,
   workerSchema,
   agentKindListSchema,
   type AgentKindList,
@@ -25,7 +25,7 @@ import {
   type PullRequest,
   type PullRequestDiff,
   type Session,
-  type Settings,
+  type SettingsRead,
   type Worker,
 } from "@pideck/shared";
 
@@ -181,7 +181,8 @@ export class DaemonClient {
     return this.request("GET", formatPath("getPullRequestDiff", { projectId, prNumber }), undefined, pullRequestDiffSchema);
   }
 
-  async settings(): Promise<Settings> {
-    return this.request("GET", endpoints.getSettings.path, undefined, settingsSchema);
+  /** Masked read shape (issue #428): no raw review token, only the configured flag. */
+  async settings(): Promise<SettingsRead> {
+    return this.request("GET", endpoints.getSettings.path, undefined, settingsReadSchema);
   }
 }
