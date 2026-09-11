@@ -243,7 +243,7 @@ describe("PullRequestPipeline: review-trigger — gating (issues #407/#440)", ()
 
   it("autoFixReviewComments off: the trigger is skipped, the parked decision survives", async () => {
     const h = greenHarness({
-      workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: false, autoReview: true }),
+      workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: false, autoReview: true, workerReuseContextThreshold: 20 }),
     });
     await h.poll();
     await h.poll();

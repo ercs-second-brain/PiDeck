@@ -35,13 +35,29 @@ export function hubAnnouncedSpawner(
     onError: (err) => onError(err, "issue-spawn-prompt"),
   });
   return {
-    spawnWorker: async (projectId, issueNumber, prompt) => {
-      const spawned = await base.spawnWorker(projectId, issueNumber, prompt);
+    spawnWorker: async (projectId, issueNumber, prompt, options) => {
+      const spawned = await base.spawnWorker(projectId, issueNumber, prompt, options);
       bridge.broadcast(
         { type: "worker.spawned", at: now().toISOString(), worker: workerSchema.parse(spawned.worker) },
         `spawn:${projectId}`,
       );
       return spawned;
+    },
+    // Issue #471 reuse: a re-tasked worker is not a new spawn — its
+    // lifecycle flip (running) announces like any status change.
+    retaskWorker: async (workerId, issueNumber, prompt) => {
+      const worker = await base.retaskWorker(workerId, issueNumber, prompt);
+      bridge.broadcast(
+        {
+          type: "worker.status.changed",
+          at: now().toISOString(),
+          projectId: worker.projectId,
+          workerId: worker.id,
+          status: worker.status,
+        },
+        `worker-status:${worker.id}`,
+      );
+      return worker;
     },
     listActiveWorkerIssueNumbers: (projectId) => base.listActiveWorkerIssueNumbers(projectId),
     // Issue #416 retract: archiving an unassigned/closed issue's workers

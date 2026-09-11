@@ -249,6 +249,47 @@ function parseAgentKindSpawn(
   return kindRaw;
 }
 
+/**
+ * The `--lane` slug validation (issue #471): the idle-reuse key must be a
+ * lowercase slug (a-z, 0-9, dashes; no leading/trailing dash, ≤ 64 chars).
+ * `undefined` passes through (no lane ⇒ never reused).
+ */
+function parseLane(laneRaw: string | undefined): string | undefined {
+  if (laneRaw === undefined) return undefined;
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(laneRaw) || laneRaw.length > 64) {
+    throw new CliError("--lane must be a lowercase slug (a-z, 0-9, dashes; no leading/trailing dash, ≤ 64 chars)");
+  }
+  return laneRaw;
+}
+
+/** The agent-kind spawn leg (issues #297/#300/#302): registry-validated kind spawn. */
+async function spawnAgentKind(ctx: CommandContext, projectId: string, name: string, kind: string, question: string | undefined): Promise<number> {
+  // Registry v2 (issue #330): the kind's rules come from the daemon's
+  // registry — shipped and user-defined kinds validate identically.
+  const kinds = await ctx.client.agentKinds();
+  const spec = kinds.find((entry) => entry.name === kind);
+  if (spec === undefined) {
+    throw new CliError(`unknown agent kind "${kind}" (valid kinds: ${kinds.map((entry) => entry.name).join(", ")})`);
+  }
+  if (spec.trigger === "waitForInput") {
+    if (question === undefined) throw new CliError(`spawn --kind ${kind} needs --question <question>`);
+  } else if (question !== undefined) {
+    throw new CliError(`--question is not an input of kind "${kind}" (it takes no input)`);
+  }
+  const session = await ctx.client.spawnAgent(projectId, {
+    name,
+    kind,
+    ...(question !== undefined ? { question } : {}),
+  });
+  const target = spec.reportTarget;
+  emit(ctx.json, session, () =>
+    console.log(
+      `${kind} session ${session.id} spawned (tmux: ${session.tmuxSession}, report → ${target === "caller" ? "calling session" : "project orchestrator"})`,
+    ),
+  );
+  return 0;
+}
+
 async function cmdSpawn(ctx: CommandContext): Promise<number> {
   const usage = "pideck spawn --project <id> [--issue <n> | --kind <agent-kind> [--question <q>]] --name <label> [--prompt <task>]";
   const projectId = requireFlag(ctx.parsed.flags, "project", usage);
@@ -257,6 +298,11 @@ async function cmdSpawn(ctx: CommandContext): Promise<number> {
   const issueRaw = optionalFlag(ctx.parsed.flags, "issue");
   const prompt = optionalFlag(ctx.parsed.flags, "prompt");
   const question = optionalFlag(ctx.parsed.flags, "question");
+  // Conceptual lane (issue #471): recorded on the worker — the idle-reuse
+  // key. The daemon re-tasks an eligible done same-lane worker (context
+  // occupancy at/below the reuse threshold) instead of spawning fresh; a
+  // spawn without --lane never reuses (deterministic fresh-spawn default).
+  const lane = parseLane(optionalFlag(ctx.parsed.flags, "lane"));
 
   // Agent-kind spawn (issues #297/#300/#302): the kind fixes the persona
   // and the report route (AGENT_KIND_REPORT_TARGET). Repeated --kind
@@ -268,32 +314,7 @@ async function cmdSpawn(ctx: CommandContext): Promise<number> {
     prompt,
     question,
   );
-  if (kind !== null) {
-    // Registry v2 (issue #330): the kind's rules come from the daemon's
-    // registry — shipped and user-defined kinds validate identically.
-    const kinds = await ctx.client.agentKinds();
-    const spec = kinds.find((entry) => entry.name === kind);
-    if (spec === undefined) {
-      throw new CliError(`unknown agent kind "${kind}" (valid kinds: ${kinds.map((entry) => entry.name).join(", ")})`);
-    }
-    if (spec.trigger === "waitForInput") {
-      if (question === undefined) throw new CliError(`spawn --kind ${kind} needs --question <question>`);
-    } else if (question !== undefined) {
-      throw new CliError(`--question is not an input of kind "${kind}" (it takes no input)`);
-    }
-    const session = await ctx.client.spawnAgent(projectId, {
-      name,
-      kind,
-      ...(question !== undefined ? { question } : {}),
-    });
-    const target = spec.reportTarget;
-    emit(ctx.json, session, () =>
-      console.log(
-        `${kind} session ${session.id} spawned (tmux: ${session.tmuxSession}, report → ${target === "caller" ? "calling session" : "project orchestrator"})`,
-      ),
-    );
-    return 0;
-  }
+  if (kind !== null) return spawnAgentKind(ctx, projectId, name, kind, question);
 
   // Worker spawn (issues #14/#120): unchanged path.
   if (issueRaw === undefined && prompt === undefined) {
@@ -304,6 +325,7 @@ async function cmdSpawn(ctx: CommandContext): Promise<number> {
     ...(issueRaw !== undefined ? { issueNumber: Number(issueRaw) } : {}),
     name,
     ...(prompt !== undefined ? { prompt } : {}),
+    ...(lane !== undefined ? { lane } : {}),
   });
   emit(ctx.json, worker, () =>
     console.log(

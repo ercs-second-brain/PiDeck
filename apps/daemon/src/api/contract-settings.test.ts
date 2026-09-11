@@ -30,6 +30,7 @@ describe("settings", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      workerReuseContextThreshold: 20,
       reviewAccountUsername: null,
       reviewAccountTokenConfigured: false,
       browserMergeNotifications: false,
@@ -43,6 +44,7 @@ describe("settings", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      workerReuseContextThreshold: 20,
       reviewAccountUsername: null,
       reviewAccountTokenConfigured: false,
       browserMergeNotifications: false,
@@ -54,9 +56,17 @@ describe("settings", () => {
     expect(settingsReadSchema.parse(toggled.json).autoFixCi).toBe(false);
     await api("PUT", endpoints.updateSettings.path, { autoFixCi: true });
 
+    // Issue #471: the reuse context threshold updates and validates.
+    const threshold = await api("PUT", endpoints.updateSettings.path, { workerReuseContextThreshold: 40 });
+    expect(threshold.status).toBe(200);
+    expect(settingsReadSchema.parse(threshold.json).workerReuseContextThreshold).toBe(40);
+    await api("PUT", endpoints.updateSettings.path, { workerReuseContextThreshold: 20 });
+
     // invalid values → 400 (contract validation)
     expect((await api("PUT", endpoints.updateSettings.path, { defaultWorkerConcurrency: 99 })).status).toBe(400);
     expect((await api("PUT", endpoints.updateSettings.path, { terminateOnMerge: "nope" })).status).toBe(400);
+    expect((await api("PUT", endpoints.updateSettings.path, { workerReuseContextThreshold: 101 })).status).toBe(400);
+    expect((await api("PUT", endpoints.updateSettings.path, { workerReuseContextThreshold: 0 })).status).toBe(400);
 
     // Issue #424 (F2): the review-account pair is both-or-neither — half a
     // second identity is not a configurable state.

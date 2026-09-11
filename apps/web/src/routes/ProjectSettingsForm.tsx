@@ -56,10 +56,12 @@ function ProjectPipelineToggles(props: {
   );
 }
 
-/** The free-form per-project field (worker cap). */
+/** The free-form per-project fields (worker cap, reuse-threshold override). */
 function ProjectCoreFields(props: {
   concurrency: string;
   onConcurrency: (value: string) => void;
+  reuseThreshold: string;
+  onReuseThreshold: (value: string) => void;
 }) {
   return (
     <>
@@ -78,12 +80,29 @@ function ProjectCoreFields(props: {
           Max workers running concurrently for this project (1–16). Empty = unlimited.
         </small>
       </div>
+      <div className="field">
+        <label htmlFor="reuse-threshold">Worker reuse context threshold (%)</label>
+        <input
+          id="reuse-threshold"
+          type="number"
+          min={1}
+          max={100}
+          placeholder="empty = inherit daemon-wide setting"
+          value={props.reuseThreshold}
+          onChange={(e) => props.onReuseThreshold(e.target.value)}
+        />
+        <small className="field-hint">
+          A done same-lane worker above this context-usage percent (1–100) is not reused for follow-on tasks — a fresh
+          worker spawns instead. Empty = inherit the daemon-wide threshold.
+        </small>
+      </div>
     </>
   );
 }
 
 export function SettingsForm({ project }: { project: Project }) {
   const [concurrency, setConcurrency] = useState(project.settings.workerConcurrency?.toString() ?? "");
+  const [reuseThreshold, setReuseThreshold] = useState(project.settings.workerReuseContextThreshold?.toString() ?? "");
   const [toggles, setToggles] = useState(() => ({
     autoReview: toChoice(project.settings.autoReview),
     autoFixCi: toChoice(project.settings.autoFixCi),
@@ -105,6 +124,16 @@ export function SettingsForm({ project }: { project: Project }) {
       }
       cap = parsed;
     }
+    // Issue #471: an empty threshold sends `null` (explicit clear → the
+    // daemon-wide threshold applies); a value must be an integer 1..100.
+    let threshold: number | null = null;
+    if (reuseThreshold.trim().length > 0) {
+      threshold = Number(reuseThreshold);
+      if (!Number.isInteger(threshold) || threshold < 1 || 100 < threshold) {
+        setError("Worker reuse context threshold must be an integer between 1 and 100 (empty = inherit).");
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     try {
@@ -114,6 +143,7 @@ export function SettingsForm({ project }: { project: Project }) {
           // treats it as unset (unbounded); omitting the field would keep
           // the previous cap instead of clearing it.
           workerConcurrency: cap ?? null,
+          workerReuseContextThreshold: threshold,
           // Issue #322: "inherit" sends `null` (explicitly cleared → the
           // daemon-wide toggle applies); "on"/"off" send the override.
           ...Object.fromEntries(Object.entries(toggles).map(([key, choice]) => [key, toSetting(choice)])),
@@ -140,6 +170,11 @@ export function SettingsForm({ project }: { project: Project }) {
         concurrency={concurrency}
         onConcurrency={(value) => {
           setConcurrency(value);
+          setSaved(false);
+        }}
+        reuseThreshold={reuseThreshold}
+        onReuseThreshold={(value) => {
+          setReuseThreshold(value);
           setSaved(false);
         }}
       />

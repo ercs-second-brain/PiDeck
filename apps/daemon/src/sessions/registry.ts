@@ -51,6 +51,12 @@ export interface RegisterWorkerInput {
   projectId: string;
   sessionId: string;
   issueNumber: number;
+  /**
+   * Conceptual lane the worker was spawned for (issue #471); carried from
+   * the spawn request (`pideck spawn --lane <slug>`) onto the worker record
+   * — the idle-reuse key. Absent = lane-less (never reused).
+   */
+  lane?: string;
   /** PR the worker owns, or reviews (review agents, issue #107). */
   prNumber?: number;
   /** Worker kind (issue #107); omit for implementers — absent means implementer. */
@@ -270,6 +276,7 @@ export class SessionRegistry {
     };
     if (input.kind !== undefined) worker.kind = input.kind;
     if (input.prompt !== undefined) worker.prompt = input.prompt;
+    if (input.lane !== undefined) worker.lane = input.lane;
     if (input.parentWorkerId !== undefined && input.parentWorkerId !== null) {
       worker.parentWorkerId = input.parentWorkerId;
     }
@@ -323,6 +330,26 @@ export class SessionRegistry {
     if (!worker) throw new Error(`unknown worker: ${workerId}`);
     worker.status = status;
     if (statusMessage !== undefined) worker.statusMessage = statusMessage;
+    worker.updatedAt = new Date().toISOString();
+    this.save();
+    return worker;
+  }
+
+  /**
+   * Re-tasks an idle worker with a follow-on task (issue #471 reuse): the
+   * new issue number and prompt replace the old ones on the record and the
+   * worker moves to `running` — the pane (still alive) receives the
+   * follow-on prompt through the caller's prompt-gate delivery. The lane
+   * and the PR associations ride untouched: the worker keeps its lane (it
+   * stays reusable for the same lane) and `prNumbers` accumulate (#470).
+   */
+  retaskWorker(workerId: string, issueNumber: number, prompt: string, statusMessage: string): Worker {
+    const worker = this.workers.get(workerId);
+    if (!worker) throw new Error(`unknown worker: ${workerId}`);
+    worker.issueNumber = issueNumber;
+    worker.prompt = prompt;
+    worker.status = "running";
+    worker.statusMessage = statusMessage;
     worker.updatedAt = new Date().toISOString();
     this.save();
     return worker;

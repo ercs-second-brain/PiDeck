@@ -8,7 +8,7 @@
  */
 
 import { z } from "zod";
-import { agentKindIdSchema, idSchema, refNumberSchema } from "@pideck/shared";
+import { agentKindIdSchema, idSchema, laneSlugSchema, refNumberSchema } from "@pideck/shared";
 
 /**
  * `POST /api/projects/:projectId/spawn` — spawn a worker in a project, or
@@ -26,6 +26,14 @@ export const projectSpawnSchema = z
     name: z.string().min(1).max(20),
     /** Initial task prompt delivered into the worker's pane. */
     prompt: z.string().min(1).optional(),
+    /**
+     * Conceptual lane (issue #471): spawn-request metadata recorded on the
+     * worker — the idle-reuse key for same-lane follow-on tasks. A spawn
+     * with a lane may be handed to an eligible `done` same-lane worker
+     * (context occupancy at/below the reuse threshold) instead of spawning
+     * fresh; no lane ⇒ never reused (deterministic fresh spawn).
+     */
+    lane: laneSlugSchema.optional(),
     /** Agent kind id (docs/agent-kinds.md) — present marks an agent-kind spawn. */
     kind: agentKindIdSchema.optional(),
     /** A waitForInput kind's input (`pideck spawn --kind <kind> --question`). */

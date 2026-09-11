@@ -72,6 +72,11 @@ export interface SpawnWorkerOptions {
   /** Initial prompt typed into the pane at spawn; persisted on the worker (issue #120). */
   prompt?: string;
   /**
+   * Conceptual lane the worker is spawned for (issue #471), recorded on the
+   * worker — the idle-reuse key for same-lane follow-on tasks. Omitted =
+   * lane-less (never reused).
+   */
+  lane?: string;  /**
    * Extra env exported into the pane before the agent starts (issue #407):
    * merged over the canonical runtime env ({@link agentSessionEnv}). Used to
    * give a reviewer pane the review account's `GH_TOKEN` — the second gh
@@ -83,6 +88,11 @@ export interface SpawnWorkerOptions {
 export interface SpawnedWorker {
   session: Session;
   worker: Worker;
+}
+
+/** Spreads only the listed optional fields that are set (`!== undefined`). */
+function pickDefined<T extends object, K extends keyof T>(options: T, ...keys: K[]): Pick<T, K> {
+  return Object.fromEntries(keys.filter((key) => options[key] !== undefined).map((key) => [key, options[key]])) as Pick<T, K>;
 }
 
 /**
@@ -255,10 +265,7 @@ export class SessionManager {
       issueNumber: options.issueNumber,
       status: "spawning",
       statusMessage: "launching agent session",
-      ...(options.prNumber !== undefined ? { prNumber: options.prNumber } : {}),
-      ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
-      ...(options.kind !== undefined ? { kind: options.kind } : {}),
-      ...(options.parentWorkerId !== undefined ? { parentWorkerId: options.parentWorkerId } : {}),
+      ...pickDefined(options, "prNumber", "prompt", "lane", "kind", "parentWorkerId"),
     });
     this.registry.setSessionWorker(session.id, worker.id);
 
@@ -345,6 +352,16 @@ export class SessionManager {
 
   updateWorkerStatus(workerId: string, status: WorkerStatus, statusMessage?: string): Worker {
     return this.registry.updateWorkerStatus(workerId, status, statusMessage);
+  }
+
+  /**
+   * Re-tasks an idle worker with a follow-on task (issue #471 reuse): the
+   * new issue number + prompt replace the old ones on the record and the
+   * worker moves to `running`; lane + PR associations ride untouched. The
+   * caller delivers the prompt through the prompt-gate flow.
+   */
+  retaskWorker(workerId: string, issueNumber: number, prompt: string, statusMessage: string): Worker {
+    return this.registry.retaskWorker(workerId, issueNumber, prompt, statusMessage);
   }
 
   setWorkerPr(workerId: string, prNumber: number): Worker {
@@ -501,8 +518,7 @@ export class SessionManager {
   /** Whether the session's tmux session is still alive. */
   async isAlive(sessionId: string): Promise<boolean> {
     const session = this.registry.getSession(sessionId);
-    if (!session) return false;
-    return this.tmux.hasSession(session.tmuxSession);
+    return session !== undefined && (await this.tmux.hasSession(session.tmuxSession));
   }
 
   /** Captures the session pane (visible + up to `lines` of scrollback). */

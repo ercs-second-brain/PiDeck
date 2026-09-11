@@ -48,7 +48,7 @@ describe("PullRequestPipeline: merge", () => {
   });
 
   it("keeps the worker done (pane alive) on merge when terminateOnMerge is off", async () => {
-    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: false, autoFixCi: true, autoFixReviewComments: true, autoReview: false }) });
+    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: false, autoFixCi: true, autoFixReviewComments: true, autoReview: false, workerReuseContextThreshold: 20 }) });
     h.openList.push(12);
     h.prs.set(12, { pull: restPull(12), ...greenApprovedFake() });
     h.sessions.control.listWorkers()[0]!.prNumbers = [12];

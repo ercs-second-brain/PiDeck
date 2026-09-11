@@ -117,6 +117,9 @@ function registrySpawner(): {
       active.get(projectId)?.delete(issueNumber); // archived ⇒ slot freed
       return [];
     },
+    async retaskWorker(workerId: string): Promise<never> {
+      throw new Error(`unexpected retaskWorker(${workerId})`);
+    },
   };
   return {
     spawner,
@@ -213,6 +216,9 @@ describe("IssueSpawnPipeline worker concurrency cap (#14)", () => {
       },
       listActiveWorkerIssueNumbers: (projectId) => spawner.listActiveWorkerIssueNumbers(projectId),
       archiveWorkersForIssue: (projectId, issueNumber, message) => spawner.archiveWorkersForIssue(projectId, issueNumber, message),
+    async retaskWorker(workerId: string): Promise<never> {
+      throw new Error(`unexpected retaskWorker(${workerId})`);
+    },
     };
     const { pipeline, drain } = makeCappedHarness(project, gated);
 

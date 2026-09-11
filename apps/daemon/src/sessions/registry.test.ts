@@ -216,6 +216,34 @@ describe("SessionRegistry", () => {
   });
 });
 
+describe("SessionRegistry: worker lane + retask (issue #471)", () => {
+  it("records the spawn's conceptual lane on the worker", () => {
+    const registry = new SessionRegistry(filePath);
+    const session = registry.createSession({ projectId: "a", role: "worker", tmuxSession: "pideck-a-worker-1" });
+    const laneless = registry.registerWorker({ projectId: "a", sessionId: session.id, issueNumber: 1 });
+    const lanned = registry.registerWorker({ projectId: "a", sessionId: session.id, issueNumber: 2, lane: "backend" });
+    expect(laneless.lane).toBeUndefined(); // lane-less: never reused
+    expect(lanned.lane).toBe("backend");
+  });
+
+  it("retaskWorker replaces issue/prompt + flips to running, keeps lane and PRs", () => {
+    const registry = new SessionRegistry(filePath);
+    const session = registry.createSession({ projectId: "a", role: "worker", tmuxSession: "pideck-a-worker-1" });
+    const worker = registry.registerWorker({ projectId: "a", sessionId: session.id, issueNumber: 1, lane: "backend" });
+    registry.setWorkerPr(worker.id, 12);
+    registry.updateWorkerStatus(worker.id, "done", "done");
+
+    const retasked = registry.retaskWorker(worker.id, 9, "new task prompt", "follow-on assigned");
+    expect(retasked.issueNumber).toBe(9);
+    expect(retasked.prompt).toBe("new task prompt");
+    expect(retasked.status).toBe("running");
+    expect(retasked.statusMessage).toBe("follow-on assigned");
+    expect(retasked.lane).toBe("backend"); // the lane rides: the worker stays reusable
+    expect(retasked.prNumbers).toEqual([12]); // #470: associations accumulate untouched
+    expect(() => registry.retaskWorker("worker-ghost", 1, "p", "m")).toThrow();
+  });
+});
+
 describe("SessionRegistry: reviewer linkage (issue #107)", () => {
   it("records reviewer-kind workers with pr and parent linkage", () => {
     const registry = new SessionRegistry(filePath);

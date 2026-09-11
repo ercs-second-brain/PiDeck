@@ -12,7 +12,7 @@
  * worker self-report path at all.
  */
 
-import { workerSchema, type Project, type Worker } from "@pideck/shared";
+import { workerSchema, type Worker } from "@pideck/shared";
 
 import { countProjectOccupants } from "../sessions/occupancy.js";
 import type { DaemonServices } from "./context.js";
@@ -23,41 +23,7 @@ import { requireOr404 } from "./handlers.js";
 import { handleAgentKindSpawn } from "./agent-kind-spawn.js";
 import { deliverSpawnPrompt } from "../agent/prompt-gate.js";
 import { projectSpawnSchema, sessionSendSchema } from "./cli-routes.js";
-import { buildIssueSpawnPrompt } from "../pipeline/issues/prompts.js";
-import { mapRestIssue } from "../github/issues.js";
-import { formatRepoRef, parseRepoUrl } from "../github/gh.js";
-
-/**
- * The initial prompt an issue-backed spawn delivers into the fresh pane when
- * the caller supplied none (issue #378, the #266 parity for manual spawns):
- * the orchestrator's canonical invocation (`pideck spawn --project X --issue
- * N --name L`) carries no `--prompt`, so before this resolution the worker
- * booted into pi and sat idle — the exact
- * empty-idle-worker bug #266 fixed for auto-spawns, unfixed on the CLI path.
- * The same builder the auto-spawn pipeline uses renders the issue context
- * from the REST-fetched issue; a number that turns out to be a pull request
- * (or any fetch failure) fails the spawn BEFORE the worker exists — never
- * knowingly spawn an idle worker.
- */
-async function issueSpawnPrompt(services: DaemonServices, project: Project, issueNumber: number): Promise<string> {
-  const ref = parseRepoUrl(project.repoUrl);
-  let raw: unknown;
-  try {
-    raw = await services.gh(project.repoUrl).apiJson(`/repos/${formatRepoRef(ref)}/issues/${issueNumber}`);
-  } catch (err) {
-    throw new HttpError(
-      502,
-      `cannot fetch issue #${issueNumber} for the worker's initial prompt (repo ${formatRepoRef(ref)}): ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
-  }
-  const record = mapRestIssue(project.id, raw);
-  if (record === null) {
-    throw new HttpError(400, `#${issueNumber} in ${formatRepoRef(ref)} is not an issue (it may be a pull request); spawn it freeform with --prompt instead`);
-  }
-  return buildIssueSpawnPrompt(record.issue);
-}
+import { issueSpawnPrompt, retaskReusableWorker } from "./spawn-reuse.js";
 
 /**
  * Spawns a worker via the SessionManager: `--issue` workers carry the issue
@@ -86,9 +52,28 @@ async function issueSpawnPrompt(services: DaemonServices, project: Project, issu
 export async function spawnWorker(
   services: DaemonServices,
   projectId: string,
-  input: { issueNumber?: number; name: string; prompt?: string },
+  input: { issueNumber?: number; name: string; prompt?: string; lane?: string },
 ): Promise<Worker> {
   const project = requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
+  // Issue #378 (#266 parity): the initial prompt is resolved BEFORE the
+  // spawn — an explicit `--prompt` wins; an issue-backed spawn without one
+  // gets the issue's context (the same prompt the auto-spawn pipeline
+  // types) — so the built prompt lands on the worker record (issue #120)
+  // and rides the same gate below. A resolution failure (gh fetch, a
+  // pull-request number) fails the spawn before any worker exists.
+  const prompt = input.prompt ?? (input.issueNumber !== undefined ? await issueSpawnPrompt(services, project, input.issueNumber) : undefined);
+
+  // Issue #471 — idle same-lane worker reuse: consulted BEFORE the cap
+  // check and any fresh spawn. Slot-neutral (the reused worker already
+  // occupies its slot), so a capped project's follow-on still lands. The
+  // threshold resolves per project, read fresh on every decision; the
+  // mechanics (retask + gated prompt delivery + broadcast) live in
+  // {@link retaskReusableWorker}.
+  if (input.lane !== undefined) {
+    const reused = await retaskReusableWorker(services, project, projectId, { issueNumber: input.issueNumber, lane: input.lane, prompt });
+    if (reused !== null) return reused;
+  }
+
   // `workerConcurrency` unset/null = unbounded (issues #14, #168); when set,
   // manual spawns beyond the cap are rejected (the auto-spawn pipeline queues
   // instead). Occupancy is the ONE shared predicate (issue #393): active
@@ -101,15 +86,11 @@ export async function spawnWorker(
       `worker concurrency cap reached for project "${projectId}" (${occupants}/${cap} active)`,
     );
   }
-  // Issue #378 (#266 parity): the initial prompt is resolved BEFORE the
-  // spawn — an explicit `--prompt` wins; an issue-backed spawn without one
-  // gets the issue's context (the same prompt the auto-spawn pipeline
-  // types) — so the built prompt lands on the worker record (issue #120)
-  // and rides the same gate below. A resolution failure (gh fetch, a
-  // pull-request number) fails the spawn before any worker exists.
-  const prompt = input.prompt ?? (input.issueNumber !== undefined ? await issueSpawnPrompt(services, project, input.issueNumber) : undefined);
   const { worker } = await services.sessions.spawnWorker(projectId, {
     issueNumber: input.issueNumber ?? 0,
+    // Issue #471: the spawn request's conceptual lane rides onto the worker
+    // record — the idle-reuse key for same-lane follow-on tasks.
+    ...(input.lane !== undefined ? { lane: input.lane } : {}),
     ...(prompt !== undefined ? { statusMessage: "agent running; initial prompt queued", prompt } : {}),
   });
   // The one gated delivery dance shared with every other spawn path

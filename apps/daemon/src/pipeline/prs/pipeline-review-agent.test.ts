@@ -70,7 +70,7 @@ describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => 
     await red.poll();
     expect(red.sessions.spawned).toHaveLength(0); // CI failure branch: no review cycle
 
-    const gated = greenHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: true, autoReview: false }) });
+    const gated = greenHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: true, autoReview: false, workerReuseContextThreshold: 20 }) });
     await gated.poll();
     await gated.poll();
     expect(gated.sessions.spawned).toHaveLength(0);

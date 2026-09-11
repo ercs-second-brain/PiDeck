@@ -45,6 +45,7 @@ const SETTINGS: SettingsRead = {
   autoFixCi: true,
   autoFixReviewComments: true,
   autoReview: true,
+  workerReuseContextThreshold: 20,
   reviewAccountUsername: null,
   reviewAccountTokenConfigured: false,
   browserMergeNotifications: false,

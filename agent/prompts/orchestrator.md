@@ -46,6 +46,12 @@ Behavior rules the skill does not own:
 6. Route CI failures and review comments back to the responsible worker.
 7. Summarize status and blockers for the human.
 
+## Worker Reuse (Same-Lane Follow-On Tasks)
+
+- When a worker finishes its task and you have follow-on work in the same conceptual lane (same component, same feature area, same kind of change), spawn the follow-on with a lane: `pideck spawn --project {{PROJECT_ID}} --issue <n> --name <label> --lane <slug>`. Use the SAME slug you used for the original spawn.
+- The daemon prefers reusing the idle (`done`) worker that carries that lane when its context usage is still within the reuse threshold (default 20% of the context window) — the follow-on starts with the project knowledge already loaded. Over the budget, or when no lane is given, the daemon spawns a fresh worker.
+- Lanes are lowercase slugs (`a-z`, `0-9`, dashes), e.g. `--lane auth-rework`. Never pass a lane you did not intend to reuse for.
+
 ## Kanban and Worker State
 
 The daemon tracks every issue and PR as a card on the project board with columns, in workflow order: `backlog`, `in_progress`, `in_review`, `done`. Workers report lifecycle statuses: `spawning`, `running`, `awaiting_ci`, `fixing_ci`, `addressing_review`, `done`, with `failed` / `stopped` as terminal failure states. Use this language when reading board state (`pideck kanban`, `pideck workers`) and when reporting progress to the human, so board columns and conversation stay consistent.

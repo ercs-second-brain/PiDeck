@@ -49,6 +49,7 @@ import { hubAnnouncedSpawner } from "./spawner.js";
 import { buildPRSessionControl } from "./session-control.js";
 import { buildUnit, registeredProject, RoutingBlockerResolver, type ProjectUnit } from "./unit-builder.js";
 import { StallSweep, automationStallSweep } from "./issues/stall-sweep.js";
+import { sessionReusePolicy } from "./issues/reuse.js";
 
 export { watcherOptionsFromEnv };
 export { CATCH_UP_BATCH_SIZE } from "./catchup.js";
@@ -182,6 +183,12 @@ export class GithubAutomation {
       // SAME occupancy predicate (#393) as every other spawn path — active
       // workers + live workerLike kind sessions.
       countOccupants: (projectId) => countProjectOccupants(options.sessions, options.agentKinds, projectId),
+      // Issue #471: idle same-lane worker reuse — the deterministic spawn
+      // pipeline consults the reuse policy before a fresh spawn (no lane on
+      // a spawn ⇒ fresh spawn, the deterministic default). The threshold is
+      // the workerReuseContextThreshold setting, read fresh per decision.
+      reusePolicy: sessionReusePolicy(options.sessions),
+      workerSettings: options.workerSettings,
       onError: (err) => this.onError(err, "issue-pipeline"),
     });
 

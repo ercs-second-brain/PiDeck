@@ -93,6 +93,16 @@ export const settingsSchema = z.object({
   /** Spawn an auto review agent on green, unapproved PRs (issue #107). */
   autoReview: z.boolean().default(true),
   /**
+   * Idle-worker reuse context threshold (issue #471, percent of the
+   * context window): a `done` same-lane worker whose context occupancy
+   * (input + cache read + cache write at its latest assistant message)
+   * exceeds this percent is NOT reused — a follow-on task in its lane
+   * spawns a fresh worker instead. Read fresh on every reuse decision,
+   * so a change lands without a restart; per-project overrides live on
+   * `Project.settings.workerReuseContextThreshold`.
+   */
+  workerReuseContextThreshold: z.number().int().min(1).max(100).default(20),
+  /**
    * GitHub login of the review account (issue #407) — the second GitHub
    * identity the review flow runs as. The PR-assignment leg (#408's
    * lifecycle) and review-user-keyed triggers key off this identity; it

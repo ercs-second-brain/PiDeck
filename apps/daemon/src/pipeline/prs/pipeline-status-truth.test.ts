@@ -70,7 +70,7 @@ describe("PullRequestPipeline: deterministic author statuses (issue #411, B34)",
   it("the #106 gated notice is not clobbered by the CI-passed transition (no ping-pong)", async () => {
     const h = greenHarness({
       reviewAccount: () => false,
-      workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: false, autoReview: false }),
+      workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: false, autoReview: false, workerReuseContextThreshold: 20 }),
     });
     await h.poll(); // discover + track → author done (green, no comments)
 

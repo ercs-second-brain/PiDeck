@@ -12,7 +12,7 @@ describe("PullRequestPipeline: review comments", () => {
   it("delivers review comments to the worker and handles comments arriving after fixes", async () => {
     // autoReview off: the review-comment delivery flow (#106) is orthogonal
     // to the review-agent cycle (#107, pipeline-review-agent.test.ts).
-    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: true, autoReview: false }) });
+    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: true, autoReview: false, workerReuseContextThreshold: 20 }) });
     h.openList.push(12);
     h.prs.set(12, {
       pull: restPull(12, { sha: "sha-1" }),

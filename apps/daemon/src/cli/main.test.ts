@@ -154,6 +154,47 @@ describe("run() command dispatch", () => {
 
 });
 
+/**
+ * The `--lane` passthrough (issue #471): the idle-reuse key rides the spawn
+ * request onto the worker record; the daemon re-tasks an eligible done
+ * same-lane worker (context occupancy at/below the reuse threshold) instead
+ * of spawning fresh. Malformed slugs are rejected client-side.
+ */
+describe("spawn --lane (issue #471)", () => {
+  /** Minimal stub: only `spawn` is reached on this path. */
+  class LaneStub extends DaemonClient {
+    readonly calls: Array<[string, unknown]> = [];
+    override async spawn(projectId: string, input: { issueNumber?: number; name: string; prompt?: string; lane?: string }) {
+      this.calls.push(["spawn", { projectId, input }]);
+      return {
+        id: "worker-1",
+        projectId,
+        sessionId: "sess-1",
+        issueNumber: input.issueNumber ?? 0,
+        prNumbers: [],
+        status: "running" as const,
+        statusMessage: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+    }
+  }
+
+  it("passes --lane through to the spawn request", async () => {
+    const client = new LaneStub();
+    await run(["spawn", "--project", "p1", "--issue", "5", "--name", "w", "--lane", "backend"], client);
+    expect(client.calls.at(-1)?.[0]).toBe("spawn");
+    expect(client.calls.at(-1)?.[1]).toMatchObject({ input: { lane: "backend" } });
+  });
+
+  it("rejects a malformed --lane slug", async () => {
+    const client = new LaneStub();
+    await expect(run(["spawn", "--project", "p1", "--issue", "5", "--name", "w", "--lane", "Bad Lane"], client)).rejects.toThrow(/--lane/);
+    await expect(run(["spawn", "--project", "p1", "--issue", "5", "--name", "w", "--lane", "-lead"], client)).rejects.toThrow(/--lane/);
+    await expect(run(["spawn", "--project", "p1", "--issue", "5", "--name", "w", "--lane", "x".repeat(65)], client)).rejects.toThrow(/--lane/);
+  });
+});
+
 describe("DaemonClient against a live daemon", () => {
   let server: Server;
   let base: string;

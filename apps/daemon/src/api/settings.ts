@@ -35,6 +35,10 @@ const DEFAULT_SETTINGS: Settings = {
   autoFixCi: true,
   autoFixReviewComments: true,
   autoReview: true,
+  // Issue #471: reuse a done same-lane worker for follow-on work while its
+  // context occupancy stays at/below 20% of the model's context window;
+  // above it the follow-on spawns fresh.
+  workerReuseContextThreshold: 20,
   browserMergeNotifications: false,
   // Issue #407: null (default) = single-account mode — the review flow is
   // entirely off. Username + token configure the second GitHub identity the
