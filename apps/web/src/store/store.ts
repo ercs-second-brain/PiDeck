@@ -8,10 +8,11 @@
  * Data source:
  * - REST bootstrap: project list; per-project kanban board, workers, and
  *   pull requests, fetched lazily when a board page mounts.
- * - WebSocket fan-out on `/api/ws`: `KanbanUpdateEvent`s (card moved,
- *   project updated, worker spawned / status changed) are applied to the
- *   current state as they arrive. Every payload is validated against the
- *   shared `wsServerEventSchema` before use.
+ * - WebSocket fan-out on `/api/ws`: `KanbanUpdateEvent`s (card moved, full
+ *   board re-derived after a background cache refresh (#451), project
+ *   updated, worker spawned / status changed) are applied to the current
+ *   state as they arrive. Every payload is validated against the shared
+ *   `wsServerEventSchema` before use.
  * - The socket reconnects with exponential backoff + jitter; while it is
  *   down a slow poll keeps the board roughly current.
  *
@@ -64,8 +65,13 @@ export interface AppState {
 export interface BoardStore {
   subscribe(listener: () => void): () => void;
   getState(): AppState;
-  /** Fetches/refreshes one project's kanban, workers, and pull requests. */
-  loadProject(projectId: string): Promise<void>;
+  /**
+   * Fetches/refreshes one project's kanban, workers, and pull requests.
+   * `refresh: true` (board navigation, issue #451) asks the daemon to bypass
+   * its caches — navigation must render fresh state, not a board cached up
+   * to a TTL ago.
+   */
+  loadProject(projectId: string, options?: { refresh?: boolean }): Promise<void>;
   /** Refreshes the project list (and any already-loaded project data). */
   refresh(): Promise<void>;
   /** Seeds a just-registered project (issue #203): visible immediately, board load kicked. */
@@ -146,6 +152,15 @@ export function applyKanbanEvent(state: AppState, event: KanbanUpdateEvent): App
         boards: { ...state.boards, [event.projectId]: { ...board, columns, updatedAt: event.at } },
       };
     }
+    case "kanban.board.updated":
+      // Issue #451: the daemon re-derived the board after a background SWR
+      // refresh and the result differs from the cached copy — replace it
+      // wholesale so open board views catch up within a beat of the refresh
+      // instead of waiting for the next poll.
+      return {
+        ...state,
+        boards: { ...state.boards, [event.board.projectId]: event.board },
+      };
     case "project.updated":
       return { ...state, projects: upsertProjectList(state.projects, event.project) };
     case "worker.spawned": {
@@ -245,11 +260,11 @@ class LiveBoardStore implements BoardStore {
     }
   }
 
-  loadProject(projectId: string): Promise<void> {
+  loadProject(projectId: string, options?: { refresh?: boolean }): Promise<void> {
     // Single-flight (#88): a poll reload, a board mount, and a websocket
     // event hitting the same project share one fetch round instead of
     // stacking three requests each per caller.
-    return shareInFlight(this.projectLoads, projectId, () => this.runProjectLoad(projectId));
+    return shareInFlight(this.projectLoads, projectId, () => this.runProjectLoad(projectId, options));
   }
 
   /**
@@ -261,12 +276,13 @@ class LiveBoardStore implements BoardStore {
    */
   upsertProject(project: Project): void {
     this.setState({ projects: upsertProjectList(this.state.projects, project) });
-    void this.loadProject(project.id).catch(() => {});
+    // Fresh fetch: the project was just registered, nothing is cached for it.
+    void this.loadProject(project.id, { refresh: true }).catch(() => {});
   }
 
-  private async runProjectLoad(projectId: string): Promise<void> {
+  private async runProjectLoad(projectId: string, options?: { refresh?: boolean }): Promise<void> {
     const [board, workers, pullRequests] = await Promise.all([
-      apiGetKanban(projectId),
+      apiGetKanban(projectId, options?.refresh === true),
       apiListWorkers(projectId),
       apiListPullRequests(projectId),
     ]);
@@ -354,6 +370,14 @@ class LiveBoardStore implements BoardStore {
     // sidebar's reload is the update (the #370 poll-gap finding).
     if (event.type === "worker.spawned" || event.type === "worker.status.changed" || event.type === "session.archived") {
       for (const listener of this.workerEventListeners) listener(event);
+      // Issue #451: worker-driven card placement (issue → in_progress on
+      // spawn) is derived server-side from the worker list; reload the
+      // project so the board follows the event within a beat. The daemon
+      // keys its board cache on the registry's worker-state generation, so
+      // this load re-derives fresh placement instead of serving the cached
+      // pre-event board. Single-flight coalesces with any concurrent load.
+      if (event.type === "worker.spawned") void this.loadProject(event.worker.projectId).catch(() => {});
+      else void this.loadProject(event.projectId).catch(() => {});
     }
   }
 

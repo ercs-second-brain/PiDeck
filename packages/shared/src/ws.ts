@@ -17,6 +17,7 @@ import {
   agentKindIdSchema,
   isoDateTimeSchema,
   issueSchema,
+  kanbanBoardSchema,
   kanbanCardSchema,
   kanbanColumnSchema,
   projectSchema,
@@ -105,6 +106,18 @@ export const kanbanUpdateEventSchema = z.discriminatedUnion("type", [
     to: kanbanColumnSchema,
     /** Full updated card, so clients can replace it wholesale. */
     card: kanbanCardSchema,
+  }),
+  /**
+   * The daemon re-derived a project's board after a background (SWR) cache
+   * refresh and the result differs from the previously served board (issue
+   * #451): the full board rides the event so open kanban views replace their
+   * stale copy within a beat of the refresh instead of waiting for the next
+   * REST poll.
+   */
+  z.object({
+    type: z.literal("kanban.board.updated"),
+    at: isoDateTimeSchema,
+    board: kanbanBoardSchema,
   }),
   z.object({
     type: z.literal("project.updated"),

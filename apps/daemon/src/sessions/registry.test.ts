@@ -302,3 +302,33 @@ describe("SessionRegistry fallback isolation (issue #372)", () => {
     expect(second.listSessions()).toEqual([]);
   });
 });
+
+describe("SessionRegistry: workersVersion (issue #451)", () => {
+  it("starts at 0 and bumps on every worker mutation, so cache consumers can key on it", () => {
+    const registry = new SessionRegistry(filePath);
+    expect(registry.workersVersion()).toBe(0);
+
+    const session = registry.createSession({ projectId: "a", role: "worker", tmuxSession: "pideck-a-worker-1" });
+    expect(registry.workersVersion()).toBe(0); // session mutations don't count
+
+    const worker = registry.registerWorker({ projectId: "a", sessionId: session.id, issueNumber: 4 });
+    const afterRegister = registry.workersVersion();
+    expect(afterRegister).toBeGreaterThan(0);
+
+    registry.setWorkerPr(worker.id, 12);
+    const afterPr = registry.workersVersion();
+    expect(afterPr).toBeGreaterThan(afterRegister);
+
+    registry.updateWorkerStatus(worker.id, "running", "up");
+    const afterStatus = registry.workersVersion();
+    expect(afterStatus).toBeGreaterThan(afterPr);
+
+    registry.deleteWorker(worker.id);
+    const afterDelete = registry.workersVersion();
+    expect(afterDelete).toBeGreaterThan(afterStatus);
+
+    // Deleting an unknown worker is a no-op — no bump.
+    expect(registry.deleteWorker("worker-none")).toBe(false);
+    expect(registry.workersVersion()).toBe(afterDelete);
+  });
+});

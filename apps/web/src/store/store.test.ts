@@ -233,8 +233,7 @@ describe("boardStore.onWorkerEvent (issue #269)", () => {
       agentKind: "devex-audit",
       rootSessionId: "sess-agent-1",
     };
-    // The reduction is a no-op (no persona-agent records in state), but the
-    // sidebar still learns instantly via the listener (the reload is the update).
+    // The reduction is a no-op, but the sidebar still learns instantly via the listener.
     boardStore.apply(archiveEvent);
     expect(seen.map((event) => event.type)).toEqual(["session.archived"]);
     unsubscribe();

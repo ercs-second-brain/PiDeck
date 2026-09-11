@@ -56,9 +56,10 @@ describe("registerProject (issue #203)", () => {
     expect(registered).toEqual(project);
     // The shared store now knows the project…
     expect(boardStore.getState().projects.find((p) => p.id === project.id)).toEqual(project);
-    // …and the board load was kicked through the single-flight path.
+    // …and the board load was kicked through the single-flight path
+    // (fresh fetch — the project was just registered, issue #451).
     await vi.waitFor(() => {
-      expect(mockGetKanban).toHaveBeenCalledWith(project.id);
+      expect(mockGetKanban).toHaveBeenCalledWith(project.id, true);
     });
   });
 

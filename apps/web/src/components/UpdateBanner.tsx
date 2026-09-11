@@ -15,7 +15,10 @@ import { UpdateApplyModal } from "./UpdateApplyModal";
  *   re-check, apps/daemon/src/api/update.ts), and the banner forces a fresh
  *   check (`?refresh=1`) on page load and window focus (debounced — no
  *   polling loops), so new updates show up within seconds of visiting the
- *   page instead of up to an hour.
+ *   page instead of up to an hour. The background poll runs every 15s
+ *   (issue #451): the daemon's fresh-per-request fields — the active-worker
+ *   gate count and the apply progress — used to trail reality by up to the
+ *   previous 5-minute poll interval.
  * - 'Up to date' is deliberately quiet — no banner at all.
  * - The update button is disabled while any worker is in an active status;
  *   the count comes from the daemon (same `ACTIVE_WORKER_STATUSES` gate the

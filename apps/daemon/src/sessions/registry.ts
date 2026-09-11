@@ -132,6 +132,13 @@ export class SessionRegistry {
   private readonly sessions = new Map<string, Session>();
   private readonly workers = new Map<string, Worker>();
   private readonly store: JsonStore<PersistedState>;
+  /**
+   * Bumped on every worker mutation (register, PR link, status, delete —
+   * issue #451): the kanban board cache keys on this value, so a worker
+   * status change orphans the cached board immediately instead of serving
+   * the old worker-derived card placement for the rest of the board TTL.
+   */
+  private workersVersionCounter = 0;
 
   constructor(filePath: string) {
     this.store = new JsonStore(filePath);
@@ -260,6 +267,7 @@ export class SessionRegistry {
       worker.parentWorkerId = input.parentWorkerId;
     }
     this.workers.set(worker.id, worker);
+    this.bumpWorkersVersion();
     this.save();
     return worker;
   }
@@ -281,6 +289,7 @@ export class SessionRegistry {
     if (!worker) throw new Error(`unknown worker: ${workerId}`);
     worker.prNumber = prNumber;
     worker.updatedAt = new Date().toISOString();
+    this.bumpWorkersVersion();
     this.save();
     return worker;
   }
@@ -291,6 +300,7 @@ export class SessionRegistry {
     worker.status = status;
     if (statusMessage !== undefined) worker.statusMessage = statusMessage;
     worker.updatedAt = new Date().toISOString();
+    this.bumpWorkersVersion();
     this.save();
     return worker;
   }
@@ -299,8 +309,25 @@ export class SessionRegistry {
    * archive, deletion keeps no history). No-op for unknown ids. */
   deleteWorker(id: string): boolean {
     const deleted = this.workers.delete(id);
-    if (deleted) this.save();
+    if (deleted) {
+      this.bumpWorkersVersion();
+      this.save();
+    }
     return deleted;
+  }
+
+  /**
+   * Monotonic worker-state generation (issue #451): cache consumers key on
+   * this so worker mutations (spawn, PR link, status, delete) immediately
+   * orphan cached values derived from the worker list instead of serving
+   * them until their TTL expires.
+   */
+  workersVersion(): number {
+    return this.workersVersionCounter;
+  }
+
+  private bumpWorkersVersion(): void {
+    this.workersVersionCounter += 1;
   }
 
   // -- persistence -----------------------------------------------------------

@@ -5,9 +5,11 @@
  * stops its timers.
  *
  * - Idle (startIdleStatusPolling): forced fresh check on load/focus
- *   (debounced, issue #82) plus a slow cached-status fallback poll. A failed
- *   fetch (daemon restarting under the page — e.g. a CLI update) starts a
- *   backoff reconnect loop so the page notices the daemon's return.
+ *   (debounced, issue #82) plus a 15s cached-status poll (issue #451 — the
+ *   per-request-fresh active-worker count and apply progress used to trail
+ *   reality by the previous 5-minute interval). A failed fetch (daemon
+ *   restarting under the page — e.g. a CLI update) starts a backoff
+ *   reconnect loop so the page notices the daemon's return.
  * - Updating (startApplyPolling): polls until the daemon is *actually
  *   running the target build* (`runningSha === targetSha`; `updateAvailable`
  *   flips false mid-update while the source is already reset but the old
@@ -18,9 +20,15 @@
 import type { UpdateStatusResponse } from "@pideck/shared";
 import { apiGetUpdateStatus } from "../lib/api";
 
-/** Idle polling fallback: slow — the daemon serves a cached gh check (~5 min
- * TTL) and fresh checks are forced on page load / window focus instead. */
-const POLL_MS = 5 * 60_000;
+/**
+ * Idle polling cadence (issue #451): used to be 5 minutes, which left the
+ * banner's fresh-per-request fields (`activeWorkers` — the update button's
+ * gate — and `applyProgress`) trailing reality by minutes. 15s is cheap:
+ * the daemon serves the gh check from its ~5-min cache, so each poll costs
+ * one local worker count + one progress-file read; fresh gh checks are still
+ * forced only on page load / window focus.
+ */
+const POLL_MS = 15_000;
 /** Minimum spacing between forced (`?refresh=1`) checks (focus storms). */
 const FORCE_DEBOUNCE_MS = 30_000;
 /** Updating: first poll delay; doubles per failed poll (daemon down), capped. */

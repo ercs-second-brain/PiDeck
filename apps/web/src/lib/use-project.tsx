@@ -19,7 +19,10 @@ export function useProject(projectId: string | undefined): { project: Project | 
 
   useEffect(() => {
     if (projectId === undefined) return;
-    void boardStore.loadProject(projectId).catch(() => boardStore.refresh());
+    // Issue #451: navigation asks the daemon for a fresh board (`?refresh=1`)
+    // — a cached board up to a TTL old is exactly the "kanban shows old state
+    // until a wait" complaint. The poll loop keeps its cached loads.
+    void boardStore.loadProject(projectId, { refresh: true }).catch(() => boardStore.refresh());
   }, [projectId]);
 
   const project = state.projects.find((p) => p.id === projectId);

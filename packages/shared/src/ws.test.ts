@@ -7,6 +7,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   githubWatcherEventSchema,
+  kanbanBoardSchema,
   kanbanCardSchema,
   terminalClientMessageSchema,
   wsServerEventSchema,
@@ -102,6 +103,20 @@ describe("websocket: kanban updates", () => {
       updatedAt: NOW,
     };
     expect(wsServerEventSchema.parse({ type: "project.updated", at: NOW, project }).type).toBe("project.updated");
+
+    // Issue #451: a background SWR refresh re-derived a different board —
+    // the full board rides the event so open views replace their copy.
+    const board = kanbanBoardSchema.parse({
+      projectId: "p",
+      updatedAt: NOW,
+      columns: [{ column: "backlog", cards: [] }],
+    });
+    expect(wsServerEventSchema.parse({ type: "kanban.board.updated", at: NOW, board }).type).toBe(
+      "kanban.board.updated",
+    );
+    expect(
+      wsServerEventSchema.safeParse({ type: "kanban.board.updated", at: NOW, board: { ...board, columns: 3 } }).success,
+    ).toBe(false);
     expect(
       wsServerEventSchema.parse({
         type: "worker.spawned",

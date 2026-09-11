@@ -302,6 +302,19 @@ function agentAssetHandlers(services: DaemonServices): Pick<EndpointRegistry, "g
   };
 }
 
+/**
+ * The project's kanban board (issue #88 cache). `?refresh=1` — the webapp's
+ * board navigation (issue #451) — bypasses the board cache and drops the
+ * PR-listing cache: navigation must not render data cached up to a TTL ago;
+ * the poll loop keeps its cache economy.
+ */
+function kanbanBoardPayload(services: DaemonServices, projectId: string, query: string) {
+  const project = requireOr404(services.projects.get(projectId), `unknown project: ${projectId}`);
+  const refresh = new URLSearchParams(query).get("refresh") === "1";
+  if (refresh) services.pullListing.invalidate(projectId);
+  return services.kanban.getBoard(project, refresh ? { refresh: true } : {});
+}
+
 /** Builds the handler registry for every entry of the shared endpoint map. */
 export function contractHandlers(services: DaemonServices): EndpointRegistry {
   return {
@@ -320,10 +333,7 @@ export function contractHandlers(services: DaemonServices): EndpointRegistry {
       return undefined;
     },
 
-    getProjectKanban: async ({ params }) => {
-      const project = requireOr404(services.projects.get(params.projectId), `unknown project: ${params.projectId}`);
-      return services.kanban.getBoard(project);
-    },
+    getProjectKanban: ({ params, query = "" }) => kanbanBoardPayload(services, params.projectId, query),
 
     listProjectSessions: ({ params }) => projectSessionsPayload(services, params.projectId),
 

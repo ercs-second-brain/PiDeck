@@ -134,6 +134,22 @@ export interface KanbanServiceDeps {
    * uncached REST + per-PR enrichment flow for direct constructions.
    */
   listPullRequests?: (project: Project) => Promise<PullRequest[]>;
+  /**
+   * Monotonic worker-state generation (issue #451; usually
+   * `SessionRegistry.workersVersion`): folded into the cache key so any
+   * worker mutation (spawn, PR link, status change, archive) orphans the
+   * cached board immediately — worker-driven card placement (issue →
+   * `in_progress` on spawn) used to stay frozen for the rest of the board
+   * TTL even though the worker events themselves were already broadcast.
+   */
+  listWorkersVersion?: () => number;
+  /**
+   * Called when a background (SWR) refresh re-derives a board that differs
+   * from the cached one (issue #451): the context broadcasts it as a
+   * `kanban.board.updated` WS event so open kanban views catch up within a
+   * beat of the refresh instead of on their next poll.
+   */
+  onBoardChanged?: (board: KanbanBoard) => void;
   /** Board cache TTL in ms (issue #88). Default 30_000. */
   ttlMs?: number;
   /** Injectable clock (ms epoch; tests). */
@@ -151,17 +167,34 @@ export class KanbanService {
    * (see `TtlSwrCache`); same economy as the PR listing cache (issue #40).
    */
   private readonly boards: TtlSwrCache<KanbanBoard>;
+  private readonly listWorkersVersion?: () => number;
 
   constructor(deps: KanbanServiceDeps) {
     this.gh = deps.gh;
     this.listWorkers = deps.listWorkers;
     this.listPullRequests = deps.listPullRequests;
-    this.boards = new TtlSwrCache<KanbanBoard>({ ttlMs: deps.ttlMs, now: deps.now });
+    this.listWorkersVersion = deps.listWorkersVersion;
+    this.boards = new TtlSwrCache<KanbanBoard>({
+      ttlMs: deps.ttlMs,
+      now: deps.now,
+      // Issue #451: a background refresh that re-derived a different board
+      // is announced (the webapp's poll would otherwise surface it only on
+      // its next tick, seconds later).
+      onChange: (_key, _previous, next) => deps.onBoardChanged?.(next),
+    });
   }
 
-  /** The project's kanban board, TTL-cached with stale-while-revalidate. */
-  async getBoard(project: Project): Promise<KanbanBoard> {
-    return this.boards.get(cacheKey(project.id, project.repoUrl), () => this.fetchBoard(project));
+  /**
+   * The project's kanban board, TTL-cached with stale-while-revalidate.
+   * `refresh: true` (the webapp's `?refresh=1` on board navigation, issue
+   * #451) bypasses the cache entirely: navigation is a deliberate user
+   * action and must not render a board cached up to a TTL ago — the fresh
+   * fetch still becomes the new cache entry.
+   */
+  async getBoard(project: Project, options: { refresh?: boolean } = {}): Promise<KanbanBoard> {
+    const key = cacheKey(project.id, project.repoUrl, this.listWorkersVersion?.() ?? 0);
+    if (options.refresh === true) return this.boards.refresh(key, () => this.fetchBoard(project));
+    return this.boards.get(key, () => this.fetchBoard(project));
   }
 
   /** Drops cached boards (all, or one project's) — e.g. for tests. */
@@ -179,7 +212,11 @@ export class KanbanService {
   }
 }
 
-/** Cache key: project + repo (a repoUrl change must not be served stale values of the old repo). */
-function cacheKey(projectId: string, repoUrl: string): string {
-  return `${projectId}\n${repoUrl}`;
+/**
+ * Cache key: project + repo + worker-state generation. A repoUrl change must
+ * not be served stale values of the old repo, and a worker mutation (issue
+ * #451) must not serve the old worker-derived card placement.
+ */
+function cacheKey(projectId: string, repoUrl: string, workersVersion: number): string {
+  return `${projectId}\n${repoUrl}\nw${workersVersion}`;
 }

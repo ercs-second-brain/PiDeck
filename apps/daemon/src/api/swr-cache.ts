@@ -29,6 +29,13 @@
  *   and the next `get` retries.
  * - `onStale` — transform applied to values served stale (e.g. the pi-auth
  *   probe marks them `stale: true`).
+ * - `onChange` — called after a background (SWR) refresh replaces a cached
+ *   value with a *different* one (issue #451): the SWR refresh used to sit
+ *   silently in the daemon cache until the caller's next poll, so a board
+ *   served stale on navigation stayed on screen for up to another full poll
+ *   interval. With the hook, the refreshed value can be pushed to connected
+ *   clients the moment it lands. Not fired for fresh hits, cold fetches,
+ *   or unchanged refresh results (JSON-equality check).
  * - `ttlMs: 0` — no cache at all: every caller awaits a fresh, deduplicated
  *   fetch and nothing is stored.
  */
@@ -43,6 +50,14 @@ export interface TtlSwrCacheDeps<T> {
   cacheErrors?: boolean;
   /** Transform applied to a value served stale (fresh hits are untouched). */
   onStale?: (value: T) => T;
+  /**
+   * Called when a background (SWR) refresh stores a value that differs from
+   * the one it replaced (issue #451). Not fired for fresh hits, cold fetches,
+   * explicit `refresh()` calls (their caller sees the value), or unchanged
+   * results — the notification exists purely to announce silent background
+   * refreshes to parties that did not issue the triggering request.
+   */
+  onChange?: (key: string, previous: T, next: T) => void;
 }
 
 interface SwrEntry<T> {
@@ -64,6 +79,7 @@ export class TtlSwrCache<T> {
   private readonly swr: boolean;
   private readonly cacheErrors: boolean;
   private readonly onStale?: (value: T) => T;
+  private readonly onChange?: (key: string, previous: T, next: T) => void;
   private readonly now: () => number;
 
   constructor(
@@ -73,6 +89,7 @@ export class TtlSwrCache<T> {
     this.swr = (deps.swr ?? true) && this.ttlMs > 0;
     this.cacheErrors = deps.cacheErrors ?? false;
     this.onStale = deps.onStale;
+    this.onChange = deps.onChange;
     this.now = deps.now ?? Date.now;
   }
 
@@ -96,9 +113,18 @@ export class TtlSwrCache<T> {
         return entry.value as T;
       }
       if (this.swr && entry.value !== undefined) {
-        // Stale-while-revalidate: never block the caller on the refresh.
+        // Stale-while-revalidate: never block the caller on the refresh. When
+        // the refresh lands a *different* value, announce it (issue #451) —
+        // the caller below got the stale value and would otherwise never
+        // learn about the fresh one until its next poll.
         if (entry.refreshing === undefined) {
+          const previous = entry.value;
           entry.refreshing = this.store(key, fetchValue)
+            .then((next) => {
+              if (this.onChange !== undefined && JSON.stringify(previous) !== JSON.stringify(next)) {
+                this.onChange(key, previous, next);
+              }
+            })
             .then(
               () => undefined,
               () => undefined,

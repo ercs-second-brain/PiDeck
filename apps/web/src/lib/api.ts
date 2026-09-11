@@ -135,8 +135,14 @@ export const apiDeleteProject = (projectId: string): Promise<EndpointResponse<"d
 
 // --- Kanban / workers / PRs ---------------------------------------------------
 
-export const apiGetKanban = (projectId: string): Promise<EndpointResponse<"getProjectKanban">> =>
-  request("getProjectKanban", { projectId });
+/**
+ * The project's kanban board. `refresh: true` (board navigation, issue #451)
+ * bypasses the daemon's board + PR-listing caches so navigation renders
+ * fresh state instead of a board cached up to a TTL ago; the poll loop calls
+ * without it to keep the daemon's cache economy intact.
+ */
+export const apiGetKanban = (projectId: string, refresh = false): Promise<EndpointResponse<"getProjectKanban">> =>
+  request("getProjectKanban", { projectId }, undefined, refresh ? "refresh=1" : undefined);
 
 export const apiListWorkers = (projectId: string): Promise<EndpointResponse<"listProjectWorkers">> =>
   request("listProjectWorkers", { projectId });
