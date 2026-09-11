@@ -62,6 +62,9 @@ describe("terminate captures scrollback (issue #104)", () => {
       (inv) => inv.args[0] === "capture-pane" && inv.args.includes(session.tmuxSession),
     );
     expect(capture?.args).toContain("-J");
+    // And with escape sequences kept, so archived logs preserve colors
+    // (issue #443).
+    expect(capture?.args).toContain("-e");
   });
 });
 

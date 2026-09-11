@@ -102,6 +102,24 @@ describe.skipIf(!tmuxAvailable)("SessionManager against a real tmux server", () 
     expect(await tmux.hasSession("pideck-it-orchestrator-1")).toBe(false);
   }, 15_000);
 
+  it("captures the pane with escape sequences kept (issue #443)", async () => {
+    await tmux.newSession("pideck-it-colors-1", {
+      cwd: stateDir,
+      command: ["bash", "-c", "printf '\\033[1;32mGREEN-MARKER\\033[0m plain\\n'; sleep 300"],
+    });
+    let pane = "";
+    for (let i = 0; i < 50; i++) {
+      pane = await tmux.capturePane("pideck-it-colors-1", { lines: 50 });
+      if (pane.includes("GREEN-MARKER")) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    // The archived-log path captures the same way: without -e tmux strips
+    // the SGR attributes and the worker log loses its colors. (tmux emits
+    // attribute diffs: bold and green arrive as two separate sequences.)
+    expect(pane).toContain("\x1b[1m\x1b[32mGREEN-MARKER\x1b[0m");
+    await tmux.killSession("pideck-it-colors-1");
+  }, 15_000);
+
   it("ensures one orchestrator session per project", async () => {
     const first = await manager.ensureOrchestrator("itproj");
     expect(first.tmuxSession).toBe("pideck-itproj-orchestrator-1");

@@ -304,6 +304,10 @@ export class Tmux {
     const { stdout } = await this.run([
       "capture-pane",
       "-p",
+      // Keep escape sequences (issue #443): without -e tmux strips SGR
+      // attributes, so archived worker logs lose the pane's colors. Same
+      // capture style as the live terminal streamer.
+      "-e",
       ...(options.joinWrapped === true ? ["-J"] : []),
       "-t",
       name,

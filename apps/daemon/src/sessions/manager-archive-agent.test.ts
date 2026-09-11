@@ -105,6 +105,9 @@ describe("SessionManager.archiveAgentSession (issue #357 B9)", () => {
       (inv) => inv.args[0] === "capture-pane" && inv.args.includes(agent.tmuxSession),
     );
     expect(capture?.args).toContain("-J");
+    // Colors preserved too — the shared helper's capture keeps escape
+    // sequences (issue #443).
+    expect(capture?.args).toContain("-e");
   });
 });
 

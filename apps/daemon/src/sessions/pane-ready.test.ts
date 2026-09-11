@@ -98,6 +98,14 @@ describe("paneSubmitted (submit-acceptance evidence, issue #318)", () => {
     const pane = `PD_SESSION_ID=s\ness-1 pi\n${BORDER}\n\n${BORDER}\n`;
     expect(paneSubmitted(pane, "PD_SESSION_ID=sess-1")).toBe(true);
   });
+
+  it("ignores SGR attributes interleaved by colored output (issue #443)", () => {
+    // capture-pane -e captures keep colors: a colored transcript interleaves
+    // resets between the rows of a wrapped prompt, which must not break the
+    // flattened substring match.
+    const pane = `\x1b[38;2;138;190;183mPD_SESSION_ID=s\x1b[0m\n\x1b[32mess-1 pi\x1b[0m\n${BORDER}\n\n${BORDER}\n`;
+    expect(paneSubmitted(pane, "PD_SESSION_ID=sess-1")).toBe(true);
+  });
 });
 
 describe("confirmPaneSubmitted (bounded Enter-only nudges, agent-orchestrator pattern)", () => {
