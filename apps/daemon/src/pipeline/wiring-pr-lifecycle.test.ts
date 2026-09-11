@@ -8,7 +8,7 @@
  * tests; no network.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PullRequest } from "@pideck/shared";
 
@@ -145,6 +145,9 @@ describe("GithubAutomation approval → orchestrator notification (issue #490)",
     await daemon.services.automation.start();
     // Production start order: the orchestrator bootstrap ran before automation.start().
     const orchestrator = await daemon.services.sessions.ensureOrchestrator(PROJECT);
+    // Issue #500: the fake models that bootstrapped pane — pi running, the
+    // state the notification guard probes for before typing.
+    daemon.tmux.sessions.get(orchestrator.tmuxSession)!.command = ["pi"];
 
     await daemon.services.sessions.spawnWorker(PROJECT, { issueNumber: 46 });
     daemon.services.automation.handleWatcherEvent(PROJECT, { type: "pull_request.opened", at: NOW, pullRequest: makePullRequestEvent(7) });
@@ -180,5 +183,44 @@ describe("GithubAutomation approval → orchestrator notification (issue #490)",
 
     expect(events.some((e) => e.type === "notification.pr.ready_for_merge")).toBe(false);
     expect((daemon.tmux.sessions.get(orchestrator.tmuxSession)?.paneLines ?? []).some((l) => l.includes("PR #7"))).toBe(false);
+  });
+
+  it("a bare-shell orchestrator pane (pi never bootstrapped) is re-bootstrapped and the notification skipped loudly — never typed into the shell (issue #500)", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Zero input-ready budget: the fake pane never renders pi's input box,
+    // so recovery cannot produce a deliverable pane — the skip path (single
+    // probe, no poll sleep).
+    const daemon = await registeredDaemon(
+      { ...emptyRoutes(), api: { ...emptyRoutes().api, ...greenPullRoutes([review("APPROVED")]) } },
+      { orchestratorRecoveryInputReadyTimeoutMs: 0 },
+    );
+    active = daemon;
+    const events = broadcasts(daemon);
+    await daemon.services.automation.start();
+    // No bootstrapped-pane seed: the orchestrator pane is the bare shell
+    // `ensureOrchestrator` opens when pi never bootstrapped in it.
+    const orchestrator = await daemon.services.sessions.ensureOrchestrator(PROJECT);
+
+    await daemon.services.sessions.spawnWorker(PROJECT, { issueNumber: 46 });
+    daemon.services.automation.handleWatcherEvent(PROJECT, { type: "pull_request.opened", at: NOW, pullRequest: makePullRequestEvent(7) });
+    await daemon.automation.pollPrPipeline(PROJECT);
+    await flush();
+
+    // The hub leg still fired (unchanged).
+    expect(events.some((e) => e.type === "notification.pr.ready_for_merge" && e.prNumber === 7)).toBe(true);
+
+    // Recovery was attempted: the orchestrator persona launch line was typed
+    // into the bare shell.
+    const paneLines = daemon.tmux.sessions.get(orchestrator.tmuxSession)?.paneLines ?? [];
+    expect(paneLines.some((l) => l.includes("pi --no-skills --append-system-prompt"))).toBe(true);
+    // The notification text itself was never typed into the shell.
+    expect(paneLines.filter((l) => l.includes("PR #7"))).toEqual([]);
+    // Loud skip: the actionable error is logged through the wiring's onError
+    // (the recovery send's Enter settles on a real timer, so poll for it).
+    await vi.waitFor(() => expect(consoleError.mock.calls.length).toBeGreaterThan(0));
+    const logged = consoleError.mock.calls.map((call) => call.map(String).join(" ")).join("\n");
+    expect(logged).toContain("not bootstrapped");
+    expect(logged).toContain("orchestrator-notify");
+    consoleError.mockRestore();
   });
 });

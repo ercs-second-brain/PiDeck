@@ -287,8 +287,11 @@ export class FakeTmuxRunner {
 
   /**
    * Renders a `display-message -p` format, substituting the cursor tokens
-   * the terminal bridge queries (issue #92). Unknown tokens pass through —
-   * callers here only ever ask for the cursor triple.
+   * the terminal bridge queries (issue #92) and `#{pane_current_command}`
+   * (issue #500 — the bootstrap's agent-running probe): the first token of
+   * the pane's command, basename'd like the real tmux report (a pane
+   * created without a command runs the default shell, reported as `bash`).
+   * Unknown tokens pass through.
    */
   private displayMessage(cmdArgs: string[], originalArgs: string[]): string {
     const pane = this.paneOf(cmdArgs, originalArgs);
@@ -307,7 +310,8 @@ export class FakeTmuxRunner {
     return format
       .replace(/#\{cursor_flag\}/g, (pane.cursorVisible ?? true) ? "1" : "0")
       .replace(/#\{cursor_x\}/g, String(pane.cursorX ?? 0))
-      .replace(/#\{cursor_y\}/g, String(pane.cursorY ?? 0));
+      .replace(/#\{cursor_y\}/g, String(pane.cursorY ?? 0))
+      .replace(/#\{pane_current_command\}/g, pane.command.length > 0 ? path.basename(pane.command[0]!) : "bash");
   }
 
   /** The first non-flag argument (the pipe command), if any. */

@@ -165,6 +165,13 @@ export interface DaemonContextOptions {
    * inject a constant so hermetic fake panes count as ready.
    */
   paneReady?: (tmuxSession: string) => Promise<boolean>;
+  /**
+   * Input-ready wait budget for the orchestrator notification's recovery
+   * path (issue #500): how long a re-bootstrapped bare pane gets to mount
+   * pi's input box before its delivery is skipped. Tests shrink it so the
+   * skip path stays fast over fake panes (which never render one).
+   */
+  orchestratorRecoveryInputReadyTimeoutMs?: number;
 }
 
 /**
@@ -323,7 +330,17 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   });
 
   // Orchestrator bootstrap (#12/#166): shared by the startup sweep and the registration handler.
-  const orchestratorBootstrap = new OrchestratorBootstrap({ sessions, tmux, projects, layout, agentAssets, agentKinds });
+  const orchestratorBootstrap = new OrchestratorBootstrap({
+    sessions,
+    tmux,
+    projects,
+    layout,
+    agentAssets,
+    agentKinds,
+    ...(options.orchestratorRecoveryInputReadyTimeoutMs !== undefined
+      ? { recoveryInputReadyTimeoutMs: options.orchestratorRecoveryInputReadyTimeoutMs }
+      : {}),
+  });
 
   // pi auth readiness (issue #57) + worker/agent-kind initial-prompt gate (issue #56):
   // the gate polls the same probe so queued prompts deliver when ready.
@@ -353,6 +370,9 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     piReady: () => piAuth.payload().then((payload) => payload.ready),
     promptGate,
     agentKinds, // #393: kind-aware occupancy for the review-agent spawn cap
+    // Issue #500: the orchestrator notification only types into a pane the
+    // bootstrap guard confirmed to run the agent persona.
+    orchestratorGuard: orchestratorBootstrap,
     ...watcherOptions,
   });
   automationRef.current = automation;
