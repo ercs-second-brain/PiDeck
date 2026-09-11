@@ -368,3 +368,4 @@ describe("reconcile re-injects the reviewer GH_TOKEN (issue #423)", () => {
     if (script !== undefined) expect(script).not.toContain("GH_TOKEN");
   });
 });
+

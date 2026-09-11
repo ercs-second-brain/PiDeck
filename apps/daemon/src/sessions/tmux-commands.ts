@@ -5,6 +5,8 @@
  * daemon-managed tmux session name parse/sanitize (issues #4, #15, #27).
  */
 
+import { existsSync } from "node:fs";
+
 import type { SessionRole } from "./registry.js";
 import type { SessionRegistry } from "./registry.js";
 import type { Tmux } from "./tmux.js";
@@ -93,19 +95,51 @@ export function deserializeCommand(command: string): string[] {
 }
 
 /**
+ * Drops `--skill <path>` / `--skill=<path>` argv pairs whose path no longer
+ * exists (issue #460): sessions spawned before an upgrade recorded launch
+ * commands that name shipped skills the current checkout no longer ships
+ * (the seven global integration skills #439 removed) — pi reports each
+ * dangling path as a "[Skill conflicts] … skill path does not exist" error
+ * on every pane reload. Recorded commands must re-run faithfully (#27),
+ * but a now-nonexistent skill path is dead weight pi errors on, not
+ * behavior to preserve. Valid paths (agent-assets deployed skill files)
+ * are kept, as is every non-skill argument.
+ */
+export function dropDanglingSkillArgs(argv: string[]): string[] {
+  const kept: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg === "--skill") {
+      const path = argv[i + 1];
+      if (path !== undefined && !existsSync(path)) {
+        i++; // consume the path argument with the dangling flag
+        continue;
+      }
+    } else if (arg.startsWith("--skill=") && !existsSync(arg.slice("--skill=".length))) {
+      continue;
+    }
+    kept.push(arg);
+  }
+  return kept;
+}
+
+/**
  * Wraps a pane command in the reboot-resilient shell guard: run the
  * recorded command verbatim when its binary is on PATH, else fall back to
  * an interactive shell so the pane survives a reboot/restart where the
  * agent binary may be missing (issue #15). Used by
  * {@link SessionManager.reconcile} to faithfully resurrect recorded spawn
- * commands (issue #27).
+ * commands (issue #27) — with dangling `--skill` paths dropped first
+ * (issue #460: a pre-upgrade recorded command naming removed shipped
+ * skills must not re-error on every reload).
  */
 export function resurrectionCommand(recorded: string[]): string[] {
-  const bin = recorded[0] ?? "";
+  const commands = dropDanglingSkillArgs(recorded);
+  const bin = commands[0] ?? "";
   return [
     "sh",
     "-c",
-    `command -v ${shQuote(bin)} >/dev/null 2>&1 && exec ${recorded
+    `command -v ${shQuote(bin)} >/dev/null 2>&1 && exec ${commands
       .map(shQuote)
       .join(" ")} || exec "\${SHELL:-/bin/sh}"`,
   ];
