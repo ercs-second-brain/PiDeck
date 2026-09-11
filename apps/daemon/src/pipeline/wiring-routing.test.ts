@@ -333,6 +333,56 @@ describe("GithubAutomation PR wiring (#46)", () => {
     expect(String(prompt)).toMatch(/CI is failing on your PR #7.*Failing checks: build.*attempt 1 of /);
     expect(events.some((e) => e.type === "worker.status.changed" && e.status === "fixing_ci")).toBe(true);
   });
+
+  it("re-associates a tracked PR to the worker its pideck/ head branch names (issue #466)", async () => {
+    const daemon = await registeredDaemon({
+      ...emptyRoutes(),
+      api: {
+        ...emptyRoutes().api,
+        // PR pipeline discovery + per-PR state (red CI on sha-1).
+        "/repos/octo/repo/pulls": [restPull(7, "sha-1")],
+        "/repos/octo/repo/pulls/7": restPull(7, "sha-1"),
+        "/repos/octo/repo/commits/sha-1/check-runs": {
+          total_count: 1,
+          check_runs: [{ name: "build", status: "completed", conclusion: "failure" }],
+        },
+        "/repos/octo/repo/pulls/7/reviews": [],
+        "/repos/octo/repo/pulls/7/comments": [],
+      },
+    });
+    active = daemon;
+    broadcasts(daemon);
+    await daemon.services.automation.start();
+
+    // Two parallel workers on issue #46: a PR whose title references the
+    // issue is heuristic evidence — the first scanned worker claimed it
+    // (the mis-attribution pattern from the AO #452 lesson).
+    const { worker: claimed } = await daemon.services.sessions.spawnWorker(PROJECT, { issueNumber: 46 });
+    const { worker: author } = await daemon.services.sessions.spawnWorker(PROJECT, { issueNumber: 46 });
+
+    daemon.services.automation.handleWatcherEvent(PROJECT, {
+      type: "pull_request.opened",
+      at: NOW,
+      pullRequest: makePullRequest(7, { title: "Resolve #46: fix the loop", headBranch: "issue-46-fix" }),
+    });
+    expect(daemon.services.registry.getWorker(claimed.id)!.prNumber).toBe(7);
+
+    // Re-watch: the PR's real head branch names the author's worker — the
+    // namespace is the deterministic key, so ownership self-corrects.
+    daemon.services.automation.handleWatcherEvent(PROJECT, {
+      type: "pull_request.updated",
+      at: NOW,
+      pullRequest: makePullRequest(7, { title: "Resolve #46: fix the loop", headBranch: `pideck/${author.id}` }),
+    });
+    expect(daemon.services.registry.getWorker(author.id)!.prNumber).toBe(7);
+    expect(daemon.services.registry.getWorker(claimed.id)!.prNumber).toBeNull();
+
+    // The red-PR CI-fix prompt lands on the namespaced worker's pane now.
+    const sendKeys = vi.spyOn(daemon.services.sessions, "sendKeys");
+    await daemon.automation.pollPrPipeline(PROJECT);
+    const [sessionId] = sendKeys.mock.calls[0] ?? [];
+    expect(sessionId).toBe(author.sessionId);
+  });
 });
 
 // ---------------------------------------------------------------------------

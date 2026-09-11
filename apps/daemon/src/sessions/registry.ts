@@ -285,6 +285,17 @@ export class SessionRegistry {
     return worker;
   }
 
+  /** Clears a worker's recorded PR (issue #466: mis-association self-correction
+   * — the PR's head-branch namespace moved ownership to another worker). */
+  clearWorkerPr(workerId: string): Worker {
+    const worker = this.workers.get(workerId);
+    if (!worker) throw new Error(`unknown worker: ${workerId}`);
+    worker.prNumber = null;
+    worker.updatedAt = new Date().toISOString();
+    this.save();
+    return worker;
+  }
+
   updateWorkerStatus(workerId: string, status: WorkerStatus, statusMessage?: string): Worker {
     const worker = this.workers.get(workerId);
     if (!worker) throw new Error(`unknown worker: ${workerId}`);
