@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "typecheck": "pnpm -r run typecheck",
+    "check:selective": "node scripts/check-selective.mjs",
     "kiss:knip": "node scripts/kiss-knip.mjs",
     "kiss:complexity": "node scripts/kiss-complexity.mjs",
     "kiss:dup": "jscpd --baseline kiss-baseline/jscpd.json --fail-on-new-clones 0 apps packages install",

@@ -7,10 +7,14 @@ on:
 
 jobs:
   ci:
-    name: Check (lint, typecheck, build, test, kiss)
+    name: Check (selective)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the selective check can diff against the merge
+          # base (pull requests) or the pushed parent (direct main pushes).
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -22,19 +26,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Install shell suites (issue #161): shellcheck + the plain-shell
-      # install tests run as their own explicit step, so a broken shim or
-      # install lib can never merge silently.
-      - name: Install shell suites
-        run: |
-          shellcheck install/bootstrap.sh install/onboard.sh install/uninstall.sh \
-            install/bin/pideck install/bin/pideck-daemon install/lib/*.sh install/test/*.sh
-          sh install/test/cli-forwarding.sh
-          sh install/test/deps.sh
-          sh install/test/update.sh
-          sh install/test/onboard.sh
-
-      # Shared with the pre-push git hook (.husky/pre-push) so local CI parity
-      # is maintained by construction — one script, no duplicated step lists.
+      # Shared with the pre-push git hook (.husky/pre-push) — one selection
+      # policy in scripts/check-selective.mjs, no duplicated step lists.
+      # The install shell suites (shellcheck + tests, issue #161) run through
+      # the @pideck/install build script whenever install/ changes or the
+      # full check runs.
       - name: Check
-        run: pnpm check
+        run: pnpm check:selective --base "${{ github.event_name == 'pull_request' && 'origin/main' || github.event.before }}"
