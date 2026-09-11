@@ -1,12 +1,4 @@
-node_modules/
-dist/
-coverage/
-*.tsbuildinfo
+node_modules
+dist
 .env
-.env.*
-!.env.example
 .DS_Store
-.pi/
-
-# Stray vitest temp dirs if any test ever mis-creates one in cwd (issue #460 review finding)
-pideck-skillargs-*/

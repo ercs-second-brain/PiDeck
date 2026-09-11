@@ -1,5 +1,0 @@
-# Selective checks: the changed files pick what runs (shared with CI via
-# scripts/check-selective.mjs). Code changes get full CI parity; docs-only
-# changes skip the heavy checks entirely.
-# Bypass with `git push --no-verify` if you really must.
-pnpm check:selective
