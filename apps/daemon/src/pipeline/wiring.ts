@@ -42,6 +42,7 @@ import type { SessionManager } from "../sessions/manager.js";
 import type { WsHub } from "../api/ws.js";
 import type { PromptGate } from "../agent/prompt-gate.js";
 import { KanbanBridge } from "./broadcast.js";
+import { notifyOrchestrator, orchestratorReadyForMergeMessage } from "./orchestrator-notify.js";
 import { CatchUpSweep } from "./catchup.js";
 import { watcherOptionsFromEnv } from "./env.js";
 import { associateWorkerPr } from "./issue-refs.js";
@@ -442,5 +443,16 @@ export class GithubAutomation {
     // re-evaluate the project's recorded blocked tickets and spawn workers for
     // the ones that just unblocked (occupancy + dedupe = no running conflicts).
     if (event.type === "notification.pr.merged") void this.issuePipeline.sweepUnblocked(projectId);
+    // Issue #490: an approved PR's orchestrator notification must reach the
+    // orchestrator deterministically — the hub broadcast only reaches webapps,
+    // so the wiring also types the notification into the orchestrator's pane
+    // (its notification path, `pideck send` parity). The pipeline fires the
+    // event exactly once per approved round, so the pane is messaged once per
+    // round too. Failures are logged; the loop keeps running.
+    if (event.type === "notification.pr.ready_for_merge") {
+      void notifyOrchestrator(this.options.sessions, event.projectId, orchestratorReadyForMergeMessage(event.prNumber, event.title)).catch(
+        (err) => this.onError(err, `orchestrator-notify:${event.projectId}`),
+      );
+    }
   }
 }

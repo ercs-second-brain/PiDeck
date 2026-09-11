@@ -10,9 +10,11 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { PullRequest } from "@pideck/shared";
+
 import { testDaemon, type FakeGhRoutes, type TestDaemon } from "../api/testutil.js";
 import { broadcasts, emptyRoutes, flush, registeredDaemon } from "./wiring-routing.test.js";
-import { restPull as sharedRestPull } from "../testing/fixtures.js";
+import { makePullRequest as sharedMakePullRequest, restPull as sharedRestPull } from "../testing/fixtures.js";
 
 const PROJECT = "octo-repo";
 const NOW = "2026-09-06T12:00:00.000Z";
@@ -98,3 +100,85 @@ function mergedPull(): Record<string, unknown> {
 }
 
 void testDaemon;
+
+// ---------------------------------------------------------------------------
+// Approval → deterministic orchestrator notification (issue #490)
+// ---------------------------------------------------------------------------
+
+/** A review submission payload for the PR's reviews route. */
+function review(state: "APPROVED" | "CHANGES_REQUESTED"): Record<string, unknown> {
+  return { user: { login: "review-bot" }, state, submitted_at: NOW };
+}
+
+/** The watcher-event pull request for worker PR #7 (title references issue #46). */
+function makePullRequestEvent(number: number): PullRequest {
+  return sharedMakePullRequest(number, {
+    projectId: PROJECT,
+    author: "octo-bot",
+    title: "Resolve #46: fix the loop",
+    headBranch: "issue-46-fix",
+    url: `https://github.com/octo/repo/pull/${number}`,
+    updatedAt: NOW,
+  });
+}
+
+/** Routes for worker PR #7: CI green, the given reviews, no comments. */
+function greenPullRoutes(reviews: Record<string, unknown>[]): Record<string, unknown> {
+  const pull = sharedRestPull(7, { sha: "sha-1", author: "octo-bot", headBranch: "issue-46-fix", title: "Resolve #46: fix the loop", updatedAt: NOW });
+  return {
+    "/repos/octo/repo/pulls": [pull],
+    "/repos/octo/repo/pulls/7": pull,
+    "/repos/octo/repo/commits/sha-1/check-runs": {
+      total_count: 1,
+      check_runs: [{ name: "build", status: "completed", conclusion: "success" }],
+    },
+    "/repos/octo/repo/pulls/7/reviews": reviews,
+    "/repos/octo/repo/pulls/7/comments": [],
+  };
+}
+
+describe("GithubAutomation approval → orchestrator notification (issue #490)", () => {
+  it("an approval on a worker's PR messages the project orchestrator's pane, once per round", async () => {
+    const daemon = await registeredDaemon({ ...emptyRoutes(), api: { ...emptyRoutes().api, ...greenPullRoutes([review("APPROVED")]) } });
+    active = daemon;
+    const events = broadcasts(daemon);
+    await daemon.services.automation.start();
+    // Production start order: the orchestrator bootstrap ran before automation.start().
+    const orchestrator = await daemon.services.sessions.ensureOrchestrator(PROJECT);
+
+    await daemon.services.sessions.spawnWorker(PROJECT, { issueNumber: 46 });
+    daemon.services.automation.handleWatcherEvent(PROJECT, { type: "pull_request.opened", at: NOW, pullRequest: makePullRequestEvent(7) });
+    await daemon.automation.pollPrPipeline(PROJECT);
+    await flush();
+
+    // The hub leg (webapp toast/notification center) is unchanged.
+    expect(events.some((e) => e.type === "notification.pr.ready_for_merge" && e.prNumber === 7)).toBe(true);
+    // The orchestrator leg (issue #490): the notification lands in the pane.
+    const pane = daemon.tmux.sessions.get(orchestrator.tmuxSession);
+    const messages = (pane?.paneLines ?? []).filter((l) => l.includes("PR #7"));
+    expect(messages).toEqual(['[pideck] PR #7 "Resolve #46: fix the loop" is CI-green and approved — ready for review and merge.']);
+
+    // Deterministic once-per-round: another poll does not re-message the pane
+    // (the pipeline's readyNotifiedHeadSha watermark gates the event, so the
+    // wiring's pane delivery runs exactly once per approved round too).
+    await daemon.automation.pollPrPipeline(PROJECT);
+    await flush();
+    expect((daemon.tmux.sessions.get(orchestrator.tmuxSession)?.paneLines ?? []).filter((l) => l.includes("PR #7"))).toEqual(messages);
+  });
+
+  it("no approval → no ready-for-merge notification anywhere (hub or orchestrator pane)", async () => {
+    const daemon = await registeredDaemon({ ...emptyRoutes(), api: { ...emptyRoutes().api, ...greenPullRoutes([]) } });
+    active = daemon;
+    const events = broadcasts(daemon);
+    await daemon.services.automation.start();
+    const orchestrator = await daemon.services.sessions.ensureOrchestrator(PROJECT);
+
+    await daemon.services.sessions.spawnWorker(PROJECT, { issueNumber: 46 });
+    daemon.services.automation.handleWatcherEvent(PROJECT, { type: "pull_request.opened", at: NOW, pullRequest: makePullRequestEvent(7) });
+    await daemon.automation.pollPrPipeline(PROJECT);
+    await flush();
+
+    expect(events.some((e) => e.type === "notification.pr.ready_for_merge")).toBe(false);
+    expect((daemon.tmux.sessions.get(orchestrator.tmuxSession)?.paneLines ?? []).some((l) => l.includes("PR #7"))).toBe(false);
+  });
+});
