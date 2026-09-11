@@ -169,9 +169,12 @@ export type IssueWatcherOptions = WatcherBaseOptions;
 /**
  * Watches issue lifecycle transitions: `issue.created` for newly seen open
  * issues, `issue.assigned` when an issue gains a new assignee (any user —
- * issue #416's spawn trigger), `issue.unassigned` when a previously
- * assigned issue loses all assignees, and `issue.closed` when a
- * previously-seen open issue disappears from the open-issues poll.
+ * issue #416's spawn trigger) — including an issue first seen already
+ * assigned (created+assigned inside one poll window, issue #504: without
+ * the paired event that assignment would never trigger a spawn) —
+ * `issue.unassigned` when a previously assigned issue loses all assignees,
+ * and `issue.closed` when a previously-seen open issue disappears from the
+ * open-issues poll.
  */
 export class IssueWatcher extends WatcherBase<IssueWatcherOptions> {
   private readonly seen = new Map<number, IssueRecord>();
@@ -192,6 +195,16 @@ export class IssueWatcher extends WatcherBase<IssueWatcherOptions> {
       this.seen.set(record.issue.number, record);
       if (prev === undefined) {
         events.push({ type: "issue.created", at: now().toISOString(), issue: record.issue });
+        // Issue #504: an issue first seen WITH an assignee (created and
+        // assigned inside one poll window — the orchestrator's
+        // create-then-assign flow, #491) never shows a later assignee-count
+        // growth, so without this the assignment trigger would be silently
+        // lost. Emit the assignment transition right after the creation:
+        // the pipeline ignores `issue.created` (#416) and runs the normal
+        // spawn matrix on `issue.assigned`.
+        if (record.assignees.length > 0) {
+          events.push({ type: "issue.assigned", at: now().toISOString(), issue: record.issue });
+        }
         continue;
       }
       if (record.assignees.length > prev.assignees.length) {
