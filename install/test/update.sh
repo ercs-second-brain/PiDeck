@@ -215,6 +215,39 @@ check_no_grep 'apply when up to date does not restart the service' 'SVC restart'
 check_grep 'apply when up to date says so' 'up to date' "$out"
 check_grep 'apply when up to date records done progress (issue #89)' '"stage":"done"' "$(cat "$PD_HOME/var/update-state.json")"
 
+# --- apply path reconciles installed agent assets (issue #460 follow-up) ----
+# The apply path never ran the installer's asset step, so an in-place update
+# that merged a skills-removal change (the seven global skills #439 removed)
+# left the old ~/.pi/agent/skills symlinks dangling and pi reported "skill
+# path does not exist" on every pane load. Every apply now re-runs
+# install_agent_assets: it links the checkout's agent/ tree AND prunes
+# dangling links this install owns.
+PD_SRC="$PD_HOME/src"
+mkdir -p "$PD_SRC/agent/skills/bash-triage"
+printf -- '---\nname: bash-triage\n---\n' > "$PD_SRC/agent/skills/bash-triage/SKILL.md"
+PI_SKILLS_DIR="$PD_HOME/.pi/agent/skills"
+mkdir -p "$PI_SKILLS_DIR"
+for _stale in using-pideck create-issue spawn-worker report-pr ci-status review-comments review-pr; do
+  ln -s "$PD_SRC/agent/skills/$_stale" "$PI_SKILLS_DIR/$_stale"
+done
+# A dangling link pointing OUTSIDE the install's agent tree (user-owned)
+# must survive the reconcile.
+mkdir -p "$PD_HOME/other"
+ln -s "$PD_HOME/other/gone" "$PI_SKILLS_DIR/foreign-link"
+
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
+check_eq 'asset-reconcile apply exits 0' '0' "$rc"
+for _stale in using-pideck create-issue spawn-worker report-pr ci-status review-comments review-pr; do
+  if [ -L "$PI_SKILLS_DIR/$_stale" ]; then
+    printf 'not ok - apply pruned stale link %s\n' "$_stale"
+    failures=$((failures + 1))
+  else
+    printf 'ok - apply pruned stale link %s\n' "$_stale"
+  fi
+done
+check_eq 'apply links the live shipped skill' "$PD_SRC/agent/skills/bash-triage" "$(readlink "$PI_SKILLS_DIR/bash-triage")"
+check_eq 'apply keeps foreign links' "$PD_HOME/other/gone" "$(readlink "$PI_SKILLS_DIR/foreign-link")"
+
 # --- apply path: stale private node on an up-to-date install (issue #224) ----
 # The #224 bug: restart-only (and up-to-date) applies used to skip the node
 # freshness check, so the private runtime stayed on v22.14.0 while pi 0.85.1

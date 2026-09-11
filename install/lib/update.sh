@@ -469,6 +469,21 @@ update_apply() {
     refresh_installed_layer
   fi
   refresh_pi_assets
+  # Issue #460 follow-up: reconcile the installed agent assets on EVERY
+  # apply — link the (possibly freshly reset) checkout's agent/ tree into
+  # the pi agent dir AND prune stale symlinks for assets the checkout no
+  # longer ships. The apply path never ran the installer's asset step
+  # (only bootstrap.sh did), so an in-place update that merged a
+  # skills-removal change (the seven global skills #439 removed) left the
+  # old symlinks dangling and pi reported "skill path does not exist" on
+  # every pane load. The step is cheap and idempotent, and needs no daemon
+  # restart — pruned links affect the next pi pane launch. The guard covers
+  # pre-#223 installed layers whose assets.sh predates the asset step.
+  if command -v install_agent_assets >/dev/null 2>&1; then
+    install_agent_assets
+  else
+    warn "$PD_LIB/assets.sh missing — cannot reconcile agent assets (re-run the installer)"
+  fi
   if [ -n "$UPDATE_IDLE" ] && [ -z "${UPDATE_NODE_REFRESHED:-}" ] && [ -z "${UPDATE_PI_REFRESHED:-}" ]; then
     update_report
     update_progress "done"
