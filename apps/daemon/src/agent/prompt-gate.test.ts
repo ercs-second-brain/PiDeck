@@ -76,6 +76,19 @@ describe("PromptGate.queue", () => {
     h.gate.queue(w, "b");
     expect(h.gate.size).toBe(1);
   });
+
+  it("hasPendingWorker reports the exact worker (issue #467 stall-sweep view)", async () => {
+    const h = harness();
+    expect(h.gate.hasPendingWorker("worker-1")).toBe(false);
+    h.gate.queue(h.workers.get("worker-1") as Worker, "a");
+    expect(h.gate.hasPendingWorker("worker-1")).toBe(true);
+    // Per-worker, not global: an unknown id is not in flight.
+    expect(h.gate.hasPendingWorker("worker-2")).toBe(false);
+    // Delivery clears the in-flight view.
+    h.setReady(true);
+    await h.gate.deliverPending();
+    expect(h.gate.hasPendingWorker("worker-1")).toBe(false);
+  });
 });
 
 describe("PromptGate.deliverPending", () => {

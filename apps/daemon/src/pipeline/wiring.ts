@@ -27,8 +27,6 @@
 
 import path from "node:path";
 
-import { workerSchema } from "@pideck/shared";
-
 import type { GhClient } from "../github/gh.js";
 import { BlockedTicketStore } from "./issues/blocked-store.js";
 import { IssueSpawnPipeline } from "./issues/pipeline.js";
@@ -48,8 +46,9 @@ import { CatchUpSweep } from "./catchup.js";
 import { watcherOptionsFromEnv } from "./env.js";
 import { associateWorkerPr } from "./issue-refs.js";
 import { hubAnnouncedSpawner } from "./spawner.js";
+import { buildPRSessionControl } from "./session-control.js";
 import { buildUnit, registeredProject, RoutingBlockerResolver, type ProjectUnit } from "./unit-builder.js";
-import { spawnReviewAgent as spawnReviewAgentImpl } from "./prs/review-spawn.js";
+import { StallSweep, automationStallSweep } from "./issues/stall-sweep.js";
 
 export { watcherOptionsFromEnv };
 export { CATCH_UP_BATCH_SIZE } from "./catchup.js";
@@ -83,8 +82,8 @@ export interface GithubAutomationOptions {
   reviewAccountUsername?: () => string | null;
   /** Pi auth readiness for review-agent prompt gating (issue #107). Required (issue #424 F8) — the daemon context always provides it. */
   piReady: () => Promise<boolean>;
-  /** Prompt gate (issue #56) holding review prompts until pi is ready. Required (issue #424 F8). */
-  promptGate: Pick<PromptGate, "queue">;
+  /** Prompt gate (issue #56) holding review prompts until pi is ready; the stall sweep reads its prompt-in-flight view (issue #467). Required (issue #424 F8). */
+  promptGate: Pick<PromptGate, "queue" | "hasPendingWorker">;
   /**
    * Agent-kind registry (v2, issue #330): consulted by the session
    * control's occupancy count so workerLike kind sessions gate the
@@ -95,6 +94,10 @@ export interface GithubAutomationOptions {
   enabled?: boolean;
   /** Poll interval for watchers and the PR loop. Default: 30s or env. */
   pollIntervalMs?: number;
+  /** Stall-sweep idle window in ms (issue #467). Default: 15 min. */
+  stallIdleMs?: number;
+  /** Stall-sweep bound: re-prompts per worker before it is failed (issue #467). Default: 2. */
+  stallMaxReprompts?: number;
   /** Injectable clock (ISO timestamps for events). */
   now?: () => Date;
   /** Error sink for poll/spawn/broadcast failures. Default: console.error. */
@@ -114,11 +117,13 @@ export class GithubAutomation {
   private readonly spawner: WorkerSpawner;
   private readonly bridge: KanbanBridge;
   private readonly catchUp: CatchUpSweep;
+  private readonly stallSweep: StallSweep;
   private readonly enabled: boolean;
   private readonly pollIntervalMs: number;
   private readonly now: () => Date;
   private readonly onError: (err: unknown, where: string) => void;
   private running = false;
+  private stallTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly options: GithubAutomationOptions) {
     this.enabled = options.enabled ?? true;
@@ -140,64 +145,26 @@ export class GithubAutomation {
 
     this.spawner = hubAnnouncedSpawner(options, this.bridge, this.now, this.onError);
 
-    this.sessionControl = {
-      listWorkers: (filter) => options.sessions.listWorkers(filter),
-      getWorker: (workerId) => options.sessions.getWorker(workerId),
-      updateWorkerStatus: (workerId, status, statusMessage) => {
-        const worker = options.sessions.updateWorkerStatus(workerId, status, statusMessage);
-        this.bridge.broadcast(
-          {
-            type: "worker.status.changed",
-            at: this.now().toISOString(),
-            projectId: worker.projectId,
-            workerId: worker.id,
-            status,
-          },
-          `worker-status:${workerId}`,
-        );
-        return worker;
-      },
-      sendKeys: (sessionId, keys, sendOptions) => options.sessions.sendKeys(sessionId, keys, sendOptions),
-      // Issue #393: the review path gates the `workerConcurrency` cap with
-      // the SAME occupancy predicate as the CLI/agent-kind spawn paths —
-      // active workers + live workerLike kind sessions.
-      countProjectOccupants: (projectId) => countProjectOccupants(options.sessions, options.agentKinds, projectId),
-      // Issue #106: terminate-on-merge archives the owning worker (kills its
-      // pane); the wiring announces the terminal status like a manual terminate.
-      archiveWorker: async (workerId, message) => {
-        const worker = await options.sessions.archiveWorker(workerId, message);
-        if (worker !== null) {
-          this.bridge.broadcast(
-            {
-              type: "worker.status.changed",
-              at: this.now().toISOString(),
-              projectId: worker.projectId,
-              workerId: worker.id,
-              status: worker.status,
-            },
-            `worker-status:${workerId}`,
-          );
-        }
-        return worker;
-      },
-      // Issue #107: the auto review agent spawn path — reviewer kind nested
-      // under the PR-authoring worker, spawn announced, prompt gated on pi
-      // readiness like manual spawns (issue #56 parity).
-      spawnReviewAgent: (projectId, request) =>
-        spawnReviewAgentImpl(projectId, request, {
-          sessions: options.sessions,
-          reviewGhToken: options.reviewAccountToken?.() ?? null,
-          broadcastSpawned: (worker) => {
-            this.bridge.broadcast(
-              { type: "worker.spawned", at: this.now().toISOString(), worker: workerSchema.parse(worker) },
-              `spawn:${projectId}`,
-            );
-          },
-          piReady: options.piReady,
-          promptGate: options.promptGate,
-          onError: (err) => this.onError(err, `review-spawn:${projectId}`),
-        }),
-    };
+    // Issue #467: the deterministic stall backstop for issue workers — the
+    // one loop that notices a silently ended turn (no PR, no prompt in
+    // flight, idle past the window) and re-prompts, bounded.
+    this.stallSweep = automationStallSweep(options.sessions, (workerId, status, statusMessage) => this.sessionControl.updateWorkerStatus(workerId, status, statusMessage), (workerId) => options.promptGate.hasPendingWorker(workerId), {
+      ...(options.stallIdleMs !== undefined ? { stallIdleMs: options.stallIdleMs } : {}),
+      ...(options.stallMaxReprompts !== undefined ? { maxReprompts: options.stallMaxReprompts } : {}),
+      now: this.now,
+      onError: this.onError,
+    });
+
+    this.sessionControl = buildPRSessionControl({
+      sessions: options.sessions,
+      bridge: this.bridge,
+      agentKinds: options.agentKinds,
+      reviewAccountToken: () => options.reviewAccountToken?.() ?? null,
+      piReady: options.piReady,
+      promptGate: options.promptGate,
+      now: this.now,
+      onError: this.onError,
+    });
 
     const projectSource: ProjectSource = {
       get: (projectId) => registeredProject(options.projects, projectId),
@@ -236,6 +203,11 @@ export class GithubAutomation {
     if (!this.enabled || this.running) return;
     this.rebuildUnits();
     this.running = true; // set before activation: handleWatcherEvent routes only while running
+    // Issue #467: the stall sweep rides the automation's poll cadence.
+    this.stallTimer = setInterval(() => {
+      void this.pollStallSweep();
+    }, this.pollIntervalMs);
+    this.stallTimer.unref?.();
     await Promise.all(
       [...this.units.values()].map((unit) =>
         this.activateUnit(unit).catch((err) => this.onError(err, `activate:${unit.projectId}`)),
@@ -250,6 +222,10 @@ export class GithubAutomation {
    */
   stop(): void {
     this.running = false;
+    if (this.stallTimer !== null) {
+      clearInterval(this.stallTimer);
+      this.stallTimer = null;
+    }
     for (const unit of this.units.values()) this.stopUnit(unit);
     this.units.clear();
   }
@@ -361,6 +337,16 @@ export class GithubAutomation {
         ? [...this.units.values()]
         : [this.units.get(projectId)].filter((unit): unit is ProjectUnit => unit !== undefined);
     await this.catchUp.pollBatch(targets);
+  }
+
+  /**
+   * Runs one stall-sweep pass (issue #467) — the deterministic backstop
+   * that re-prompts silently-stalled issue workers. Test/ops hook: the
+   * running automation sweeps on its own poll timer.
+   */
+  async pollStallSweep(): Promise<void> {
+    if (!this.running) return; // stopped: no sweeps
+    await this.stallSweep.sweep().catch((err) => this.onError(err, "stall-sweep"));
   }
 
   // -- internals -------------------------------------------------------------
