@@ -323,7 +323,12 @@ export class GithubAutomation {
     associateWorkerPr(
       unit.tracker,
       this.options.sessions.listWorkers({ projectId: event.pullRequest.projectId }),
-      (workerId, prNumber) => this.options.sessions.setWorkerPr(workerId, prNumber),
+      {
+        setWorkerPr: (workerId, prNumber) => this.options.sessions.setWorkerPr(workerId, prNumber),
+        // Issue #466: the re-watch verification can move ownership to the
+        // worker the PR's head branch actually names.
+        clearWorkerPr: (workerId) => this.options.sessions.clearWorkerPr(workerId),
+      },
       event.pullRequest,
     );
     for (const prEvent of unit.prPipeline.handleWatcherEvent(event)) {
