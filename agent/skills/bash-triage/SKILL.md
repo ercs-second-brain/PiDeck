@@ -84,7 +84,18 @@ gh issue create -R OWNER/REPO --title "..." --body-file - --label bug --label se
 ```
 
 - **Search before creating** — a bash frequently rediscovers known bugs; comment on the existing issue instead of filing a duplicate.
-- **Create in dependency order** so the blocker's issue number exists when you attach the relation. Express real dependencies as **native GitHub blocked-by relations** (via the issue's development/relations UI or `gh api`), mirrored as a `- #12 <short title>` line in the body's Notes; an assigned issue with no open blockers is immediately worker-eligible, so only declare a real dependency.
+- **Create in dependency order** so the blocker's issue number exists when you attach the relation. Express real dependencies as **native GitHub blocked-by relations** — an assigned issue with no open blockers is immediately worker-eligible, so only declare a real dependency:
+
+```bash
+# blocker's numeric node id (not the issue number)
+BLOCKER_ID=$(gh api repos/OWNER/REPO/issues/12 -q .id)
+# mark #34 as blocked by #12
+gh api -X POST repos/OWNER/REPO/issues/34/dependencies/blocked_by -F issue_id=$BLOCKER_ID
+# verify
+gh api repos/OWNER/REPO/issues/34/dependencies/blocked_by -q '.[] | "#\(.number) \(.state)"'
+```
+
+`issue_id` is the issue's integer node id, passed with `-F` (a string id 422s). Mirror the relation as a `- #12 <short title>` line in the body's Notes.
 - Batch-verify after creation: `gh issue list --label bug --json number,title --limit 50`.
 
 ### 4. Verify and report

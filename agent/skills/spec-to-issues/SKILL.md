@@ -66,7 +66,18 @@ Every issue body:
 
 Blocking is expressed as **native GitHub "blocked by" relations**, never as prose that a reader must interpret:
 
-- When creating an issue whose work depends on another issue, add the dependency via the issue's development/relations UI or `gh api` so GitHub shows "blocked by #12" on the issue page. The "Depends on" section in the body mirrors it in text (`- #12 <short title>`) for readability.
+- When creating an issue whose work depends on another issue, attach the dependency so GitHub shows "blocked by #12" on the issue page. The "Depends on" section in the body mirrors it in text (`- #12 <short title>`) for readability.
+
+```bash
+# blocker's numeric node id (not the issue number)
+BLOCKER_ID=$(gh api repos/OWNER/REPO/issues/12 -q .id)
+# mark #34 as blocked by #12
+gh api -X POST repos/OWNER/REPO/issues/34/dependencies/blocked_by -F issue_id=$BLOCKER_ID
+# verify
+gh api repos/OWNER/REPO/issues/34/dependencies/blocked_by -q '.[] | "#\(.number) \(.state)"'
+```
+
+`issue_id` is the issue's integer node id, passed with `-F` (a string id 422s).
 - Create in dependency (topological) order so the blocker's issue number exists when you attach the relation. After all issues exist, edit Phase 0–2 issues to add the inverse "blocks" relations so both directions are navigable.
 - **Only declare a real dependency.** "Would be nice after" is not a blocker — an over-constrained graph serializes work that could be parallel. An assigned issue with no open blockers is immediately worker-eligible; honest relations keep that first wave accurate.
 
