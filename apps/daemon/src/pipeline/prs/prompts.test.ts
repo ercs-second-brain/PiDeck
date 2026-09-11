@@ -97,6 +97,30 @@ describe("PR prompts", () => {
     expect(prompt).toContain("gh pr review 12 --repo o/r");
   });
 
+  it("re-review prompt carries the researcher-spawn sanction of the initial prompt (issue #468 P2-2)", () => {
+    const prompt = buildReReviewPrompt(PR, { projectId: "proj", repo: "o/r" });
+    expect(prompt).toContain("--kind researcher");
+    expect(prompt).toContain("pideck spawn --project proj --kind researcher --question");
+    expect(prompt).toContain("wait for its report before re-posting your review");
+  });
+
+  it("review-agent prompts stay single-line and paste-safe (issue #468 P2-1)", () => {
+    // P2-1 investigation (real tmux 3.4, the daemon's chunked-hex sendKeys
+    // path): the review-agent prompt (1288 chars) and the control-char
+    // variant both delivered byte-for-byte, submitting Enter after the
+    // payload — no truncation at this length. The contract pins single-line
+    // prompts under a generous bound so the verified-fidelity property
+    // survives prompt edits; see tmux-send.integration.test.ts for the
+    // end-to-end byte-for-byte proof against the real builder output.
+    const initial = buildReviewAgentPrompt(PR, { projectId: "proj", repo: "o/r" });
+    const reReview = buildReReviewPrompt(PR, { projectId: "proj", repo: "o/r" });
+    for (const prompt of [initial, reReview]) {
+      expect(prompt).not.toContain("\n");
+      expect(prompt.length).toBeLessThan(2000);
+    }
+    expect(initial.length).toBeGreaterThan(1000); // the audited ~1300-char regime
+  });
+
   it("address-review prompt tells the author to fetch findings from the review body too, with the round bound (issue #440)", () => {
     const prompt = buildAddressReviewPrompt(PR, { attempt: 2, maxAttempts: 5 });
     expect(prompt).not.toContain("\n");

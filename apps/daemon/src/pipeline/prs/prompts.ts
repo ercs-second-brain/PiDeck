@@ -116,7 +116,9 @@ export function buildReReviewPrompt(pr: PullRequest, options: ReviewAgentPromptO
     `Re-review the updated diff (\`gh pr diff ${pr.number} --repo ${options.repo}\`) and submit a fresh ` +
       `GitHub review via \`gh pr review ${pr.number} --repo ${options.repo}\` — request changes or approve as the findings dictate, ` +
       `or a real COMMENT review if GitHub rejects the decisive event (self-review) — exactly one submission.`,
-    "Do not push commits, do not open or close PRs. Reply with a short summary when done.",
+    "Do not push commits, do not open or close PRs. For codebase questions the diff alone cannot answer, spawn a researcher " +
+      `(read-only, grounded report) with \`pideck spawn --project ${options.projectId} --kind researcher --question "<question>" --name "<label>"\` and wait for its report before re-posting your review — ` +
+      "the same sanction as your initial review round (issue #468). Reply with a short summary when done.",
   ];
   return parts.map(oneLine).join(" ");
 }

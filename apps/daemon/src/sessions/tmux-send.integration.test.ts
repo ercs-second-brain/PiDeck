@@ -16,6 +16,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildReviewAgentPrompt } from "../pipeline/prs/prompts.js";
 import { Tmux } from "./tmux.js";
 
 const SOCKET = `pideck-send-test-${process.pid}`;
@@ -111,6 +112,37 @@ describe.skipIf(!tmuxAvailable)("Tmux.sendKeys against a real tmux server (issue
     await sendAndExpect(
       "- CI is red on PR #12:\n  - typecheck fails in packages/shared\n  - fix and push",
     );
+  });
+
+  it("delivers the review-agent prompt byte-for-byte at its audited ~1300-char length (issue #468 P2-1)", async () => {
+    // P2-1 investigation result, kept as a contract: the real
+    // buildReviewAgentPrompt output (single line, ~1.3KB) is delivered
+    // through the production sendKeys path with byte-for-byte fidelity —
+    // no truncation at this length (the #115 chunked-hex wire + the #123
+    // paste-wrap rules already cover the lossy cases).
+    const pr = {
+      projectId: "proj", number: 12, title: "Fix the flaky export loop",
+      state: "open", ciStatus: "pending", reviewState: "none",
+      headBranch: "issue-7", baseBranch: "main", author: "octo-bot",
+      url: "https://github.com/o/r/pull/12", updatedAt: "2026-09-06T12:00:00Z",
+    } as Parameters<typeof buildReviewAgentPrompt>[0];
+    const prompt = buildReviewAgentPrompt(pr, { projectId: "proj", repo: "o/r" });
+    expect(prompt).not.toContain("\n"); // typed as ONE line
+    expect(prompt.length).toBeGreaterThan(1000); // the audited length regime
+    await sendAndExpect(prompt);
+  });
+
+  it("delivers the review-agent prompt byte-for-byte when a control char forces paste-wrap (issue #468 P2-1)", async () => {
+    // Same prompt with a tab injected: control chars switch the send to the
+    // bracketed-paste wire form — fidelity must hold there too.
+    const pr = {
+      projectId: "proj", number: 12, title: "Fix the flaky export loop",
+      state: "open", ciStatus: "pending", reviewState: "none",
+      headBranch: "issue-7", baseBranch: "main",
+      author: "octo-bot", url: "https://github.com/o/r/pull/12", updatedAt: "2026-09-06T12:00:00Z",
+    } as Parameters<typeof buildReviewAgentPrompt>[0];
+    const prompt = buildReviewAgentPrompt(pr, { projectId: "proj", repo: "o/r" });
+    await sendAndExpect(prompt.slice(0, 600) + "\t" + prompt.slice(600));
   });
 
   it("delivers a multi-chunk payload byte-exactly (past tmux's command buffer)", { timeout: 30_000 }, async () => {
