@@ -292,8 +292,22 @@ export function usePickerState(
     return () => window.removeEventListener("keydown", onKey);
   }, [deleteConfirm]);
 
-  const confirmTerminate = (onTerminateWorker: (workerId: string) => Promise<void>) =>
-    terminateConfirm.confirm(confirmingSession?.workerId ?? null, onTerminateWorker, () => setConfirmingSessionId(null));
+  // The confirm target is the worker id (the #268 archive path) — except
+  // when the daemon keeps no worker record for the session: an adopted
+  // orphan pane (registry adoption creates `workerId: null` sessions) or a
+  // workers fetch that came back empty. Those rows' delete routes through
+  // the #317 session-id terminate path (the worker-less kill semantics),
+  // so the ⋯ menu stays functional on them (issue #482).
+  const confirmTerminate = (
+    onTerminateWorker: (workerId: string) => Promise<void>,
+    onTerminateSession?: (sessionId: string) => Promise<void>,
+  ) => {
+    const session = confirmingSession;
+    if (session && session.workerId === null && onTerminateSession !== undefined) {
+      return terminateConfirm.confirm(session.id, onTerminateSession, () => setConfirmingSessionId(null));
+    }
+    return terminateConfirm.confirm(session?.workerId ?? null, onTerminateWorker, () => setConfirmingSessionId(null));
+  };
   // #311: agent sessions have no worker record — the confirm target is the session id.
   const confirmTerminateAgent = (onTerminateAgentSession: (sessionId: string) => Promise<void>) =>
     terminateConfirm.confirm(confirmingSessionId, onTerminateAgentSession, () => setConfirmingSessionId(null));

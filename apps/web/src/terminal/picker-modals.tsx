@@ -74,6 +74,12 @@ function ConfirmModal(props: {
 export function TerminateWorkerModal(props: {
   /** tmux session name of the worker about to be deleted (archived). */
   sessionName: string;
+  /**
+   * False for a record-less worker session (an adopted orphan pane,
+   * issue #482): the #317 kill path removes the record instead of
+   * archiving, so the copy must not promise inspectable history.
+   */
+  archived?: boolean;
   /** The delete request is in flight (Delete shows "Deleting…"). */
   pending: boolean;
   /** Failure from the daemon, shown inside the modal (issue #268). */
@@ -86,10 +92,17 @@ export function TerminateWorkerModal(props: {
       ariaLabel="Delete worker"
       title="Delete worker?"
       body={
-        <p>
-          <code>{props.sessionName}</code> will be killed and archived — its pane and agent stop, its history stays
-          inspectable.
-        </p>
+        props.archived === false ? (
+          <p>
+            <code>{props.sessionName}</code> will be killed and removed — the daemon keeps no worker record for this
+            session.
+          </p>
+        ) : (
+          <p>
+            <code>{props.sessionName}</code> will be killed and archived — its pane and agent stop, its history stays
+            inspectable.
+          </p>
+        )
       }
       confirmLabel="Delete"
       pendingLabel="Deleting…"

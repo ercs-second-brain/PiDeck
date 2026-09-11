@@ -273,14 +273,13 @@ describe("SessionPicker (worker termination + archive, issue #64)", () => {
     const html = renderToString(
       <TerminateWorkerModal sessionName="proj-worker-1" pending={false} onConfirm={() => {}} onCancel={() => {}} />,
     );
-    // Small centered modal over a dimmed backdrop.
+    // Small centered modal over a dimmed backdrop, with the explicit way out.
     expect(html).toContain("terminate-modal-overlay");
     expect(html).toContain('role="dialog"');
     expect(html).toContain("terminate-modal");
     expect(html).toContain("Delete worker?");
     expect(html).toContain("proj-worker-1");
     expect(html).toContain("Delete");
-    // The explicit way out.
     expect(html).toContain("Cancel");
   });
 

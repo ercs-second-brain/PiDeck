@@ -99,4 +99,14 @@ describe("TerminateWorkerModal error surface (issue #268)", () => {
     expect(html).toContain("Delete");
     expect(html).not.toContain("Deleting…");
   });
+
+  it("tells the truth about a record-less (adopted orphan) worker's delete (issue #482)", () => {
+    // The #317 kill path removes the session record — nothing is archived.
+    const html = renderToString(
+      <TerminateWorkerModal sessionName="pideck-agentskiss-worker-2" archived={false} pending={false} onConfirm={() => {}} onCancel={() => {}} />,
+    );
+    expect(html).toContain("Delete worker?");
+    expect(html).toContain("killed and removed");
+    expect(html).not.toContain("archived");
+  });
 });

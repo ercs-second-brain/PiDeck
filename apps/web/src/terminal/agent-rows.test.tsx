@@ -46,6 +46,7 @@ function renderPicker(entries: ProjectEntry[], overrides: Partial<Parameters<typ
       onStartOnboarding={() => {}}
       onOpenGlobalSettings={() => {}}
       onStartOrchestrator={() => {}}
+      onTerminateWorker={overrides.onTerminateWorker}
       onSpawnAgentSession={overrides.onSpawnAgentSession}
       onTerminateAgentSession={overrides.onTerminateAgentSession}
     />,
@@ -140,6 +141,18 @@ describe("agent-kind session rows (docs/agent-kinds.md, #297/#300/#302)", () => 
 });
 
 describe("agent-row ⋯ terminate menu (issue #355, B5 — #311 affordance moved off the row, #268 modal pattern)", () => {
+  it("keeps the worker row's ⋯ menu when the daemon has no worker record (adopted orphan, issue #482)", () => {
+    const orphanSessions: Session[] = [
+      makeSession({ id: "sess-orch-1", role: "orchestrator", tmuxSession: "pideck-agentskiss-orchestrator-1" }),
+      makeSession({ id: "sess-orphan-1", tmuxSession: "pideck-agentskiss-worker-2", workerId: null }),
+    ];
+    // Registry adoption after a restart whose state was lost creates these
+    // workerId-null sessions; the old `worker &&` gate dropped the ⋯ there.
+    const html = renderPicker([entryWith(orphanSessions)], { onTerminateWorker: async () => {} });
+    expect(html).toContain("picker-row-menu-toggle");
+    expect(html).toContain('title="Session options"');
+  });
+
   it("renders the ⋯ affordance on root-level agent rows when a terminate handler is wired", () => {
     const html = renderPicker([entryWith([orchestrator, devexAudit])], { onTerminateAgentSession: async () => {} });
     expect(html).toContain("picker-row-menu-toggle");
