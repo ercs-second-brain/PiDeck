@@ -150,9 +150,9 @@ function ProjectSection(props: {
   onSpawnAgent: (projectId: string, kind: AgentKind) => void;
   /** Opens the input modal for a waitForInput kind (#297, #324, #331). */
   onAskSpawnInput: (projectId: string, kind: AgentKind) => void;
-  /** The ⋯ menu's spawn-agent submenu state + registry (issues #330/#331); hover opens it (#448 B9). */
+  /** The ⋯ menu's spawn-agent submenu state + registry (issues #330/#331); hover or click opens it (#448 B9, #492). */
   spawnSubmenuOpen: boolean;
-  onToggleSpawnSubmenu: (projectId: string) => void;
+  onOpenSpawnSubmenu: (projectId: string) => void;
   onHoverSpawnSubmenu: (projectId: string) => void;
   agentKinds: readonly AgentKindSpec[];
   /** Row ⋯ context menu state (issue #355, B5): open session id + toggle. */
@@ -200,7 +200,7 @@ function ProjectSection(props: {
         onOpenSettings={props.onOpenSettings}
         onDeleteProject={(projectId) => props.onAskDeleteProject(projectId)}
         onSpawnAgent={props.onSpawnAgent} onAskSpawnInput={props.onAskSpawnInput}
-        spawnSubmenuOpen={props.spawnSubmenuOpen} onToggleSpawnSubmenu={props.onToggleSpawnSubmenu}
+        spawnSubmenuOpen={props.spawnSubmenuOpen} onOpenSpawnSubmenu={props.onOpenSpawnSubmenu}
         onHoverSpawnSubmenu={props.onHoverSpawnSubmenu}
         agentKinds={props.agentKinds}
       />
@@ -397,7 +397,7 @@ export function SessionPicker(props: SessionPickerProps) {
             onOpenSettings={(projectId) => { state.closeMenu(); props.onOpenSettings(projectId); }}
             onAskDeleteProject={(projectId) => { state.closeMenu(); state.deleteConfirm.ask(projectId); }}
             onToggleMenu={state.toggleMenu} onStartOrchestrator={props.onStartOrchestrator}
-            onToggleSpawnSubmenu={state.toggleSpawnMenu} onHoverSpawnSubmenu={state.openSpawnMenu} onSpawnAgent={(projectId, kind) => {
+            onOpenSpawnSubmenu={state.openSpawnMenu} onHoverSpawnSubmenu={state.openSpawnMenu} onSpawnAgent={(projectId, kind) => {
               state.closeMenu();
               spawnAgent(projectId, kind);
             }}

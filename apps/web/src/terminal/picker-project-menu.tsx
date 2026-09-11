@@ -43,8 +43,8 @@ export function ProjectMenu(props: {
   agentKinds: readonly AgentKindSpec[];
   /** Whether the spawn-agent submenu is expanded (issue #331). */
   spawnSubmenuOpen: boolean;
-  onToggleSpawnSubmenu: () => void;
-  /** Hovering the submenu's parent item opens it (issue #448, B9); click stays the fallback. */
+  /** Clicking/hovering the submenu's parent item opens it (issues #331, #448 B9, #492). */
+  onOpenSpawnSubmenu: () => void;
   onHoverSpawnSubmenu?: () => void;
 } & ProjectMenuCallbacks) {
   return (
@@ -69,7 +69,7 @@ export function ProjectMenu(props: {
           aria-haspopup="true"
           aria-expanded={props.spawnSubmenuOpen}
           title="Spawn an agent-kind session"
-          onClick={props.onToggleSpawnSubmenu}
+          onClick={props.onOpenSpawnSubmenu}
           onMouseEnter={props.onHoverSpawnSubmenu}
         >
           Spawn agent ▸
