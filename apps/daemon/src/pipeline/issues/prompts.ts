@@ -18,6 +18,27 @@ import type { Issue } from "@pideck/shared";
 import { oneLine } from "../prompt-line.js";
 
 /**
+ * Builds the stall re-prompt (issue #467): typed into a stalled issue
+ * worker's pane by the deterministic sweep — the worker's turn silently
+ * ended (no PR, no activity for the whole idle window) and nothing else
+ * re-prompts it. The worker's session already carries the issue context
+ * (the spawn prompt), so the nudge stays short: report or continue, and
+ * the bounded-loop notice.
+ */
+export function buildStallRepromptPrompt(issueNumber: number, attempt: number, maxAttempts: number): string {
+  const parts = [
+    `[pideck] Stall check: your last turn on issue #${issueNumber} ended without a PR and without platform-visible progress.`,
+    `If you are still working, reply with a one-line status and keep going. ` +
+      `If your turn finished early, continue the task: implement the issue (\`gh issue view ${issueNumber}\`) ` +
+      "and verify the result.",
+    `Re-prompt ${attempt} of ${maxAttempts}: when the change is ready, open (or update) the PR that links ` +
+      "the issue with a closing keyword — \`Closes #" + issueNumber + "\` in the PR body. " +
+      "After the final re-prompt goes unanswered the worker is marked failed.",
+  ];
+  return parts.map(oneLine).join(" ");
+}
+
+/**
  * Builds the initial prompt for the worker auto-spawned for an issue:
  * the issue's number, title, URL, and assignment as the task context, plus
  * the task-source workflow the worker prompt already establishes (read the

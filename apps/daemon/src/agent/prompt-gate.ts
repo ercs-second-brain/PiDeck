@@ -185,6 +185,15 @@ export class PromptGate {
   }
 
   /**
+   * Whether a prompt for this worker is queued on the gate (issue #467):
+   * the stall sweep must not re-prompt a worker whose initial prompt is
+   * still awaiting delivery — that prompt is already "in flight".
+   */
+  hasPendingWorker(workerId: string): boolean {
+    return this.pending.some((entry) => entry.workerId === workerId);
+  }
+
+  /**
    * Queues an agent-kind session's prompt after an unauthenticated spawn
    * (issue #56 parity for docs/agent-kinds.md spawns — the researcher's
    * question is never typed into an agent that cannot run). Idempotent per

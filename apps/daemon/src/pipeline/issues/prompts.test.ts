@@ -6,7 +6,7 @@ import { makeIssue } from "../../testing/fixtures.js";
 import type { SpawnedWorker } from "../../sessions/manager.js";
 import { IssueSpawnPipeline } from "./pipeline.js";
 import type { WorkerSpawner } from "./ports.js";
-import { buildIssueSpawnPrompt } from "./prompts.js";
+import { buildIssueSpawnPrompt, buildStallRepromptPrompt } from "./prompts.js";
 
 describe("buildIssueSpawnPrompt (issue #266)", () => {
   it("carries the issue context in a single pane-safe line", () => {
@@ -31,6 +31,23 @@ describe("buildIssueSpawnPrompt (issue #266)", () => {
     // instruct the worker to self-report the PR to the daemon or notify
     // anyone; claiming is the daemon's job.
     expect(prompt).not.toMatch(/self-report|notify/i);
+  });
+});
+
+describe("buildStallRepromptPrompt (issue #467)", () => {
+  it("is a single pane-safe line naming the issue and the bounded attempt", () => {
+    const prompt = buildStallRepromptPrompt(467, 2, 3);
+    expect(prompt).not.toMatch(/\n/);
+    expect(prompt).toContain("issue #467");
+    expect(prompt).toContain("Re-prompt 2 of 3");
+    expect(prompt).toContain("Closes #467");
+    expect(prompt).toContain("marked failed");
+  });
+
+  it("asks for a status first, then continuation — a busy worker is not derailed", () => {
+    const prompt = buildStallRepromptPrompt(1, 1, 2);
+    expect(prompt).toContain("reply with a one-line status and keep going");
+    expect(prompt).toContain("continue the task");
   });
 });
 
