@@ -8,10 +8,11 @@
  * Hermetic: GhClient runs over the in-memory fake gh runner (testutil).
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { testDaemon, UPDATED_AT, type FakeGhRoutes } from "./testutil.js";
 import { assignIssue } from "./cli-handlers.js";
+import type { GithubWatcherEvent } from "@pideck/shared";
 
 /** The gh account the fake auth probe reports (`/user`). */
 const GH_LOGIN = "auto-agent";
@@ -67,6 +68,32 @@ describe("assignIssue (issue #491)", () => {
     await services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
     const result = await assignIssue(services, "o-r", 7);
     expect(result).toEqual({ ok: true, issueNumber: 7, assignee: GH_LOGIN, retriggered: true });
+  });
+
+  it("synthesizes the unassign→re-assign event pair on the re-trigger path (issue #509)", async () => {
+    const { services } = testDaemon(assignRoutes());
+    await services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
+    const routed: Array<{ projectId: string; event: GithubWatcherEvent }> = [];
+    vi.spyOn(services.automation, "handleWatcherEvent").mockImplementation((projectId, event) => {
+      routed.push({ projectId, event });
+    });
+    await assignIssue(services, "o-r", 7);
+    // The pair a straddling watcher poll would have produced, in order:
+    // retract (assignee cleared) then the fresh assignment.
+    expect(routed).toHaveLength(2);
+    const [unassigned, assigned] = routed.map((r) => r.event);
+    expect(routed[0]?.projectId).toBe("o-r");
+    expect(unassigned).toMatchObject({ type: "issue.unassigned", issue: { number: 7, assignee: null } });
+    expect(assigned).toMatchObject({ type: "issue.assigned", issue: { number: 7, assignee: GH_LOGIN } });
+    expect(unassigned?.at).toEqual(assigned?.at);
+  });
+
+  it("synthesizes no events on the fresh-assignment path (the watcher drives that spawn)", async () => {
+    const { services } = testDaemon(assignRoutes());
+    await services.projects.register({ mode: "clone", repoUrl: "https://github.com/o/r" });
+    const handleWatcherEvent = vi.spyOn(services.automation, "handleWatcherEvent");
+    await assignIssue(services, "o-r", 5);
+    expect(handleWatcherEvent).not.toHaveBeenCalled();
   });
 
   it("404s an unknown project before any gh call", async () => {
