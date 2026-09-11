@@ -8,7 +8,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { shouldAutoOpenOnboarding } from "./sidebar";
+import { z } from "zod";
+import { isStaleBundleError, shouldAutoOpenOnboarding } from "./sidebar";
 
 describe("shouldAutoOpenOnboarding (issue #90)", () => {
   it("does not open while the project list is still loading", () => {
@@ -26,5 +27,20 @@ describe("shouldAutoOpenOnboarding (issue #90)", () => {
   it("does not open when the daemon is unreachable", () => {
     expect(shouldAutoOpenOnboarding({ loaded: false, error: "connection refused", entryCount: 0 })).toBe(false);
     expect(shouldAutoOpenOnboarding({ loaded: true, error: "connection refused", entryCount: 0 })).toBe(false);
+  });
+});
+
+describe("isStaleBundleError (issue #485)", () => {
+  it("flags schema-validation failures as a stale app bundle", () => {
+    // The #485 skew shape: the daemon's worker records no longer fit the running bundle's schema.
+    const probe = z.number().nullable().safeParse(undefined);
+    expect(probe.success).toBe(false);
+    if (!probe.success) expect(isStaleBundleError(probe.error)).toBe(true);
+  });
+
+  it("treats transport errors as transient, not stale-bundle", () => {
+    expect(isStaleBundleError(new Error("connection refused"))).toBe(false);
+    expect(isStaleBundleError("daemon unreachable")).toBe(false);
+    expect(isStaleBundleError(null)).toBe(false);
   });
 });

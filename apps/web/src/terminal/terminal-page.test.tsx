@@ -51,6 +51,30 @@ function renderPicker(overrides: Partial<PickerProps> = {}) {
   );
 }
 
+describe("SessionPicker (stale-bundle reload banner, issue #485)", () => {
+  it("renders the reload banner instead of the unreachable-daemon line", () => {
+    const html = renderToString(
+      <SessionPicker
+        entries={[{ project, sessions, workers }]}
+        error="prNumber: Invalid input: expected number, received undefined"
+        staleBundle
+        selectedSessionId={null}
+        onSelectSession={() => {}}
+        onSelectProject={() => {}}
+        onOpenSettings={() => {}}
+        onOpenGlobalSettings={() => {}}
+        onSelectAllProjects={() => {}}
+        onStartOnboarding={() => {}}
+        onStartOrchestrator={() => {}}
+      />,
+    );
+    expect(html).toContain("older than the daemon");
+    expect(html).toContain("picker-error-reload");
+    expect(html).toContain(">Reload</button>");
+    expect(html).not.toContain("Daemon unreachable:");
+  });
+});
+
 describe("SessionPicker", () => {
   it("renders the Workspace row and the + Add project bottom row", () => {
     const html = renderPicker();
