@@ -107,6 +107,14 @@ export const kanbanUpdateEventSchema = z.discriminatedUnion("type", [
     card: kanbanCardSchema,
   }),
   z.object({
+    // Issue #451: the daemon's board cache revalidated (its stale-while-
+    // revalidate background refresh completed) — clients reload the board
+    // instead of rendering the stale value until their next slow poll.
+    type: z.literal("kanban.board.updated"),
+    at: isoDateTimeSchema,
+    projectId: projectIdField,
+  }),
+  z.object({
     type: z.literal("project.updated"),
     at: isoDateTimeSchema,
     project: projectSchema,

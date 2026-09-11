@@ -168,6 +168,31 @@ export function applyKanbanEvent(state: AppState, event: KanbanUpdateEvent): App
       // fetches its own) — the reduction is a no-op on purpose; the store
       // notifies the worker-event listeners (the sidebar's reload is the update).
       return state;
+    case "kanban.board.updated":
+      // Issue #451: the daemon's board cache revalidated — the board data
+      // itself follows through the store's project reload (apply); nothing
+      // to reduce here.
+      return state;
+  }
+}
+
+/**
+ * The project whose data an event signals changed — reloaded by the store's
+ * `apply` (issue #451). `project.updated` carries its own payload and is
+ * reduced directly, but the board-revalidation and worker-lifecycle events
+ * only announce that derived state (board, issue columns) moved on the
+ * server. `null` when the event names no known project.
+ */
+function reloadTarget(event: KanbanUpdateEvent): string | null {
+  switch (event.type) {
+    case "kanban.board.updated":
+    case "worker.status.changed":
+    case "session.archived":
+      return event.projectId;
+    case "worker.spawned":
+      return event.worker.projectId;
+    default:
+      return null;
   }
 }
 
@@ -345,6 +370,17 @@ class LiveBoardStore implements BoardStore {
       this.state = next;
       if (event.type === "project.updated") void this.loadProject(event.project.id).catch(() => {});
       this.emit();
+    }
+    // Issue #451: events that signal server-derived state changed without
+    // carrying it reload the project — a board revalidation push (the
+    // daemon's SWR refresh completed; clients were rendered the stale value)
+    // and worker lifecycle events (issue columns derive from live worker
+    // status; the pipeline only broadcasts the pickup move). Single-flight
+    // loads + warm daemon caches keep these cheap: pushes fire at most once
+    // per TTL per project, and the reloads hit them.
+    const reloadProjectId = reloadTarget(event);
+    if (reloadProjectId !== null && this.loadedProjects.has(reloadProjectId)) {
+      void this.loadProject(reloadProjectId).catch(() => {});
     }
     // Worker lifecycle events always notify (issue #269) — even when the
     // reducer was a no-op (unknown worker), the sidebar decides what a

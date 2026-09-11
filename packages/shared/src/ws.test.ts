@@ -124,6 +124,13 @@ describe("websocket: kanban updates", () => {
         .type,
     ).toBe("worker.status.changed");
   });
+
+  it("parses the board-revalidation push (issue #451) and rejects it without a project", () => {
+    expect(wsServerEventSchema.parse({ type: "kanban.board.updated", at: NOW, projectId: "p" }).type).toBe(
+      "kanban.board.updated",
+    );
+    expect(wsServerEventSchema.safeParse({ type: "kanban.board.updated", at: NOW }).success).toBe(false);
+  });
 });
 
 describe("websocket: user notifications (issue #111)", () => {
