@@ -5,7 +5,7 @@ Send a message to a running agent session. Use this to correct or direct a live 
 ## Syntax
 
 ```
-pideck send [flags]
+pideck send --session <id> --message <text>
 ```
 
 ## Flags

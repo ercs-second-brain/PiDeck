@@ -37,7 +37,14 @@ import { PI_NODE_MIN_VERSION } from "../api/node-version.js";
 /** Injectables for tests. */
 export type RunDeps = Record<string, never>;
 
-const USAGE = `pideck — talk to the PiDeck daemon
+/**
+ * The CLI's own usage text (`pideck` with no args). The invocation lines
+ * (`pideck ...`) are the agent-facing surface's source of truth — the
+ * using-pideck skill must carry each of them verbatim (drift guard,
+ * issue #474): a new command or flag form fails CI until the skill
+ * documents it.
+ */
+export const USAGE = `pideck — talk to the PiDeck daemon
 
 Usage:
   pideck status [--json]
@@ -314,8 +321,14 @@ async function cmdSend(ctx: CommandContext): Promise<number> {
   return 0;
 }
 
-/** Command table (issue #134): run() dispatches, each handler stays small. */
-const commands: Record<string, Command> = {
+/**
+ * Command registry (issue #134): run() dispatches, each handler stays
+ * small. Exported for the using-pideck skill's drift guard (issue #474,
+ * agent/cli-skill-drift.test.ts): the agent-facing command list derives
+ * from this table, not from a hand-maintained doc list — a new command
+ * fails CI until the skill documents it.
+ */
+export const commands: Record<string, Command> = {
   status: cmdStatus,
   project: cmdProject,
   kanban: cmdKanban,

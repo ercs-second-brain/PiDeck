@@ -10,7 +10,7 @@ trigger: "Using the pideck CLI: spawning workers, messaging sessions, inspecting
 
 | Command | What it does | When to use | Details |
 |---|---|---|---|
-| `pideck spawn` | Spawn a worker agent in a fresh git worktree | Starting a new task or issue | [commands/spawn.md](commands/spawn.md) |
+| `pideck spawn` | Spawn a worker agent in a fresh git worktree, or a preset-prompt agent-kind session (`--kind` — see [commands/agent-kind-spawn.md](commands/agent-kind-spawn.md)) | Starting a new task or issue; spawning a researcher or audit session | [commands/spawn.md](commands/spawn.md) |
 | `pideck send` | Send a message to a running agent session | Correcting or directing a live agent | [commands/send.md](commands/send.md) |
 | `pideck project` | Inspect registered projects | Looking up repo, branch, or settings | [commands/project.md](commands/project.md) |
 | `pideck status` | Show daemon status | Verifying the daemon is up | [commands/state.md](commands/state.md) |

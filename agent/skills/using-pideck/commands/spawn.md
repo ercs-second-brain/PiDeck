@@ -5,17 +5,21 @@ Spawn a worker agent session in a registered project. The daemon creates the tmu
 ## Syntax
 
 ```
-pideck spawn [flags]
+pideck spawn --project <id> [--issue <n> | --kind <agent-kind> [--question <q>]] --name <label> [--prompt <task>]
 ```
+
+A spawn is either a **worker spawn** (`--issue` or `--prompt`) or an **agent-kind spawn** (`--kind`, see [agent-kind-spawn.md](agent-kind-spawn.md)) — never both.
 
 ## Flags
 
 | Flag | Meaning | Default / Required |
 |---|---|---|
 | `--project string` | Project id to spawn the worker in | Required |
-| `--issue string` | GitHub issue number to associate with the worker | - |
+| `--issue string` | GitHub issue number to associate with the worker | Worker spawns: `--issue` or `--prompt` |
+| `--kind string` | Spawn an agent-kind session instead of a worker (see [agent-kind-spawn.md](agent-kind-spawn.md)) | Mutually exclusive with `--issue`/`--prompt` |
+| `--question string` | The researcher's question (agent kinds with a `waitForInput` trigger) | Required for `--kind researcher`; forbidden for kinds that take no input |
 | `--name string` | Display label shown in the kanban/sidebar (max 20 characters) | Required |
-| `--prompt string` | Initial task prompt for the worker | - |
+| `--prompt string` | Initial task prompt for the worker | Worker spawns: `--issue` or `--prompt` |
 
 ## Daemon behavior
 
