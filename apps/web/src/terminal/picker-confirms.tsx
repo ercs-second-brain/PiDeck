@@ -61,12 +61,16 @@ function TerminateConfirmModals(props: { state: PickerState; onTerminateWorker?:
     );
   }
   if (props.onTerminateWorker === undefined) return null;
+  // Issue #482: a record-less (adopted orphan) worker session deletes
+  // through the #317 session-id terminate path — the daemon kills the
+  // pane and removes the record, so nothing is archived.
   return (
     <TerminateWorkerModal
       sessionName={confirming.tmuxSession}
+      archived={confirming.workerId != null}
       pending={state.pendingTerminate}
       error={state.terminateError}
-      onConfirm={() => void state.confirmTerminate(props.onTerminateWorker!)}
+      onConfirm={() => void state.confirmTerminate(props.onTerminateWorker!, props.onTerminateAgentSession)}
       onCancel={state.cancelTerminate}
     />
   );

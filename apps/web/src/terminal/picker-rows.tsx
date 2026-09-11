@@ -183,7 +183,13 @@ export function WorkerRow(props: {
         {worker && <span className="picker-runtime">{formatRunningDuration(worker.startedAt, props.now ?? Date.now())}</span>}
         {badge && <span className={badge.className}>{badge.label}</span>}
       </button>
-      {props.onTerminateWorker && worker && props.onToggleRowMenu && (
+      {/* Issue #482: the ⋯ menu shows on every wired live worker row — even
+          when the daemon has no worker record for the session (an adopted
+          orphan pane after a restart whose state was lost, or a workers
+          fetch that came back empty). Those rows' delete routes through the
+          #317 session-id terminate path (confirmTerminate's fallback), so
+          the affordance stays real instead of decorative. */}
+      {props.onTerminateWorker && props.onToggleRowMenu && (
         <RowOptionsMenu
           sessionId={props.session.id}
           open={props.rowMenuOpen === true}
