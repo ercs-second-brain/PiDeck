@@ -223,4 +223,72 @@ describe("GithubAutomation approval → orchestrator notification (issue #490)",
     expect(logged).toContain("orchestrator-notify");
     consoleError.mockRestore();
   });
+
+});
+
+/** Green routes with the review-user assignee already on the PR (issue #408's spawn gate reads it from the poll payload). */
+function assignedGreenPullRoutes(reviews: Record<string, unknown>[]): Record<string, unknown> {
+  const pull = { ...sharedRestPull(7, { sha: "sha-1", author: "octo-bot", headBranch: "issue-46-fix", title: "Resolve #46: fix the loop", updatedAt: NOW }), assignees: [{ login: "review-bot" }] };
+  return {
+    ...emptyRoutes().api,
+    "/repos/octo/repo/pulls": [pull],
+    "/repos/octo/repo/pulls/7": pull,
+    "/repos/octo/repo/commits/sha-1/check-runs": {
+      total_count: 1,
+      check_runs: [{ name: "build", status: "completed", conclusion: "success" }],
+    },
+    "/repos/octo/repo/pulls/7/reviews": reviews,
+    "/repos/octo/repo/pulls/7/comments": [],
+    // The assignment leg's POST (fire-and-forget at track time; the payload
+    // already carries the assignee, so the spawn gate reads it).
+    "/repos/octo/repo/issues/7/assignees": { assignees: [{ login: "review-bot" }] },
+  };
+}
+
+describe("GithubAutomation reviewer-agent approval → orchestrator notification (issue #503)", () => {
+  it("the reviewer agent's approval notifies the orchestrator pane on the poll that records it", async () => {
+    // Full production reviewer flow (issue #407/#408): the review account is
+    // configured, the green PR carries the review-user assignee (the spawn
+    // gate), a reviewer agent spawns, and its approval — recorded on the
+    // review-submission watermark — drives the notification directly.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const routes: FakeGhRoutes & { api: Record<string, unknown>; graphql: Record<string, unknown> } = {
+      ...emptyRoutes(),
+      api: assignedGreenPullRoutes([]),
+    };
+    const daemon = await registeredDaemon(routes);
+    active = daemon;
+    daemon.services.settings.update({ reviewAccountToken: "tok", reviewAccountUsername: "review-bot" });
+    const events = broadcasts(daemon);
+    await daemon.services.automation.start();
+    const orchestrator = await daemon.services.sessions.ensureOrchestrator(PROJECT);
+    daemon.tmux.sessions.get(orchestrator.tmuxSession)!.command = ["pi"];
+
+    await daemon.services.sessions.spawnWorker(PROJECT, { issueNumber: 46 });
+    daemon.services.automation.handleWatcherEvent(PROJECT, { type: "pull_request.opened", at: NOW, pullRequest: makePullRequestEvent(7) });
+    await daemon.automation.pollPrPipeline(PROJECT);
+    await flush();
+
+    // The review cycle ran: a reviewer agent is attached to the PR.
+    const reviewers = daemon.services.registry.listWorkers({ projectId: PROJECT }).filter((w) => w.kind === "reviewer");
+    expect(reviewers).toHaveLength(1);
+    expect(consoleError.mock.calls.map((c) => c.join(" ")).some((l) => l.includes("review-spawn"))).toBe(false);
+
+    // The reviewer approves — the next poll records the approval and the
+    // notification lands in the orchestrator pane on that same poll.
+    routes.api!["/repos/octo/repo/pulls/7/reviews"] = [{ user: { login: "review-bot" }, state: "APPROVED", submitted_at: NOW }];
+    await daemon.automation.pollPrPipeline(PROJECT);
+    await flush();
+
+    expect(events.filter((e) => e.type === "notification.pr.ready_for_merge")).toHaveLength(1);
+    const pane = daemon.tmux.sessions.get(orchestrator.tmuxSession);
+    expect((pane?.paneLines ?? []).filter((l) => l.includes("PR #7"))).toEqual([
+      '[pideck] PR #7 "Resolve #46: fix the loop" is CI-green and approved — ready for review and merge.',
+    ]);
+    // Exactly once per approval round: the following poll stays silent.
+    await daemon.automation.pollPrPipeline(PROJECT);
+    await flush();
+    expect((daemon.tmux.sessions.get(orchestrator.tmuxSession)?.paneLines ?? []).filter((l) => l.includes("PR #7"))).toHaveLength(1);
+    consoleError.mockRestore();
+  });
 });

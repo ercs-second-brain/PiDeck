@@ -15,9 +15,14 @@
  *   so the webapp can toast it. Emitted once per merge (the PR drops out
  *   of the active list as `done`).
  * - `notification.pr.ready_for_merge` — the orchestrator notification
- *   (issue #408): the PR is CI-green, approved, and both the author worker
- *   and the reviewer are idle. The wiring forwards it onto the WS hub as a
- *   shared `NotificationEvent` (webapp toast/notification center) and —
+ *   (issue #408): the PR is CI-green and approved. Emitted from two legs
+ *   sharing one once-per-round watermark: the approval-recorded trigger
+ *   (issue #503 — a newly recorded APPROVED review submission notifies
+ *   immediately, so the reviewer agent's approval drives the notification
+ *   deterministically) and the idle-gated backstop (issue #408's
+ *   `driveReadyForMerge`, for rounds whose approval predates the loop's
+ *   watch or lands while CI is red). The wiring forwards it onto the WS hub
+ *   as a shared `NotificationEvent` (webapp toast/notification center) and —
  *   issue #490 — types it into the owning project's orchestrator pane, so
  *   the orchestrator is notified deterministically (merging stays
  *   human/orchestrator-approved — this only notifies).

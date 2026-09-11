@@ -111,6 +111,11 @@ export async function driveLoop(
     tracked.pendingReviewDecision = false;
     tracked.reviewFixAttempts = 0;
   }
+  // Issue #503 (the reviewer-agent approval leg): a newly recorded APPROVED
+  // submission notifies the orchestrator immediately — the notification is a
+  // direct consequence of the approval action, not downstream of the
+  // ready-for-merge detection below. Shares its once-per-round watermark.
+  const approvalReady = driveApprovalNotification(tracked, pr, headSha, review.isNew, ctx);
 
   if (pr.ciStatus === "failure") {
     // Issue #441 (B5): the failure branch returns early, but the review
@@ -134,8 +139,63 @@ export async function driveLoop(
   await driveReview(tracked, pr, headSha, ctx);
   // Issue #408: green + approved + both agents idle → the orchestrator is
   // notified the PR is ready for merge (merging stays human-approved).
-  const ready = driveReadyForMerge(tracked, pr, headSha, ctx);
+  // Issue #503: at most one leg fires per poll — the approval leg marks the
+  // round's watermark first, and the backstop skips when it already
+  // notified (and vice versa on polls without a newly recorded approval).
+  const ready = firstReadyNotification(driveReadyForMerge(tracked, pr, headSha, ctx), approvalReady);
   return ready === null ? greenEvents : [...greenEvents, ready];
+}
+
+/** The poll's single ready-for-merge notification: the approval-recorded leg wins when it fired (issue #503 — the shared once-per-round watermark makes the pair mutually exclusive). */
+function firstReadyNotification(backstop: PRPipelineEvent | null, approval: PRPipelineEvent | null): PRPipelineEvent | null {
+  return approval ?? backstop;
+}
+
+/**
+ * Approval-recorded notification (issue #503): the reviewer-agent approval
+ * leg's own trigger. When a NEW APPROVED review submission is recorded (the
+ * #407 watermark consumes it exactly once) and the PR meets the #490
+ * delivery bar (CI-green, review decision approved), the orchestrator is
+ * notified right away — as a direct consequence of the approval action,
+ * instead of waiting for {@link driveReadyForMerge}, whose idle gates (the
+ * author mid-prompt or parked on an agent-reported `running` status, the
+ * reviewer's pane still live until the archival pass) can hold the
+ * notification well past the approval. Runs in both modes: a human
+ * approval recorded on the watermark notifies just like the auto
+ * reviewer's. Shares the `readyNotifiedHeadSha` watermark with
+ * {@link driveReadyForMerge}, so one approval round notifies exactly once
+ * regardless of which leg fires; the backstop still owns rounds whose
+ * approval predates the loop's watch (watermark-consumed as pre-existing)
+ * or lands while CI is red.
+ */
+function driveApprovalNotification(
+  tracked: TrackedPR,
+  pr: PullRequest,
+  headSha: string,
+  newReview: ReviewSubmission | null,
+  ctx: DriveContext,
+): PRPipelineEvent | null {
+  if (newReview === null || newReview.state !== "APPROVED") return null;
+  if (pr.reviewState !== "approved" || pr.ciStatus !== "success") return null;
+  if (tracked.readyNotifiedHeadSha === headSha) return null; // this round already notified
+  return markRoundNotified(tracked, pr, headSha, ctx);
+}
+
+/**
+ * Marks the approval round notified and builds the ready-for-merge event —
+ * the ONE watermark write both notification legs share (issue #408's
+ * `readyNotifiedHeadSha` once-per-round watermark; issue #503's
+ * approval-recorded leg marks it before the backstop runs).
+ */
+function markRoundNotified(tracked: TrackedPR, pr: PullRequest, headSha: string, ctx: DriveContext): PRPipelineEvent {
+  tracked.readyNotifiedHeadSha = headSha;
+  return {
+    type: "notification.pr.ready_for_merge",
+    at: ctx.now().toISOString(),
+    projectId: tracked.projectId,
+    prNumber: tracked.prNumber,
+    title: pr.title,
+  };
 }
 
 /**
@@ -153,14 +213,7 @@ function driveReadyForMerge(tracked: TrackedPR, pr: PullRequest, headSha: string
   if (reviewer !== undefined && ACTIVE_WORKER_STATUSES.has(reviewer.status)) return null; // reviewer still working
   const author = ctx.sessions.getWorker(tracked.workerId);
   if (author !== undefined && author.status !== "awaiting_ci" && ACTIVE_WORKER_STATUSES.has(author.status)) return null;
-  tracked.readyNotifiedHeadSha = headSha;
-  return {
-    type: "notification.pr.ready_for_merge",
-    at: ctx.now().toISOString(),
-    projectId: tracked.projectId,
-    prNumber: tracked.prNumber,
-    title: pr.title,
-  };
+  return markRoundNotified(tracked, pr, headSha, ctx);
 }
 
 /**
