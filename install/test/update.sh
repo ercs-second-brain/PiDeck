@@ -127,16 +127,27 @@ chmod +x "$FAKE_BIN/git" "$FAKE_BIN/gh"
 cp "$PI_SHIM_SRC" "$FAKE_BIN/pi"
 chmod +x "$FAKE_BIN/pi"
 
+# _pd_ambient_scrub — `-u NAME` flags for every ambient PD_*/UPDATE_* variable
+# (issue #484). The suite runs from inside `pideck update`'s build, which
+# inherits the apply's exported installer environment; fixtures must see only
+# what they set themselves. Extends the #213 node-variable scrub to the whole
+# namespace: #462's asset-reconcile step reads PD_PI_DIR, so a leaked ambient
+# value sent the fixture's links to the REAL agent dir and failed every
+# first apply's build.
+_pd_ambient_scrub() {
+  printenv | sed -n 's/^\(PD_[A-Za-z0-9_]*\)=.*/-u \1/p; s/^\(UPDATE_[A-Za-z0-9_]*\)=.*/-u \1/p'
+}
+
 # Runs an update.sh snippet with the fake git/gh and the fake install layout.
 # Usage: run_update <local-sha> <remote-sha|''> <remote-url|''> <snippet>
 # HOME is pinned to the fake home so ~/.local/bin writes (the pideck
 # symlink the apply path re-creates) land in the tmp tree, not the real one.
 run_update() {
-  # -u: scrub the legacy node variables (issue #213) — a real box runs this
-  # suite from inside `pideck update`'s process, whose ambient environment
-  # can carry any stale subset of PD_NODE/PD_NODE_BIN/PD_NODE_BIN_DIR; the
-  # tests must see only what the fixture's env file provides.
-  env -u PD_NODE -u PD_NODE_BIN -u PD_NODE_BIN_DIR \
+  # Scrub the ambient installer environment (issue #484; the #213 node
+  # variables are covered by the same sweep) — the tests must see only what
+  # the fixture's env file provides.
+  # shellcheck disable=SC2046 # -u NAME flags: bare names, safe to split
+  env $(_pd_ambient_scrub) \
     PATH="$FAKE_BIN:$PATH" \
     FAKE_LOCAL_SHA="$1" FAKE_REMOTE_SHA="$2" FAKE_REMOTE_URL="$3" UPDATE_SNIPPET="$4" \
     PD_HOME="$PD_HOME" HOME="$PD_HOME" \
@@ -184,9 +195,13 @@ write_config
 # --- shim wiring ------------------------------------------------------------
 
 run_shim() { # run_shim <local-sha> <remote-sha|''> <args...>
-  # -u: scrub the legacy node variables (issue #213) — see run_update.
+  # Scrub the ambient installer environment (issue #484 — extends the #213
+  # node-variable scrub to the whole PD_*/UPDATE_* namespace): this suite
+  # runs inside `pideck update`'s build on real boxes, and the shim must see
+  # only what the fixture provides.
   _rs_local=$1; _rs_remote=$2; shift 2
-  env -u PD_NODE -u PD_NODE_BIN -u PD_NODE_BIN_DIR \
+  # shellcheck disable=SC2046 # -u NAME flags: bare names, safe to split
+  env $(_pd_ambient_scrub) \
     PATH="$FAKE_BIN:$PATH" FAKE_LOCAL_SHA="$_rs_local" FAKE_REMOTE_SHA="$_rs_remote" \
     PD_HOME="$PD_HOME" HOME="$PD_HOME" sh "$SHIM" "$@"
 }
@@ -259,6 +274,32 @@ for _stale in $REMOVED; do
 done
 check_eq 'apply links the live shipped skill' "$PD_SRC/agent/skills/bash-triage" "$(readlink "$PI_SKILLS_DIR/bash-triage")"
 check_eq 'apply keeps foreign links' "$PD_HOME/other/gone" "$(readlink "$PI_SKILLS_DIR/foreign-link")"
+
+# --- ambient installer env must not leak into the apply (issue #484) --------
+# This suite runs from inside `pideck update`'s `pnpm build`, which inherits
+# the apply's exported PD_* environment. The #462 asset-reconcile step reads
+# PD_PI_DIR: a leaked ambient value sent the fixture's links to the REAL
+# agent dir, failed the reconcile assertions, and made every first apply's
+# build die with "build failed" (the retry then skipped the rebuild — the
+# "works on re-run" illusion). run_shim/run_update scrub the namespace;
+# prove it with decoy ambient values that must be ignored.
+PD_PI_DIR="$PD_HOME/ambient-decoy/agent"
+PD_SRC="$PD_HOME/ambient-decoy/src"
+export PD_PI_DIR PD_SRC
+mkdir -p "$PD_PI_DIR/skills"
+: > "$ORDER_LOG"
+rm -f "$PD_HOME/var/update-state.json"
+out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
+check_eq 'ambient PD_* leak: asset-reconcile apply still exits 0 (issue #484)' '0' "$rc"
+check_eq 'ambient PD_* leak: reconcile still links into the fixture agent dir (issue #484)' \
+  "$PD_HOME/src/agent/skills/bash-triage" "$(readlink "$PI_SKILLS_DIR/bash-triage")"
+check_eq 'ambient PD_* leak: the decoy agent dir stays untouched (issue #484)' '' \
+  "$(readlink "$PD_PI_DIR/skills/bash-triage" 2>/dev/null)"
+check_eq 'ambient PD_* leak: stale links stay pruned (issue #484)' '' \
+  "$(readlink "$PI_SKILLS_DIR/stale-skill-0" 2>/dev/null)"
+# Restore the fixture env for the sections below (they use PD_SRC directly).
+PD_SRC="$PD_HOME/src"
+unset PD_PI_DIR
 
 # --- apply path: stale private node on an up-to-date install (issue #224) ----
 # The #224 bug: restart-only (and up-to-date) applies used to skip the node
