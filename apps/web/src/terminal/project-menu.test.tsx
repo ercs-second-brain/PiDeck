@@ -59,7 +59,7 @@ function renderRow(menuOpen: boolean, opts: { spawnSubmenuOpen?: boolean; agentK
       agentKinds={opts.agentKinds ?? SHIPPED_AGENT_KINDS}
       onToggleCollapsed={() => {}}
       onToggleMenu={() => {}}
-      onToggleSpawnSubmenu={() => {}}
+      onOpenSpawnSubmenu={() => {}}
       onOpenSettings={() => {}}
       onDeleteProject={() => {}}
       onSpawnAgent={() => {}}

@@ -75,7 +75,7 @@ function renderOpenRow(overrides: Partial<Parameters<typeof ProjectRow>[0]> = {}
     agentKinds: SHIPPED_AGENT_KINDS,
     onToggleCollapsed: () => {},
     onToggleMenu: () => {},
-    onToggleSpawnSubmenu: () => {},
+    onOpenSpawnSubmenu: () => {},
     onOpenSettings: () => {},
     onDeleteProject: () => {},
     onSpawnAgent: () => {},

@@ -47,7 +47,7 @@ function renderProjectRow(): string {
       agentKinds={SHIPPED_AGENT_KINDS}
       onToggleCollapsed={() => {}}
       onToggleMenu={() => {}}
-      onToggleSpawnSubmenu={() => {}}
+      onOpenSpawnSubmenu={() => {}}
       onOpenSettings={() => {}}
       onDeleteProject={() => {}}
       onSpawnAgent={() => {}}

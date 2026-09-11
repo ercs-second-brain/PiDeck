@@ -166,9 +166,14 @@ function useOpenMenu() {
     openSpawnMenuId,
     toggleMenu: menu.toggle,
     closeMenu: menu.close,
-    toggleSpawnMenu: (projectId: string) => setOpenSpawnMenuId((current) => (current === projectId ? null : projectId)),
-    // Issue #448 (B9): hover opens the spawn-agent submenu without toggling
-    // (click stays the fallback) — always opens, never closes.
+    // Issue #448 (B9) + #492: hover AND click both open the spawn-agent
+    // submenu — always opens, never closes. When hover-open shipped (#448),
+    // click stayed a toggle: a pointer user's click is always preceded by
+    // the mouseenter that already opened the submenu, so the click closed
+    // it again and the submenu "never appeared" (issue #492, finding B2).
+    // An idempotent open is the only consistent semantics once hover opens
+    // too — and it fixes touch, where a tap synthesizes mouseover before
+    // the click. Dismissal: outside click, Escape, or closing the menu.
     openSpawnMenu: (projectId: string) => setOpenSpawnMenuId(projectId),
   };
 }
