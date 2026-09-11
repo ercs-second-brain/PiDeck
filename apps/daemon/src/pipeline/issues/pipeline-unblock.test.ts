@@ -67,6 +67,9 @@ function fakeSpawner(options: { active?: number[] } = {}): {
     async archiveWorkersForIssue() {
       return [];
     },
+    async retaskWorker(workerId: string): Promise<never> {
+      throw new Error(`unexpected retaskWorker(${workerId})`);
+    },
   };
   return { spawner, spawns };
 }

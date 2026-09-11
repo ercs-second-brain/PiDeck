@@ -63,6 +63,9 @@ export function fakeSpawner(options: { active?: number[] } = {}): {
       archivedKeys.push(`${projectId}#${issueNumber}`);
       return [];
     },
+    async retaskWorker(workerId: string): Promise<never> {
+      throw new Error(`unexpected retaskWorker(${workerId})`);
+    },
   };
   return { spawner, spawns, archivedKeys };
 }
@@ -287,6 +290,9 @@ describe("IssueSpawnPipeline redelivery & dedupe (#416: spawn once)", () => {
       },
       listActiveWorkerIssueNumbers: (projectId) => base.spawner.listActiveWorkerIssueNumbers(projectId),
       archiveWorkersForIssue: (projectId, issueNumber, message) => base.spawner.archiveWorkersForIssue(projectId, issueNumber, message),
+    async retaskWorker(workerId: string): Promise<never> {
+      throw new Error(`unexpected retaskWorker(${workerId})`);
+    },
     };
     const { pipeline, kanbanEvents, errors } = makeHarness({
       blockerScript: new Map([[1, []]]),

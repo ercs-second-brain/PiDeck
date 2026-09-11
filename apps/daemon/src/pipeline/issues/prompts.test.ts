@@ -99,6 +99,9 @@ function makePipeline() {
     async archiveWorkersForIssue() {
       return [];
     },
+    async retaskWorker(workerId: string): Promise<never> {
+      throw new Error(`unexpected retaskWorker(${workerId})`);
+    },
   };
   const pipeline = new IssueSpawnPipeline({
     projects: {

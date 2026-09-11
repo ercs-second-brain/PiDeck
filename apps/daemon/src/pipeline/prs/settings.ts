@@ -12,14 +12,21 @@ export interface WorkerPipelineSettings {
   autoFixReviewComments: boolean;
   /** Auto review agent on green, unapproved PRs (issue #107). */
   autoReview: boolean;
+  /**
+   * Idle-worker reuse context threshold, percent of the context window
+   * (issue #471): a `done` same-lane worker above it is not reused — the
+   * follow-on task spawns fresh. Read fresh on every reuse decision.
+   */
+  workerReuseContextThreshold: number;
 }
 
-/** All-ON fallback when no settings provider is injected (tests/legacy). */
+/** Fallback when no settings provider is injected (tests/legacy). */
 export const DEFAULT_WORKER_PIPELINE_SETTINGS: WorkerPipelineSettings = {
   terminateOnMerge: true,
   autoFixCi: true,
   autoFixReviewComments: true,
   autoReview: true,
+  workerReuseContextThreshold: 20,
 };
 
 /**
@@ -44,5 +51,9 @@ export function resolvePipelineSettings(
     autoFixCi: pick(perProject.autoFixCi, base.autoFixCi),
     autoFixReviewComments: pick(perProject.autoFixReviewComments, base.autoFixReviewComments),
     autoReview: pick(perProject.autoReview, base.autoReview),
+    workerReuseContextThreshold:
+      typeof perProject.workerReuseContextThreshold === "number"
+        ? perProject.workerReuseContextThreshold
+        : base.workerReuseContextThreshold,
   };
 }

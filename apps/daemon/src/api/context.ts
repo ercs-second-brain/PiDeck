@@ -17,6 +17,7 @@ import { GhClient } from "../github/index.js";
 import type { GhRunner } from "../github/gh.js";
 import type { GitRunner } from "../github/repos.js";
 import { GithubAutomation, watcherOptionsFromEnv } from "../pipeline/wiring.js";
+import { sessionReusePolicy, type ReusePolicy } from "../pipeline/issues/reuse.js";
 import { OrchestratorBootstrap } from "../orchestrator/bootstrap.js";
 import { procSnapshot, type ProcessInfo } from "../sessions/caller-discovery.js";
 import { ProjectLayout, defaultStateDir } from "../sessions/layout.js";
@@ -98,6 +99,14 @@ export interface DaemonServices {
    * question) here too, via `queueSession`.
    */
   promptGate: PromptGate;
+  /**
+   * Idle-worker reuse policy (issue #471): consulted by the manual spawn
+   * route before a fresh spawn — a lane-carrying spawn may be handed to an
+   * eligible `done` same-lane worker (context occupancy at/below the
+   * reuse threshold). The automation's issue pipeline consults its own
+   * instance of the same policy.
+   */
+  reusePolicy: ReusePolicy;
   /**
    * Live process-table snapshot for agent-kind caller discovery
    * (docs/agent-kinds.md §3 — the calling pane is resolved from the spawn
@@ -370,6 +379,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     update,
     piAuth,
     promptGate,
+    reusePolicy: sessionReusePolicy(sessions),
     callerProcesses: options.callerProcesses ?? (async () => procSnapshot()),
     now: () => new Date(),
     runtimeStats: new RuntimeStats(),

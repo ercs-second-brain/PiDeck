@@ -61,7 +61,7 @@ describe("PullRequestPipeline: CI-fix loop", () => {
   });
 
   it("skips the CI-fix prompt when autoFixCi is off (issue #106)", async () => {
-    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: false, autoFixReviewComments: true, autoReview: false }) });
+    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: false, autoFixReviewComments: true, autoReview: false, workerReuseContextThreshold: 20 }) });
     h.openList.push(12);
     h.prs.set(12, redFakePR());
     h.sessions.control.listWorkers()[0]!.prNumbers = [12];
@@ -82,7 +82,7 @@ describe("PullRequestPipeline: CI-fix loop", () => {
   });
 
   it("skips review-comment delivery when autoFixReviewComments is off (issue #106)", async () => {
-    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: false, autoReview: false }) });
+    const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: false, autoReview: false, workerReuseContextThreshold: 20 }) });
     h.openList.push(12);
     h.prs.set(12, {
       pull: restPull(12, { sha: "sha-1" }),

@@ -122,6 +122,71 @@ export function reviewAccountSaveBody(settings: SettingsRead | null, username: s
 }
 
 /**
+ * Worker-reuse context threshold (issue #471): a `done` same-lane worker
+ * whose context occupancy (input + cache read + cache write at its latest
+ * assistant message) exceeds this percent of its model's context window is
+ * NOT reused — the follow-on task spawns fresh instead. Daemon-wide
+ * default with per-project overrides (the project settings form).
+ */
+function ReuseThresholdSettings({ settings }: { settings: SettingsRead | null }) {
+  const [threshold, setThreshold] = useState("");
+  const [state, setState] = useState<{ saving: boolean; saved: boolean; error: string | null }>({
+    saving: false,
+    saved: false,
+    error: null,
+  });
+
+  const save = async (): Promise<void> => {
+    const parsed = Number(threshold);
+    if (threshold.trim() === "" || !Number.isInteger(parsed) || parsed < 1 || 100 < parsed) {
+      setState({ saving: false, saved: false, error: "Context threshold must be an integer between 1 and 100." });
+      return;
+    }
+    setState({ saving: true, saved: false, error: null });
+    try {
+      await apiUpdateSettings({ workerReuseContextThreshold: parsed });
+      setState({ saving: false, saved: true, error: null });
+    } catch (err) {
+      setState({ saving: false, saved: false, error: errorMessage(err) });
+    }
+  };
+
+  return (
+    <section className="global-worker-settings">
+      <h2 className="section-title">Worker reuse (all projects)</h2>
+      <div className="settings-form">
+        <div className="field">
+          <label htmlFor="reuse-context-threshold">Reuse context threshold (%)</label>
+          <input
+            id="reuse-context-threshold"
+            type="number"
+            min={1}
+            max={100}
+            placeholder={settings?.workerReuseContextThreshold?.toString() ?? "20"}
+            value={threshold}
+            onChange={(e) => {
+              setThreshold(e.target.value);
+              setState((prev) => ({ ...prev, saved: false }));
+            }}
+          />
+          <small className="field-hint">
+            A done same-lane worker whose context usage exceeds this percent of its context window is not reused —
+            the follow-on task spawns a fresh worker. Stored: {settings?.workerReuseContextThreshold ?? "—"}%.
+          </small>
+        </div>
+      </div>
+      <div className="wizard-actions">
+        <button type="button" className="button button-primary" disabled={state.saving || settings === null} onClick={() => void save()}>
+          {state.saving ? "Saving…" : "Save reuse threshold"}
+        </button>
+        {state.saved && <span className="saved-note">Saved ✓</span>}
+      </div>
+      {state.error !== null && <p className="error-note">{state.error}</p>}
+    </section>
+  );
+}
+
+/**
  * Review-account section (issues #407, #428): the username + write-only token
  * fields configuring the second GitHub identity the PR loop's reviewer runs
  * as. The token is write-only from the webapp's side — the daemon never
@@ -302,6 +367,7 @@ export function GlobalWorkerSettings() {
         )}
       </section>
       <ReviewAccountSettings settings={settings} />
+      <ReuseThresholdSettings settings={settings} />
       {error !== null && <p className="error-note">{error}</p>}
     </>
   );

@@ -103,6 +103,9 @@ describe("IssueSpawnPipeline retract (#416: unassign/close leaves no zombies)", 
       },
       listActiveWorkerIssueNumbers: (projectId) => spawner.listActiveWorkerIssueNumbers(projectId),
       archiveWorkersForIssue: (projectId, issueNumber, message) => spawner.archiveWorkersForIssue(projectId, issueNumber, message),
+    async retaskWorker(workerId: string): Promise<never> {
+      throw new Error(`unexpected retaskWorker(${workerId})`);
+    },
     };
     const { pipeline } = makeHarness({ blockerScript: new Map([[1, []]]), spawner: gated });
 

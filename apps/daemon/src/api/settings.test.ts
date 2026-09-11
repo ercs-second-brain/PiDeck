@@ -21,6 +21,7 @@ describe("SettingsStore", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      workerReuseContextThreshold: 20,
       reviewAccountUsername: null,
       reviewAccountToken: null,
       browserMergeNotifications: false,
@@ -50,6 +51,17 @@ describe("SettingsStore", () => {
     expect(new SettingsStore(dir).get().browserMergeNotifications).toBe(true);
   });
 
+  it("defaults the reuse context threshold to 20% and persists changes (issue #471)", () => {
+    const dir = testDaemon().stateDir;
+    const store = new SettingsStore(dir);
+    expect(store.get().workerReuseContextThreshold).toBe(20);
+    store.update({ workerReuseContextThreshold: 35 });
+    expect(new SettingsStore(dir).get().workerReuseContextThreshold).toBe(35);
+    // Validation: an out-of-range update throws (→ 400 via the router).
+    expect(() => store.update({ workerReuseContextThreshold: 0 })).toThrow();
+    expect(() => store.update({ workerReuseContextThreshold: 101 })).toThrow();
+  });
+
   it("defaults the review account OFF (single-account mode) and persists it (issue #407)", () => {
     const dir = testDaemon().stateDir;
     const store = new SettingsStore(dir);
@@ -74,6 +86,7 @@ describe("SettingsStore", () => {
       autoFixCi: true,
       autoFixReviewComments: true,
       autoReview: true,
+      workerReuseContextThreshold: 20,
       reviewAccountUsername: null,
       reviewAccountToken: null,
       browserMergeNotifications: false,

@@ -64,8 +64,26 @@ export interface WorkerSpawner {
    * Delivery is a background step: the promise resolves once the worker is
    * up (with the prompt recorded on the worker), never gated on the
    * delivery itself.
+   *
+   * `options.lane` (issue #471) records the spawn request's conceptual
+   * lane on the worker — the idle-reuse key. Omitted = lane-less (never
+   * reused; the deterministic fresh-spawn default).
    */
-  spawnWorker(projectId: string, issueNumber: number, prompt?: string): Promise<SpawnedWorker>;
+  spawnWorker(
+    projectId: string,
+    issueNumber: number,
+    prompt?: string,
+    options?: { lane?: string },
+  ): Promise<SpawnedWorker>;
+  /**
+   * Re-tasks an idle (`done`) worker with a follow-on task (issue #471
+   * reuse): the new issue number + prompt replace the old ones on the
+   * record, the worker moves to `running`, and the follow-on prompt is
+   * delivered through the same prompt-gate flow as a fresh spawn. The
+   * worker's lane and PR associations ride untouched (#470 prNumbers
+   * accumulate). Slot-neutral: the worker already occupies its slot.
+   */
+  retaskWorker(workerId: string, issueNumber: number, prompt: string): Promise<Worker>;
   /**
    * Issue numbers in the project that currently have a **non-terminal**
    * worker (`spawning`/`running`/CI/review states — any non-terminal status).
@@ -96,9 +114,12 @@ export class SessionManagerSpawner implements WorkerSpawner {
     private readonly options: SessionManagerSpawnerOptions = {},
   ) {}
 
-  async spawnWorker(projectId: string, issueNumber: number, prompt?: string): Promise<SpawnedWorker> {
+  async spawnWorker(projectId: string, issueNumber: number, prompt?: string, options?: { lane?: string }): Promise<SpawnedWorker> {
     const spawned = await this.sessions.spawnWorker(projectId, {
       issueNumber,
+      // Issue #471: the spawn request's conceptual lane rides onto the
+      // worker record — the idle-reuse key for same-lane follow-on tasks.
+      ...(options?.lane !== undefined ? { lane: options.lane } : {}),
       // Issue #266: auto-spawned workers receive the issue context as their
       // initial prompt — recorded on the worker (issue #120) and delivered
       // into the pane below (never left to idle empty).
@@ -127,6 +148,28 @@ export class SessionManagerSpawner implements WorkerSpawner {
       );
     }
     return spawned;
+  }
+
+  async retaskWorker(workerId: string, issueNumber: number, prompt: string): Promise<Worker> {
+    // Issue #471: the follow-on prompt's delivery is a background step,
+    // exactly like a fresh spawn's (issue #266) — the retask resolves once
+    // the record is updated, never gated on the delivery. The same shared
+    // dance ({@link deliverSpawnPrompt}) types the prompt and flips the
+    // worker's status messages; its error sink keeps a delivery failure
+    // from failing the retask (the pipeline's dedupe slot must not release).
+    const worker = this.sessions.retaskWorker(workerId, issueNumber, prompt, "agent running; follow-on task assigned, prompt queued (worker reuse, issue #471)");
+    void deliverSpawnPrompt(
+      this.sessions,
+      this.options.promptGate,
+      this.options.piReady,
+      { kind: "worker", worker },
+      prompt,
+      {
+        onError:
+          this.options.onError ?? ((err: unknown) => console.error("[pideck/pipeline] issue-spawn prompt delivery failed:", err)),
+      },
+    );
+    return worker;
   }
 
   async listActiveWorkerIssueNumbers(projectId: string): Promise<Set<number>> {

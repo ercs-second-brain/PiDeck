@@ -40,6 +40,20 @@ export const agentKindIdSchema = z
 export const refNumberSchema = z.number().int().positive();
 export type RefNumber = z.infer<typeof refNumberSchema>;
 
+/**
+ * A conceptual-lane slug (issue #471): the spawn-request metadata that keys
+ * idle-worker reuse — lowercase alphanumeric segments joined by dashes.
+ * Carried on the spawn request (`pideck spawn --lane <slug>`) and on the
+ * worker record it produces; a follow-on task in the same lane may reuse
+ * the idle worker instead of spawning fresh.
+ */
+export const laneSlugSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lane must be a lowercase slug (a-z, 0-9, dashes; no leading/trailing dash)");
+export type LaneSlug = z.infer<typeof laneSlugSchema>;
+
 // ---------------------------------------------------------------------------
 // Global agent (workspace-level)
 // ---------------------------------------------------------------------------
@@ -93,6 +107,15 @@ export const projectSettingsSchema = z.object({
   autoFixCi: z.boolean().nullish(),
   autoFixReviewComments: z.boolean().nullish(),
   autoReview: z.boolean().nullish(),
+  /**
+   * Per-project override of the idle-worker reuse context threshold (issue
+   * #471): a reused worker whose context occupancy (input + cache read +
+   * cache write at its latest assistant message) exceeds this percent of its
+   * model's context window is NOT reused — a fresh worker spawns instead.
+   * Unset/`null` = inherit the daemon-wide setting (default 20). Read fresh
+   * on every reuse decision, so a change lands without a restart.
+   */
+  workerReuseContextThreshold: z.number().int().min(1).max(100).nullish(),
 });
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;
 export type ProjectSettingsInput = z.input<typeof projectSettingsSchema>;
@@ -527,6 +550,15 @@ export const workerSchema = z.object({
   projectId: idSchema,
   /** Terminal session the worker's agent runs in. */
   sessionId: idSchema,
+  /**
+   * The conceptual lane the worker was spawned for (issue #471), when the
+   * spawn request carried one (`pideck spawn --lane <slug>`). The reuse
+   * key: a follow-on task spawned with the same lane may be handed to an
+   * idle (`done`) worker that carries it, saving the context the worker
+   * already loaded. Absent = the spawn is lane-less and never reused for
+   * (a lane-less spawn takes the deterministic fresh-spawn default).
+   */
+  lane: laneSlugSchema.optional(),
   /**
    * Issue the worker was spawned for. `0` marks a **freeform worker** —
    * spawned from a plain task prompt (`pideck spawn --prompt ...`)

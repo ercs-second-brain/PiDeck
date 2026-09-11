@@ -53,6 +53,8 @@
 import { issueCardId, type GithubWatcherEvent, type Issue, type IssueBlocker, type KanbanCard, type KanbanUpdateEvent, type RefNumber } from "@pideck/shared";
 
 import type { GhClient } from "../../github/gh.js";
+import type { WorkerPipelineSettings } from "../prs/settings.js";
+import { resolvePipelineSettings } from "../prs/settings.js";
 import { BlockedTicketStore } from "./blocked-store.js";
 import { GhBlockerResolver } from "./blockers.js";
 import { Emitter } from "./emitter.js";
@@ -63,6 +65,7 @@ import {
   type RegisteredProject,
   type WorkerSpawner,
 } from "./ports.js";
+import type { ReusePolicy } from "./reuse.js";
 import { QueueingScheduler, type SpawnScheduler } from "./scheduler.js";
 
 export interface IssueSpawnPipelineOptions {
@@ -90,6 +93,32 @@ export interface IssueSpawnPipelineOptions {
    * scheduler's worker-count accounting alone.
    */
   countOccupants?: (projectId: string) => number;
+  /**
+   * Idle-worker reuse (issue #471): consulted in the spawn path BEFORE a
+   * fresh spawn, for every spawn source uniformly. A lane-carrying task
+   * re-tasks an eligible `done` same-lane worker (pane alive, context
+   * occupancy at/below the threshold, not stall-marked/failed); a task
+   * with NO lane takes the deterministic fresh-spawn default. The lane
+   * comes from spawn-request metadata via {@link laneFor} — assignment
+   * events carry none today, so watcher-driven spawns always spawn fresh
+   * (deliberate: no lane ⇒ no reuse).
+   */
+  reusePolicy?: ReusePolicy;
+  /**
+   * Worker-pipeline settings provider (issue #471): the reuse threshold is
+   * resolved per project through {@link resolvePipelineSettings} — read
+   * fresh on every reuse decision, so a settings change lands without a
+   * restart. Required only when `reusePolicy` is set.
+   */
+  workerSettings?: () => WorkerPipelineSettings | undefined;
+  /**
+   * Per-spawn lane source (issue #471): returns the spawn request's
+   * conceptual lane for the issue, or `undefined` for none. Default: no
+   * lane — every watcher-driven spawn spawns fresh (deterministic
+   * default). The manual spawn route (`pideck spawn --lane`) passes its
+   * `--lane` through its own path.
+   */
+  laneFor?: (issue: Issue) => string | undefined;
   /** Injectable clock (tests). */
   now?: () => Date;
   /** Error sink for spawn/scheduling failures. Default: console.error. */
@@ -113,6 +142,9 @@ export class IssueSpawnPipeline {
   private readonly spawner: WorkerSpawner;
   private readonly scheduler: SpawnScheduler;
   private readonly countOccupants: ((projectId: string) => number) | undefined;
+  private readonly reusePolicy: ReusePolicy | undefined;
+  private readonly workerSettings: (() => WorkerPipelineSettings | undefined) | undefined;
+  private readonly laneFor: ((issue: Issue) => string | undefined) | undefined;
   private readonly now: () => Date;
   private readonly onError: (err: unknown) => void;
 
@@ -155,6 +187,9 @@ export class IssueSpawnPipeline {
     this.scheduler =
       options.scheduler ?? new QueueingScheduler({ spawner: this.spawner, onError: (err) => this.onError(err) });
     this.countOccupants = options.countOccupants;
+    this.reusePolicy = options.reusePolicy;
+    this.workerSettings = options.workerSettings;
+    this.laneFor = options.laneFor;
     this.blockedStore = options.blockedStore ?? new BlockedTicketStore();
   }
 
@@ -307,29 +342,58 @@ export class IssueSpawnPipeline {
       // Issue #416: the issue may have been unassigned/closed while this
       // spawn task sat queued — never spawn for a retracted issue.
       if (this.retracted.has(key)) return;
+
+      // Issue #471 — idle-worker reuse: consulted BEFORE a fresh spawn for
+      // every spawn source uniformly. The lane is spawn-request metadata;
+      // no lane ⇒ no reuse (the deterministic fresh-spawn default). The
+      // threshold resolves per project, read fresh on every decision.
+      const lane = this.laneFor?.(issue);
+      if (lane !== undefined && this.reusePolicy !== undefined) {
+        const threshold = resolvePipelineSettings(registered.project, this.workerSettings?.()).workerReuseContextThreshold;
+        const reusable = await this.reusePolicy.findReusableWorker({
+          projectId: registered.project.id,
+          lane,
+          thresholdPct: threshold,
+        });
+        if (reusable !== null) {
+          const retasked = await this.spawner.retaskWorker(reusable.id, issue.number, buildIssueSpawnPrompt(issue));
+          await this.settle(registered, issue, key, retasked.id);
+          return;
+        }
+      }
+
       const spawned = await this.spawner.spawnWorker(
         registered.project.id,
         issue.number,
         buildIssueSpawnPrompt(issue),
+        lane !== undefined ? { lane } : undefined,
       );
-      // The retract may have been observed while the spawn was in flight:
-      // archive the just-spawned worker instead of leaving it running
-      // (the retract path's own archive call ran before this worker
-      // registered — exactly one of the two finds it).
-      if (this.retracted.has(key)) {
-        await this.spawner.archiveWorkersForIssue(
-          registered.project.id,
-          issue.number,
-          "archived: issue unassigned or closed (#416)",
-        );
-        return;
-      }
-      this.blockedStore.remove(registered.project.id, issue.number);
-      this.emitCardMoved(registered.project.id, issue, spawned.worker.id);
+      await this.settle(registered, issue, key, spawned.worker.id);
     } catch (err) {
       this.accepted.delete(key);
       this.onError(err);
     }
+  }
+
+  /**
+   * Settles an accepted spawn/retask (shared by the fresh-spawn and the
+   * #471 reuse paths): the #416 retract may have been observed while the
+   * spawn/retask was in flight — archive the just-started worker instead
+   * of leaving it running (the retract path's own archive call ran before
+   * this worker registered — exactly one of the two finds it); otherwise
+   * clear the blocked record and emit the kanban card move.
+   */
+  private async settle(registered: RegisteredProject, issue: Issue, key: string, workerId: string): Promise<void> {
+    if (this.retracted.has(key)) {
+      await this.spawner.archiveWorkersForIssue(
+        registered.project.id,
+        issue.number,
+        "archived: issue unassigned or closed (#416)",
+      );
+      return;
+    }
+    this.blockedStore.remove(registered.project.id, issue.number);
+    this.emitCardMoved(registered.project.id, issue, workerId);
   }
 
   /**

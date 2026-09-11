@@ -56,7 +56,7 @@ describe("PullRequestPipeline: CI-fix prompt detail (issue #322)", () => {
     });
     const events = await driveLoop(tracked, { ...redPR(), ciStatus: "failure" }, "sha-1", [], {
       sessions: h.sessions.control,
-      settings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: true, autoReview: false }),
+      settings: () => ({ terminateOnMerge: true, autoFixCi: true, autoFixReviewComments: true, autoReview: false, workerReuseContextThreshold: 20 }),
       workerCap: () => undefined,
       repo: "o/r",
       failingChecks: () => Promise.reject(new Error("gh down")),

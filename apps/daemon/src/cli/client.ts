@@ -94,11 +94,17 @@ export class DaemonClient {
     return this.request("GET", "/api/status");
   }
 
-  /** `pideck spawn` — daemon spawns the worker (tmux + registry + event). */
-  async spawn(projectId: string, input: { issueNumber?: number; name: string; prompt?: string }): Promise<Worker> {
+  /**
+   * `pideck spawn` — daemon spawns the worker (tmux + registry + event).
+   * `lane` (issue #471) rides onto the worker record as the idle-reuse key;
+   * the daemon may hand a lane-carrying spawn to an eligible done
+   * same-lane worker instead of spawning fresh.
+   */
+  async spawn(projectId: string, input: { issueNumber?: number; name: string; prompt?: string; lane?: string }): Promise<Worker> {
     const body: Record<string, unknown> = { name: input.name };
     if (input.issueNumber !== undefined) body["issueNumber"] = input.issueNumber;
     if (input.prompt !== undefined) body["prompt"] = input.prompt;
+    if (input.lane !== undefined) body["lane"] = input.lane;
     return this.request("POST", `/api/projects/${encodeURIComponent(projectId)}/spawn`, body, workerSchema);
   }
 
