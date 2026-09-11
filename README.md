@@ -24,3 +24,4 @@ Docs:
 - [docs/SPEC.md](docs/SPEC.md) — the spec of record
 - [docs/DECISIONS.md](docs/DECISIONS.md) — why each spec decision was made
 - [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) — the PiDeck-vs-pi line
+- [docs/DESIGN.md](docs/DESIGN.md) — web UI design: tokens, terminal config, layout, primitives
