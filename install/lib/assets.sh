@@ -115,15 +115,34 @@ install_agent_assets() {
   _ia_kinds="skills extensions commands prompt-templates themes"
   for _ia_kind in $_ia_kinds; do
     _ia_srcdir="$PD_SRC/agent/$_ia_kind"
-    [ -d "$_ia_srcdir" ] || continue
-    run mkdir -p "$PD_PI_DIR/$_ia_kind"
-    for _ia_entry in "$_ia_srcdir"/*; do
-      [ -e "$_ia_entry" ] || continue
-      _ia_name=$(basename "$_ia_entry")
-      _ia_target="$PD_PI_DIR/$_ia_kind/$_ia_name"
-      run ln -sfn "$_ia_entry" "$_ia_target"
-      ok "linked agent/$_ia_kind/$_ia_name -> $_ia_target"
-      _ia_linked=$((_ia_linked + 1))
+    if [ -d "$_ia_srcdir" ]; then
+      run mkdir -p "$PD_PI_DIR/$_ia_kind"
+      for _ia_entry in "$_ia_srcdir"/*; do
+        [ -e "$_ia_entry" ] || continue
+        _ia_name=$(basename "$_ia_entry")
+        _ia_target="$PD_PI_DIR/$_ia_kind/$_ia_name"
+        run ln -sfn "$_ia_entry" "$_ia_target"
+        ok "linked agent/$_ia_kind/$_ia_name -> $_ia_target"
+        _ia_linked=$((_ia_linked + 1))
+      done
+    fi
+
+    # Issue #460: prune stale links for assets this install no longer ships
+    # (e.g. the seven shipped global integration skills #439 removed — an
+    # upgrade leaves their symlinks dangling, and pi reports every dangling
+    # path as "skill path does not exist" on each session load). Only links
+    # OWNED BY THIS INSTALL (target under $PD_SRC/agent) are pruned — never
+    # user-owned directories or links pointing elsewhere.
+    for _ia_entry in "$PD_PI_DIR/$_ia_kind"/*; do
+      [ -L "$_ia_entry" ] || continue
+      _ia_link_target=$(readlink "$_ia_entry") || continue
+      case "$_ia_link_target" in
+        "$_ia_srcdir"/*) ;;
+        *) continue ;;
+      esac
+      [ -e "$_ia_link_target" ] && continue
+      run rm "$_ia_entry"
+      ok "pruned stale link $_ia_name (target removed: $_ia_link_target)"
     done
   done
 
