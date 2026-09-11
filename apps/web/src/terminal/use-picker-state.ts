@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import type { AgentKind, Session } from "@pideck/shared";
+import type { AgentKind, Session, Worker } from "@pideck/shared";
 import { errorMessage } from "../lib/api";
 import { loadCollapsedProjects, saveCollapsedProjects } from "../lib/sidebar-collapse";
 
@@ -49,6 +49,25 @@ export async function runTerminateConfirm(
   } finally {
     hooks.setPending(false);
   }
+}
+
+/**
+ * Whether a session row's delete must route through the #317 session-id
+ * terminate path instead of the #64 worker-id one (issue #488): the client
+ * holds no worker record for the session's pointer — either a worker-less
+ * row (`workerId: null`, the adopted-orphan shape #482 covered) or a
+ * **dangling pointer** to a worker the daemon's registry lost (e.g. a
+ * record dropped at load), where the worker-id terminate call could only
+ * ever 404. The #317 route archives via the worker record server-side when
+ * the daemon still knows it and kills the pane when it does not, so this
+ * fallback can only help — a stale/empty client worker list downgrades
+ * nothing (same handler behind the session route).
+ *
+ * Pure so the routing decision is testable without a DOM renderer.
+ */
+export function routesThroughSessionTerminate(session: Session | undefined, workers: Worker[]): boolean {
+  if (session === undefined) return false;
+  return !workers.some((worker) => worker.id === session.workerId);
 }
 
 /**
@@ -228,7 +247,7 @@ function useOneOpenMenu(ignoreSelector: string, onDismiss?: Dispatch<SetStateAct
 }
 
 export function usePickerState(
-  entries: { project: { id: string }; sessions: Session[] }[],
+  entries: { project: { id: string }; sessions: Session[]; workers: Worker[] }[],
   terminatingWorkerId: string | null,
   /** Seeds: defaultArchivedOpen (tests/UX) + defaultCollapsedProjects (tests). */
   seedArchivedOpen = false,
@@ -268,6 +287,7 @@ export function usePickerState(
     });
 
   const allSessions = entries.flatMap((entry) => entry.sessions);
+  const allWorkers = entries.flatMap((entry) => entry.workers);
   const confirmingSession = confirmingSessionId ? allSessions.find((session) => session.id === confirmingSessionId) : undefined;
   // In flight: the confirm's own request, or the terminatingWorkerId overlay (tests).
   const pendingTerminate =
@@ -293,17 +313,15 @@ export function usePickerState(
   }, [deleteConfirm]);
 
   // The confirm target is the worker id (the #268 archive path) — except
-  // when the daemon keeps no worker record for the session: an adopted
-  // orphan pane (registry adoption creates `workerId: null` sessions) or a
-  // workers fetch that came back empty. Those rows' delete routes through
-  // the #317 session-id terminate path (the worker-less kill semantics),
-  // so the ⋯ menu stays functional on them (issue #482).
+  // for rows with no usable worker record, which route through the #317
+  // session-id terminate path (issue #488; the #482 record-less shape is
+  // one of them). See {@link routesThroughSessionTerminate}.
   const confirmTerminate = (
     onTerminateWorker: (workerId: string) => Promise<void>,
     onTerminateSession?: (sessionId: string) => Promise<void>,
   ) => {
     const session = confirmingSession;
-    if (session && session.workerId === null && onTerminateSession !== undefined) {
+    if (session && routesThroughSessionTerminate(session, allWorkers) && onTerminateSession !== undefined) {
       return terminateConfirm.confirm(session.id, onTerminateSession, () => setConfirmingSessionId(null));
     }
     return terminateConfirm.confirm(session?.workerId ?? null, onTerminateWorker, () => setConfirmingSessionId(null));

@@ -98,6 +98,12 @@ const emptyState = (): PersistedState => ({ version: STATE_VERSION, sessions: []
 /**
  * Validates a parsed registry file, dropping entries that no longer match
  * their schema (forward compatibility) instead of rejecting the whole file.
+ *
+ * Drops are loud (logged with the reason): a silently dropped record is
+ * undebuggable — issue #488's 404-on-terminate came from worker records
+ * dropped this way while their owning sessions survived, leaving dangling
+ * `session.workerId` pointers the webapp resolved into
+ * `/api/workers/<id>/terminate` calls the daemon could only 404.
  */
 function validatePersistedState(value: unknown): PersistedState | undefined {
   if (typeof value !== "object" || value === null) return undefined;
@@ -106,13 +112,29 @@ function validatePersistedState(value: unknown): PersistedState | undefined {
   for (const entry of raw.sessions ?? []) {
     const parsed = sessionSchema.safeParse(migrateSessionKind(entry));
     if (parsed.success) sessions.push(parsed.data);
+    else console.error(`[pideck] registry: dropped unparsable session record:`, JSON.stringify(entry), parsed.error.message);
   }
   const workers: Worker[] = [];
   for (const entry of raw.workers ?? []) {
     const parsed = workerSchema.safeParse(migrateWorkerPrNumbers(entry));
     if (parsed.success) workers.push(parsed.data);
+    else console.error(`[pideck] registry: dropped unparsable worker record:`, JSON.stringify(entry), parsed.error.message);
   }
-  return { version: STATE_VERSION, sessions, workers };
+  // Listing/registry agreement (issue #488): a surviving session must never
+  // point at a worker record the loader dropped — the webapp lists sessions
+  // and terminates them through that pointer, so a dangling one turns into
+  // a guaranteed-404 delete for a row the UI shows. Clear the pointer: the
+  // row keeps rendering (record-less, the #482 shape) and its delete routes
+  // through the #317 session-id terminate path, which kills the pane.
+  const workerIds = new Set(workers.map((worker) => worker.id));
+  const agreed = sessions.map((session) => {
+    if (session.workerId === null || workerIds.has(session.workerId)) return session;
+    console.error(
+      `[pideck] registry: session ${session.id} references missing worker ${session.workerId}; clearing the pointer so the row stays deletable`,
+    );
+    return { ...session, workerId: null };
+  });
+  return { version: STATE_VERSION, sessions: agreed, workers };
 }
 
 /**
