@@ -259,14 +259,20 @@ export class SessionManager {
       runsAsReviewIdentity: spawnRunsAsReviewIdentity(options.env),
       workerId: null,
     });
-    const worker = this.registry.registerWorker({
-      projectId,
-      sessionId: session.id,
-      issueNumber: options.issueNumber,
-      status: "spawning",
-      statusMessage: "launching agent session",
-      ...pickDefined(options, "prNumber", "prompt", "lane", "kind", "parentWorkerId"),
-    });
+    // Issue #494: registration validates the record at write time; a rejected
+    // spawn rolls back the just-created session row — no worker will ever
+    // point at it and no pane was launched yet.
+    let worker: Worker;
+    try {
+      worker = this.registry.registerWorker({
+        projectId, sessionId: session.id, issueNumber: options.issueNumber,
+        status: "spawning", statusMessage: "launching agent session",
+        ...pickDefined(options, "prNumber", "prompt", "lane", "kind", "parentWorkerId"),
+      });
+    } catch (err) {
+      this.registry.deleteSession(session.id);
+      throw err;
+    }
     this.registry.setSessionWorker(session.id, worker.id);
 
     // Issue #287: default-path workers start in a fresh per-worker worktree
@@ -304,10 +310,7 @@ export class SessionManager {
     }
 
     const running = this.registry.updateWorkerStatus(worker.id, "running", options.statusMessage ?? "agent running in tmux session");
-    return {
-      session: this.registry.getSession(session.id) as Session,
-      worker: running,
-    };
+    return { session: this.registry.getSession(session.id) as Session, worker: running };
   }
 
   /**

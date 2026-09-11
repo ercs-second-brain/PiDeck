@@ -121,6 +121,20 @@ describe("SessionManager with a fake tmux server", () => {
     expect(pane?.command).toEqual([...DEFAULT_WORKER_COMMAND]);
   });
 
+  it("fails a schema-invalid spawn fast at registration and leaves no orphan rows (issue #494)", async () => {
+    const { manager, registry, fake } = makeManager();
+    // Unvalidated caller junk (a string issueNumber) fails the worker schema
+    // at write time — before any pane is launched.
+    await expect(manager.spawnWorker("proj", { issueNumber: "7" as unknown as number })).rejects.toThrow(
+      /refusing to write invalid worker record/,
+    );
+    // No session row (the just-created one is rolled back), no worker record,
+    // no tmux session: the spawn died before any side effect.
+    expect(registry.listSessions()).toHaveLength(0);
+    expect(registry.listWorkers()).toHaveLength(0);
+    expect(fake.sessions.size).toBe(0);
+  });
+
   it("honors cwd and command overrides and picks the next free name", async () => {
     const { manager, fake, stateDir } = makeManager();
     const worktree = path.join(stateDir, "wt");
