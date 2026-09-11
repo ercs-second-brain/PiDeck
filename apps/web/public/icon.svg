@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- PiDeck favicon / PWA icon source (issue #263): deck/panels mark on dark. -->
-  <rect width="64" height="64" rx="14" fill="#0f1216" />
-  <rect x="26" y="14" width="24" height="30" rx="4" fill="#8f3c31" />
-  <rect x="14" y="20" width="28" height="30" rx="4" fill="#e05d44" />
-  <rect x="20" y="26" width="16" height="3.2" rx="1.6" fill="#0f1216" />
-  <rect x="20" y="34" width="10" height="3.2" rx="1.6" fill="#0f1216" />
-</svg>

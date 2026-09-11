@@ -1,6 +1,0 @@
-{
-  "name": "@pideck/agent",
-  "version": "0.1.0",
-  "private": true,
-  "description": "pi coding agent integration — orchestrator/worker prompts and orchestration skills (content-only; see agent/README.md)"
-}
