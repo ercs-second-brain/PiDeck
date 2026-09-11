@@ -691,6 +691,23 @@
   color: var(--red);
 }
 
+/* Issue #485: the stale-bundle reload banner's button — quiet, inline. */
+.picker-error-reload {
+  margin-left: 8px;
+  font-size: var(--fs-sm);
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.picker-error-reload:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Issue #259 (B7): the add-project row at the sidebar's bottom — the
    former header "+", styled like a project row and set apart by a
    divider above it. */

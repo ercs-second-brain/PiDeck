@@ -165,8 +165,7 @@ function Shell() {
   const { sessionId, projectId } = useParams();
   const {
     entries,
-    error,
-    loaded,
+    error, staleBundle, loaded,
     startingProjectId,
     globalAgent,
     startingGlobalAgent,
@@ -187,6 +186,7 @@ function Shell() {
   const sidebar = {
     entries,
     error, loaded,
+    staleBundle,
     startingProjectId,
     globalAgent, startingGlobalAgent,
     reload,

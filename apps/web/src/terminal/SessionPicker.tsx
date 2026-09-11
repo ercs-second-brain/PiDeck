@@ -222,6 +222,8 @@ function ProjectSection(props: {
 export interface SessionPickerProps {
   entries: ProjectEntry[];
   error: string | null;
+  /** Issue #485: schema validation failed — the app bundle predates the daemon; renders the reload banner. */
+  staleBundle?: boolean;
   /** Project list still loading (issue #90): empty ≠ no projects yet. */
   loading?: boolean;
   selectedSessionId: string | null;
@@ -346,9 +348,8 @@ function workspaceToggle(props: SessionPickerProps): ReactNode {
 export function SessionPicker(props: SessionPickerProps) {
   const state = usePickerState(props.entries, props.terminatingWorkerId ?? null, props.defaultArchivedOpen === true, props.defaultCollapsedProjects);
   const now = useTickingNow();
-  // Issues #297/#300/#302: direct audit spawns from the ⋯ menu (no modal —
-  // their persona is the whole prompt). A rejected spawn surfaces above the
-  // footer, like the daemon-unreachable error.
+  // Issues #297/#300/#302: direct audit spawns from the ⋯ menu (no modal — their
+  // persona is the whole prompt). A rejected spawn surfaces above the footer.
   const [spawnError, setSpawnError] = useState<string | null>(null);
   // Issue #311: in-flight ✕ overlay targets the confirming agent session.
   const pendingAgentTerminateId =
@@ -363,15 +364,14 @@ export function SessionPicker(props: SessionPickerProps) {
 
   return (
     <aside className="session-picker">
-      {/* Issue #327: the project list scrolls inside its own region — the
-          footer lives outside the scroll container, so its full-width
-          buttons span the sidebar's whole visible width (a scrollbar inside
-          the old all-scrolling sidebar shifted the footer — and the
-          settings button — left of the sidebar's visual center). */}
+      {/* Issue #327: the project list scrolls inside its own region — the footer
+          lives outside the scroll container, so its full-width buttons span the
+          sidebar's whole visible width (a scrollbar inside the old all-scrolling
+          sidebar shifted the footer — and the settings button — left of center). */}
       <div className="picker-scroll">
-        {/* Issue #259: the Workspace row — name opens the all-projects
-            board, chat attaches/starts the workspace agent (B3: disabled
-            until a project exists). Issue #373: hosts the collapse toggle. */}
+        {/* Issue #259: the Workspace row — name opens the all-projects board,
+            chat attaches/starts the workspace agent (B3: disabled until a
+            project exists). Issue #373: hosts the collapse toggle. */}
         <GlobalAgentRow
           session={props.globalAgent ?? null}
           selected={props.globalAgent?.id === props.selectedSessionId}
@@ -394,14 +394,8 @@ export function SessionPicker(props: SessionPickerProps) {
             archivedOpen={state.archivedOpen.has(entry.project.id)} onToggleArchived={state.toggleArchived}
             collapsed={state.collapsedProjects.has(entry.project.id)} onToggleCollapsed={state.toggleCollapsed}
             onSelectSession={props.onSelectSession} onSelectProject={props.onSelectProject}
-            onOpenSettings={(projectId) => {
-              state.closeMenu();
-              props.onOpenSettings(projectId);
-            }}
-            onAskDeleteProject={(projectId) => {
-              state.closeMenu();
-              state.deleteConfirm.ask(projectId);
-            }}
+            onOpenSettings={(projectId) => { state.closeMenu(); props.onOpenSettings(projectId); }}
+            onAskDeleteProject={(projectId) => { state.closeMenu(); state.deleteConfirm.ask(projectId); }}
             onToggleMenu={state.toggleMenu} onStartOrchestrator={props.onStartOrchestrator}
             onToggleSpawnSubmenu={state.toggleSpawnMenu} onHoverSpawnSubmenu={state.openSpawnMenu} onSpawnAgent={(projectId, kind) => {
               state.closeMenu();
@@ -413,7 +407,7 @@ export function SessionPicker(props: SessionPickerProps) {
               state.spawnInput.ask(projectId, kind);
             }}
             onTerminateWorker={props.onTerminateWorker} onTerminateAgentSession={props.onTerminateAgentSession}
-            // Issue #355 (B5): the confirm modal owns the confirm — close the row's ⋯ menu first.
+            // Issue #355 (B5): the confirm modal owns the confirm — close the ⋯ menu first.
             onAskTerminate={(sessionId) => {
               state.closeRowMenu();
               state.askTerminate(sessionId);
@@ -433,7 +427,12 @@ export function SessionPicker(props: SessionPickerProps) {
         {props.entries.length === 0 && !props.error && (
           <p className="picker-empty">{props.loading ? "Loading projects…" : "No projects yet — add one below to get started."}</p>
         )}
-        {props.error && <p className="picker-error">Daemon unreachable: {props.error}</p>}
+        {props.error && props.staleBundle === true ? ( // Issue #485: stale app bundle — loud, not silent.
+          <p className="picker-error">
+            The app build is older than the daemon — worker data failed validation. Reload the page; if this persists, re-run the update.
+            <button type="button" className="picker-error-reload" onClick={() => window.location.reload()}>Reload</button>
+          </p>
+        ) : props.error ? <p className="picker-error">Daemon unreachable: {props.error}</p> : null}
         {spawnError && <p className="picker-error">Spawn failed: {spawnError}</p>}
         {/* Issue #259 (B7): the add-project affordance as the sidebar's
             bottom row, styled like a project row (the former header "+"). */}

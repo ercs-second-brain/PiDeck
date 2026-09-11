@@ -9,6 +9,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { ZodError } from "zod";
 import {
   SHIPPED_AGENT_KINDS,
   agentKindInfo,
@@ -36,6 +37,13 @@ import type { ProjectEntry } from "./SessionPicker";
 export interface SidebarContextValue {
   entries: ProjectEntry[];
   error: string | null;
+  /**
+   * Issue #485: the last load failed schema validation — the running app
+   * bundle predates the daemon's contract (the daemon updated without this
+   * page, e.g. a #484-class failed apply). The sidebar renders a reload
+   * banner instead of silently mis-rendering rows.
+   */
+  staleBundle?: boolean;
   /**
    * True once the first project-list fetch completed successfully (issue
    * #90): an empty `entries` before this point means "not loaded yet", not
@@ -111,6 +119,19 @@ export function shouldAutoOpenOnboarding(state: { loaded: boolean; error: string
 }
 
 /**
+ * Stale-bundle detection (issue #485): a schema-validation failure can ONLY
+ * mean the running webapp bundle predates the daemon's contract (same
+ * origin — the daemon always matches its own contract), i.e. the daemon
+ * updated without this page. The #485 failure shape: the workers fetch
+ * zod-fails, `.catch` emptied the workers list, and the sidebar silently
+ * dissolved the Archived Workers section and every row's record-backed
+ * treatment. Such a failure must be loud.
+ */
+export function isStaleBundleError(err: unknown): boolean {
+  return err instanceof ZodError;
+}
+
+/**
  * One sidebar poll: the project list plus ONE daemon-wide sessions fetch
  * (per-project groups and the workspace-level global agent — the
  * hierarchy's top layer, projectId `global`), the per-project workers, and
@@ -135,7 +156,15 @@ async function loadSidebarData(): Promise<{ entries: ProjectEntry[]; globalAgent
   }
   const entries = await Promise.all(
     projects.map(async (project) => {
-      const workers = await fetchWorkers(project.id).catch(() => [] as Worker[]);
+      // Issue #485: a workers fetch that fails schema validation is a stale
+      // app bundle — fail the poll loudly (reload banner) instead of the
+      // silent `.catch(() => [])` that dissolved the Archived Workers
+      // section and left every row record-less. Transient failures keep
+      // the old fallback (record-less rows stay functional per #483).
+      const workers = await fetchWorkers(project.id).catch((err: unknown) => {
+        if (isStaleBundleError(err)) throw err;
+        return [] as Worker[];
+      });
       return { project, sessions: byProject.get(project.id) ?? [], workers };
     }),
   );
@@ -147,6 +176,8 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
   const [entries, setEntries] = useState<ProjectEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Issue #485: the load failed schema validation — the app bundle predates the daemon.
+  const [staleBundle, setStaleBundle] = useState(false);
   const [startingProjectId, setStartingProjectId] = useState<string | null>(null);
   const [globalAgent, setGlobalAgent] = useState<Session | null>(null);
   const [agentKinds, setAgentKinds] = useState<readonly AgentKindSpec[]>([...SHIPPED_AGENT_KINDS]);
@@ -164,10 +195,10 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
         const { entries: nextEntries, globalAgent, agentKinds: nextKinds } = await loadSidebarData();
         if (!cancelled) {
           setEntries(nextEntries); setGlobalAgent(globalAgent); setAgentKinds(nextKinds);
-          setError(null); setLoaded(true);
+          setError(null); setStaleBundle(false); setLoaded(true);
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) { setError(err instanceof Error ? err.message : String(err)); setStaleBundle(isStaleBundleError(err)); }
       } finally {
         pending = false;
       }
@@ -182,10 +213,9 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
 
   const reload = useCallback(() => setReloadTick((tick) => tick + 1), []);
 
-  // Issue #269 (B18): the REST poll above is a slow fallback. Worker spawns
-  // are pushed over the websocket in real time — reload the sidebar as soon
-  // as the store applies one, so the worker row appears on the next push at
-  // worst (same for status changes, keeping the row badges current).
+  // Issue #269 (B18): the REST poll above is a slow fallback. Worker spawns are pushed
+  // over the websocket in real time — reload the sidebar as soon as the store applies
+  // one, so the worker row appears on the next push (same for status changes).
   useEffect(() => boardStore.onWorkerEvent(reload), [reload]);
 
   // Shared start flow (orchestrator + global agent): pending state, then
@@ -250,7 +280,7 @@ export function useSidebarData(onStartOrchestratorNavigate: (sessionId: string) 
     },
     [reload],
   );
-  return { entries, error, loaded, startingProjectId, globalAgent, startingGlobalAgent, agentKinds, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject, spawnAgentSession, terminateAgentSession };
+  return { entries, error, staleBundle, loaded, startingProjectId, globalAgent, startingGlobalAgent, agentKinds, reload, startOrchestrator, startGlobalAgent, terminateWorker, deleteProject, spawnAgentSession, terminateAgentSession };
 }
 
 /** Context through which the shell shares sidebar data with main-pane routes. */
