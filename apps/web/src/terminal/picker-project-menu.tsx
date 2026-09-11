@@ -6,7 +6,11 @@
  * each module under its complexity budget. Pure rendering.
  */
 
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+
 import { AGENT_KINDS, agentKindInfo, type AgentKind, type AgentKindSpec } from "@pideck/shared";
+
+import { bestFlyoutPlacement } from "./flyout-flip";
 
 /**
  * Callbacks shared by the project row and its open ⋯ menu (issues
@@ -40,6 +44,8 @@ export function ProjectMenu(props: {
   /** Whether the spawn-agent submenu is expanded (issue #331). */
   spawnSubmenuOpen: boolean;
   onToggleSpawnSubmenu: () => void;
+  /** Hovering the submenu's parent item opens it (issue #448, B9); click stays the fallback. */
+  onHoverSpawnSubmenu?: () => void;
 } & ProjectMenuCallbacks) {
   return (
     <div className="picker-context-menu" role="menu" aria-label={`${props.projectName} options`}>
@@ -64,6 +70,7 @@ export function ProjectMenu(props: {
           aria-expanded={props.spawnSubmenuOpen}
           title="Spawn an agent-kind session"
           onClick={props.onToggleSpawnSubmenu}
+          onMouseEnter={props.onHoverSpawnSubmenu}
         >
           Spawn agent ▸
         </button>
@@ -87,6 +94,37 @@ export function ProjectMenu(props: {
       >
         Delete project…
       </button>
+    </div>
+  );
+}
+
+/**
+ * The spawn-agent submenu's flyout shell (issue #448, B8): after mount it
+ * measures itself and its anchor (the `.picker-submenu-anchor` parent) and,
+ * when the default left/top placement would overflow a screen edge, applies
+ * the flip classes (`picker-submenu-flip-right` / `picker-submenu-flip-`
+ * bottom`) that mirror the placement to the other side. The flyout is
+ * remounted on every open, so each open re-probes the current viewport.
+ */
+function EdgeFlyout(props: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [flips, setFlips] = useState<{ side: boolean; align: boolean }>({ side: false, align: false });
+  useLayoutEffect(() => {
+    const flyout = ref.current;
+    const anchor = flyout?.parentElement;
+    if (!flyout || !anchor) return;
+    const placement = bestFlyoutPlacement(
+      anchor.getBoundingClientRect(),
+      { width: flyout.getBoundingClientRect().width, height: flyout.getBoundingClientRect().height },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    setFlips({ side: placement.side === "right", align: placement.align === "bottom" });
+  }, []);
+  const className =
+    `picker-context-menu picker-submenu${flips.side ? " picker-submenu-flip-right" : ""}${flips.align ? " picker-submenu-flip-bottom" : ""}`;
+  return (
+    <div ref={ref} className={className} role="menu" aria-label="Spawn agent">
+      {props.children}
     </div>
   );
 }
@@ -131,8 +169,8 @@ function SpawnAgentSubmenu(props: {
       </button>
     );
   };
-  return (
-    <div className="picker-context-menu picker-submenu" role="menu" aria-label="Spawn agent">
+  const body = (
+    <>
       <span className="picker-menu-label">Built-in</span>
       {builtIns.map(entry)}
       {custom.length > 0 && (
@@ -141,9 +179,8 @@ function SpawnAgentSubmenu(props: {
           {custom.map(entry)}
         </>
       )}
-      {builtIns.length === 0 && custom.length === 0 && (
-        <span className="picker-menu-label">No spawnable kinds</span>
-      )}
-    </div>
+      {builtIns.length === 0 && custom.length === 0 && <span className="picker-menu-label">No spawnable kinds</span>}
+    </>
   );
+  return <EdgeFlyout>{body}</EdgeFlyout>;
 }

@@ -277,6 +277,8 @@ export function ProjectRow(props: {
   onToggleCollapsed: (projectId: string) => void;
   onToggleMenu: (projectId: string) => void;
   onToggleSpawnSubmenu: (projectId: string) => void;
+  /** Hovering the Spawn agent item opens the submenu (issue #448, B9). */
+  onHoverSpawnSubmenu?: (projectId: string) => void;
   onStartOrchestrator: (projectId: string) => void;
   onSelectProject: (projectId: string) => void;
 } & ProjectMenuCallbacks) {
@@ -338,6 +340,7 @@ export function ProjectRow(props: {
           agentKinds={props.agentKinds}
           spawnSubmenuOpen={props.spawnSubmenuOpen}
           onToggleSpawnSubmenu={() => props.onToggleSpawnSubmenu(props.projectId)}
+          onHoverSpawnSubmenu={props.onHoverSpawnSubmenu !== undefined ? () => props.onHoverSpawnSubmenu!(props.projectId) : undefined}
           onOpenSettings={props.onOpenSettings}
           onDeleteProject={props.onDeleteProject}
           onSpawnAgent={props.onSpawnAgent}

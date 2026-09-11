@@ -124,10 +124,8 @@ function ProjectSection(props: {
   selectedProjectId: string | null;
   /** Project id currently starting its orchestrator (button pending state). */
   startingProjectId: string | null;
-  /** Session id whose worker is confirming termination (issue #64). */
-  confirmingSessionId: string | null;
-  /** Project id whose ⋯ context menu is open (issue #167). */
-  openMenuProjectId: string | null;
+  confirmingSessionId: string | null; /** Issue #64: session id confirming termination. */
+  openMenuProjectId: string | null; /** Issue #167: project id whose ⋯ menu is open. */
   /** The ticking client clock for workers' running-time labels (issue #182). */
   now: number;
   /** Worker id whose termination request is in flight (issue #64). */
@@ -152,9 +150,10 @@ function ProjectSection(props: {
   onSpawnAgent: (projectId: string, kind: AgentKind) => void;
   /** Opens the input modal for a waitForInput kind (#297, #324, #331). */
   onAskSpawnInput: (projectId: string, kind: AgentKind) => void;
-  /** The ⋯ menu's spawn-agent submenu state + registry (issues #330/#331). */
+  /** The ⋯ menu's spawn-agent submenu state + registry (issues #330/#331); hover opens it (#448 B9). */
   spawnSubmenuOpen: boolean;
   onToggleSpawnSubmenu: (projectId: string) => void;
+  onHoverSpawnSubmenu: (projectId: string) => void;
   agentKinds: readonly AgentKindSpec[];
   /** Row ⋯ context menu state (issue #355, B5): open session id + toggle. */
   openRowMenuSessionId: string | null; onToggleRowMenu: (sessionId: string) => void;
@@ -202,6 +201,7 @@ function ProjectSection(props: {
         onDeleteProject={(projectId) => props.onAskDeleteProject(projectId)}
         onSpawnAgent={props.onSpawnAgent} onAskSpawnInput={props.onAskSpawnInput}
         spawnSubmenuOpen={props.spawnSubmenuOpen} onToggleSpawnSubmenu={props.onToggleSpawnSubmenu}
+        onHoverSpawnSubmenu={props.onHoverSpawnSubmenu}
         agentKinds={props.agentKinds}
       />
       {!props.collapsed && (activeWorkers.length > 0 || rootAgents.length > 0) && (
@@ -403,7 +403,7 @@ export function SessionPicker(props: SessionPickerProps) {
               state.deleteConfirm.ask(projectId);
             }}
             onToggleMenu={state.toggleMenu} onStartOrchestrator={props.onStartOrchestrator}
-            onToggleSpawnSubmenu={state.toggleSpawnMenu} onSpawnAgent={(projectId, kind) => {
+            onToggleSpawnSubmenu={state.toggleSpawnMenu} onHoverSpawnSubmenu={state.openSpawnMenu} onSpawnAgent={(projectId, kind) => {
               state.closeMenu();
               spawnAgent(projectId, kind);
             }}

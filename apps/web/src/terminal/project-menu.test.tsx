@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Tests for the project row's ⋯ context menu (issues #167/#172): every
  * project row in the sidebar carries a ⋯ toggle whose menu opens that
@@ -257,3 +258,5 @@ describe("Delete project… menu entry (issue #172)", () => {
     expect(html).toContain("active worker(s) driving PR");
   });
 });
+
+

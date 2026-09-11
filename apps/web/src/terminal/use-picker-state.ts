@@ -167,6 +167,9 @@ function useOpenMenu() {
     toggleMenu: menu.toggle,
     closeMenu: menu.close,
     toggleSpawnMenu: (projectId: string) => setOpenSpawnMenuId((current) => (current === projectId ? null : projectId)),
+    // Issue #448 (B9): hover opens the spawn-agent submenu without toggling
+    // (click stays the fallback) — always opens, never closes.
+    openSpawnMenu: (projectId: string) => setOpenSpawnMenuId(projectId),
   };
 }
 
