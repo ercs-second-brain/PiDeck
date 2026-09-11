@@ -136,6 +136,19 @@ async function sendToSession(services: DaemonServices, sessionId: string, messag
  * watcher then reports `issue.unassigned`) and re-adds it — the re-assignment
  * re-triggers the worker. Otherwise it just assigns.
  *
+ * Re-trigger delivery (issue #509): the DELETE and the POST usually land
+ * inside one watcher poll window, so the watcher diffs two identical
+ * assignee sets and emits nothing — the re-trigger would be silently lost.
+ * After both writes succeed the route therefore synthesizes the
+ * `issue.unassigned` + `issue.assigned` pair a straddling poll would have
+ * produced and routes it through the same entry point the watchers and the
+ * catch-up sweep use: retract (archive the old worker, clear the dedupe
+ * mark) then the normal spawn matrix. Both events are needed — `assigned`
+ * alone would be swallowed by the dedupe mark while the old worker still
+ * runs. Double delivery is safe: when a poll DOES straddle the writes, the
+ * watcher's real unassigned is a no-op retract and its assigned hits the
+ * dedupe mark set here — exactly one fresh worker either way.
+ *
  * The route reports `retriggered: true` for the unassign+re-assign path so
  * the CLI output can say which of the two happened.
  */
@@ -193,6 +206,21 @@ export async function assignIssue(
       502,
       `cannot assign ${login} to issue #${issueNumber} (repo ${formatRepoRef(ref)}): ${err instanceof Error ? err.message : String(err)}`,
     );
+  }
+  if (alreadyAssigned) {
+    // Issue #509: replay the unassign→re-assign transition pair the watcher
+    // may have missed (both writes inside one poll window — it diffs two
+    // identical assignee sets and emits nothing). Synthesized through the
+    // same router the watchers emit into; dropped when the automation is
+    // stopped, same as a watcher being down. The unassigned event carries
+    // the cleared assignee for entity fidelity with the watcher's event.
+    const at = services.now().toISOString();
+    services.automation.handleWatcherEvent(projectId, {
+      type: "issue.unassigned",
+      at,
+      issue: { ...record.issue, assignee: null },
+    });
+    services.automation.handleWatcherEvent(projectId, { type: "issue.assigned", at, issue: record.issue });
   }
   return { ok: true, issueNumber, assignee: login, retriggered: alreadyAssigned };
 }
