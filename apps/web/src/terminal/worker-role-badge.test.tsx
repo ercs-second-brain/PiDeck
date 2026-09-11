@@ -67,7 +67,7 @@ describe("worker role badges (issue #409, B31)", () => {
     const entry: ProjectEntry = {
       project,
       sessions: [orchestrator, reviewerSession],
-      workers: [makeWorker({ id: "worker-rev-1", sessionId: "sess-reviewer-1", kind: "reviewer", issueNumber: 0, prNumber: 12 })],
+      workers: [makeWorker({ id: "worker-rev-1", sessionId: "sess-reviewer-1", kind: "reviewer", issueNumber: 0, prNumbers: [12] })],
     };
     const html = renderToString(
       <SessionPicker

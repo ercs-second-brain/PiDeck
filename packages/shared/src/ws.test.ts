@@ -111,7 +111,7 @@ describe("websocket: kanban updates", () => {
           projectId: "p",
           sessionId: "s2",
           issueNumber: 2,
-          prNumber: null,
+          prNumbers: [],
           status: "running",
           statusMessage: null,
           startedAt: NOW,

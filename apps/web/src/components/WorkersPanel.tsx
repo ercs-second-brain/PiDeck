@@ -35,11 +35,11 @@ export function WorkersPanel({ projectId, workers: allWorkers }: { projectId: st
               ) : (
                 <span className="worker-issue">issue #{worker.issueNumber}</span>
               )}
-              {worker.prNumber !== null && (
-                <Link className="worker-pr" to={`/projects/${projectId}/pulls/${worker.prNumber}`}>
-                  PR #{worker.prNumber}
+              {worker.prNumbers.map((prNumber) => (
+                <Link key={prNumber} className="worker-pr" to={`/projects/${projectId}/pulls/${prNumber}`}>
+                  PR #{prNumber}
                 </Link>
-              )}
+              ))}
             </span>
             {worker.statusMessage && <span className="worker-message">{worker.statusMessage}</span>}
             <Link className="worker-terminal" to={`/terminal/${worker.sessionId}`} title="Open worker terminal">

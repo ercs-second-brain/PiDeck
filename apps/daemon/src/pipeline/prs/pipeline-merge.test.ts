@@ -22,7 +22,7 @@ describe("PullRequestPipeline: merge", () => {
     const h = makeHarness();
     h.openList.push(12);
     h.prs.set(12, { pull: restPull(12), ...greenApprovedFake() });
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
 
     const first = prEvents(await h.poll());
     expect(first.at(-1)).toMatchObject({ card: { column: "in_review" } });
@@ -51,7 +51,7 @@ describe("PullRequestPipeline: merge", () => {
     const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: false, autoFixCi: true, autoFixReviewComments: true, autoReview: false }) });
     h.openList.push(12);
     h.prs.set(12, { pull: restPull(12), ...greenApprovedFake() });
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
     await h.poll();
 
     h.prs.get(12)!.pull = restPull(12, { merged: true, closed: true });

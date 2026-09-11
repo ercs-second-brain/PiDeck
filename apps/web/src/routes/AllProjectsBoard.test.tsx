@@ -51,7 +51,7 @@ function worker(id: string, projectId: string): Worker {
     projectId,
     sessionId: `session-${id}`,
     issueNumber: 0, // freeform worker
-    prNumber: null,
+    prNumbers: [],
     status: "running",
     statusMessage: "Working",
     startedAt: "2026-01-02T00:00:00.000Z",

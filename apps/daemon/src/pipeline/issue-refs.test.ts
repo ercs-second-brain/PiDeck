@@ -26,7 +26,7 @@ function makeWorker(overrides: Partial<Worker> = {}): Worker {
     projectId: PROJECT,
     sessionId: "sess-1",
     issueNumber: 46,
-    prNumber: null,
+    prNumbers: [],
     status: "running",
     statusMessage: "agent running",
     startedAt: "2026-09-06T12:00:00Z",
@@ -114,7 +114,7 @@ describe("associateWorkerPr (deterministic PR claiming, issue #439)", () => {
 
   it("never re-claims: a worker with a recorded PR is skipped", () => {
     const { tracker, actions, effects } = harness();
-    associateWorkerPr(tracker, [makeWorker({ prNumber: 5 })], effects, makePr({ body: "Closes #46" }));
+    associateWorkerPr(tracker, [makeWorker({ prNumbers: [5] })], effects, makePr({ body: "Closes #46" }));
     expect(actions).toEqual([]);
   });
 
@@ -184,13 +184,36 @@ describe("associateWorkerPr evidence tiers (issues #441, #466)", () => {
     );
     expect(actions).toEqual([["set", "worker-other", 7]]);
   });
+
+  it("claims stacked/sibling PRs from the same namespace many-to-many (issue #470)", () => {
+    const { tracker, actions, effects } = harness();
+    const worker = makeWorker({ id: "worker-abc12345", issueNumber: 466 });
+    // The worker already drives PR #7 from its primary branch; a stacked PR
+    // branching under the same namespace claims the SAME worker for PR #8.
+    worker.prNumbers = [7];
+    associateWorkerPr(
+      tracker,
+      [worker],
+      effects,
+      makePr({ number: 8, headBranch: "pideck/worker-abc12345/stacked-fix" }),
+    );
+    expect(actions).toEqual([["set", "worker-abc12345", 8]]);
+  });
+
+  it("does not re-claim a PR the namespace worker already carries (issue #470)", () => {
+    const { tracker, actions, effects } = harness();
+    const worker = makeWorker({ id: "worker-abc12345", prNumbers: [7] });
+    // The claiming guard skips a PR any worker already carries.
+    associateWorkerPr(tracker, [worker], effects, makePr({ headBranch: "pideck/worker-abc12345" }));
+    expect(actions).toEqual([]);
+  });
 });
 
 describe("associateWorkerPr namespace verification on re-watch (issue #466)", () => {
   it("moves a heuristic mis-association to the worker the head branch names", () => {
     const { tracker, actions, effects } = harness();
     track(tracker, "worker-heuristic", "sess-heuristic");
-    const previous = makeWorker({ id: "worker-heuristic", sessionId: "sess-heuristic", prNumber: 7 });
+    const previous = makeWorker({ id: "worker-heuristic", sessionId: "sess-heuristic", prNumbers: [7] });
     const real = makeWorker({ id: "worker-abc12345", issueNumber: 50 });
     associateWorkerPr(
       tracker,
@@ -208,12 +231,14 @@ describe("associateWorkerPr namespace verification on re-watch (issue #466)", ()
     expect(tracker.get(PROJECT, 7)?.sessionId).toBe("sess-1");
   });
 
-  it("does not move ownership when the namespace already matches", () => {
+  it("keeps the tracker when the namespace already matches (idempotent repair)", () => {
     const { tracker, actions, effects } = harness();
     track(tracker, "worker-1", "sess-1");
-    const owner = makeWorker({ prNumber: 7 });
+    const owner = makeWorker({ prNumbers: [7] });
     associateWorkerPr(tracker, [owner], effects, makePr({ headBranch: "pideck/worker-1" }));
-    expect(actions).toEqual([]);
+    // The namespace agrees with the tracker; the re-watch only runs the
+    // idempotent registry repair (setWorkerPr appends — no second entry).
+    expect(actions).toEqual([["set", "worker-1", 7]]);
     expect(tracker.get(PROJECT, 7)?.workerId).toBe("worker-1");
   });
 
@@ -225,17 +250,25 @@ describe("associateWorkerPr namespace verification on re-watch (issue #466)", ()
     expect(tracker.get(PROJECT, 7)?.workerId).toBe("worker-9");
   });
 
-  it("keeps the tracked owner when the namespaced worker cannot take the PR", () => {
+  it("keeps the tracked owner when the head branch names no ownable worker", () => {
     const { tracker, actions, effects } = harness();
     track(tracker, "worker-heuristic", "sess-heuristic");
-    // Namespaced worker is terminal → no correction.
+    const previous = makeWorker({ id: "worker-heuristic", prNumbers: [7] });
+    // The namespaced worker is terminal → no correction (the tracked loop
+    // keeps driving until the worker resolves; #471 worker reuse will
+    // redefine the eligibility rules).
     const gone = makeWorker({ id: "worker-abc12345", status: "archived" as WorkerStatus });
-    associateWorkerPr(tracker, [gone], effects, makePr({ headBranch: "pideck/worker-abc12345" }));
-    // Namespaced worker is already associated to a different PR → no move.
-    const busy = makeWorker({ id: "worker-abc12345", prNumber: 9 });
-    associateWorkerPr(tracker, [busy], effects, makePr({ headBranch: "pideck/worker-abc12345" }));
+    associateWorkerPr(tracker, [previous, gone], effects, makePr({ headBranch: "pideck/worker-abc12345" }));
     expect(actions).toEqual([]);
-    expect(tracker.get(PROJECT, 7)?.workerId).toBe("worker-heuristic");
+    // A worker carrying another PR is NOT a blocker (issue #470 multi-PR):
+    // the namespace says this PR is its too, so it takes it as well.
+    const busy = makeWorker({ id: "worker-abc12345", prNumbers: [9] });
+    associateWorkerPr(tracker, [previous, busy], effects, makePr({ headBranch: "pideck/worker-abc12345" }));
+    expect(actions).toEqual([
+      ["set", "worker-abc12345", 7],
+      ["clear", "worker-heuristic"],
+    ]);
+    expect(tracker.get(PROJECT, 7)?.workerId).toBe("worker-abc12345");
   });
 
   it("moves ownership even when the namespaced worker already carries the PR number", () => {
@@ -243,8 +276,8 @@ describe("associateWorkerPr namespace verification on re-watch (issue #466)", ()
     track(tracker, "worker-heuristic", "sess-heuristic");
     // Registry drifted from the tracker: the namespaced worker already
     // recorded PR #7 while the tracker still says worker-heuristic.
-    const previous = makeWorker({ id: "worker-heuristic", prNumber: 7 });
-    const real = makeWorker({ id: "worker-abc12345", prNumber: 7 });
+    const previous = makeWorker({ id: "worker-heuristic", prNumbers: [7] });
+    const real = makeWorker({ id: "worker-abc12345", prNumbers: [7] });
     associateWorkerPr(tracker, [previous, real], effects, makePr({ headBranch: "pideck/worker-abc12345" }));
     expect(actions).toEqual([["set", "worker-abc12345", 7], ["clear", "worker-heuristic"]]);
     expect(tracker.get(PROJECT, 7)?.workerId).toBe("worker-abc12345");

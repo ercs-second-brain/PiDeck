@@ -85,7 +85,7 @@ describe("SessionRegistry", () => {
       statusMessage: "launching",
     });
     expect(worker.id).toMatch(/^worker-/);
-    expect(worker.prNumber).toBeNull();
+    expect(worker.prNumbers).toEqual([]);
     expect(worker.status).toBe("spawning");
 
     registry.updateWorkerStatus(worker.id, "running", "up");
@@ -94,7 +94,7 @@ describe("SessionRegistry", () => {
     if (!updated) throw new Error("worker disappeared");
     expect(updated.status).toBe("running");
     expect(updated.statusMessage).toBe("up");
-    expect(updated.prNumber).toBe(12);
+    expect(updated.prNumbers).toContain(12);
     expect(updated.updatedAt >= worker.startedAt).toBe(true);
 
     expect(registry.listWorkers({ projectId: "a", status: "running" })).toHaveLength(1);
@@ -230,7 +230,7 @@ describe("SessionRegistry: reviewer linkage (issue #107)", () => {
       prompt: "Review PR #12 for correctness",
       status: "running",
     });
-    expect(reviewer).toMatchObject({ prNumber: 12, kind: "reviewer", parentWorkerId: "worker-1", prompt: "Review PR #12 for correctness" });
+    expect(reviewer).toMatchObject({ prNumbers: [12], kind: "reviewer", parentWorkerId: "worker-1", prompt: "Review PR #12 for correctness" });;
 
     // The linkage survives a reload (persistence round-trip).
     const reloaded = new SessionRegistry(filePath);

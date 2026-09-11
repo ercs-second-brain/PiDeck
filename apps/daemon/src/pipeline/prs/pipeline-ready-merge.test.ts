@@ -18,7 +18,7 @@ function greenHarness(options: Parameters<typeof makeHarness>[0] = {}): Harness 
   const h = makeHarness(options);
   h.openList.push(12);
   h.prs.set(12, { pull: assignedPull(), checkRuns: checkRuns("success"), reviews: [], comments: [] });
-  h.sessions.control.listWorkers()[0]!.prNumber = 12;
+  h.sessions.control.listWorkers()[0]!.prNumbers = [12];
   return h;
 }
 

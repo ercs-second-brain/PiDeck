@@ -3,7 +3,8 @@
  * workers (issue #11).
  *
  * Each tracked PR records the association worker-session → PR (resolved
- * from the session registry's `worker.prNumber`) plus the loop state
+ * from the session registry's `worker.prNumbers` — one loop row per PR;
+ * a worker may drive several PRs (issue #470)) plus the loop state
  * needed to drive and bound the CI-fix / review-addressing cycle:
  *
  * - `state`: `watching` (idle) → `fixing` | `addressing` (prompt sent,

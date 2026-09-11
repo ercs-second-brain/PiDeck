@@ -73,7 +73,7 @@ export function deriveBoard(
   const workerByIssue = new Map<number, Worker>();
   for (const worker of workers) {
     if (worker.status === "archived") continue;
-    if (worker.prNumber === null) workerByIssue.set(worker.issueNumber, worker);
+    if (worker.prNumbers.length === 0) workerByIssue.set(worker.issueNumber, worker);
   }
 
   const cards: KanbanCard[] = [];

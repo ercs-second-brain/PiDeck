@@ -140,7 +140,7 @@ function archivedWorkerLogPayload(services: DaemonServices, workerId: string) {
     workerId: worker.id,
     projectId: worker.projectId,
     issueNumber: worker.issueNumber,
-    prNumber: worker.prNumber,
+    prNumber: worker.prNumbers[0] ?? null,
     prompt: worker.prompt ?? null,
     finalStatus: worker.status,
     finalStatusMessage: worker.statusMessage,

@@ -88,7 +88,7 @@ describe("run() command dispatch", () => {
         projectId,
         sessionId: "sess-1",
         issueNumber: input.issueNumber ?? 0,
-        prNumber: null,
+        prNumbers: [],
         status: "running" as const,
         statusMessage: null,
         startedAt: "2026-01-01T00:00:00.000Z",

@@ -75,12 +75,12 @@ export interface WorkerFilter {
 }
 
 interface PersistedState {
-  version: 1;
+  version: 2;
   sessions: Session[];
   workers: Worker[];
 }
 
-const STATE_VERSION = 1;
+const STATE_VERSION = 2;
 
 /** Fresh literal per call — NEVER a shared module constant: the fallback is
  * returned by reference on absent files, so a shared empty would leak state
@@ -103,10 +103,24 @@ function validatePersistedState(value: unknown): PersistedState | undefined {
   }
   const workers: Worker[] = [];
   for (const entry of raw.workers ?? []) {
-    const parsed = workerSchema.safeParse(entry);
+    const parsed = workerSchema.safeParse(migrateWorkerPrNumbers(entry));
     if (parsed.success) workers.push(parsed.data);
   }
   return { version: STATE_VERSION, sessions, workers };
+}
+
+/**
+ * One-time PR-association migration (issue #470): workers persisted before
+ * multi-PR support carry a single `prNumber`; without this rewrite they
+ * would fail the worker schema and be DROPPED by the loader. Rewritten on
+ * load, so the next save persists the list shape.
+ */
+function migrateWorkerPrNumbers(entry: unknown): unknown {
+  if (typeof entry !== "object" || entry === null) return entry;
+  const raw = entry as Record<string, unknown>;
+  if (typeof raw["prNumber"] !== "number") return entry;
+  const { prNumber, ...rest } = raw;
+  return { ...rest, prNumbers: [prNumber] };
 }
 
 /**
@@ -248,7 +262,7 @@ export class SessionRegistry {
       projectId: input.projectId,
       sessionId: input.sessionId,
       issueNumber: input.issueNumber,
-      prNumber: input.prNumber ?? null,
+      prNumbers: input.prNumber === undefined ? [] : [input.prNumber],
       status: input.status ?? "spawning",
       statusMessage: input.statusMessage ?? null,
       startedAt: now,
@@ -276,21 +290,29 @@ export class SessionRegistry {
     });
   }
 
+  /**
+   * Records `prNumber` as associated with the worker (appends — a worker may
+   * drive several PRs, issue #470; set is idempotent). First association is
+   * canonical (diffs, archived-log links).
+   */
   setWorkerPr(workerId: string, prNumber: number): Worker {
     const worker = this.workers.get(workerId);
     if (!worker) throw new Error(`unknown worker: ${workerId}`);
-    worker.prNumber = prNumber;
+    if (!worker.prNumbers.includes(prNumber)) worker.prNumbers.push(prNumber);
     worker.updatedAt = new Date().toISOString();
     this.save();
     return worker;
   }
 
-  /** Clears a worker's recorded PR (issue #466: mis-association self-correction
-   * — the PR's head-branch namespace moved ownership to another worker). */
-  clearWorkerPr(workerId: string): Worker {
+  /**
+   * Removes one PR from the worker's association list (issue #466/#470:
+   * mis-association self-correction and re-association move individual PRs;
+   * the worker keeps any others). Idempotent.
+   */
+  clearWorkerPr(workerId: string, prNumber: number): Worker {
     const worker = this.workers.get(workerId);
     if (!worker) throw new Error(`unknown worker: ${workerId}`);
-    worker.prNumber = null;
+    worker.prNumbers = worker.prNumbers.filter((n) => n !== prNumber);
     worker.updatedAt = new Date().toISOString();
     this.save();
     return worker;

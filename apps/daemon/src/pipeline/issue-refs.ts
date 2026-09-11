@@ -35,17 +35,26 @@ const PR_OWNABLE_STATUSES = new Set<WorkerStatus>([
 const WORKER_BRANCH_PREFIX = "pideck/";
 
 /**
- * Worker whose exact head-branch namespace owns the PR — `pideck/<workerId>`.
- * Worker ids are unique and never recycled, so the suffix is matched by
- * exact equality. The worker must be ownable and either unassociated or
- * already recorded against this very PR (the re-watch verification path).
+ * Worker whose head-branch namespace owns the PR — issue #470's many-to-many
+ * key. A worker's primary branch is `pideck/<workerId>`; stacked/sibling PRs
+ * branch under the same namespace (`pideck/<workerId>/<topic>`, per the
+ * worker prompt's stacking convention), so the worker id must match the
+ * `pideck/` prefix followed by the exact id (the `/` separator rules out
+ * id-prefix collisions). Worker ids are unique and never recycled.
+ *
+ * The worker must be ownable; carrying PRs already (including this one) does
+ * NOT disqualify it — multi-PR association appends, and the claiming guard
+ * in {@link associateWorkerPr} plus the verification's idempotent repair
+ * handle the already-associated cases. This key is per worker identity, so
+ * worker reuse (issue #471) rides on it unchanged.
  */
-function ownerForHeadBranch(workers: Worker[], headBranch: string, prNumber: number): Worker | undefined {
+function ownerForHeadBranch(workers: Worker[], headBranch: string): Worker | undefined {
   if (!headBranch.startsWith(WORKER_BRANCH_PREFIX)) return undefined;
-  const workerId = headBranch.slice(WORKER_BRANCH_PREFIX.length);
+  const namespaced = headBranch.slice(WORKER_BRANCH_PREFIX.length);
   return workers.find(
     (worker) =>
-      worker.id === workerId && (worker.prNumber === null || worker.prNumber === prNumber) && PR_OWNABLE_STATUSES.has(worker.status),
+      (worker.id === namespaced || namespaced.startsWith(`${worker.id}/`)) &&
+      PR_OWNABLE_STATUSES.has(worker.status),
   );
 }
 
@@ -81,18 +90,19 @@ function ownerForRefs(workers: Worker[], refs: Set<number>): Worker | undefined 
   if (refs.size === 0) return undefined;
   return workers.find(
     (worker) =>
-      worker.prNumber === null && worker.issueNumber !== 0 && refs.has(worker.issueNumber) && PR_OWNABLE_STATUSES.has(worker.status),
+      worker.prNumbers.length === 0 && worker.issueNumber !== 0 && refs.has(worker.issueNumber) && PR_OWNABLE_STATUSES.has(worker.status),
   );
 }
 
 /**
- * Association effects (issue #466): claiming records the owner; the re-watch
- * verification also clears the worker it took the PR from. Multi-PR tracking
- * (issue #470) will lift the one-prNumber-per-worker invariant.
+ * Association effects (issues #466, #470): claiming appends the PR to the
+ * worker's association list; the re-watch verification also removes the PR
+ * from the worker it moved away from (which may keep its other PRs). Worker
+ * reuse (issue #471) rides on the same per-worker identity key.
  */
 export interface WorkerPrActions {
   setWorkerPr: (workerId: string, prNumber: number) => void;
-  clearWorkerPr: (workerId: string) => void;
+  clearWorkerPr: (workerId: string, prNumber: number) => void;
 }
 
 /**
@@ -111,11 +121,17 @@ function verifyNamespace(
   actions: WorkerPrActions,
   pr: PullRequest,
 ): void {
-  const owner = ownerForHeadBranch(workers, pr.headBranch, pr.number);
-  if (owner === undefined || owner.id === tracked.workerId) return;
+  const owner = ownerForHeadBranch(workers, pr.headBranch);
+  if (owner === undefined) return;
+  if (owner.id === tracked.workerId) {
+    // Namespace already agrees with the tracker; keep the registry in sync
+    // (setWorkerPr appends idempotently, repairing any drift).
+    actions.setWorkerPr(owner.id, pr.number);
+    return;
+  }
   const previous = workers.find((worker) => worker.id === tracked.workerId);
   actions.setWorkerPr(owner.id, pr.number);
-  if (previous !== undefined) actions.clearWorkerPr(previous.id);
+  if (previous !== undefined) actions.clearWorkerPr(previous.id, pr.number);
   tracked.workerId = owner.id;
   tracked.sessionId = owner.sessionId;
   tracker.save();
@@ -123,19 +139,26 @@ function verifyNamespace(
 
 /**
  * Associates a PR with its owning worker — the PR loop's tracker resolves
- * ownership from the registry. Only ever fills workers whose `prNumber` is
- * still null.
+ * ownership from the registry.
  *
- * Evidence is tiered (issues #441, #466):
+ * Evidence is tiered (issues #441, #466, #470):
  *
- * 1. exact head-branch namespace (`pideck/<workerId>`) — the PR head branch
- *    names its owning worker deterministically;
+ * 1. head-branch namespace (`pideck/<workerId>...`) — the PR head branch
+ *    names its owning worker deterministically, for any number of the
+ *    worker's PRs (issue #470 multi-PR);
  * 2. a title/head-branch issue reference — the PR headline names its own
  *    issue;
  * 3. GitHub's closing keywords in the body (`Closes #N`) — the #439-mandated
  *    self-report. Bare body mentions ("Depends on #N") never claim: with
  *    parallel workers on related issues they picked the wrong owner, and
  *    the auto reviewer then nested under that wrong worker.
+ *
+ * The namespace tier scales many-to-many (issue #470): it claims a worker's
+ * stacked/sibling PRs from the same namespace. The issue-reference tiers
+ * stay restricted to workers without any PR yet — heuristic evidence
+ * claiming further PRs for an already-associated worker would resurrect the
+ * #441 mis-association class; a worker's own additional PRs always come
+ * through its namespace.
  *
  * Once a PR is tracked, a later re-watch runs the namespace verification
  * (issue #466) so a heuristic mis-association self-corrects; heuristic
@@ -152,9 +175,9 @@ export function associateWorkerPr(
     verifyNamespace(tracker, tracked, workers, actions, pr);
     return;
   }
-  if (workers.some((worker) => worker.prNumber === pr.number)) return;
+  if (workers.some((worker) => worker.prNumbers.includes(pr.number))) return;
   const owner =
-    ownerForHeadBranch(workers, pr.headBranch, pr.number) ??
+    ownerForHeadBranch(workers, pr.headBranch) ??
     ownerForRefs(workers, referencedIssueNumbers(`${pr.title} ${pr.headBranch}`)) ??
     (pr.body === undefined ? undefined : ownerForRefs(workers, closingKeywordRefs(pr.body)));
   if (owner !== undefined) actions.setWorkerPr(owner.id, pr.number);

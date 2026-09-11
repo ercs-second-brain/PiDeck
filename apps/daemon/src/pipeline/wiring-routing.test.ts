@@ -307,7 +307,7 @@ describe("GithubAutomation PR wiring (#46)", () => {
 
     // Worker for issue #46 exists but has not reported a PR yet.
     const { worker } = await daemon.services.sessions.spawnWorker(PROJECT, { issueNumber: 46 });
-    expect(worker.prNumber).toBeNull();
+    expect(worker.prNumbers).toEqual([]);
 
     // PR watcher event: the PR's title references the worker's issue → the
     // wiring records the association on the session registry (setWorkerPr)
@@ -318,7 +318,7 @@ describe("GithubAutomation PR wiring (#46)", () => {
       pullRequest: makePullRequest(7, { title: "Resolve #46: fix the loop", headBranch: "issue-46-fix" }),
     });
 
-    expect(daemon.services.registry.getWorker(worker.id)!.prNumber).toBe(7);
+    expect(daemon.services.registry.getWorker(worker.id)!.prNumbers).toContain(7);
     expect(events.find((e) => e.type === "kanban.card.moved" && e.cardId === `pr:${PROJECT}:7`))
       .toMatchObject({ card: { kind: "pull_request", number: 7, column: "in_progress", workerId: worker.id } });
     // The loop drives the red PR: a bounded CI-fix prompt goes to the
@@ -365,7 +365,7 @@ describe("GithubAutomation PR wiring (#46)", () => {
       at: NOW,
       pullRequest: makePullRequest(7, { title: "Resolve #46: fix the loop", headBranch: "issue-46-fix" }),
     });
-    expect(daemon.services.registry.getWorker(claimed.id)!.prNumber).toBe(7);
+    expect(daemon.services.registry.getWorker(claimed.id)!.prNumbers).toContain(7);
 
     // Re-watch: the PR's real head branch names the author's worker — the
     // namespace is the deterministic key, so ownership self-corrects.
@@ -374,8 +374,8 @@ describe("GithubAutomation PR wiring (#46)", () => {
       at: NOW,
       pullRequest: makePullRequest(7, { title: "Resolve #46: fix the loop", headBranch: `pideck/${author.id}` }),
     });
-    expect(daemon.services.registry.getWorker(author.id)!.prNumber).toBe(7);
-    expect(daemon.services.registry.getWorker(claimed.id)!.prNumber).toBeNull();
+    expect(daemon.services.registry.getWorker(author.id)!.prNumbers).toContain(7);
+    expect(daemon.services.registry.getWorker(claimed.id)!.prNumbers).not.toContain(7);
 
     // The red-PR CI-fix prompt lands on the namespaced worker's pane now.
     const sendKeys = vi.spyOn(daemon.services.sessions, "sendKeys");

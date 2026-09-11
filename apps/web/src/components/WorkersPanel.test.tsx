@@ -20,7 +20,7 @@ function worker(overrides: Partial<Worker> = {}): Worker {
     projectId: "o-r",
     sessionId: "sess-1",
     issueNumber: 7,
-    prNumber: null,
+    prNumbers: [],
     status: "running",
     statusMessage: "agent running in tmux session",
     startedAt: "2026-01-01T00:00:00.000Z",
@@ -72,4 +72,15 @@ describe("WorkersPanel (issue #102)", () => {
     expect(none).toContain('class="panel-count">0<');
     expect(none).toContain("No workers running.");
   });
+
+  it("links every associated PR of a multi-PR worker (issue #470)", () => {
+    const html = render([worker({ id: "worker-multi", prNumbers: [7, 15] })]);
+    // renderToString splits text nodes with comment markers; the hrefs carry
+    // the multi-PR evidence.
+    expect(html.match(/\/?projects\/o-r\/pulls\/\d+/g)).toEqual([
+      "/projects/o-r/pulls/7",
+      "/projects/o-r/pulls/15",
+    ]);
+  });
 });
+

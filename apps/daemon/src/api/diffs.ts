@@ -87,13 +87,16 @@ export class DiffService {
     input: WorkerFilesInput,
   ): Promise<WorkerFilesChanged> {
     const { worker, sessionCwd, baseBranch } = input;
-    if (worker.prNumber !== null) {
-      const diff = await this.getDiff(projectId, repoUrl, worker.prNumber);
+    // The worker's canonical (first-associated) PR backs the file list; a
+    // multi-PR worker's other PRs are tracked/diffable as plain PRs.
+    const primary = worker.prNumbers[0];
+    if (primary !== undefined) {
+      const diff = await this.getDiff(projectId, repoUrl, primary);
       return workerFilesChangedSchema.parse({
         workerId: worker.id,
         projectId,
         source: "pr",
-        prNumber: worker.prNumber,
+        prNumber: primary,
         headBranch: diff.headBranch,
         baseBranch: diff.baseBranch,
         files: diff.files,
