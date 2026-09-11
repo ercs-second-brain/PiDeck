@@ -12,7 +12,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { projectSchema, type Project, type Session } from "@pideck/shared";
+import { projectSchema, type Project } from "@pideck/shared";
 
 import { createDaemonServer } from "../api/server.js";
 import { startContractServer } from "../api/contract-fixtures.js";
@@ -50,7 +50,7 @@ interface Harness {
   promptFile: string;
 }
 
-async function harness(options: { isAgentRunning?: (tmuxSession: string) => Promise<boolean>; recoveryInputReadyTimeoutMs?: number } = {}): Promise<Harness> {
+async function harness(options: { isAgentRunning?: (tmuxSession: string) => Promise<boolean> } = {}): Promise<Harness> {
   const daemon = testDaemon({
     // Issue #378: the orchestrator's canonical spawn (`pideck spawn --issue`
     // — no --prompt) fetches the issue for the #266 context prompt; the fake
@@ -79,7 +79,6 @@ async function harness(options: { isAgentRunning?: (tmuxSession: string) => Prom
     projects: daemon.services.projects,
     promptPath,
     isAgentRunning: options.isAgentRunning ?? (async () => false),
-    ...(options.recoveryInputReadyTimeoutMs !== undefined ? { recoveryInputReadyTimeoutMs: options.recoveryInputReadyTimeoutMs } : {}),
   });
   return {
     daemon,
@@ -235,50 +234,6 @@ describe("OrchestratorBootstrap.ensureGlobalAgent", () => {
     const second = await h.bootstrap.ensureGlobalAgent();
     expect(second.id).toBe(first.id);
     expect(h.daemon.tmux.sessions.get(first.tmuxSession)?.paneLines).toHaveLength(1); // launched exactly once
-  });
-});
-
-describe("OrchestratorBootstrap.ensureReadyPane (issue #500)", () => {
-  it("returns an already-bootstrapped pane untouched — nothing typed into it", async () => {
-    const h = await harness({ isAgentRunning: async () => true });
-    const session = await h.daemon.services.sessions.ensureOrchestrator(h.project.id);
-
-    const ready = await h.bootstrap.ensureReadyPane(session);
-    expect(ready).toBe(session);
-    expect(h.daemon.tmux.invocations.filter((inv) => inv.args[0] === "send-keys")).toEqual([]);
-  });
-
-  it("re-bootstraps a bare-shell pane and declares it deliverable once pi's input box appears", async () => {
-    const h = await harness({ isAgentRunning: async () => false, recoveryInputReadyTimeoutMs: 1_000 });
-    const session = await h.daemon.services.sessions.ensureOrchestrator(h.project.id);
-    // The freshly bootstrapped pi renders its input box: the border the
-    // pane-ready probe looks for (pane-ready.ts) is in the trailing lines.
-    h.daemon.tmux.notifyOutput(session.tmuxSession, "─".repeat(40));
-
-    const ready = await h.bootstrap.ensureReadyPane(session);
-    expect(ready).toBe(session);
-    // The persona launch line was typed (the recovery).
-    const lines = h.daemon.tmux.sessions.get(session.tmuxSession)?.paneLines ?? [];
-    expect(lines.some((l) => l.includes("pi --no-skills --append-system-prompt"))).toBe(true);
-  });
-
-  it("reports a bare pane pi never mounts in as undeliverable — recovery attempted, caller must skip", async () => {
-    const h = await harness({ isAgentRunning: async () => false, recoveryInputReadyTimeoutMs: 1 });
-    const session = await h.daemon.services.sessions.ensureOrchestrator(h.project.id);
-
-    const ready = await h.bootstrap.ensureReadyPane(session);
-    expect(ready).toBeNull();
-    // Recovery was attempted (the launch line is in the pane), but the pane
-    // never became input-ready — the notification must not be typed.
-    const lines = h.daemon.tmux.sessions.get(session.tmuxSession)?.paneLines ?? [];
-    expect(lines.some((l) => l.includes("pi --no-skills --append-system-prompt"))).toBe(true);
-  });
-
-  it("reports an orchestrator pane of an unknown project as unrecoverable", async () => {
-    const h = await harness();
-    const orphan = { id: "orphan", role: "orchestrator", projectId: "no-such-project", tmuxSession: "orphan-pane", agentKind: undefined } as Session;
-
-    expect(await h.bootstrap.ensureReadyPane(orphan)).toBeNull();
   });
 });
 

@@ -175,6 +175,23 @@ export interface DaemonContextOptions {
 }
 
 /**
+ * Builds the orchestrator bootstrap (#12) over the shared services; the
+ * notification-recovery input-ready budget (issue #500) is a test seam.
+ * Module-level so `createDaemonContext` stays within its complexity budget.
+ */
+function buildOrchestratorBootstrap(
+  services: { sessions: SessionManager; tmux: Tmux; projects: ProjectService; layout: ProjectLayout; agentAssets: AgentAssetsStore; agentKinds: AgentKindRegistry },
+  options: DaemonContextOptions,
+): OrchestratorBootstrap {
+  return new OrchestratorBootstrap({
+    ...services,
+    ...(options.orchestratorRecoveryInputReadyTimeoutMs !== undefined
+      ? { recoveryInputReadyTimeoutMs: options.orchestratorRecoveryInputReadyTimeoutMs }
+      : {}),
+  });
+}
+
+/**
  * Builds the initial-prompt readiness gate (issue #56) over the session
  * manager and the pi auth probe: worker prompts and agent-kind session
  * prompts (the researcher's question, docs/agent-kinds.md) both queue
@@ -330,17 +347,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   });
 
   // Orchestrator bootstrap (#12/#166): shared by the startup sweep and the registration handler.
-  const orchestratorBootstrap = new OrchestratorBootstrap({
-    sessions,
-    tmux,
-    projects,
-    layout,
-    agentAssets,
-    agentKinds,
-    ...(options.orchestratorRecoveryInputReadyTimeoutMs !== undefined
-      ? { recoveryInputReadyTimeoutMs: options.orchestratorRecoveryInputReadyTimeoutMs }
-      : {}),
-  });
+  const orchestratorBootstrap = buildOrchestratorBootstrap({ sessions, tmux, projects, layout, agentAssets, agentKinds }, options);
 
   // pi auth readiness (issue #57) + worker/agent-kind initial-prompt gate (issue #56):
   // the gate polls the same probe so queued prompts deliver when ready.
@@ -370,9 +377,7 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     piReady: () => piAuth.payload().then((payload) => payload.ready),
     promptGate,
     agentKinds, // #393: kind-aware occupancy for the review-agent spawn cap
-    // Issue #500: the orchestrator notification only types into a pane the
-    // bootstrap guard confirmed to run the agent persona.
-    orchestratorGuard: orchestratorBootstrap,
+    orchestratorGuard: orchestratorBootstrap, // #500: pane notifications only into bootstrap-guarded panes
     ...watcherOptions,
   });
   automationRef.current = automation;

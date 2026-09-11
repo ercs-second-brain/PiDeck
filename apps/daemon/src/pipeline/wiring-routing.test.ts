@@ -18,8 +18,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Issue, PullRequest, WsServerEvent } from "@pideck/shared";
 
-import { testDaemon, type FakeGhRoutes, type TestDaemon } from "../api/testutil.js";
-import type { DaemonContextOptions } from "../api/context.js";
+import { testDaemon, type DaemonContextOptions, type FakeGhRoutes, type TestDaemon } from "../api/testutil.js";
 import { makeIssue as sharedMakeIssue, makePullRequest as sharedMakePullRequest, restPull as sharedRestPull } from "../testing/fixtures.js";
 import type { GithubAutomation } from "./wiring.js";
 import { watcherOptionsFromEnv } from "./wiring.js";
@@ -84,10 +83,7 @@ function restPull(number: number, sha: string): Record<string, unknown> {
   return sharedRestPull(number, { sha, author: AUTO_USER, headBranch: `feature-${number}`, updatedAt: NOW });
 }
 
-export async function registeredDaemon(
-  ghRoutes: FakeGhRoutes = emptyRoutes(),
-  contextOptions: Partial<DaemonContextOptions> = {},
-): Promise<TestDaemon & { automation: GithubAutomation }> {
+export async function registeredDaemon(ghRoutes: FakeGhRoutes = emptyRoutes(), contextOptions: Partial<DaemonContextOptions> = {}): Promise<TestDaemon & { automation: GithubAutomation }> {
   const daemon = testDaemon(ghRoutes, { watcherPollIntervalMs: NO_TICK, ...contextOptions });
   await daemon.services.projects.register({ mode: "clone", repoUrl: REPO_URL });
   return { ...daemon, automation: daemon.services.automation };
