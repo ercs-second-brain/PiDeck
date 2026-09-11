@@ -338,6 +338,20 @@
   right: calc(100% + 4px);
 }
 
+/* Issue #448 (B8): edge-overflow flip classes — applied after mount by the
+   placement probe in picker-project-menu.tsx when the default left/top
+   placement would overflow a screen edge. Each mirrors one axis: open on
+   the anchor's other side, or extend upward instead of downward. */
+.picker-submenu.picker-submenu-flip-right {
+  right: auto;
+  left: calc(100% + 4px);
+}
+
+.picker-submenu.picker-submenu-flip-bottom {
+  top: auto;
+  bottom: 0;
+}
+
 .picker-submenu button {
   padding: 8px 12px;
 }
