@@ -21,9 +21,13 @@
  * - Issue #408 (the deterministic PR lifecycle): worker PRs are assigned to
  *   the review user on submission (`reviewAccountUsername`); a CI-green PR
  *   assigned to that user drives the review-agent cycle; and a green +
- *   approved PR with both the author and the reviewer idle notifies the
- *   orchestrator it is ready for merge (`notification.pr.ready_for_merge`,
- *   once per round — merging stays human/orchestrator-approved).
+ *   approved PR notifies the orchestrator it is ready for merge
+ *   (`notification.pr.ready_for_merge`, once per round — merging stays
+ *   human/orchestrator-approved). Issue #503: a newly recorded APPROVED
+ *   review submission notifies immediately (the approval action drives the
+ *   notification); the idle-gated detection (`driveReadyForMerge`) remains
+ *   the backstop for rounds without a newly recorded approval. Both share
+ *   the once-per-round watermark.
  * - Merged → card `done`; with `terminateOnMerge` (issue #106) the owning
  *   worker's pane is archived, otherwise the pane keeps running as `done`.
  * - Settled CI or any review decision → card `in_review`.

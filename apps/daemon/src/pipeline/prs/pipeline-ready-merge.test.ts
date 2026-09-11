@@ -95,19 +95,22 @@ describe("PullRequestPipeline: ready-for-merge trigger (issue #408)", () => {
     expect(readyEvents(events)).toHaveLength(1);
   });
 
-  it("a busy author (running status) holds the notification", async () => {
-    const h = greenHarness({ reviewAccount: () => false });
+  it("a busy author (running status) does not hold the approval-recorded notification", async () => {
+    // Issue #503: the approval action drives the notification — the author's
+    // agent-reported `running` status holds only the idle-gated backstop
+    // (rounds without a newly recorded approval, e.g. the third test here).
+    const h = greenHarness({ reviewAccount: () => false }); // single-account mode, human approval
     await h.poll();
     approve(h, "2026-09-06T12:05:00Z");
     h.advance(5 * 60_000);
     h.sessions.control.listWorkers()[0]!.status = "running";
-    await h.poll();
-    expect(readyEvents(h.emit)).toHaveLength(0);
+    const seen: PRPipelineEvent[] = [...(await h.poll())];
+    expect(readyEvents(seen)).toHaveLength(1);
 
-    // Back to idle → notifies on the next poll.
+    // Still exactly once per round: back to idle, the backstop cannot re-fire.
     h.sessions.control.listWorkers()[0]!.status = "awaiting_ci";
-    const events = await h.poll();
-    expect(readyEvents(events)).toHaveLength(1);
+    seen.push(...(await h.poll()));
+    expect(readyEvents(seen)).toHaveLength(1);
   });
 
   it("a new review round re-arms the trigger even on an unchanged head", async () => {
@@ -131,5 +134,63 @@ describe("PullRequestPipeline: ready-for-merge trigger (issue #408)", () => {
     events = await h.poll();
     expect(readyEvents(events)).toHaveLength(1); // the second round notifies again
     expect(h.tracker.get(PROJECT, 12)!.readyNotifiedHeadSha).toBe("sha-1");
+  });
+});
+
+describe("PullRequestPipeline: approval-recorded trigger (issue #503)", () => {
+  // Issue #503: the approval-recorded leg. The approval action itself
+  // notifies — even when the idle gates would hold the backstop (the author
+  // parked on an agent-reported `running` status, the reviewer's pane still
+  // live) — exactly once per approval round.
+  it("the reviewer's approval notifies on the poll that records it, even while the author is busy", async () => {
+    // The author sits on an agent-reported `running` status (the pipeline
+    // cannot see typing) — the idle-gated backstop would hold forever.
+    const h = greenHarness();
+    await h.poll(); // discover + track
+    await h.poll(); // reviewer spawns
+    h.sessions.control.listWorkers()[0]!.status = "running";
+    approve(h, "2026-09-06T12:05:00Z");
+    h.advance(5 * 60_000);
+    const events = await h.poll();
+    expect(readyEvents(events)).toHaveLength(1);
+    expect(h.tracker.get(PROJECT, 12)!.readyNotifiedHeadSha).toBe("sha-1");
+
+    // Still exactly once per round: the backstop cannot re-fire behind the
+    // approval leg's watermark, whatever the author's status does next.
+    h.sessions.control.listWorkers()[0]!.status = "awaiting_ci";
+    await h.poll();
+    expect(readyEvents(events)).toHaveLength(1);
+  });
+
+  it("a newly recorded approval and the idle-gated backstop notify once per round together", async () => {
+    // Everything idle on the approval poll: both legs run on the same poll
+    // — the approval leg marks the watermark, the backstop skips.
+    const h = greenHarness();
+    await h.poll();
+    approve(h, "2026-09-06T12:05:00Z");
+    h.advance(5 * 60_000);
+    const events = await h.poll();
+    expect(readyEvents(events)).toHaveLength(1);
+  });
+
+  it("a COMMENTED review does not drive the approval leg (not an approval action)", async () => {
+    // The author sits busy (`running`): the idle-gated backstop is held, so
+    // any new event would have to come from the approval leg — which must
+    // not fire for a COMMENT submission even on an approved PR.
+    const h = greenHarness({ reviewAccount: () => false });
+    await h.poll();
+    h.sessions.control.listWorkers()[0]!.status = "running";
+    approve(h, "2026-09-06T12:05:00Z");
+    h.advance(5 * 60_000);
+    const seen: PRPipelineEvent[] = [...(await h.poll())];
+    expect(readyEvents(seen)).toHaveLength(1);
+
+    h.prs.get(12)!.reviews = [
+      { user: { login: "alice" }, state: "APPROVED", submitted_at: "2026-09-06T12:05:00Z" },
+      { user: { login: "alice" }, state: "COMMENTED", submitted_at: "2026-09-06T12:10:00Z" },
+    ];
+    h.advance(5 * 60_000);
+    seen.push(...(await h.poll()));
+    expect(readyEvents(seen)).toHaveLength(1);
   });
 });
