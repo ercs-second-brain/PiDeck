@@ -1,8 +1,15 @@
 import { z } from "zod";
 import { PersonaSchema } from "./persona.js";
-import { ProjectSchema, ProjectSettingsSchema } from "./project.js";
+import {
+  ProjectCreateSchema,
+  ProjectSchema,
+  ProjectSettingsSchema,
+} from "./project.js";
 import { SessionViewSchema } from "./session.js";
-import { GlobalSettingsSchema } from "./settings.js";
+import {
+  GlobalSettingsPutSchema,
+  GlobalSettingsReadSchema,
+} from "./settings.js";
 
 export const OkSchema = z.object({ ok: z.literal(true) });
 export type Ok = z.infer<typeof OkSchema>;
@@ -11,15 +18,10 @@ export const StatusSchema = z.object({
   version: z.string(),
   stateDir: z.string(),
   pollIntervalSeconds: z.number().int().positive(),
+  piReady: z.boolean(),
+  ghReady: z.boolean(),
 });
 export type Status = z.infer<typeof StatusSchema>;
-
-export const ProjectCreateSchema = z.object({
-  repoUrl: z.string().min(1),
-  name: z.string().min(1).optional(),
-  defaultBranch: z.string().min(1).optional(),
-});
-export type ProjectCreate = z.infer<typeof ProjectCreateSchema>;
 
 export const ProjectUpdateSchema = ProjectSchema.pick({
   name: true,
@@ -46,6 +48,13 @@ export type PromptPut = z.infer<typeof PromptPutSchema>;
 
 export const ProbeSchema = z.object({ ok: z.boolean(), detail: z.string() });
 export type Probe = z.infer<typeof ProbeSchema>;
+
+export const PiProbeSchema = ProbeSchema.extend({
+  providers: z.array(z.string()),
+  models: z.array(z.string()),
+  defaultModel: z.string().nullable(),
+});
+export type PiProbe = z.infer<typeof PiProbeSchema>;
 
 export const UpdateCheckSchema = z.object({
   updateAvailable: z.boolean(),
@@ -105,12 +114,16 @@ export const restEndpoints = {
   sessionTerminate: { method: "POST", path: "/api/sessions/:id/terminate", response: OkSchema },
   sessionLog: { method: "GET", path: "/api/sessions/:id/log", response: SessionLogSchema },
 
-  globalSettingsGet: { method: "GET", path: "/api/settings", response: GlobalSettingsSchema },
+  globalSettingsGet: {
+    method: "GET",
+    path: "/api/settings",
+    response: GlobalSettingsReadSchema,
+  },
   globalSettingsPut: {
     method: "PUT",
     path: "/api/settings",
-    request: GlobalSettingsSchema,
-    response: GlobalSettingsSchema,
+    request: GlobalSettingsPutSchema,
+    response: GlobalSettingsReadSchema,
   },
 
   promptGet: { method: "GET", path: "/api/prompts/:persona", response: PromptSchema },
@@ -122,8 +135,9 @@ export const restEndpoints = {
   },
   promptReset: { method: "POST", path: "/api/prompts/:persona/reset", response: PromptSchema },
 
-  probePi: { method: "GET", path: "/api/onboarding/pi", response: ProbeSchema },
-  probeGh: { method: "GET", path: "/api/onboarding/gh", response: ProbeSchema },
+  probePi: { method: "GET", path: "/api/onboarding/pi", response: PiProbeSchema },
+  probeGhPrimary: { method: "GET", path: "/api/onboarding/gh/primary", response: ProbeSchema },
+  probeGhReview: { method: "GET", path: "/api/onboarding/gh/review", response: ProbeSchema },
 
   updateCheck: { method: "GET", path: "/api/update", response: UpdateCheckSchema },
   updateApply: { method: "POST", path: "/api/update/apply", response: OkSchema },

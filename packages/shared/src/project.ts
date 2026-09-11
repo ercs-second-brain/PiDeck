@@ -21,3 +21,17 @@ export const ProjectSettingsSchema = z.object({
 });
 
 export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
+
+export const ProjectCreateSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("clone"),
+    repoUrl: z.string().min(1),
+    name: z.string().min(1).optional(),
+  }),
+  z.object({
+    mode: z.literal("create"),
+    name: z.string().min(1),
+    private: z.boolean(),
+  }),
+]);
+export type ProjectCreate = z.infer<typeof ProjectCreateSchema>;

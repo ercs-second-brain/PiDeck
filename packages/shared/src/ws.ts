@@ -3,7 +3,6 @@ import { SessionViewSchema } from "./session.js";
 
 export const SessionsChangedSchema = z.object({
   type: z.literal("sessions.changed"),
-  projectId: z.string(),
   sessions: z.array(SessionViewSchema),
 });
 export type SessionsChanged = z.infer<typeof SessionsChangedSchema>;

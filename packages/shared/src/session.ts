@@ -5,7 +5,7 @@ import { WorkerStateSchema } from "./state.js";
 export const SessionSchema = z.object({
   id: z.string(),
   persona: PersonaSchema,
-  projectId: z.string(),
+  projectId: z.string().nullable(),
   issueNumber: z.number().int().positive().optional(),
   prNumber: z.number().int().positive().optional(),
   tmuxSession: z.string(),
@@ -24,7 +24,7 @@ export type Session = z.infer<typeof SessionSchema>;
 
 export const SessionViewSchema = z.object({
   session: SessionSchema,
-  state: WorkerStateSchema,
+  state: WorkerStateSchema.nullable(),
   status: z.string(),
   parentSessionId: z.string().nullable(),
 });

@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { GlobalSettingsSchema, maskToken } from "./settings.js";
+import {
+  GlobalSettingsPutSchema,
+  GlobalSettingsReadSchema,
+  GlobalSettingsSchema,
+} from "./settings.js";
 import { Personas, PersonaSchema } from "./persona.js";
-import { ProjectSettingsSchema } from "./project.js";
+import { ProjectCreateSchema, ProjectSettingsSchema } from "./project.js";
 import { SessionSchema, SessionViewSchema } from "./session.js";
 import { WorkerStates, WorkerStateSchema } from "./state.js";
-import { restEndpoints } from "./rest.js";
-import {
-  SessionsChangedSchema,
-  WsClientMessageSchema,
-  WsServerMessageSchema,
-} from "./ws.js";
+import { PiProbeSchema, restEndpoints } from "./rest.js";
+import { SessionsChangedSchema, WsClientMessageSchema, WsServerMessageSchema } from "./ws.js";
 
 describe("persona", () => {
   it("accepts the four personas and nothing else", () => {
@@ -36,16 +36,18 @@ describe("worker state", () => {
 });
 
 describe("session", () => {
+  const base = {
+    id: "s1",
+    persona: "worker",
+    projectId: "p1",
+    issueNumber: 42,
+    tmuxSession: "pideck-s1",
+    spawnedAt: "2025-01-01T00:00:00Z",
+    model: null,
+  };
+
   it("defaults watermarks on a fresh session", () => {
-    const session = SessionSchema.parse({
-      id: "s1",
-      persona: "worker",
-      projectId: "p1",
-      issueNumber: 42,
-      tmuxSession: "pideck-s1",
-      spawnedAt: "2025-01-01T00:00:00Z",
-      model: null,
-    });
+    const session = SessionSchema.parse(base);
     expect(session.fixAttempts).toBe(0);
     expect(session.lastPromptedHeadSha).toBeNull();
     expect(session.lastDeliveredIssueCommentId).toBeNull();
@@ -55,16 +57,17 @@ describe("session", () => {
   });
 
   it("rejects an unknown persona", () => {
-    expect(() =>
-      SessionSchema.parse({
-        id: "s1",
-        persona: "researcher",
-        projectId: "p1",
-        tmuxSession: "s",
-        spawnedAt: "2025-01-01T00:00:00Z",
-        model: null,
-      }),
-    ).toThrow();
+    expect(() => SessionSchema.parse({ ...base, persona: "researcher" })).toThrow();
+  });
+
+  it("allows a null projectId for the global agent", () => {
+    const session = SessionSchema.parse({
+      ...base,
+      persona: "global",
+      projectId: null,
+      tmuxSession: "global",
+    });
+    expect(session.projectId).toBeNull();
   });
 
   it("keeps optional issue and pr numbers absent for orchestrators", () => {
@@ -83,16 +86,17 @@ describe("session", () => {
 });
 
 describe("session view", () => {
+  const base = {
+    id: "s1",
+    persona: "worker",
+    projectId: "p1",
+    issueNumber: 42,
+    tmuxSession: "s",
+    spawnedAt: "2025-01-01T00:00:00Z",
+    model: null,
+  };
+
   it("pairs a session with a derived state and parent link", () => {
-    const base = {
-      id: "s1",
-      persona: "worker",
-      projectId: "p1",
-      issueNumber: 42,
-      tmuxSession: "s",
-      spawnedAt: "2025-01-01T00:00:00Z",
-      model: null,
-    };
     const view = SessionViewSchema.parse({
       session: base,
       state: "fixing",
@@ -116,6 +120,16 @@ describe("session view", () => {
       }),
     ).toThrow();
   });
+
+  it("allows a null state for sessions without worker states", () => {
+    const view = SessionViewSchema.parse({
+      session: { ...base, persona: "orchestrator" },
+      state: null,
+      status: "listening",
+      parentSessionId: null,
+    });
+    expect(view.state).toBeNull();
+  });
 });
 
 describe("project settings", () => {
@@ -136,11 +150,25 @@ describe("project settings", () => {
   });
 });
 
-describe("global settings", () => {
-  it("defaults every persona model to null", () => {
-    const settings = GlobalSettingsSchema.parse({
-      reviewAccount: { username: "reviewer-bot", token: "tok" },
+describe("project create", () => {
+  it("accepts both onboarding modes and nothing else", () => {
+    expect(ProjectCreateSchema.parse({ mode: "clone", repoUrl: "https://github.com/o/r" })).toEqual({
+      mode: "clone",
+      repoUrl: "https://github.com/o/r",
     });
+    expect(
+      ProjectCreateSchema.parse({ mode: "create", name: "my-api", private: true }),
+    ).toEqual({ mode: "create", name: "my-api", private: true });
+    expect(() => ProjectCreateSchema.parse({ mode: "clone" })).toThrow();
+    expect(() => ProjectCreateSchema.parse({ mode: "create", name: "x" })).toThrow();
+    expect(() => ProjectCreateSchema.parse({ repoUrl: "https://github.com/o/r" })).toThrow();
+  });
+});
+
+describe("global settings", () => {
+  it("loads without a review account, before onboarding completes", () => {
+    const settings = GlobalSettingsSchema.parse({});
+    expect(settings.reviewAccount).toBeNull();
     expect(settings.modelByPersona).toEqual({
       global: null,
       orchestrator: null,
@@ -149,23 +177,55 @@ describe("global settings", () => {
     });
   });
 
-  it("requires every persona key", () => {
+  it("requires every persona key when provided", () => {
     expect(() =>
       GlobalSettingsSchema.parse({
-        reviewAccount: { username: "reviewer-bot", token: "tok" },
+        reviewAccount: null,
         modelByPersona: { global: null, orchestrator: null, worker: null },
       }),
     ).toThrow();
   });
-});
 
-describe("maskToken", () => {
-  it("keeps only the last four characters", () => {
-    expect(maskToken("ghp_abcdef1234")).toBe("••••1234");
+  it("reads back a token presence flag, never the token", () => {
+    const read = GlobalSettingsReadSchema.parse({
+      reviewAccount: { username: "reviewer-bot", tokenSet: true },
+      modelByPersona: { global: null, orchestrator: null, worker: null, reviewer: null },
+    });
+    expect(read.reviewAccount).toEqual({ username: "reviewer-bot", tokenSet: true });
+    expect(JSON.stringify(read)).not.toContain("token\"");
+    expect(
+      GlobalSettingsReadSchema.parse({
+        reviewAccount: null,
+        modelByPersona: { global: null, orchestrator: null, worker: null, reviewer: null },
+      }).reviewAccount,
+    ).toBeNull();
   });
 
-  it("masks an empty token to an empty string", () => {
-    expect(maskToken("")).toBe("");
+  it("lets a put omit the token to keep it and null to clear the account", () => {
+    const keep = GlobalSettingsPutSchema.parse({
+      reviewAccount: { username: "reviewer-bot" },
+      modelByPersona: { global: null, orchestrator: null, worker: "m", reviewer: null },
+    });
+    expect(keep.reviewAccount).toEqual({ username: "reviewer-bot" });
+    expect(keep.modelByPersona?.worker).toBe("m");
+    expect(GlobalSettingsPutSchema.parse({ reviewAccount: null }).reviewAccount).toBeNull();
+    expect(GlobalSettingsPutSchema.parse({}).reviewAccount).toBeUndefined();
+    expect(() => GlobalSettingsPutSchema.parse({ reviewAccount: {} })).toThrow();
+  });
+});
+
+describe("pi probe", () => {
+  it("carries providers, models, and the default model", () => {
+    const probe = PiProbeSchema.parse({
+      ok: true,
+      detail: "authenticated",
+      providers: ["anthropic", "openai"],
+      models: ["claude-x", "gpt-y"],
+      defaultModel: "claude-x",
+    });
+    expect(probe.models).toHaveLength(2);
+    expect(PiProbeSchema.parse({ ok: false, detail: "", providers: [], models: [], defaultModel: null }).defaultModel).toBeNull();
+    expect(() => PiProbeSchema.parse({ ok: true, detail: "" })).toThrow();
   });
 });
 
@@ -177,7 +237,7 @@ describe("rest endpoint map", () => {
     }
   });
 
-  it("maps settings and prompts as named in the spec", () => {
+  it("maps settings, probes, and prompts as named in the spec", () => {
     expect(restEndpoints.projectSettingsPut).toMatchObject({
       method: "PUT",
       path: "/api/projects/:id/settings",
@@ -186,7 +246,20 @@ describe("rest endpoint map", () => {
       method: "POST",
       path: "/api/prompts/:persona/reset",
     });
+    expect(restEndpoints.probeGhPrimary).toMatchObject({
+      method: "GET",
+      path: "/api/onboarding/gh/primary",
+    });
+    expect(restEndpoints.probeGhReview).toMatchObject({
+      method: "GET",
+      path: "/api/onboarding/gh/review",
+    });
     expect(restEndpoints.updateApply.method).toBe("POST");
+  });
+
+  it("never exposes a write-only token in read responses", () => {
+    expect(restEndpoints.globalSettingsGet.response).toBe(GlobalSettingsReadSchema);
+    expect(restEndpoints.globalSettingsPut.request).toBe(GlobalSettingsPutSchema);
   });
 });
 
@@ -200,21 +273,20 @@ describe("ws events", () => {
     spawnedAt: "2025-01-01T00:00:00Z",
     model: null,
   };
+  const view = {
+    session: baseSession,
+    state: "working",
+    status: "implementing",
+    parentSessionId: null,
+  };
 
-  it("carries the full session view list for a project", () => {
+  it("carries the daemon-wide session view list", () => {
     const event = SessionsChangedSchema.parse({
       type: "sessions.changed",
-      projectId: "p1",
-      sessions: [
-        {
-          session: baseSession,
-          state: "working",
-          status: "implementing",
-          parentSessionId: null,
-        },
-      ],
+      sessions: [view],
     });
     expect(event.sessions).toHaveLength(1);
+    expect("projectId" in event).toBe(false);
   });
 
   it("covers the terminal stream protocol in both directions", () => {
@@ -233,13 +305,11 @@ describe("ws events", () => {
       WsServerMessageSchema.parse({ type: "terminal.data", sessionId: "s1", data: "hi" }).type,
     ).toBe("terminal.data");
     expect(
-      WsServerMessageSchema.parse({
-        type: "sessions.changed",
-        projectId: "p1",
-        sessions: [],
-      }).type,
+      WsServerMessageSchema.parse({ type: "sessions.changed", sessions: [] }).type,
     ).toBe("sessions.changed");
     expect(() => WsClientMessageSchema.parse({ type: "terminal.attach" })).toThrow();
-    expect(() => WsServerMessageSchema.parse({ type: "terminal.detach", sessionId: "s1" })).toThrow();
+    expect(() =>
+      WsServerMessageSchema.parse({ type: "terminal.detach", sessionId: "s1" }),
+    ).toThrow();
   });
 });
