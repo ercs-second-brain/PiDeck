@@ -252,11 +252,21 @@ function buildUpdateChecker(options: DaemonContextOptions, stateDir: string): Up
  * cached (issue #40) — the API layer shares the GitHub token, so it must
  * not burn O(PR) calls.
  */
-function buildKanban(deps: { gh: (repoUrl: string) => GhClient; sessions: SessionManager; pullListing: PullListingService }): KanbanService {
+function buildKanban(deps: { gh: (repoUrl: string) => GhClient; sessions: SessionManager; pullListing: PullListingService; hub: WsHub }): KanbanService {
   return new KanbanService({
     gh: deps.gh,
     listWorkers: () => deps.sessions.listWorkers(),
     listPullRequests: (project) => deps.pullListing.list(project.id, project.repoUrl),
+    // Issue #451: a completed board revalidation pushes `kanban.board.updated`
+    // so connected webapps reload immediately instead of rendering the stale
+    // value until their next poll. Best-effort: never fail the board fetch.
+    onBoardRefreshed: (projectId) => {
+      try {
+        deps.hub.broadcast({ type: "kanban.board.updated", at: new Date().toISOString(), projectId });
+      } catch {
+        // A broadcast failure must not fail the board fetch that triggered it.
+      }
+    },
   });
 }
 
@@ -281,10 +291,13 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
   // Forward-declared so the change hook below reaches the automation constructed after it (issue #46).
   const automationRef: { current?: GithubAutomation } = {};
 
+  const hub = new WsHub();
+
   // Kanban derives boards from gh + workers; built before the project service
-  // so deletion (issue #172) drops the board cache with the project.
+  // so deletion (issue #172) drops the board cache with the project. The hub
+  // is built first so board revalidations can push (issue #451).
   const pullListing = new PullListingService({ gh });
-  const kanban = buildKanban({ gh, sessions, pullListing });
+  const kanban = buildKanban({ gh, sessions, pullListing, hub });
 
   const projects = new ProjectService({
     store: projectStore,
@@ -299,7 +312,6 @@ export function createDaemonContext(options: DaemonContextOptions = {}): DaemonS
     ...(options.git !== undefined ? { git: options.git } : {}),
     gh,
   });
-  const hub = new WsHub();
 
   // Orchestrator bootstrap (#12/#166): shared by the startup sweep and the registration handler.
   const orchestratorBootstrap = new OrchestratorBootstrap({ sessions, tmux, projects, layout, agentAssets, agentKinds });

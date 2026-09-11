@@ -17,6 +17,7 @@
 
 import type { UpdateStatusResponse } from "@pideck/shared";
 import { apiGetUpdateStatus } from "../lib/api";
+import { boardStore } from "../store/store";
 
 /** Idle polling fallback: slow — the daemon serves a cached gh check (~5 min
  * TTL) and fresh checks are forced on page load / window focus instead. */
@@ -139,5 +140,38 @@ export function startApplyPolling(targetSha: string, startedAt: number, handlers
     alive = false;
     clearInterval(ticker);
     clearTimeout(pollTimer);
+  };
+}
+
+/** Trailing debounce between a worker-event burst and the status refetch. */
+const WORKER_GATE_DEBOUNCE_MS = 1_500;
+
+/**
+ * Issue #451: worker lifecycle events are pushed over the kanban socket in
+ * real time — the banner's worker gate (`activeWorkers`, which disables
+ * Update-now while agents work) must not wait for the 5-minute idle poll to
+ * notice them. Subscribes to the store's worker events and refetches the
+ * update status with a short trailing debounce so a spawn burst collapses
+ * into one refetch. Cheap by construction: the gh check stays server-side
+ * cached (~5 min TTL), and `activeWorkers` is computed live per request —
+ * only the refetch is new, no extra gh load.
+ */
+export function startWorkerGateRefresher(onStatus: (result: UpdateStatusResponse) => void, debounceMs = WORKER_GATE_DEBOUNCE_MS): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const off = boardStore.onWorkerEvent(() => {
+    if (timer !== undefined) return; // a burst is already pending
+    timer = setTimeout(() => {
+      timer = undefined;
+      apiGetUpdateStatus()
+        .then(onStatus)
+        .catch(() => {
+          // Daemon unreachable (e.g. restarting): the idle poll's own
+          // reconnect loop handles recovery — nothing to do here.
+        });
+    }, debounceMs);
+  });
+  return () => {
+    if (timer !== undefined) clearTimeout(timer);
+    off();
   };
 }

@@ -138,12 +138,22 @@ export interface KanbanServiceDeps {
   ttlMs?: number;
   /** Injectable clock (ms epoch; tests). */
   now?: () => number;
+  /**
+   * Issue #451: called after a REVALIDATION fetch completes — a board whose
+   * cached copy was stale got refreshed. The API layer broadcasts
+   * `kanban.board.updated` on the hub so connected webapps reload
+   * immediately instead of rendering the stale value until their next poll.
+   * The first (cold) fill is not reported: the fetching client just got
+   * that board, and a push would only trigger a redundant reload.
+   */
+  onBoardRefreshed?: (projectId: string) => void;
 }
 
 export class KanbanService {
   private readonly gh: (repoUrl: string) => GhClient;
   private readonly listWorkers: () => Worker[];
   private readonly listPullRequests?: (project: Project) => Promise<PullRequest[]>;
+  private readonly onBoardRefreshed?: (projectId: string) => void;
   /**
    * Board cache per project+repo (issue #88): `getProjectKanban` used to hit
    * GitHub GraphQL on every call, so the webapp's poll cadence (and any
@@ -156,7 +166,15 @@ export class KanbanService {
     this.gh = deps.gh;
     this.listWorkers = deps.listWorkers;
     this.listPullRequests = deps.listPullRequests;
-    this.boards = new TtlSwrCache<KanbanBoard>({ ttlMs: deps.ttlMs, now: deps.now });
+    this.onBoardRefreshed = deps.onBoardRefreshed;
+    this.boards = new TtlSwrCache<KanbanBoard>({
+      ttlMs: deps.ttlMs,
+      now: deps.now,
+      // Issue #451: a completed background revalidation means fresh board
+      // data exists that connected webapps are still rendering stale — the
+      // API layer broadcasts `kanban.board.updated` so they reload at once.
+      onRefresh: (key) => this.onBoardRefreshed?.(key.split("\n")[0] ?? ""),
+    });
   }
 
   /** The project's kanban board, TTL-cached with stale-while-revalidate. */

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { isTerminalUpdateStage, UPDATE_STAGE_TEXT, type UpdateStatusResponse } from "@pideck/shared";
 import { apiApplyUpdate, errorMessage } from "../lib/api";
-import { startApplyPolling, startIdleStatusPolling } from "./update-polling";
+import { startApplyPolling, startIdleStatusPolling, startWorkerGateRefresher } from "./update-polling";
 import { UpdateApplyModal } from "./UpdateApplyModal";
 
 /**
@@ -138,11 +138,20 @@ export function UpdateBanner() {
     }
   }, []);
 
-  // Idle: fresh check on load/focus, slow cached fallback, and a backoff
-  // reconnect loop whenever the API is unreachable (CLI-update restart).
+  // Idle: fresh check on load/focus, slow cached fallback, a backoff
+  // reconnect loop whenever the API is unreachable (CLI-update restart), and
+  // the #451 worker-event gate refresher — worker spawns/status changes are
+  // pushed over the kanban socket, and the worker gate must react within a
+  // beat instead of on the next 5-minute idle poll. All quiet during an
+  // apply: the apply polling flow owns the status then.
   useEffect(() => {
     if (phase !== "idle") return;
-    return startIdleStatusPolling({ onStatus: adopt, onUnreachable: () => setReconnecting(true) });
+    const stopIdle = startIdleStatusPolling({ onStatus: adopt, onUnreachable: () => setReconnecting(true) });
+    const stopGate = startWorkerGateRefresher(adopt);
+    return () => {
+      stopIdle();
+      stopGate();
+    };
   }, [phase, adopt]);
 
   // Updating: poll until the daemon runs the target build (see docblock).
@@ -188,10 +197,6 @@ export function UpdateBanner() {
     }
   }, [status]);
 
-  const onReload = useCallback((): void => {
-    window.location.reload();
-  }, []);
-
   return (
     <UpdateBannerView
       status={status}
@@ -201,7 +206,7 @@ export function UpdateBanner() {
       reconnecting={reconnecting}
       error={error?.message ?? null}
       onApply={() => void apply()}
-      onReload={onReload}
+      onReload={() => window.location.reload()}
     />
   );
 }

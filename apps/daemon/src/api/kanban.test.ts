@@ -52,12 +52,16 @@ function issueNode(number: number, title: string) {
   };
 }
 
-/** GraphQL issues query over the fake gh runner; reads `issues()` each call. */
-function fakeGh(readIssues: () => { number: number; title: string }[], failFirst: { value: boolean }) {
+/** GraphQL issues query over the fake gh runner; reads `issues()` each call.
+ * `failNext` fails exactly the next call (armed once), not "the first ever". */
+function fakeGh(readIssues: () => { number: number; title: string }[], failNext: { armed: boolean }) {
   let calls = 0;
   const runner: GhRunner = async (args) => {
     calls++;
-    if (failFirst.value && calls === 1) throw new Error("gh exploded");
+    if (failNext.armed) {
+      failNext.armed = false;
+      throw new Error("gh exploded");
+    }
     if (args[0] !== "api" || args[1] !== "graphql") throw new Error(`unexpected args: ${JSON.stringify(args)}`);
     const issues = readIssues();
     return {
@@ -89,13 +93,13 @@ interface Harness {
   failNext: () => void;
 }
 
-function harness(ttlMs = 30_000): Harness {
+function harness(ttlMs = 30_000, onBoardRefreshed?: (projectId: string) => void): Harness {
   let now = 1_000_000;
   let issues = [{ number: 1, title: "First" }];
-  const failFirst = { value: false };
+  const failNext = { armed: false };
   const fake = fakeGh(
     () => issues,
-    failFirst,
+    failNext,
   );
   const service = new KanbanService({
     gh: fake.gh,
@@ -103,6 +107,7 @@ function harness(ttlMs = 30_000): Harness {
     listPullRequests: async () => [pr(9, "PR 9")],
     ttlMs,
     now: () => now,
+    onBoardRefreshed,
   });
   return {
     service,
@@ -114,7 +119,7 @@ function harness(ttlMs = 30_000): Harness {
       issues = next;
     },
     failNext: () => {
-      failFirst.value = true;
+      failNext.armed = true;
     },
   };
 }
@@ -196,6 +201,36 @@ describe("KanbanService board cache", () => {
     h.service.invalidate(PROJECT);
     await h.service.getBoard(project);
     expect(h.ghCalls()).toBe(2);
+  });
+
+  it("reports board revalidations — but not cold fills or fresh hits (issue #451)", async () => {
+    const refreshed: string[] = [];
+    const h = harness(30_000, (projectId) => refreshed.push(projectId));
+
+    // Cold fill: the fetching client just got this board — no push.
+    await h.service.getBoard(project);
+    expect(refreshed).toEqual([]);
+
+    // Fresh hit inside the TTL: 0 fetches, 0 pushes.
+    await h.service.getBoard(project);
+    expect(refreshed).toEqual([]);
+
+    // Stale revalidation: the push fires when the background refresh
+    // COMPLETES (fresh data exists that clients render stale) — not when
+    // the stale value is served.
+    h.advance(30_001);
+    h.serveIssues([{ number: 2, title: "Second" }]);
+    await h.service.getBoard(project); // resolves with the stale board
+    expect(refreshed).toEqual([]); // refresh still in flight
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(refreshed).toEqual([PROJECT]);
+
+    // A failed revalidation pushes nothing — the stale value stays.
+    h.advance(30_001);
+    h.failNext();
+    await h.service.getBoard(project);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(refreshed).toEqual([PROJECT]);
   });
 });
 

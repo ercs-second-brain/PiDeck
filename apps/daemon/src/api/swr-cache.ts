@@ -43,6 +43,14 @@ export interface TtlSwrCacheDeps<T> {
   cacheErrors?: boolean;
   /** Transform applied to a value served stale (fresh hits are untouched). */
   onStale?: (value: T) => T;
+  /**
+   * Issue #451: called after a background revalidation (stale-serve) SUCCEEDS
+   * — fresh data now exists that callers were not blocked on, so cache
+   * owners can push it (the kanban board's `kanban.board.updated` WS event).
+   * Not fired for cold fills or awaited (throttle/no-cache) fetches: their
+   * caller receives the fresh value directly. Receives the cache key.
+   */
+  onRefresh?: (key: string) => void;
 }
 
 interface SwrEntry<T> {
@@ -64,6 +72,7 @@ export class TtlSwrCache<T> {
   private readonly swr: boolean;
   private readonly cacheErrors: boolean;
   private readonly onStale?: (value: T) => T;
+  private readonly onRefresh?: (key: string) => void;
   private readonly now: () => number;
 
   constructor(
@@ -73,6 +82,7 @@ export class TtlSwrCache<T> {
     this.swr = (deps.swr ?? true) && this.ttlMs > 0;
     this.cacheErrors = deps.cacheErrors ?? false;
     this.onStale = deps.onStale;
+    this.onRefresh = deps.onRefresh;
     this.now = deps.now ?? Date.now;
   }
 
@@ -100,8 +110,8 @@ export class TtlSwrCache<T> {
         if (entry.refreshing === undefined) {
           entry.refreshing = this.store(key, fetchValue)
             .then(
-              () => undefined,
-              () => undefined,
+              () => this.onRefresh?.(key), // success: fresh data exists that stale clients don't have (#451)
+              () => undefined, // failure: the stale value stays; the next poll retries
             )
             .finally(() => {
               entry.refreshing = undefined;
