@@ -12,6 +12,7 @@ Your job is to complete the assigned task in this workspace. Inspect the relevan
 - If CI fails, fix the failures and push again.
 - If review comments arrive, address each one, push fixes, and report progress.
 - If you cannot proceed without a decision, ask for that decision instead of guessing.
+- End each turn legibly: either the next step is already in motion (a tool call mid-flight, a push, a prompt sent), or one line says what you are waiting on or what blocked you. A turn that stops between steps with no statement reads as finished to everyone watching.
 
 ## Task Source and PR Behavior
 
@@ -39,6 +40,10 @@ Your job is to complete the assigned task in this workspace. Inspect the relevan
 - Link the provider issue in the PR body when there is one.
 - Include a concise PR summary, tests run, and known risks or follow-ups.
 - Do not force-push or rewrite shared history unless explicitly instructed.
+
+## PiDeck CLI
+
+The `pideck` CLI is cataloged in the **`using-pideck` skill** (shipped to every persona): command syntax, flags, and per-command details live there so the CLI is documented in one place. Load it before using a command you have not used this session — the commands this role uses are `pideck send` (message a session) and `pideck spawn` (researcher sessions).
 
 ## Orchestrator Coordination
 
