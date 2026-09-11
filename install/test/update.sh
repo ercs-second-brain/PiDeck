@@ -217,18 +217,30 @@ check_grep 'apply when up to date records done progress (issue #89)' '"stage":"d
 
 # --- apply path reconciles installed agent assets (issue #460 follow-up) ----
 # The apply path never ran the installer's asset step, so an in-place update
-# that merged a skills-removal change (the seven global skills #439 removed)
-# left the old ~/.pi/agent/skills symlinks dangling and pi reported "skill
-# path does not exist" on every pane load. Every apply now re-runs
-# install_agent_assets: it links the checkout's agent/ tree AND prunes
-# dangling links this install owns.
+# that merged a skills-removal change left the old ~/.pi/agent/skills
+# symlinks dangling and pi reported "skill path does not exist" on every
+# pane load. Every apply now re-runs install_agent_assets: it links the
+# checkout's agent/ tree AND prunes dangling links this install owns. The
+# fixture names are generated — the prune is generic over whatever an
+# install stopped shipping (issue #463).
 PD_SRC="$PD_HOME/src"
 mkdir -p "$PD_SRC/agent/skills/bash-triage"
 printf -- '---\nname: bash-triage\n---\n' > "$PD_SRC/agent/skills/bash-triage/SKILL.md"
 PI_SKILLS_DIR="$PD_HOME/.pi/agent/skills"
 mkdir -p "$PI_SKILLS_DIR"
-for _stale in using-pideck create-issue spawn-worker report-pr ci-status review-comments review-pr; do
+REMOVED=""
+_i=0
+while [ "$_i" -lt 7 ]; do
+  _stale="stale-skill-$_i"
+  mkdir -p "$PD_SRC/agent/skills/$_stale"
   ln -s "$PD_SRC/agent/skills/$_stale" "$PI_SKILLS_DIR/$_stale"
+  REMOVED="$REMOVED $_stale"
+  _i=$((_i + 1))
+done
+# The upgrade stops shipping the stale skills: drop them from the source
+# tree (what the #460-follow-up apply must reconcile away).
+for _stale in $REMOVED; do
+  rm -rf "$PD_SRC/agent/skills/$_stale"
 done
 # A dangling link pointing OUTSIDE the install's agent tree (user-owned)
 # must survive the reconcile.
@@ -237,7 +249,7 @@ ln -s "$PD_HOME/other/gone" "$PI_SKILLS_DIR/foreign-link"
 
 out=$(run_shim "$LOCAL_SHA" "$REMOTE_SAME" update); rc=$?
 check_eq 'asset-reconcile apply exits 0' '0' "$rc"
-for _stale in using-pideck create-issue spawn-worker report-pr ci-status review-comments review-pr; do
+for _stale in $REMOVED; do
   if [ -L "$PI_SKILLS_DIR/$_stale" ]; then
     printf 'not ok - apply pruned stale link %s\n' "$_stale"
     failures=$((failures + 1))

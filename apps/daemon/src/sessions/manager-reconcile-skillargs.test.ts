@@ -1,10 +1,11 @@
 /**
- * Reconcile regression for issue #460: pre-upgrade persisted worker
- * commands carry `--skill` args for the seven shipped global integration
- * skills #439 removed; reconcile must resurrect those panes cleanly — the
- * resurrection guard drops dangling skill paths instead of re-erroring
- * them into every reloaded pane. Split from manager-reconcile.test.ts to
- * respect its max-lines budget (kiss ratchet).
+ * Reconcile regression for issue #460 (fixtures de-hardcoded by issue
+ * #463): a pre-upgrade persisted worker command can carry `--skill` args
+ * for skills the checkout no longer ships; reconcile must resurrect those
+ * panes cleanly — the resurrection guard drops dangling skill paths
+ * instead of re-erroring them into every reloaded pane. The fixture names
+ * are generated, not a memorial list. Split from manager-reconcile.test.ts
+ * to respect its max-lines budget (kiss ratchet).
  */
 
 import { describe, expect, it } from "vitest";
@@ -24,15 +25,10 @@ const makeManager = () => makeSessionManager({ tmpPrefix: "pideck-reconcile-skil
 // every reloaded pane.
 // ---------------------------------------------------------------------------
 
-const REMOVED_SKILLS = [
-  "using-pideck",
-  "create-issue",
-  "spawn-worker",
-  "report-pr",
-  "ci-status",
-  "review-comments",
-  "review-pr",
-];
+/** Arbitrary stale skill names a pre-upgrade recorded command might carry —
+ * generated, not a memorial list: the reconcile-time drop is generic over
+ * whatever skills a checkout stopped shipping (issue #463). */
+const STALE_SKILLS = Array.from({ length: 7 }, (_, i) => `no-longer-shipped-skill-${i + 1}`);
 
 describe("reconcile drops dangling --skill paths from recorded commands (issue #460)", () => {
   it("resurrects a pre-#439 worker pane with zero dangling skill args", async () => {
@@ -44,7 +40,7 @@ describe("reconcile drops dangling --skill paths from recorded commands (issue #
     const stale = [
       "pi",
       "--no-skills",
-      ...REMOVED_SKILLS.flatMap((name) => ["--skill", `/nonexistent/pideck/src/agent/skills/${name}`]),
+      ...STALE_SKILLS.flatMap((name) => ["--skill", `/nonexistent/pideck/src/agent/skills/${name}`]),
     ];
     registry.setSessionCommand(session.id, serializeCommand(stale));
 
@@ -63,7 +59,7 @@ describe("reconcile drops dangling --skill paths from recorded commands (issue #
     const pane = rebooted.sessions.get(session.tmuxSession);
     expect(pane?.command).toBeDefined();
     const inner = pane?.command[2] ?? "";
-    for (const name of REMOVED_SKILLS) {
+    for (const name of STALE_SKILLS) {
       expect(inner).not.toContain(name);
     }
     expect(inner).not.toContain("--skill");

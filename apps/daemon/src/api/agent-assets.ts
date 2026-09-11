@@ -50,12 +50,22 @@ import { findAgentPath, findAgentPromptPath } from "../orchestrator/prompt.js";
 
 const persistedSchema = z.object({
   // Version 1 = pre-seeding store; version 2 = the shipped-default skills
-  // (issue #338) have been seeded once — see {@link seedShippedDefaultSkills}.
-  version: z.union([z.literal(1), z.literal(2)]),
+  // (issue #338) have been seeded once; version 3 (issue #463) = shipped
+  // seeding re-runs on schema upgrades — new shipped entries reach existing
+  // state dirs too, while user deletions stay deleted (recorded in
+  // {@link deletedShippedSkills}). See {@link seedShippedDefaultSkills}.
+  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   // Partial record: at most one override per persona (zod 4's enum-keyed
   // `z.record` demands exhaustiveness; overrides are sparse by design).
   prompts: z.partialRecord(personaSchema, promptOverrideSchema),
   skills: z.array(agentSkillSchema),
+  /**
+   * Shipped-default skill ids the user explicitly deleted (issue #463):
+   * shipped re-seeding must never resurrect a deletion (a delete sticks —
+   * issue #338's contract), so deletions of shipped-default ids are
+   * recorded here and the seeding skips them.
+   */
+  deletedShippedSkills: z.array(z.string()).default([]),
 });
 
 /**
@@ -132,25 +142,28 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
         const parsed = persistedSchema.safeParse(migrateLegacyPersonas(value));
         return parsed.success ? parsed.data : undefined;
       },
-      { version: 1, prompts: {} as Record<Persona, PromptOverride>, skills: [] },
+      { version: 1, prompts: {} as Record<Persona, PromptOverride>, skills: [], deletedShippedSkills: [] },
     );
     this.seedShippedDefaultSkills();
   }
 
   /**
-   * One-time seeding of the shipped-default skills (issue #338, wired by
-   * issue #351 F2): every {@link SHIPPED_DEFAULT_SKILLS} entry missing from
-   * the store is added applied to its default personas, with the shipped
-   * `agent/skills/<name>/SKILL.md` content deployed — the shipped skills
-   * really are applied to the orchestrator out of the box. Runs exactly
-   * once per state dir (the version 1 → 2 bump): afterwards the seeded
-   * entries are ordinary user-owned skills — editable, re-appliable,
-   * deletable (a delete sticks; nothing re-seeds).
+   * Seeds the shipped-default skills (issue #338, wired by issue #351 F2;
+   * re-seeding semantics from issue #463): every {@link
+   * SHIPPED_DEFAULT_SKILLS} entry missing from the store — and not recorded
+   * as user-deleted — is added applied to its default personas, with the
+   * shipped `agent/skills/<name>/SKILL.md` content deployed. Runs when the
+   * persisted schema is older than the current version (a fresh store, or
+   * an older install gaining a newly shipped entry such as #463's
+   * `using-pideck` restoration); afterwards every entry is an ordinary,
+   * user-owned skill — editable, re-appliable, deletable (the deletion is
+   * recorded, so a later schema bump never re-seeds it).
    */
   private seedShippedDefaultSkills(): void {
-    if (this.current.version !== 1) return;
+    if (this.current.version >= 3) return;
+    const deleted = new Set(this.current.deletedShippedSkills);
     for (const shipped of SHIPPED_DEFAULT_SKILLS) {
-      if (this.current.skills.some((skill) => skill.id === shipped.name)) continue;
+      if (this.current.skills.some((skill) => skill.id === shipped.name) || deleted.has(shipped.name)) continue;
       let content: string;
       try {
         content = readFileSync(findAgentPath(undefined, "skills", shipped.name, "SKILL.md"), "utf8");
@@ -166,7 +179,7 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
       this.current.skills.push(skill);
       atomicWrite(this.skillFilePath(skill.id), skill.content);
     }
-    this.current.version = 2;
+    this.current.version = 3;
     this.persist();
   }
 
@@ -241,6 +254,12 @@ export class AgentAssetsStore implements PersonaLaunchAssets {
     const index = this.current.skills.findIndex((entry) => entry.id === id);
     if (index === -1) return false;
     this.current.skills.splice(index, 1);
+    // Issue #463: deletions of shipped-default ids are recorded so the
+    // seeding skips them — a delete sticks even across schema bumps that
+    // re-run the shipped seeding (a deleted skill is never resurrected).
+    if ((SHIPPED_DEFAULT_SKILLS as readonly { name: string }[]).some((shipped) => shipped.name === id)) {
+      if (!this.current.deletedShippedSkills.includes(id)) this.current.deletedShippedSkills.push(id);
+    }
     this.persist();
     try {
       unlinkSync(this.skillFilePath(id));

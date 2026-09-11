@@ -14,23 +14,16 @@ import { describe, expect, it } from "vitest";
 
 import { dropDanglingSkillArgs, resurrectionCommand } from "./tmux-commands.js";
 
-/** The seven shipped global skills #439 removed — the exact stale names a
- * pre-#439 recorded worker command carries. */
-const REMOVED_SKILLS = [
-  "using-pideck",
-  "create-issue",
-  "spawn-worker",
-  "report-pr",
-  "ci-status",
-  "review-comments",
-  "review-pr",
-];
+/** Arbitrary stale skill names a pre-upgrade recorded command might carry —
+ * generated, not a memorial list: the dangling-arg drop is generic over
+ * whatever skills a checkout stopped shipping (issue #463). */
+const STALE_SKILLS = Array.from({ length: 7 }, (_, i) => `no-longer-shipped-skill-${i + 1}`);
 
 function recordedPreUpgrade(validSkillPath: string): string[] {
   return [
     "pi",
     "--no-skills",
-    ...REMOVED_SKILLS.flatMap((name) => ["--skill", `/nonexistent/pideck/src/agent/skills/${name}`]),
+    ...STALE_SKILLS.flatMap((name) => ["--skill", `/nonexistent/pideck/src/agent/skills/${name}`]),
     "--skill",
     validSkillPath,
     "--append-system-prompt",
@@ -45,7 +38,7 @@ describe("dropDanglingSkillArgs (issue #460)", () => {
     writeFileSync(valid, "---\nname: kept\n---\n");
     const argv = recordedPreUpgrade(valid);
     const filtered = dropDanglingSkillArgs(argv);
-    for (const name of REMOVED_SKILLS) {
+    for (const name of STALE_SKILLS) {
       expect(filtered).not.toContain(`/nonexistent/pideck/src/agent/skills/${name}`);
     }
     expect(filtered.filter((arg) => arg === "--skill")).toEqual(["--skill"]);
@@ -85,7 +78,7 @@ describe("resurrectionCommand drops dangling skill paths (issue #460)", () => {
     writeFileSync(valid, "x");
     const guarded = resurrectionCommand(recordedPreUpgrade(valid));
     const inner = guarded[2] ?? "";
-    expect(inner).not.toContain("report-pr");
+    for (const name of STALE_SKILLS) expect(inner).not.toContain(name);
     expect(inner).toContain("kept.md");
     // The guard still falls back to an interactive shell when pi is gone.
     expect(inner).toContain("exec");

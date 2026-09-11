@@ -22,9 +22,9 @@
  * archiving.
  *
  * The reviewer itself reads the diff and posts the GitHub review (approve
- * or request changes, with inline comments) via `gh` — see
- * `agent/skills/review-pr/SKILL.md`; the daemon never posts reviews on its
- * behalf.
+ * or request changes, with inline comments) via `gh` — the generated
+ * review prompt (`pipeline/prs/prompts.ts`) carries the exact commands;
+ * the daemon never posts reviews on its behalf.
  *
  * Issue #407: the reviewer cycle (auto agent, real GitHub reviews, the
  * review-submission watermark) runs ONLY when a review account is

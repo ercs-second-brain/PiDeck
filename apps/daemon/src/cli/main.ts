@@ -14,9 +14,9 @@
  *   pideck spawn --project <id> [--issue <number> | --kind <agent-kind> [--question <q>]] --name <label ≤20> [--prompt <task>]
  *   pideck send --session <id> --message <text>
  *
- * (No `report-pr` command since issue #439: PR→worker claiming is
- * deterministic daemon code — pipeline/issue-refs.ts — so there is no
- * worker self-report path at all.)
+ * (PR→worker claiming is deterministic daemon code —
+ * pipeline/issue-refs.ts — so the CLI has no worker self-report command at
+ * all; issue #439.)
  *
  * Agent kinds (docs/agent-kinds.md): preset-persona, read-only sessions —
  * `researcher` (needs --question; report returns to the calling session)

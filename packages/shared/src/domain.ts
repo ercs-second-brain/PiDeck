@@ -363,16 +363,22 @@ export const shippedDefaultSkillSchema = z.object({
 export type ShippedDefaultSkill = z.infer<typeof shippedDefaultSkillSchema>;
 
 /**
- * The shipped integration-level workflow skills (issue #338): PiDeck-owned
- * `agent/skills/<name>/` entries that are orchestrator defaults — seeded
- * into the agent-assets store applied to the orchestrator persona out of
- * the box (once per state dir; afterwards ordinary, user-owned,
- * per-persona configurable entries — turn-off-able, re-appliable to other
- * {@link Persona}s, deletable — nothing is hardcoded always-on; issue
- * #351 F2 wired the store to this table). The skills' content is
- * user-editable asset text.
+ * The shipped workflow skills (issue #338, extended by issue #463):
+ * PiDeck-owned `agent/skills/<name>/` entries seeded into the agent-assets
+ * store applied to their default personas out of the box (once per state
+ * dir; afterwards ordinary, user-owned, per-persona configurable entries —
+ * turn-off-able, re-appliable to other {@link Persona}s, deletable —
+ * nothing is hardcoded always-on; issue #351 F2 wired the store to this
+ * table). The skills' content is user-editable asset text.
+ *
+ * `using-pideck` (issue #463) is the CLI-catalog skill — it documents the
+ * deterministic `pideck` commands every PiDeck agent may run — so it ships
+ * applied to EVERY persona by default; the rest are orchestrator
+ * workflow defaults. Removals are table edits (reversible), not content
+ * deletions.
  */
 export const SHIPPED_DEFAULT_SKILLS = [
+  { name: "using-pideck", defaultPersonas: [...PERSONAS] },
   { name: "bash-triage", defaultPersonas: ["orchestrator"] },
   { name: "concept-brief", defaultPersonas: ["orchestrator"] },
   { name: "prd", defaultPersonas: ["orchestrator"] },

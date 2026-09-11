@@ -43,11 +43,17 @@ describe("worker pane persona assets (issue #315)", () => {
     expect(command).not.toContain("orchestrator-only");
   });
 
-  it("keeps the shipped-defaults-only command when no worker assets are applied", async () => {
+  it("keeps the shipped-defaults command when no user worker assets are applied", async () => {
     const daemon: TestDaemon = testDaemon();
     const { session } = await daemon.services.sessions.spawnWorker("p1", { issueNumber: 8 });
-    // Discovery off; no persona shaping (issue #439: no shipped globals).
-    expect(session.command).toBe(serializeCommand([...DEFAULT_WORKER_COMMAND]));
+    // Discovery off; the shipped store seeds ride along — the every-persona
+    // using-pideck CLI catalog (issue #463) — and no user shaping.
+    expect(session.command).toBe(
+      serializeCommand([
+        ...DEFAULT_WORKER_COMMAND,
+        "--skill", path.join(daemon.stateDir, "agent-assets", "skills", "using-pideck.md"),
+      ]),
+    );
   });
 
   it("enforces the persona restriction: an orchestrator-only skill never rides a worker pane (issue #356)", async () => {
