@@ -351,9 +351,9 @@ export class SessionManager {
     return this.registry.setWorkerPr(workerId, prNumber);
   }
 
-  /** Clears a worker's recorded PR (issue #466 mis-association self-correction). */
-  clearWorkerPr(workerId: string): Worker {
-    return this.registry.clearWorkerPr(workerId);
+  /** Removes one PR from the worker's association list (issue #466/#470). */
+  clearWorkerPr(workerId: string, prNumber: number): Worker {
+    return this.registry.clearWorkerPr(workerId, prNumber);
   }
 
   async reconcile(options: { resurrect?: boolean } = {}): Promise<ReconcileResult> {

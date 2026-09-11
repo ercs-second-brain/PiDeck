@@ -117,7 +117,7 @@ function worker(overrides: Partial<Worker> = {}): Worker {
     projectId: "o-r",
     sessionId: "sess-1",
     issueNumber: 5,
-    prNumber: null,
+    prNumbers: [],
     status: "running",
     statusMessage: null,
     startedAt: "2026-01-01T00:00:00.000Z",
@@ -161,7 +161,7 @@ function service(runner: GhRunner, git?: GitRunner): DiffService {
 describe("DiffService.getWorkerFilesChanged", () => {
   it("serves the worker's PR files when a PR is recorded", async () => {
     const diff = await service(fakeGhApi({ "/repos/o/r/pulls/9": PULL_9 })).getWorkerFilesChanged("o-r", REPO_URL, {
-      worker: worker({ prNumber: 9 }),
+      worker: worker({ prNumbers: [9] }),
       baseBranch: "main",
     });
     expect(diff).toMatchObject({

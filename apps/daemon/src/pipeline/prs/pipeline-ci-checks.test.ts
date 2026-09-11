@@ -33,7 +33,7 @@ describe("PullRequestPipeline: CI-fix prompt detail (issue #322)", () => {
     const h = makeHarness();
     h.openList.push(12);
     h.prs.set(12, redFakePR());
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
 
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(1);

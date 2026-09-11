@@ -142,7 +142,7 @@ describe("component render smoke tests", () => {
       projectId,
       sessionId: "s-free",
       issueNumber: 0,
-      prNumber: null,
+      prNumbers: [],
       status: "running",
       statusMessage: "Freeform task",
       startedAt: "2026-01-02T00:00:00.000Z",

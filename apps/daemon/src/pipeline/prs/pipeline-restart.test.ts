@@ -20,7 +20,7 @@ describe("PullRequestPipeline: lifecycle", () => {
     const h = makeHarness();
     h.prs.set(12, redFakePR());
     const worker = h.sessions.control.listWorkers()[0]!;
-    worker.prNumber = 12;
+    worker.prNumbers = [12];
 
     const pr: PullRequest = {
       projectId: PROJECT,
@@ -53,7 +53,7 @@ describe("PullRequestPipeline: lifecycle", () => {
   it("restart: persisted tracker + registry reconcile resumes the loop and prunes lost workers", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "pideck-prpipeline-"));
     const filePath = path.join(dir, "prs.json");
-    const worker = makeWorker({ prNumber: 12 });
+    const worker = makeWorker({ prNumbers: [12] });
     const h = makeHarness({ workers: [worker], trackerPath: filePath });
     h.openList.push(12);
     h.prs.set(12, redFakePR());

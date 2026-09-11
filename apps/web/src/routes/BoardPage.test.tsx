@@ -46,7 +46,7 @@ const worker: Worker = workerSchema.parse({
   projectId: PROJECT_ID,
   sessionId: "s-1",
   issueNumber: 0, // freeform worker
-  prNumber: null,
+  prNumbers: [],
   status: "running",
   statusMessage: "Working",
   startedAt: "2026-01-02T00:00:00.000Z",

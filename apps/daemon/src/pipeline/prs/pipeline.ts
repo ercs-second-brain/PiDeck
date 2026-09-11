@@ -345,7 +345,7 @@ export class PullRequestPipeline {
 
   /**
    * Registers a PR when a registered worker owns it (registry
-   * `worker.prNumber`); returns the initial card event, or `null` when the
+   * `worker.prNumbers`); returns the initial card event, or `null` when the
    * PR is already tracked or has no owning worker. `prAssignees` (issue
    * #408) skips the review-user assignment when the PR already carries it.
    */
@@ -386,7 +386,7 @@ export class PullRequestPipeline {
   private findOwner(pr: PullRequest): Worker | undefined {
     // Review agents (issue #107) record the PR they review but never own it.
     const workers = this.sessions.listWorkers({ projectId: pr.projectId }).filter(
-      (w) => w.prNumber === pr.number && w.kind !== "reviewer",
+      (w) => w.prNumbers.includes(pr.number) && w.kind !== "reviewer",
     );
     if (workers.length === 0) return undefined;
     return workers.find((w) => ACTIVE_WORKER_STATUSES.has(w.status)) ?? workers[0];

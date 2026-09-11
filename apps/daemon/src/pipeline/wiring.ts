@@ -301,9 +301,10 @@ export class GithubAutomation {
       this.options.sessions.listWorkers({ projectId: event.pullRequest.projectId }),
       {
         setWorkerPr: (workerId, prNumber) => this.options.sessions.setWorkerPr(workerId, prNumber),
-        // Issue #466: the re-watch verification can move ownership to the
-        // worker the PR's head branch actually names.
-        clearWorkerPr: (workerId) => this.options.sessions.clearWorkerPr(workerId),
+        // Issue #466/#470: the re-watch verification can move a PR to the
+        // worker its head branch actually names (removing it from the old
+        // owner's list — the old owner keeps its other PRs).
+        clearWorkerPr: (workerId, prNumber) => this.options.sessions.clearWorkerPr(workerId, prNumber),
       },
       event.pullRequest,
     );

@@ -29,7 +29,7 @@ const workerSession = makeSession({ workerId: "worker-1" });
 
 const archivedWorker: Worker = makeWorker({
   issueNumber: 104,
-  prNumber: 110,
+  prNumbers: [110],
   status: "archived",
   statusMessage: "archived: terminated from the webapp",
   updatedAt: "2025-01-02T00:00:00.000Z",

@@ -21,7 +21,7 @@ describe("PullRequestPipeline", () => {
     expect(h.tracker.list()).toEqual([]);
 
     // The wiring records the PR on the worker (SessionManager.setWorkerPr).
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
 
     const events = prEvents(await h.poll());
     // Discovery card (CI not yet enriched → in_progress), then the enriched
@@ -42,7 +42,7 @@ describe("PullRequestPipeline", () => {
     h.openList.push(12);
     h.prs.set(12, redFakePR());
     const worker = h.sessions.control.listWorkers()[0]!;
-    worker.prNumber = 12;
+    worker.prNumbers = [12];
 
     // Poll 1: red → CI-fix prompt to the worker's session.
     const events = await h.poll();

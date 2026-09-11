@@ -18,7 +18,7 @@ function worker(overrides: Partial<Worker> = {}): Worker {
     projectId: "o-r",
     sessionId: "sess-1",
     issueNumber: 5,
-    prNumber: null,
+    prNumbers: [],
     status: "spawning",
     statusMessage: null,
     startedAt: UPDATED_AT,

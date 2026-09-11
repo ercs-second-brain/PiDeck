@@ -16,7 +16,7 @@ function greenHarness(options: Parameters<typeof makeHarness>[0] = {}): Harness 
   const h = makeHarness(options);
   h.openList.push(12);
   h.prs.set(12, { pull: assignedPull(), checkRuns: checkRuns("success"), reviews: [], comments: [] });
-  h.sessions.control.listWorkers()[0]!.prNumber = 12;
+  h.sessions.control.listWorkers()[0]!.prNumbers = [12];
   return h;
 }
 
@@ -54,7 +54,7 @@ describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => 
     expect(h.tracker.get(PROJECT, 12)).toMatchObject({ reviewWorkerId: "worker-reviewer-1", reviewedHeadSha: "sha-1" });
     // The reviewer is a reviewer-kind worker carrying the PR.
     const reviewer = h.sessions.control.getWorker("worker-reviewer-1");
-    expect(reviewer).toMatchObject({ kind: "reviewer", prNumber: 12, status: "running" });
+    expect(reviewer).toMatchObject({ kind: "reviewer", prNumbers: [12], status: "running" });;
 
     // Reviewer active, same head → no duplicate spawns.
     await h.poll();
@@ -65,7 +65,7 @@ describe("PullRequestPipeline: auto review agent — spawn (issue #107)", () => 
     const red = makeHarness();
     red.openList.push(12);
     red.prs.set(12, redFakePR());
-    red.sessions.control.listWorkers()[0]!.prNumber = 12;
+    red.sessions.control.listWorkers()[0]!.prNumbers = [12];
     await red.poll();
     await red.poll();
     expect(red.sessions.spawned).toHaveLength(0); // CI failure branch: no review cycle

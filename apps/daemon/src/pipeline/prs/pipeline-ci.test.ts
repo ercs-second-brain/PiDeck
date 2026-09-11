@@ -13,7 +13,7 @@ describe("PullRequestPipeline: CI-fix loop", () => {
     const h = makeHarness({ maxFixAttempts: 2 });
     h.openList.push(12);
     h.prs.set(12, redFakePR());
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
 
     // Attempt 1 (sha-1), worker pushes, still red.
     expect((await h.poll()).length).toBeGreaterThan(0);
@@ -46,7 +46,7 @@ describe("PullRequestPipeline: CI-fix loop", () => {
     const h = makeHarness({ maxFixAttempts: 2, fixPromptTimeoutMs: 1000 });
     h.openList.push(12);
     h.prs.set(12, redFakePR());
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
 
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(1);
@@ -64,7 +64,7 @@ describe("PullRequestPipeline: CI-fix loop", () => {
     const h = makeHarness({ workerSettings: () => ({ terminateOnMerge: true, autoFixCi: false, autoFixReviewComments: true, autoReview: false }) });
     h.openList.push(12);
     h.prs.set(12, redFakePR());
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
 
     // Polls never send a fix prompt; the worker's status says why.
     const events = await h.poll();
@@ -90,7 +90,7 @@ describe("PullRequestPipeline: CI-fix loop", () => {
       reviews: [],
       comments: [],
     });
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
     await h.poll();
     expect(h.sessions.prompts).toHaveLength(0);
 
@@ -107,5 +107,31 @@ describe("PullRequestPipeline: CI-fix loop", () => {
     // B34 transition) — the gated notice rides on top and then dedupes.
     await h.poll();
     expect(h.sessions.statuses).toHaveLength(3);
+  });
+});
+
+describe("PullRequestPipeline: multi-PR worker (issue #470)", () => {
+  it("tracks and drives every PR of a multi-PR worker (stacked/sibling branches)", async () => {
+    const h = makeHarness();
+    const worker = h.sessions.control.listWorkers()[0]!;
+    worker.prNumbers = [12, 15];
+    h.openList.push(12, 15);
+    h.prs.set(12, redFakePR());
+    h.prs.set(15, redFakePR(15));
+
+    const events = await h.poll();
+
+    // Both PRs track against the same worker — the namespace association is
+    // many-to-many now (registration + first column-move cards per PR).
+    expect(h.tracker.get(PROJECT, 12)).toMatchObject({ workerId: "worker-1", sessionId: "sess-1" });
+    expect(h.tracker.get(PROJECT, 15)).toMatchObject({ workerId: "worker-1", sessionId: "sess-1" });
+    const cardIds = new Set(events.filter((e) => e.type === "kanban.pr.card").map((e) => e.card.id));
+    expect(cardIds).toEqual(new Set([`pr:${PROJECT}:12`, `pr:${PROJECT}:15`]));
+
+    // Both red PRs drive independently: one bounded CI-fix prompt each, both
+    // reaching the author's pane.
+    expect(h.sessions.prompts.map((p) => p.sessionId)).toEqual(["sess-1", "sess-1"]);
+    expect(h.tracker.get(PROJECT, 12)!.state).toBe("fixing");
+    expect(h.tracker.get(PROJECT, 15)!.state).toBe("fixing");
   });
 });

@@ -52,7 +52,7 @@ function fakeSpawner(options: { active?: number[] } = {}): {
           projectId,
           sessionId: `sess-${n}`,
           issueNumber,
-          prNumber: null,
+          prNumbers: [],
           status: "running",
           statusMessage: null,
           startedAt: "2026-09-06T12:00:00Z",

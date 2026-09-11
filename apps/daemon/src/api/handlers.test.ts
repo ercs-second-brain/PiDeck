@@ -106,7 +106,7 @@ describe("deriveBoard", () => {
           projectId: "o-r",
           sessionId: "sess-1",
           issueNumber: 5,
-          prNumber: null,
+          prNumbers: [],
           status: "running",
           statusMessage: null,
           startedAt: UPDATED_AT,

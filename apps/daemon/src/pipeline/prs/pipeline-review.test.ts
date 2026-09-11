@@ -20,7 +20,7 @@ describe("PullRequestPipeline: review comments", () => {
       reviews: [],
       comments: [],
     });
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
     await h.poll(); // discover + track, nothing to do
     expect(h.sessions.prompts).toHaveLength(0);
 

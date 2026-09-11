@@ -68,7 +68,7 @@ describe("WsHub", () => {
         projectId: "p",
         sessionId: "sess-1",
         issueNumber: 3,
-        prNumber: null,
+        prNumbers: [],
         status: "spawning",
         statusMessage: null,
         startedAt: "2026-01-01T00:00:00.000Z",

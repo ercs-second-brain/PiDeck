@@ -111,7 +111,7 @@ describe("SessionManager with a fake tmux server", () => {
     expect(session.workerId).toBe(worker.id);
     expect(worker.sessionId).toBe(session.id);
     expect(worker.issueNumber).toBe(4);
-    expect(worker.prNumber).toBeNull();
+    expect(worker.prNumbers).toEqual([]);
     expect(worker.status).toBe("running");
 
     const pane = fake.sessions.get("pideck-proj-worker-1");
@@ -248,7 +248,7 @@ describe("SessionManager lifecycle passthroughs (kill/capture/resize/failed laun
 
     expect(manager.listSessions("proj")).toHaveLength(2);
     expect(manager.listWorkers({ projectId: "proj", status: "running" })).toHaveLength(1);
-    expect(manager.getWorker(worker.id)?.prNumber).toBe(42);
+    expect(manager.getWorker(worker.id)?.prNumbers).toContain(42);
     manager.updateWorkerStatus(worker.id, "awaiting_ci", "waiting on CI");
     expect(manager.getWorker(worker.id)?.status).toBe("awaiting_ci");
   });

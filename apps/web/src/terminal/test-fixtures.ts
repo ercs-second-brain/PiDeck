@@ -34,7 +34,7 @@ export function makeWorker(overrides: Partial<Worker> = {}): Worker {
     projectId: "agentskiss",
     sessionId: "sess-worker-1",
     issueNumber: 7,
-    prNumber: null,
+    prNumbers: [],
     status: "running",
     statusMessage: null,
     startedAt: "2025-01-01T00:00:00.000Z",

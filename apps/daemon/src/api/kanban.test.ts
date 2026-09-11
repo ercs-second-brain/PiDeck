@@ -264,7 +264,7 @@ describe("deriveBoard: archived workers (issue #102)", () => {
     projectId: "o-r",
     sessionId: `sess-${status}`,
     issueNumber: 5,
-    prNumber: null,
+    prNumbers: [],
     status,
     statusMessage: null,
     startedAt: UPDATED_AT,

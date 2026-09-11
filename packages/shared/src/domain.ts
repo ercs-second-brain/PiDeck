@@ -534,8 +534,14 @@ export const workerSchema = z.object({
    * card of their own and only ever appear in the workers list.
    */
   issueNumber: z.number().int().min(0),
-  /** PR opened by the worker, once one exists. Review agents record the PR they review. */
-  prNumber: refNumberSchema.nullable(),
+  /**
+   * PRs associated with the worker (issue #470), oldest first — `prNumbers[0]`
+   * is the canonical one (diffs, archived-log links). A worker may drive
+   * several PRs (stacked/sibling branches under its `pideck/<workerId>`
+   * namespace); the PR tracker holds one loop row per PR. Review agents
+   * record the PR they review.
+   */
+  prNumbers: z.array(refNumberSchema),
   /**
    * What the worker does ({@link workerKindSchema}). Optional for backward
    * compatibility: absent means `"implementer"` (all pre-#107 records).

@@ -20,7 +20,7 @@ function greenHarness(options: Parameters<typeof makeHarness>[0] = {}, assigned 
     reviews: [],
     comments: [],
   });
-  h.sessions.control.listWorkers()[0]!.prNumber = 12;
+  h.sessions.control.listWorkers()[0]!.prNumbers = [12];
   return h;
 }
 
@@ -29,7 +29,7 @@ describe("PullRequestPipeline: PR assignment leg (issue #408)", () => {
     const h = makeHarness({ reviewAccountUsername: () => REVIEW_USER });
     h.openList.push(12);
     h.prs.set(12, { pull: restPull(12), checkRuns: checkRuns("success"), reviews: [], comments: [] });
-    h.sessions.control.listWorkers()[0]!.prNumber = 12;
+    h.sessions.control.listWorkers()[0]!.prNumbers = [12];
     await h.poll(); // discovery poll registers the PR
     expect(h.assignments).toEqual([{ path: "/repos/o/r/issues/12/assignees", assignees: [REVIEW_USER] }]);
   });

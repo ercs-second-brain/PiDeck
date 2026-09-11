@@ -146,8 +146,9 @@ export class StallSweep {
     for (const worker of this.listWorkers()) {
       live.add(worker.id);
       // Progress resets the streak: a worker that delivered a PR is the PR
-      // loop's to drive, and a terminal one needs no backstop.
-      if (worker.prNumber !== null || isTerminalWorkerStatus(worker.status)) {
+      // loop's to drive, and a terminal one needs no backstop. Multi-PR
+      // workers (issue #470) count as PR-owning through any association.
+      if (worker.prNumbers.length > 0 || isTerminalWorkerStatus(worker.status)) {
         this.attempts.delete(worker.id);
         continue;
       }
@@ -210,14 +211,15 @@ export class StallSweep {
 /**
  * Whether one worker is a stall candidate (issue #467): an issue worker
  * (freeform workers have `issueNumber 0`; review agents are a kind of
- * their own) in an active, non-spawning status with no PR and no prompt
- * queued on the gate. The idle-window check is the caller's (it owns the
- * clock); terminal and PR-owning workers never reach here.
+ * their own) in an active, non-spawning status with no associated PR and
+ * no prompt queued on the gate. The idle-window check is the caller's (it
+ * owns the clock); terminal and PR-owning workers never reach here — a
+ * worker carrying any PR (multi-PR, issue #470) is the PR loop's to drive.
  */
 function isStallCandidate(worker: Worker, promptInFlight: (workerId: string) => boolean): boolean {
   if (worker.issueNumber <= 0) return false; // freeform workers have no issue lifecycle
   if (worker.kind === "reviewer") return false; // review agents settle via the PR loop (#441)
   if (!ACTIVE_WORKER_STATUSES.has(worker.status) || worker.status === "spawning") return false; // terminal or gate-held
-  if (worker.prNumber !== null) return false; // the PR loop owns it
+  if (worker.prNumbers.length > 0) return false; // the PR loop owns it (any PR, issue #470)
   return !promptInFlight(worker.id); // the prompt gate owns it
 }

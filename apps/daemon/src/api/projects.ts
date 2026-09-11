@@ -298,11 +298,11 @@ export class ProjectService {
     }
     const driving = teardown
       .activeWorkers(id)
-      .filter((worker) => worker.prNumber !== null);
+      .filter((worker) => worker.prNumbers.length > 0);
     if (driving.length > 0) {
       throw new ConflictError(
         `project "${id}" has ${driving.length} active worker(s) driving PR ` +
-          `(#${driving.map((worker) => worker.prNumber).join(", #")}) — delete or finish them before deleting`,
+          `(#${driving.flatMap((worker) => worker.prNumbers).join(", #")}) — delete or finish them before deleting`,
       );
     }
     teardown.stopWatching(id);

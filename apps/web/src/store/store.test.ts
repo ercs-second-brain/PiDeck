@@ -158,7 +158,7 @@ describe("applyKanbanEvent: workers", () => {
     projectId: PROJECT_ID,
     sessionId: "s-1",
     issueNumber: 0, // freeform worker
-    prNumber: null,
+    prNumbers: [],
     status: "running",
     statusMessage: "Working",
     startedAt: "2026-01-02T00:00:00.000Z",
@@ -203,7 +203,7 @@ describe("applyKanbanEvent: workers", () => {
 
 describe("boardStore.onWorkerEvent (issue #269)", () => {
   const worker = workerSchema.parse({
-    id: "w-evt", projectId: PROJECT_ID, sessionId: "s-evt", issueNumber: 0, prNumber: null,
+    id: "w-evt", projectId: PROJECT_ID, sessionId: "s-evt", issueNumber: 0, prNumbers: [],
     status: "running", statusMessage: null,
     startedAt: "2026-01-02T00:00:00.000Z", updatedAt: "2026-01-02T00:00:00.000Z",
   });

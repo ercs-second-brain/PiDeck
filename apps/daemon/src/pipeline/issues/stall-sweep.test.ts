@@ -20,7 +20,7 @@ function makeWorker(overrides: Partial<Worker> = {}): Worker {
     projectId: "proj",
     sessionId: "sess-1",
     issueNumber: 7,
-    prNumber: null,
+    prNumbers: [],
     status: "running",
     statusMessage: "agent running; initial prompt delivered",
     startedAt: new Date(BASE - 60 * 60_000).toISOString(),
@@ -116,9 +116,19 @@ describe("StallSweep detection (issue #467)", () => {
   });
 
   it("skips workers with a PR (the PR loop owns them)", async () => {
-    const h = harness({ workers: [makeWorker({ prNumber: 12 })] });
+    const h = harness({ workers: [makeWorker({ prNumbers: [12] })] });
     const outcome = await h.sweep();
     expect(outcome.reprompted).toEqual([]);
+  });
+
+  it("skips a multi-PR worker carrying any association (issue #470)", async () => {
+    // Stall eligibility keys on having NO associated PR at all — a worker
+    // with any PR in its list is the PR loop's to drive, whether that list
+    // holds one or several (stacked/sibling) PRs.
+    const h = harness({ workers: [makeWorker({ prNumbers: [7, 9] })] });
+    const outcome = await h.sweep();
+    expect(outcome.reprompted).toEqual([]);
+    expect(h.prompts).toHaveLength(0);
   });
 
   it("skips freeform workers (issueNumber 0) and review agents", async () => {
@@ -189,14 +199,14 @@ describe("StallSweep bound (issue #467 — bounded like the fix-attempt caps)", 
   it("resets the bound when the worker delivers a PR (progress, not stall)", async () => {
     const h = harness({ maxReprompts: 1 });
     await h.sweep(); // attempt 1 (bound 1 reached)
-    h.workers[0]!.prNumber = 42; // the worker delivered
+    h.workers[0]!.prNumbers = [42]; // the worker delivered
     h.advance(20 * 60_000);
     await h.sweep(); // PR loop owns it — and the streak resets
     expect(h.prompts).toHaveLength(1);
     expect(h.workers[0]!.status).toBe("running");
 
     // A later stall (PR closed? — any active no-PR record again) starts fresh.
-    h.workers[0]!.prNumber = null;
+    h.workers[0]!.prNumbers = [];
     h.advance(20 * 60_000);
     const outcome = await h.sweep();
     expect(outcome.reprompted).toEqual(["worker-1"]); // attempt 1 of 1, not failed

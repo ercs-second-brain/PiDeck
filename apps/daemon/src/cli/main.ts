@@ -187,7 +187,7 @@ async function cmdWorkers(ctx: CommandContext): Promise<number> {
     else
       for (const worker of workers) {
         console.log(
-          `${worker.id}\t${worker.status}\tissue:#${worker.issueNumber}${worker.prNumber !== null ? `\tpr:#${worker.prNumber}` : ""}${worker.statusMessage !== null ? `\t${worker.statusMessage}` : ""}`,
+          `${worker.id}\t${worker.status}\tissue:#${worker.issueNumber}${worker.prNumbers.map((n) => `\tpr:#${n}`).join("")}${worker.statusMessage !== null ? `\t${worker.statusMessage}` : ""}`,
         );
       }
   });
