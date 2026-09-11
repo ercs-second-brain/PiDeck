@@ -41,6 +41,7 @@ import { serializeCommand, shQuote, type SessionManager } from "../sessions/mana
 import type { Tmux } from "../sessions/tmux.js";
 
 import { findAgentPromptPath, orchestratorPromptValues, renderGlobalAgentPrompt, renderOrchestratorPrompt, renderTemplate } from "./prompt.js";
+import { waitForPaneInputReady } from "../sessions/pane-ready.js";
 
 /** Rendered prompt file written into the project's state dir. */
 const ORCHESTRATOR_PROMPT_FILENAME = "orchestrator-prompt.md";
@@ -104,6 +105,14 @@ export interface OrchestratorBootstrapDeps {
    * tmux `#{pane_current_command}` probe (errors treated as "not running").
    */
   isAgentRunning?: (tmuxSession: string) => Promise<boolean>;
+  /**
+   * Input-ready wait budget for the notification-recovery path (issue
+   * #500): after a bare pane is re-bootstrapped, delivery waits this long
+   * for pi's input box before declaring the pane deliverable. Default
+   * 15s — well past pi's observed cold start, without hanging a caller
+   * forever on a pane pi will never mount in.
+   */
+  recoveryInputReadyTimeoutMs?: number;
   /** Error sink for per-project failures. Default: console.error. */
   onError?: (err: unknown, projectId: string) => void;
 }
@@ -138,6 +147,7 @@ export class OrchestratorBootstrap {
   private readonly agentAssets: PersonaLaunchAssets | undefined;
   private readonly agentKinds: AgentKindRegistry;
   private readonly isAgentRunning: (tmuxSession: string) => Promise<boolean>;
+  private readonly recoveryInputReadyTimeoutMs: number;
   private readonly onError: (err: unknown, projectId: string) => void;
 
   constructor(deps: OrchestratorBootstrapDeps) {
@@ -150,6 +160,7 @@ export class OrchestratorBootstrap {
     this.agentAssets = deps.agentAssets;
     this.agentKinds = deps.agentKinds ?? new AgentKindRegistry();
     this.isAgentRunning = deps.isAgentRunning ?? ((name) => paneCommandProbe(this.tmux, name));
+    this.recoveryInputReadyTimeoutMs = deps.recoveryInputReadyTimeoutMs ?? 15_000;
     this.onError = deps.onError ?? ((err, projectId) => {
       console.error(`[daemon] orchestrator bootstrap failed for project "${projectId}":`, err);
     });
@@ -308,6 +319,35 @@ export class OrchestratorBootstrap {
           }),
         ),
     );
+  }
+
+  /**
+   * Notification-delivery guard (issue #500): guarantees the pane behind
+   * `session` runs the agent persona and is accepting input before a caller
+   * types into it — `ensureOrchestrator` only guarantees a live pane, and a
+   * live pane pi never bootstrapped in (crash pre-bootstrap) is a bare
+   * shell that would turn typed notification text into shell input.
+   *
+   * - Persona already running: returns the session untouched (the normal
+   *   daemon start order — bootstrap before the automation — lands here).
+   * - Bare shell: re-bootstraps the persona (the same machinery as
+   *   {@link ensureForSession}) and waits (bounded) for pi's input box —
+   *   the pane is only declared deliverable once pi actually accepts
+   *   input, never during the launch window.
+   * - Unrecoverable (unknown project/persona, or pi not accepting input
+   *   within the window): returns `null` — callers must skip delivery
+   *   loudly instead of typing into the shell.
+   */
+  async ensureReadyPane(session: Session): Promise<Session | null> {
+    if (await this.isAgentRunning(session.tmuxSession)) return session;
+    const recovered = await this.ensureForSession(session);
+    if (recovered === null) return null;
+    return (await this.inputReady(recovered.tmuxSession)) ? recovered : null;
+  }
+
+  /** Bounded wait for pi's input box in a freshly (re)bootstrapped pane. */
+  private inputReady(tmuxSession: string): Promise<boolean> {
+    return waitForPaneInputReady(this.tmux, tmuxSession, { timeoutMs: this.recoveryInputReadyTimeoutMs });
   }
 
   /**

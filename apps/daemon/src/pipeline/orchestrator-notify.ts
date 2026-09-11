@@ -9,11 +9,16 @@
  * arrive there; `pideck send` parity), so the wiring types a message into
  * it on every ready-for-merge event.
  *
- * Delivery is deterministic: `ensureOrchestrator` guarantees a live target
- * pane exists (the daemon's start order — orchestrator bootstrap before
- * `automation.start()` — normally means it already runs the orchestrator
- * persona), and the pipeline fires the event exactly once per approved
- * round, so the pane is messaged exactly once per round too.
+ * Delivery is deterministic and shell-safe (issue #500): `ensureOrchestrator`
+ * guarantees a live target pane exists, but a live pane is not necessarily
+ * running the orchestrator persona — pi may never have bootstrapped in it
+ * (crash before the bootstrap sweep, a resurrected plain shell). Typing the
+ * notification there loses it to a shell error. So before typing, a pane
+ * guard confirms the pane runs the agent persona and accepts input: a bare
+ * pane is re-bootstrapped first (the #12 machinery), and an unrecoverable
+ * pane skips the delivery loudly instead. The pipeline fires the event
+ * exactly once per approved round, so a deliverable pane is messaged exactly
+ * once per round too.
  */
 
 import type { Session } from "@pideck/shared";
@@ -24,6 +29,16 @@ export interface OrchestratorNotifySessions {
   ensureOrchestrator(projectId: string): Promise<Session>;
   /** Type text into a session's pane (the `pideck send` mechanism). */
   sendKeys(sessionId: string, keys: string, options?: { enter?: boolean }): Promise<void>;
+}
+
+/**
+ * The pane-delivery guard (issue #500): guarantees the pane behind `session`
+ * runs the agent persona and is accepting input before notification text is
+ * typed into it. `null` = unrecoverable — the caller must skip delivery
+ * loudly (an actionable error/log), never type into a bare shell.
+ */
+export interface OrchestratorPaneGuard {
+  ensureReadyPane(session: Session): Promise<Session | null>;
 }
 
 /**
@@ -39,9 +54,22 @@ export function orchestratorReadyForMergeMessage(prNumber: number, title: string
 /**
  * Delivers one notification into the project's orchestrator pane. Throws on
  * failure — the caller decides how failures surface (the wiring logs them
- * through `onError`; the loop keeps running).
+ * through `onError`; the loop keeps running). A bare-shell orchestrator pane
+ * (issue #500) is recovered first and otherwise skips the delivery loudly —
+ * the error names the state and the recovery path, and no text is typed
+ * into the shell.
  */
-export async function notifyOrchestrator(sessions: OrchestratorNotifySessions, projectId: string, message: string): Promise<void> {
+export async function notifyOrchestrator(sessions: OrchestratorNotifySessions, guard: OrchestratorPaneGuard, projectId: string, message: string): Promise<void> {
   const orchestrator = await sessions.ensureOrchestrator(projectId);
+  // Issue #500: `ensureOrchestrator` only guarantees a live pane — without
+  // the guard, a pane pi never bootstrapped in would receive the message as
+  // shell input. The guard re-bootstraps a bare pane and reports it
+  // undeliverable when recovery cannot produce an input-ready agent pane.
+  const ready = await guard.ensureReadyPane(orchestrator);
+  if (ready === null) {
+    throw new Error(
+      `orchestrator pane for project "${projectId}" is not bootstrapped (no input-ready agent pane after recovery) — skipping the notification instead of typing it into a bare shell; re-run the orchestrator bootstrap (the daemon start sweep) and deliver the message manually if needed`,
+    );
+  }
   await sessions.sendKeys(orchestrator.id, message, { enter: true });
 }

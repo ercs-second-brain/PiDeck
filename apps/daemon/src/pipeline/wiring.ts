@@ -42,7 +42,7 @@ import type { SessionManager } from "../sessions/manager.js";
 import type { WsHub } from "../api/ws.js";
 import type { PromptGate } from "../agent/prompt-gate.js";
 import { KanbanBridge } from "./broadcast.js";
-import { notifyOrchestrator, orchestratorReadyForMergeMessage } from "./orchestrator-notify.js";
+import { notifyOrchestrator, orchestratorReadyForMergeMessage, type OrchestratorPaneGuard } from "./orchestrator-notify.js";
 import { CatchUpSweep } from "./catchup.js";
 import { watcherOptionsFromEnv } from "./env.js";
 import { associateWorkerPr } from "./issue-refs.js";
@@ -92,6 +92,15 @@ export interface GithubAutomationOptions {
    * review-agent spawn cap exactly like the other spawn paths (issue #393).
    */
   agentKinds: AgentKindLookup;
+  /**
+   * Pane-delivery guard for the orchestrator notification (issue #500):
+   * confirms the orchestrator pane runs the agent persona before the
+   * ready-for-merge text is typed into it — a bare-shell pane is
+   * re-bootstrapped first, and an unrecoverable pane skips the delivery
+   * loudly (the text is never typed into a shell). The daemon context
+   * supplies the orchestrator bootstrap.
+   */
+  orchestratorGuard: OrchestratorPaneGuard;
   /** Master switch. Default: resolved from the environment (on). */
   enabled?: boolean;
   /** Poll interval for watchers and the PR loop. Default: 30s or env. */
@@ -446,13 +455,20 @@ export class GithubAutomation {
     // Issue #490: an approved PR's orchestrator notification must reach the
     // orchestrator deterministically — the hub broadcast only reaches webapps,
     // so the wiring also types the notification into the orchestrator's pane
-    // (its notification path, `pideck send` parity). The pipeline fires the
-    // event exactly once per approved round, so the pane is messaged once per
-    // round too. Failures are logged; the loop keeps running.
+    // (its notification path, `pideck send` parity). Issue #500: the pane is
+    // only messaged once the guard confirms it runs the agent persona — a
+    // bare-shell orchestrator pane is re-bootstrapped first, and delivery is
+    // skipped loudly when recovery cannot produce an input-ready pane (never
+    // typed into a shell). The pipeline fires the event exactly once per
+    // approved round, so the pane is messaged once per round too. Failures
+    // are logged; the loop keeps running.
     if (event.type === "notification.pr.ready_for_merge") {
-      void notifyOrchestrator(this.options.sessions, event.projectId, orchestratorReadyForMergeMessage(event.prNumber, event.title)).catch(
-        (err) => this.onError(err, `orchestrator-notify:${event.projectId}`),
-      );
+      void notifyOrchestrator(
+        this.options.sessions,
+        this.options.orchestratorGuard,
+        event.projectId,
+        orchestratorReadyForMergeMessage(event.prNumber, event.title),
+      ).catch((err) => this.onError(err, `orchestrator-notify:${event.projectId}`));
     }
   }
 }

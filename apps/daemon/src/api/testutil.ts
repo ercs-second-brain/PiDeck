@@ -15,6 +15,9 @@ import type { GitRunner } from "../github/repos.js";
 
 import { createDaemonContext, type DaemonContextOptions, type DaemonServices } from "./context.js";
 
+/** Re-exported so test files can type their `testDaemon` options without importing context.js. */
+export type { DaemonContextOptions };
+
 export interface FakeGhRoutes {
   /** GraphQL responses keyed by a distinctive query substring. */
   graphql?: Record<string, unknown>;
