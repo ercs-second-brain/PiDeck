@@ -29,9 +29,10 @@ make_skill() { # make_skill <name>
   printf -- '---\nname: %s\n---\n' "$1" > "$PD_SRC/agent/skills/$1/SKILL.md"
 }
 
-# The seven shipped global integration skills #439 removed, plus one skill
-# that stays (the shipped-defaults methodology set).
-REMOVED="using-pideck create-issue spawn-worker report-pr ci-status review-comments review-pr"
+# Arbitrary skill names the "checkout" stops shipping across the upgrade —
+# generated, not a memorial list: the prune is generic over whatever an
+# install removed (issue #463). One skill stays live.
+REMOVED="stale-a stale-b stale-c stale-d stale-e stale-f stale-g"
 LIVE="bash-triage"
 
 # --- first install: every shipped dir gets a symlink ------------------------
@@ -41,7 +42,7 @@ for _s in $LIVE $REMOVED; do
   check_eq "first install links $_s" "$PD_SRC/agent/skills/$_s" "$(readlink "$PD_PI_DIR/skills/$_s")"
 done
 
-# --- upgrade: the #439 checkout removes the seven dirs ----------------------
+# --- upgrade: the checkout stops shipping the stale dirs -------------------
 for _s in $REMOVED; do
   rm -rf "$PD_SRC/agent/skills/$_s"
 done

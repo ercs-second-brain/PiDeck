@@ -103,7 +103,8 @@ describe("PR prompts", () => {
     expect(prompt).toContain("requested changes on your PR #12");
     expect(prompt).toContain("Fetch the findings");
     expect(prompt).toContain("Fix round 2 of 5");
-    expect(prompt).not.toContain("review-comments skill");
+    // The prompt carries its own instructions — it defers to no skill.
+    expect(prompt).not.toContain("skill");
     expect(prompt).toContain("`agent/issue-7`");
     expect(prompt).toContain("Do not open a new PR");
   });

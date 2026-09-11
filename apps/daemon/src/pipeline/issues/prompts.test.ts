@@ -28,9 +28,9 @@ describe("buildIssueSpawnPrompt (issue #266)", () => {
     expect(prompt).toContain("Closes #1");
     expect(prompt).toContain("#1");
     // Issue #439: deterministic steps are daemon work — the prompt must not
-    // instruct the worker to run `pideck report-pr` or notify anyone.
-    expect(prompt).not.toContain("report-pr");
-    expect(prompt).not.toMatch(/notify/i);
+    // instruct the worker to self-report the PR to the daemon or notify
+    // anyone; claiming is the daemon's job.
+    expect(prompt).not.toMatch(/self-report|notify/i);
   });
 });
 

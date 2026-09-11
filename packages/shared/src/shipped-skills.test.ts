@@ -15,8 +15,9 @@ describe("SHIPPED_DEFAULT_SKILLS (issue #338 — shipped-default seed data for #
     }
   });
 
-  it("ships exactly the four orchestrator workflow skills, uniquely named", () => {
+  it("ships the workflow skills plus the every-persona CLI catalog, uniquely named (issue #463)", () => {
     expect(SHIPPED_DEFAULT_SKILLS.map((s) => s.name)).toEqual([
+      "using-pideck",
       "bash-triage",
       "concept-brief",
       "prd",
@@ -24,9 +25,9 @@ describe("SHIPPED_DEFAULT_SKILLS (issue #338 — shipped-default seed data for #
     ]);
   });
 
-  it("defaults every entry to the orchestrator persona only", () => {
+  it("defaults the workflow skills to the orchestrator; the CLI catalog ships to every persona (issue #463)", () => {
     for (const entry of SHIPPED_DEFAULT_SKILLS) {
-      expect(entry.defaultPersonas).toEqual(["orchestrator"]);
+      expect(entry.defaultPersonas).toEqual(entry.name === "using-pideck" ? [...PERSONAS] : ["orchestrator"]);
     }
   });
 

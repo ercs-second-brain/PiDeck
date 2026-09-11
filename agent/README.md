@@ -41,6 +41,7 @@ agent/
 │   ├── global-agent.md        # workspace-level global agent prompt (daemon assembles)
 │   └── worker.md              # worker system prompt (daemon assembles)
 └── skills/                    # pi skill dirs (SKILL.md)
+    ├── using-pideck/          # the pideck CLI catalog (SKILL.md + commands/) — every-persona default, issue #463
     ├── bash-triage/           # findings → issues → worker batch (orchestrator default, issue #338)
     ├── concept-brief/         # raw idea → one-page verbatim brief (orchestrator default, issue #338)
     ├── prd/                   # interview → one-page PRD (orchestrator default, issue #338)
@@ -49,13 +50,13 @@ agent/
 
 Skills follow pi's skill conventions (frontmatter with `name`/`description`, loaded on demand); see pi's `docs/skills.md`.
 
-### Shipped orchestrator defaults (issue #338)
+### Shipped defaults (issue #338, extended by issue #463)
 
-`bash-triage`, `concept-brief`, `prd`, and `spec-to-issues` are the shipped **orchestrator-default** workflow skills: they ship applied to the orchestrator persona out of the box and are registered in `SHIPPED_DEFAULT_SKILLS` (`packages/shared/src/domain.ts`), typed against the canonical `PERSONAS` vocabulary and the `agentSkillIdSchema` id contract from #315. They are not hardcoded always-on: the daemon's agent-assets store seeds the table into its skills list exactly once per state dir (issue #351 F2 — the shipped `agent/skills/<name>/SKILL.md` content, deployed and applied to the orchestrator like any stored skill), and afterwards every entry is an ordinary, user-owned row in the agent-assets surface (#315): per-persona configurable (turn-off-able, re-appliable to other personas), editable, and deletable — a delete sticks, nothing re-seeds. User-authored skills deploy per persona via the same surface.
+`bash-triage`, `concept-brief`, `prd`, and `spec-to-issues` are the shipped **orchestrator-default** workflow skills, and `using-pideck` — the `pideck` CLI catalog (SKILL.md + `commands/{project,send,spawn,state}.md`) — is the shipped **every-persona** skill: it documents the deterministic daemon CLI the whole design depends on, so it ships applied to all six personas out of the box. All are registered in `SHIPPED_DEFAULT_SKILLS` (`packages/shared/src/domain.ts`), typed against the canonical `PERSONAS` vocabulary and the `agentSkillIdSchema` id contract from #315. They are not hardcoded always-on: the daemon's agent-assets store seeds the table into its skills list (issue #351 F2 — the shipped `agent/skills/<name>/SKILL.md` content, deployed and applied like any stored skill; the seeding re-runs on schema bumps so newly shipped entries reach existing state dirs, issue #463), and afterwards every entry is an ordinary, user-owned row in the agent-assets surface (#315): per-persona configurable (turn-off-able, re-appliable to other personas), editable, and deletable — a delete sticks (deletions of shipped-default ids are recorded, so a later seeding never resurrects them, issue #463). User-authored skills deploy per persona via the same surface. Removals are table edits — reversible — never content deletions.
 
 ### Launch-time skill enforcement (issue #356)
 
-Every PiDeck-launched pi pane (orchestrator, global agent, agent kind, worker) runs with `--no-skills`: pi's global skill discovery — including the installer's `~/.pi/agent/skills/` symlinks of this very directory, which pi would auto-load in every session on the machine — is off, so a skill restricted to one persona in the settings can never appear loaded in another persona's pane. Panes receive explicit `--skill` args for exactly the store skills assigned to their persona (issue #439: PiDeck ships no ride-every-pane "integration" skills — anything the `pideck`/`gh` CLI does deterministically lives in daemon code or the CLI's own `--help`, and procedural text lives in the persona prompts, not skills). The shipped table must exactly cover `agent/skills/` (drift-guarded in `apps/daemon/src/agent/shipped-skills.test.ts`), so every skill loadable by a pane appears in the Prompts & Skills settings. The installer's global symlinks stay: they serve pi sessions the user starts outside PiDeck, which PiDeck does not manage.
+Every PiDeck-launched pi pane (orchestrator, global agent, agent kind, worker) runs with `--no-skills`: pi's global skill discovery — including the installer's `~/.pi/agent/skills/` symlinks of this very directory, which pi would auto-load in every session on the machine — is off, so a skill restricted to one persona in the settings can never appear loaded in another persona's pane. Panes receive explicit `--skill` args for exactly the store skills assigned to their persona (issue #439: no ride-every-pane `--skill` plumbing — skills reach panes only through the per-persona assignment, seeded by the shipped table; anything the `pideck`/`gh` CLI does deterministically still lives in daemon code or the CLI's own `--help`, and procedural text lives in the persona prompts, not skills). The shipped table must exactly cover `agent/skills/` (drift-guarded in `apps/daemon/src/agent/shipped-skills.test.ts`), so every skill loadable by a pane appears in the Prompts & Skills settings. The installer's global symlinks stay: they serve pi sessions the user starts outside PiDeck, which PiDeck does not manage.
 
 ## Prompts
 
@@ -107,18 +108,17 @@ Each row's REST mapping is from `packages/shared/src/rest.ts`. "Finalized in #9"
 - Status vocabularies used verbatim in prompts and skills: kanban columns `backlog`, `in_progress`, `in_review`, `done` (`KANBAN_COLUMNS`); worker statuses `spawning`, `running`, `awaiting_ci`, `fixing_ci`, `addressing_review`, `done`, `failed`, `stopped` (`workerStatusSchema`); CI `pending`, `running`, `success`, `failure`, `unknown` (`ciStatusSchema`); review `none`, `pending`, `approved`, `changes_requested` (`reviewStateSchema`).
 - `packages/shared` is the source of truth; this directory consumes the contract conceptually and must not edit or duplicate it.
 
-### Where each invocation lives (issue #439)
+### Where each invocation lives
 
-With the integration skills removed, canonical locations are the persona prompts (`agent/prompts/`), the shipped methodology skills below, and the CLIs' own docs:
+Canonical locations are the `using-pideck` CLI catalog (issue #463), the persona prompts (`agent/prompts/`), the shipped methodology skills, and the CLIs' own docs:
 
 | Invocation | Canonical location |
 |---|---|
+| `pideck spawn ...`, `pideck send ...`, `pideck pulls ...`, `pideck diff ...`, all other `pideck` read commands | `skills/using-pideck/SKILL.md` + `skills/using-pideck/commands/*.md` (reference: `pideck --help`) |
 | `gh issue create ...`, `gh label create ...` | `skills/bash-triage/SKILL.md`, `skills/spec-to-issues/SKILL.md` (single invocations: `agent/prompts/orchestrator.md`) |
-| `pideck spawn ...` | `agent/prompts/orchestrator.md`, `skills/bash-triage/SKILL.md`, `skills/spec-to-issues/SKILL.md` |
-| `pideck pulls ...`, `pideck diff ...` | `agent/prompts/orchestrator.md`, `skills/bash-triage/SKILL.md` |
+| `pideck spawn ...` (workflow framing) | `agent/prompts/orchestrator.md`, `skills/bash-triage/SKILL.md`, `skills/spec-to-issues/SKILL.md` |
 | `gh pr checks ...`, `gh run view ...`, `gh api .../pulls/<n>/comments`, `gh pr view --comments` | `agent/prompts/orchestrator.md`, `skills/bash-triage/SKILL.md` |
 | `gh pr diff ...`, `gh pr review ...`, `gh api .../pulls/<n>/reviews` | the daemon's generated review prompts (`apps/daemon/src/pipeline/prs/prompts.ts`) |
-| all other `pideck` read commands, `pideck send ...` | `pideck --help` / `pideck <command> --help` |
 | PR→worker claiming | deterministic daemon code — `apps/daemon/src/pipeline/issue-refs.ts` (no worker self-report exists; issue #439) |
 
 ## Installer notes

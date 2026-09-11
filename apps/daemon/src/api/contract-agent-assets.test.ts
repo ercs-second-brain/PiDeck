@@ -5,7 +5,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agentAssetsSchema, agentSkillSchema, endpoints, formatPath, promptOverrideSchema } from "@pideck/shared";
+import { agentAssetsSchema, agentSkillSchema, endpoints, formatPath, PERSONAS, promptOverrideSchema } from "@pideck/shared";
 
 import { startContractServer, type ContractServer } from "./contract-fixtures.js";
 
@@ -25,10 +25,14 @@ describe("agent assets (issue #315)", () => {
     expect(got.status).toBe(200);
     const assets = agentAssetsSchema.parse(got.json);
     expect(assets.prompts).toEqual([]);
-    // Issue #338/#351 F2: the shipped-default skills are seeded into the
-    // store — applied to the orchestrator, ordinary user-owned rows after.
-    expect(assets.skills.map((skill) => skill.id)).toEqual(["bash-triage", "concept-brief", "prd", "spec-to-issues"]);
-    for (const skill of assets.skills) expect(skill.personas).toEqual(["orchestrator"]);
+    // Issue #338/#351 F2 + #463: the shipped-default skills are seeded into
+    // the store — using-pideck (the CLI catalog) applied to every persona,
+    // the methodology skills to the orchestrator; ordinary user-owned rows
+    // after.
+    expect(assets.skills.map((skill) => skill.id)).toEqual(["using-pideck", "bash-triage", "concept-brief", "prd", "spec-to-issues"]);
+    for (const skill of assets.skills) {
+      expect(skill.personas).toEqual(skill.id === "using-pideck" ? PERSONAS : ["orchestrator"]);
+    }
     // Defaults come from the shipped agent/prompts files (repo walk-up).
     expect(assets.defaults["orchestrator"]).toContain("{{PROJECT_ID}}");
   });
@@ -66,6 +70,7 @@ describe("agent assets (issue #315)", () => {
     // The PUT upserted the seeded "prd" entry in place; the other shipped
     // seeds ride along.
     expect(agentAssetsSchema.parse(listed.json).skills).toEqual([
+      expect.objectContaining({ id: "using-pideck" }),
       expect.objectContaining({ id: "bash-triage" }),
       expect.objectContaining({ id: "concept-brief" }),
       skill,

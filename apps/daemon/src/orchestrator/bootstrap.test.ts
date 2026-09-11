@@ -320,9 +320,13 @@ describe("end-to-end: chat-requested spawn reaches the daemon spawn path", () =>
 
     const workerSessions = [...h.daemon.tmux.sessions.entries()].filter(([name]) => name.endsWith("-worker-1"));
     expect(workerSessions).toHaveLength(1);
-    // Default worker command (issue #356): discovery off; no persona
-    // shaping without stored assets (issue #439: no shipped globals).
-    expect(workerSessions[0]?.[1].command).toEqual([...DEFAULT_WORKER_COMMAND]);
+    // Default worker command (issue #356): discovery off; the shipped store
+    // seeds ride along — the every-persona using-pideck CLI catalog (issue
+    // #463) — and no user shaping without stored assets.
+    expect(workerSessions[0]?.[1].command).toEqual([
+      ...DEFAULT_WORKER_COMMAND,
+      "--skill", path.join(h.daemon.stateDir, "agent-assets", "skills", "using-pideck.md"),
+    ]);
 
     // 4b. Issue #378: the worker pane RECEIVED the issue context — the
     //     orchestrator's issue-backed spawn (no --prompt) delivers the
