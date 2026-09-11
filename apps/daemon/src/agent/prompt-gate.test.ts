@@ -76,6 +76,14 @@ describe("PromptGate.queue", () => {
     h.gate.queue(w, "b");
     expect(h.gate.size).toBe(1);
   });
+
+  it("holdsWorker reports the prompt-in-flight state (issue #467 stall sweep)", () => {
+    const h = harness();
+    expect(h.gate.holdsWorker("worker-1")).toBe(false);
+    h.gate.queue(h.workers.get("worker-1") as Worker, "a");
+    expect(h.gate.holdsWorker("worker-1")).toBe(true);
+    expect(h.gate.holdsWorker("worker-2")).toBe(false);
+  });
 });
 
 describe("PromptGate.deliverPending", () => {

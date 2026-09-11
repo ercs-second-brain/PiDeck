@@ -217,6 +217,23 @@ export const notificationEventSchema = z.discriminatedUnion("type", [
    * orchestrator triages findings like a bug bash; the user is not the
    * direct recipient.
    */
+  /**
+   * An issue worker stalled (issue #467): its turn silently ended without
+   * opening a PR and the daemon's bounded stall backstop is exhausted —
+   * every stall re-prompt went unanswered. The worker's pane stays alive
+   * for human follow-up; this only notifies.
+   */
+  z.object({
+    type: z.literal("notification.worker.stalled"),
+    at: isoDateTimeSchema,
+    projectId: projectIdField,
+    /** The stalled worker's id. */
+    workerId: z.string().min(1),
+    /** The backed issue the worker never opened a PR for. */
+    issueNumber: refNumberSchema,
+    /** Headline detail, for the toast/notification-center secondary line. */
+    title: z.string().min(1),
+  }),
   z.object({
     type: z.literal("notification.agent.report"),
     at: isoDateTimeSchema,

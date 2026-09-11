@@ -24,8 +24,8 @@ import type { GithubAutomation } from "./wiring.js";
 import { watcherOptionsFromEnv } from "./wiring.js";
 
 const REPO_URL = "https://github.com/octo/repo";
-const PROJECT = "octo-repo";
-const AUTO_USER = "octo-bot";
+export const PROJECT = "octo-repo";
+export const AUTO_USER = "octo-bot";
 const NOW = "2026-09-06T12:00:00.000Z";
 
 // Poll interval so large that the running loops never tick again within a

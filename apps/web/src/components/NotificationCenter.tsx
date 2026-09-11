@@ -24,19 +24,24 @@ export function notificationTime(iso: string, now = new Date()): string {
 }
 
 /** Where a notification click-through lands: the PR's diff page (merged
- *  PRs), or the orchestrator session that received an agent report —
- *  the report lives there (issues #300/#302: the orchestrator triages). */
+ *  PRs), the orchestrator session that received an agent report —
+ *  the report lives there (issues #300/#302: the orchestrator triages) —
+ *  or the project board for a stalled worker (issue #467: follow up in
+ *  the worker's pane via the board's terminals). */
 export function notificationTarget(n: CenterNotification): string {
-  return n.reportTargetSessionId !== undefined
-    ? `/terminal/${n.reportTargetSessionId}`
-    : `/projects/${n.projectId}/pulls/${n.prNumber}`;
+  if (n.reportTargetSessionId !== undefined) return `/terminal/${n.reportTargetSessionId}`;
+  if (n.workerId !== undefined) return `/projects/${n.projectId}`;
+  return `/projects/${n.projectId}/pulls/${n.prNumber}`;
 }
 
-/** Headline for a notification row: "<project> #42 merged" or
- *  "<project> devex-audit report ready". */
+/** Headline for a notification row: "<project> #42 merged",
+ *  "<project> devex-audit report ready", or "<project> issue #7 worker
+ *  stalled" (issue #467). */
 function notificationHeadline(projectName: string | undefined, n: CenterNotification): string {
   const project = projectName ?? n.projectId;
-  return n.agentKind !== undefined ? `${project} ${n.agentKind} report ready` : `${project} #${n.prNumber} merged`;
+  if (n.agentKind !== undefined) return `${project} ${n.agentKind} report ready`;
+  if (n.issueNumber !== undefined) return `${project} issue #${n.issueNumber} worker stalled`;
+  return `${project} #${n.prNumber} merged`;
 }
 
 // --- Notification permission (issue #180) ----------------------------------

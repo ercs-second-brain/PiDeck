@@ -185,6 +185,16 @@ export class PromptGate {
   }
 
   /**
+   * Whether a queued prompt is currently held for the worker (tests/
+   * observability, and the issue-worker stall sweep's prompt-in-flight
+   * detection — issue #467: a worker whose prompt is queued for delivery
+   * is not stalled, it is waiting).
+   */
+  holdsWorker(workerId: string): boolean {
+    return this.pending.some((entry) => entry.workerId === workerId);
+  }
+
+  /**
    * Queues an agent-kind session's prompt after an unauthenticated spawn
    * (issue #56 parity for docs/agent-kinds.md spawns — the researcher's
    * question is never typed into an agent that cannot run). Idempotent per

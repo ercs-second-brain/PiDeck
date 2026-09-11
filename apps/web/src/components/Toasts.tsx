@@ -37,8 +37,23 @@ export interface AgentReportToast {
   title: string;
 }
 
+/**
+ * One stalled-worker toast (issue #467): an issue worker's turn silently
+ * ended without a PR and the daemon's bounded stall backstop is exhausted.
+ * Same ephemeral contract as the merged-PR toast.
+ */
+export interface WorkerStalledToast {
+  key: string;
+  projectId: string;
+  /** The backed issue the worker never opened a PR for. */
+  issueNumber: number;
+  /** The stalled worker's id (dedupe key part). */
+  workerId: string;
+  title: string;
+}
+
 /** Any toast the stack renders. */
-export type AppToast = MergedPRToast | AgentReportToast;
+export type AppToast = MergedPRToast | AgentReportToast | WorkerStalledToast;
 
 /** Whether the event is a PR-lifecycle notification (merged #111, ready-for-merge #408). */
 export function isPrNotification(event: NotificationEvent): event is Extract<NotificationEvent, { type: "notification.pr.merged" | "notification.pr.ready_for_merge" }> {
@@ -54,11 +69,16 @@ export function toastKey(projectId: string, prNumber: number, kind: "merged" | "
 function eventKey(event: NotificationEvent): string {
   return isPrNotification(event)
     ? toastKey(event.projectId, event.prNumber, event.type === "notification.pr.merged" ? "merged" : "ready_for_merge")
-    : `agent:${event.projectId}:${event.sessionId}`;
+    : event.type === "notification.worker.stalled"
+      ? `stall:${event.projectId}:${event.workerId}`
+      : `agent:${event.projectId}:${event.sessionId}`;
 }
 
 /** The headline source for a PR-lifecycle or agent-report toast/notification. */
-export type HeadlineSource = Pick<MergedPRToast, "projectId" | "prNumber" | "kind"> | Pick<AgentReportToast, "projectId" | "agentKind">;
+export type HeadlineSource =
+  | Pick<MergedPRToast, "projectId" | "prNumber" | "kind">
+  | Pick<AgentReportToast, "projectId" | "agentKind">
+  | Pick<WorkerStalledToast, "projectId" | "issueNumber">;
 
 /**
  * The ONE headline builder (KISS audit F11): toast and browser-notification
@@ -72,7 +92,9 @@ export function headline(projectName: string | undefined, source: HeadlineSource
     ? source.kind === "ready_for_merge"
       ? `${project} #${source.prNumber} ready for merge`
       : `${project} #${source.prNumber} merged`
-    : `${project} ${source.agentKind} report ready`;
+    : "issueNumber" in source
+      ? `${project} issue #${source.issueNumber} worker stalled`
+      : `${project} ${source.agentKind} report ready`;
 }
 
 /** Appends an event as a toast, deduped by key and bounded — pure. */
@@ -82,7 +104,9 @@ export function appendToast(toasts: AppToast[], event: NotificationEvent): AppTo
   const base = { key, projectId: event.projectId, title: event.title };
   const next = isPrNotification(event)
     ? { ...base, prNumber: event.prNumber, kind: event.type === "notification.pr.merged" ? ("merged" as const) : ("ready_for_merge" as const) }
-    : { ...base, agentKind: event.agentKind };
+    : event.type === "notification.worker.stalled"
+      ? { ...base, issueNumber: event.issueNumber, workerId: event.workerId }
+      : { ...base, agentKind: event.agentKind };
   return [...toasts, next].slice(-MAX_TOASTS);
 }
 
@@ -190,7 +214,9 @@ function maybeBrowserNotify(event: NotificationEvent, enabled: boolean): void {
   const project = boardStore.getState().projects.find((p) => p.id === event.projectId);
   const source: HeadlineSource = isPrNotification(event)
     ? { projectId: event.projectId, prNumber: event.prNumber, kind: event.type === "notification.pr.ready_for_merge" ? "ready_for_merge" : "merged" }
-    : { projectId: event.projectId, agentKind: event.agentKind };
+    : event.type === "notification.worker.stalled"
+      ? { projectId: event.projectId, issueNumber: event.issueNumber }
+      : { projectId: event.projectId, agentKind: event.agentKind };
   try {
     new Notification(headline(project?.name, source), { body: event.title });
   } catch {

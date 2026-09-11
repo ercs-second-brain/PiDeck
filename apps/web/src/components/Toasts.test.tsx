@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
 import type { NotificationEvent, Project } from "@pideck/shared";
 
-import { appendToast, headline, MAX_TOASTS, ToastStack, toastKey, type AgentReportToast, type AppToast, type MergedPRToast } from "./Toasts";
+import { appendToast, headline, MAX_TOASTS, ToastStack, toastKey, type AgentReportToast, type AppToast, type MergedPRToast, type WorkerStalledToast } from "./Toasts";
 
 const NOW = "2026-01-02T03:04:05.000Z";
 
@@ -53,6 +53,12 @@ describe("toastKey / headline (issue #111)", () => {
   it("renders the agent-report headline (docs/agent-kinds.md, #300/#302)", () => {
     const report: AgentReportToast = { key: "agent:kisstest:sess-agent-1", projectId: "kisstest", agentKind: "kiss-audit", title: "x" };
     expect(headline("kisstest", report)).toBe("kisstest kiss-audit report ready");
+  });
+
+  it("renders the stalled-worker headline (issue #467)", () => {
+    const stalled: WorkerStalledToast = { key: "stall:kisstest:worker-1", projectId: "kisstest", issueNumber: 42, workerId: "worker-1", title: "x" };
+    expect(headline("kisstest", stalled)).toBe("kisstest issue #42 worker stalled");
+    expect(headline(undefined, stalled)).toBe("kisstest issue #42 worker stalled");
   });
 });
 
@@ -155,5 +161,31 @@ describe("agent-report toasts (docs/agent-kinds.md, #300/#302)", () => {
     );
     expect(html).toContain("kisstest devex-audit report ready");
     expect(html).toContain("Report ready for triage");
+  });
+});
+
+describe("stalled-worker toasts (issue #467)", () => {
+  function stalledEvent(): NotificationEvent {
+    return { type: "notification.worker.stalled", at: NOW, projectId: "kisstest", workerId: "worker-1", issueNumber: 42, title: "no PR after 5 stall re-prompts" };
+  }
+
+  it("appends a stalled event as a toast keyed by the worker", () => {
+    const toasts = appendToast([], stalledEvent());
+    expect(toasts).toEqual([{ key: "stall:kisstest:worker-1", projectId: "kisstest", issueNumber: 42, workerId: "worker-1", title: "no PR after 5 stall re-prompts" }]);
+  });
+
+  it("dedupes re-emissions and keeps other kinds' keys separate", () => {
+    const once = appendToast([], stalledEvent());
+    expect(appendToast(once, stalledEvent())).toBe(once);
+    const withMerge = appendToast(once, mergedEvent());
+    expect(withMerge).toHaveLength(2);
+  });
+
+  it("renders '<project> issue #42 worker stalled' with the detail line", () => {
+    const html = renderToString(
+      <ToastStack toasts={appendToast([], stalledEvent())} projects={[KISSTEST]} onDismiss={() => {}} />,
+    );
+    expect(html).toContain("kisstest issue #42 worker stalled");
+    expect(html).toContain("no PR after 5 stall re-prompts");
   });
 });

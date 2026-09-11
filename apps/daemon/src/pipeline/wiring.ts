@@ -13,6 +13,9 @@
  *   issues, keyed by the persisted issue cursor (issue #50);
  * - {@link ./issue-refs.ts} — worker↔PR association by issue reference;
  * - {@link ./broadcast.ts} — the kanban broadcast bridge onto the WS hub.
+ * - {@link ./stall-wiring.ts} — the issue-worker stall backstop (issue
+ *   #467): a poll-driven sweep that re-prompts (bounded) issue workers
+ *   whose turn silently ended without a PR, notifying on exhaustion.
  *
  * Start ordering (daemon entry point): session reconciliation →
  * orchestrator bootstrap → `automation.start()`. `start()` baselines each
@@ -27,7 +30,7 @@
 
 import path from "node:path";
 
-import { workerSchema } from "@pideck/shared";
+import { workerSchema, type NotificationEvent } from "@pideck/shared";
 
 import type { GhClient } from "../github/gh.js";
 import { BlockedTicketStore } from "./issues/blocked-store.js";
@@ -38,7 +41,7 @@ import { countProjectOccupants } from "../sessions/occupancy.js";
 import type { PRSessionControl } from "./prs/pipeline.js";
 import type { WorkerPipelineSettings } from "./prs/settings.js";
 import type { PRPipelineEvent } from "./prs/events.js";
-import { DEFAULT_POLL_INTERVAL_MS, type GithubWatcherEvent } from "../github/watch.js";
+import { DEFAULT_POLL_INTERVAL_MS, PollLoop, type GithubWatcherEvent } from "../github/watch.js";
 import type { ProjectService } from "../api/projects.js";
 import type { SessionManager } from "../sessions/manager.js";
 import type { WsHub } from "../api/ws.js";
@@ -48,6 +51,8 @@ import { CatchUpSweep } from "./catchup.js";
 import { watcherOptionsFromEnv } from "./env.js";
 import { associateWorkerPr } from "./issue-refs.js";
 import { hubAnnouncedSpawner } from "./spawner.js";
+import { announceWorkerStatus, buildStallSweep } from "./stall-wiring.js";
+import type { StallSweep } from "./issues/stall-sweep.js";
 import { buildUnit, registeredProject, RoutingBlockerResolver, type ProjectUnit } from "./unit-builder.js";
 import { spawnReviewAgent as spawnReviewAgentImpl } from "./prs/review-spawn.js";
 
@@ -84,7 +89,7 @@ export interface GithubAutomationOptions {
   /** Pi auth readiness for review-agent prompt gating (issue #107). Required (issue #424 F8) — the daemon context always provides it. */
   piReady: () => Promise<boolean>;
   /** Prompt gate (issue #56) holding review prompts until pi is ready. Required (issue #424 F8). */
-  promptGate: Pick<PromptGate, "queue">;
+  promptGate: Pick<PromptGate, "queue" | "holdsWorker">;
   /**
    * Agent-kind registry (v2, issue #330): consulted by the session
    * control's occupancy count so workerLike kind sessions gate the
@@ -114,6 +119,8 @@ export class GithubAutomation {
   private readonly spawner: WorkerSpawner;
   private readonly bridge: KanbanBridge;
   private readonly catchUp: CatchUpSweep;
+  private readonly stallSweep: StallSweep;
+  private stallLoop: PollLoop | null = null;
   private readonly enabled: boolean;
   private readonly pollIntervalMs: number;
   private readonly now: () => Date;
@@ -140,23 +147,14 @@ export class GithubAutomation {
 
     this.spawner = hubAnnouncedSpawner(options, this.bridge, this.now, this.onError);
 
+    // Issue #467: one status announcer shared by the PR loop's session
+    // control and the stall sweep (the broadcast never drifts).
+    const announceStatus = announceWorkerStatus(options.sessions, this.bridge, this.now);
+
     this.sessionControl = {
       listWorkers: (filter) => options.sessions.listWorkers(filter),
       getWorker: (workerId) => options.sessions.getWorker(workerId),
-      updateWorkerStatus: (workerId, status, statusMessage) => {
-        const worker = options.sessions.updateWorkerStatus(workerId, status, statusMessage);
-        this.bridge.broadcast(
-          {
-            type: "worker.status.changed",
-            at: this.now().toISOString(),
-            projectId: worker.projectId,
-            workerId: worker.id,
-            status,
-          },
-          `worker-status:${workerId}`,
-        );
-        return worker;
-      },
+      updateWorkerStatus: announceStatus,
       sendKeys: (sessionId, keys, sendOptions) => options.sessions.sendKeys(sessionId, keys, sendOptions),
       // Issue #393: the review path gates the `workerConcurrency` cap with
       // the SAME occupancy predicate as the CLI/agent-kind spawn paths —
@@ -223,6 +221,12 @@ export class GithubAutomation {
       if (this.units.get(event.projectId) === undefined) return;
       this.bridge.broadcast(event, `kanban:${event.projectId}`);
     });
+
+    // Issue #467: the stall backstop — deterministic sweep over the watched
+    // projects' issue workers, re-prompting (bounded) the ones whose turn
+    // silently ended without a PR. Its exhaustion notifications are
+    // broadcast on the hub like the PR loop's notifications.
+    this.stallSweep = buildStallSweep(options, announceStatus, this.now, this.onError);
   }
 
   // -- lifecycle -------------------------------------------------------------
@@ -241,6 +245,17 @@ export class GithubAutomation {
         this.activateUnit(unit).catch((err) => this.onError(err, `activate:${unit.projectId}`)),
       ),
     );
+    // Issue #467: the stall backstop's poll loop — one sweep per poll tick
+    // over the watched projects (same cadence as the watchers/PR loop;
+    // the sweep itself is a cheap registry read unless it re-prompts).
+    if (this.stallLoop === null) {
+      this.stallLoop = new PollLoop(
+        () => this.pollStallSweep(),
+        this.pollIntervalMs,
+        (err) => this.onError(err, "stall-sweep"),
+      );
+    }
+    this.stallLoop.start({ immediate: false });
   }
 
   /**
@@ -250,6 +265,7 @@ export class GithubAutomation {
    */
   stop(): void {
     this.running = false;
+    this.stallLoop?.stop();
     for (const unit of this.units.values()) this.stopUnit(unit);
     this.units.clear();
   }
@@ -361,6 +377,27 @@ export class GithubAutomation {
         ? [...this.units.values()]
         : [this.units.get(projectId)].filter((unit): unit is ProjectUnit => unit !== undefined);
     await this.catchUp.pollBatch(targets);
+  }
+
+  /**
+   * Runs one stall sweep (issue #467) over a project's workers (or all
+   * watched projects') and broadcasts the exhaustion notifications. Test/
+   * ops hook — the running loop sweeps by itself, one pass per poll tick.
+   */
+  async pollStallSweep(projectId?: string): Promise<void> {
+    const targets =
+      projectId === undefined
+        ? [...this.units.keys()]
+        : [projectId].filter((id) => this.units.has(id));
+    for (const id of targets) {
+      const events = await this.stallSweep.sweep(id);
+      for (const event of events) this.broadcastNotification(id, event);
+    }
+  }
+
+  /** Broadcasts a stall-sweep (or other worker-lifecycle) notification on the hub. */
+  private broadcastNotification(projectId: string, event: NotificationEvent): void {
+    this.bridge.broadcast(event, `kanban:${projectId}`);
   }
 
   // -- internals -------------------------------------------------------------

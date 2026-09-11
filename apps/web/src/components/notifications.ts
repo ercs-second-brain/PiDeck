@@ -10,7 +10,10 @@
 import type { AgentKind, NotificationEvent } from "@pideck/shared";
 import { isPrNotification, toastKey } from "./Toasts";
 
-/** One persisted notification (merged PRs #111; agent reports #300/#302; ready-for-merge #408). */
+/**
+ * One persisted notification (merged PRs #111; agent reports #300/#302;
+ * ready-for-merge #408; stalled workers #467).
+ */
 export interface CenterNotification {
   /** Stable dedupe key, shared with toasts. */
   key: string;
@@ -26,6 +29,10 @@ export interface CenterNotification {
   /** Session the report was delivered to (agent-report notifications only):
    * the project orchestrator, where the report lives. */
   reportTargetSessionId?: string;
+  /** The stalled worker's id (stalled-worker notifications only, issue #467). */
+  workerId?: string;
+  /** The backed issue the stalled worker never opened a PR for (stalled-worker notifications only). */
+  issueNumber?: number;
   /** Headline detail (PR title at merge / report summary). */
   title: string;
   /** Event timestamp (ISO), shown in the dropdown. */
@@ -43,7 +50,9 @@ const STORAGE_KEY = "pideck.notifications.v1";
 function notificationKey(event: NotificationEvent): string {
   return isPrNotification(event)
     ? toastKey(event.projectId, event.prNumber, event.type === "notification.pr.merged" ? "merged" : "ready_for_merge")
-    : `agent:${event.projectId}:${event.sessionId}`;
+    : event.type === "notification.worker.stalled"
+      ? `stall:${event.projectId}:${event.workerId}`
+      : `agent:${event.projectId}:${event.sessionId}`;
 }
 
 /** Appends an event as an unread notification, deduped and newest-first — pure. */
@@ -53,7 +62,9 @@ export function appendNotification(list: CenterNotification[], event: Notificati
   const base = { key, projectId: event.projectId, title: event.title, at: event.at, read: false };
   const next = isPrNotification(event)
     ? { ...base, prNumber: event.prNumber, prKind: event.type === "notification.pr.merged" ? ("merged" as const) : ("ready_for_merge" as const) }
-    : { ...base, agentKind: event.agentKind, sessionId: event.sessionId, reportTargetSessionId: event.reportTargetSessionId };
+    : event.type === "notification.worker.stalled"
+      ? { ...base, workerId: event.workerId, issueNumber: event.issueNumber }
+      : { ...base, agentKind: event.agentKind, sessionId: event.sessionId, reportTargetSessionId: event.reportTargetSessionId };
   return [{ ...next }, ...list].slice(0, MAX_NOTIFICATIONS);
 }
 
@@ -93,7 +104,9 @@ function loadNotifications(): CenterNotification[] {
         (typeof (n as CenterNotification).prNumber === "number" ||
           (typeof (n as CenterNotification).agentKind === "string" &&
             typeof (n as CenterNotification).sessionId === "string" &&
-            typeof (n as CenterNotification).reportTargetSessionId === "string")) &&
+            typeof (n as CenterNotification).reportTargetSessionId === "string") ||
+          (typeof (n as CenterNotification).workerId === "string" &&
+            typeof (n as CenterNotification).issueNumber === "number")) &&
         typeof (n as CenterNotification).title === "string" &&
         typeof (n as CenterNotification).at === "string" &&
         typeof (n as CenterNotification).read === "boolean",

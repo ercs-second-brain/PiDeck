@@ -157,6 +157,12 @@ describe("notificationTarget (issue #178)", () => {
       }),
     ).toBe("/terminal/sess-orch-1");
   });
+
+  it("clicks stalled-worker notifications through to the project board (issue #467)", () => {
+    expect(
+      notificationTarget({ key: "stall:kisstest:worker-1", projectId: "kisstest", workerId: "worker-1", issueNumber: 42, title: "t", at: NOW, read: false }),
+    ).toBe("/projects/kisstest");
+  });
 });
 
 describe("agent-report notifications (docs/agent-kinds.md, #300/#302)", () => {
@@ -192,6 +198,41 @@ describe("agent-report notifications (docs/agent-kinds.md, #300/#302)", () => {
     );
     expect(html).toContain("kisstest devex-audit report ready");
     expect(html).toContain("Report ready for triage");
+  });
+});
+
+describe("stalled-worker notifications (issue #467)", () => {
+  function stalledEvent(): NotificationEvent {
+    return { type: "notification.worker.stalled", at: NOW, projectId: "kisstest", workerId: "worker-1", issueNumber: 42, title: "no PR after 5 stall re-prompts" };
+  }
+
+  it("prepends a stalled event keyed by the worker", () => {
+    const list = appendNotification([], stalledEvent());
+    expect(list).toEqual([
+      {
+        key: "stall:kisstest:worker-1",
+        projectId: "kisstest",
+        workerId: "worker-1",
+        issueNumber: 42,
+        title: "no PR after 5 stall re-prompts",
+        at: NOW,
+        read: false,
+      },
+    ]);
+  });
+
+  it("dedupes re-emissions and keeps other kinds' keys separate", () => {
+    const once = appendNotification([], stalledEvent());
+    expect(appendNotification(once, stalledEvent())).toBe(once);
+    expect(appendNotification(once, mergedEvent())).toHaveLength(2);
+  });
+
+  it("renders '<project> issue #42 worker stalled' in the dropdown", () => {
+    const html = renderToString(
+      <NotificationList notifications={appendNotification([], stalledEvent())} projects={[KISSTEST]} onOpen={() => {}} onClear={() => {}} />,
+    );
+    expect(html).toContain("kisstest issue #42 worker stalled");
+    expect(html).toContain("no PR after 5 stall re-prompts");
   });
 });
 
