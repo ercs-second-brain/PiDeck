@@ -6,7 +6,9 @@
  * them on the WS hub, so connected webapps see boards move live. The PR
  * pipelines' user-facing `notification.pr.merged` (issue #111) and
  * `notification.pr.ready_for_merge` (issue #408) events are forwarded 1:1
- * as shared `NotificationEvent`s on the same hub.
+ * as shared `NotificationEvent`s on the same hub. The ready-for-merge
+ * event additionally reaches the owning orchestrator's pane — the wiring
+ * types it in (issue #490, `orchestrator-notify.ts`).
  *
  * The per-card `lastColumns` map exists only to synthesize the `from`
  * column of `kanban.card.moved` for PR cards (PR card events carry only

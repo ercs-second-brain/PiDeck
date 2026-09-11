@@ -17,8 +17,10 @@
  * - `notification.pr.ready_for_merge` — the orchestrator notification
  *   (issue #408): the PR is CI-green, approved, and both the author worker
  *   and the reviewer are idle. The wiring forwards it onto the WS hub as a
- *   shared `NotificationEvent` (webapp toast/notification center); merging
- *   stays human/orchestrator-approved — this only notifies.
+ *   shared `NotificationEvent` (webapp toast/notification center) and —
+ *   issue #490 — types it into the owning project's orchestrator pane, so
+ *   the orchestrator is notified deterministically (merging stays
+ *   human/orchestrator-approved — this only notifies).
  */
 
 import type { KanbanCard } from "@pideck/shared";
