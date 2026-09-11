@@ -126,6 +126,8 @@ export function makeWorker(overrides: Partial<Worker> = {}): Worker {
 export function fakeSessions(
   workers: Worker[],
   kindSessions: Session[] = [],
+  /** Injectable clock: status writes bump `updatedAt` like the real registry (issue #501's round clock reads it). */
+  now: () => Date = () => new Date(),
 ): {
   control: PRSessionControl;
   prompts: SentPrompt[];
@@ -147,6 +149,7 @@ export function fakeSessions(
       if (worker === undefined) throw new Error(`unknown worker: ${workerId}`);
       worker.status = status;
       worker.statusMessage = statusMessage ?? null;
+      worker.updatedAt = now().toISOString(); // the real registry bumps on every write
       statuses.push({ workerId, status, statusMessage });
       return worker;
     },
@@ -237,13 +240,13 @@ export function makeHarness(
   const openList: number[] = [];
   const assignments: Array<{ path: string; assignees: string[] }> = [];
   const gh = fakePipelineGh(prs, openList, assignments, options.failAssignees === true);
-  const sessions = fakeSessions(options.workers ?? [makeWorker()], options.kindSessions);
+  let clock = BASE_TIME;
+  const now = () => new Date(clock);
+  const sessions = fakeSessions(options.workers ?? [makeWorker()], options.kindSessions, now);
   const trackerPath =
     options.trackerPath ?? path.join(mkdtempSync(path.join(tmpdir(), "pideck-prpipeline-")), "prs.json");
   const tracker = new PRTracker(trackerPath);
   const emitted: PRPipelineEvent[] = [];
-  let clock = BASE_TIME;
-  const now = () => new Date(clock);
   const pipeline = new PullRequestPipeline({
     gh,
     projectId: PROJECT,

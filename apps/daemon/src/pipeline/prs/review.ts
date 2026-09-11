@@ -46,6 +46,7 @@
 
 import { ACTIVE_WORKER_STATUSES, type PullRequest, type Worker, type WorkerStatus } from "@pideck/shared";
 
+import { DEFAULT_STALL_IDLE_MS } from "../issues/stall-sweep.js";
 import type { ReviewSubmission } from "../../github/reviews.js";
 import type { PRSessionControl } from "./pipeline.js";
 import { buildReReviewPrompt, buildReviewAgentPrompt, type ReviewAgentPromptOptions } from "./prompts.js";
@@ -109,6 +110,11 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
     await archiveReviewAgent(tracked, ctx.sessions, `PR #${tracked.prNumber} approved — review agent done`);
     return;
   }
+  // Issue #501 (B9): the reviewer round's stall backstop — a `running`
+  // round with no attributable submission rests instead of showing a
+  // phantom working agent forever. Runs on red polls too: the sidebar's
+  // accuracy must not depend on CI color.
+  stallSettleReviewer(tracked, ctx);
   if (pr.ciStatus !== "success") return;
   const settings = ctx.settings() ?? DEFAULT_WORKER_PIPELINE_SETTINGS;
   // Issue #322: a conflicted PR is not reviewable — GitHub cannot merge it
@@ -124,7 +130,11 @@ export async function driveReview(tracked: TrackedPR, pr: PullRequest, headSha: 
   // Issue #424 (F2): no legacy null-user branch — a configured review
   // account always carries its login (both-or-neither), so the gate always
   // applies.
-  if (!(ctx.prAssignees ?? []).includes(ctx.reviewAccountUsername())) return;
+  // GitHub logins are case-insensitive; the settings store keeps the user-
+  // typed casing (issue #501): compare identities case-insensitively at the
+  // spawn gate and the settle attribution below, or a mis-cased username
+  // both blocks the spawn and leaves a spawned reviewer `running` forever.
+  if (!(ctx.prAssignees ?? []).some((login) => sameLogin(login, ctx.reviewAccountUsername()))) return;
   await driveReviewerRound(tracked, pr, headSha, ctx);
 }
 
@@ -201,7 +211,9 @@ export function settleReviewerRound(tracked: TrackedPR, pr: PullRequest, newRevi
   // Issue #424 (F2): no legacy null-user branch — only the configured
   // review login's submission settles the reviewer (its `gh` identity);
   // single-account mode has no reviewer, so the check below stays inert.
-  if (newReview.author !== ctx.reviewAccountUsername()) return; // someone else's review
+  // Issue #501: case-insensitive — GitHub canonicalizes login casing, so an
+  // exact compare against the user-typed settings value can miss forever.
+  if (newReview.author === null || !sameLogin(newReview.author, ctx.reviewAccountUsername())) return; // someone else's review
   const reviewerId = tracked.reviewWorkerId;
   if (reviewerId === null) return;
   const reviewer = ctx.sessions.getWorker(reviewerId);
@@ -266,6 +278,41 @@ function underCap(ctx: ReviewContext, projectId: string): boolean {
 
 function promptOptions(tracked: TrackedPR, ctx: ReviewContext): ReviewAgentPromptOptions {
   return { projectId: tracked.projectId, repo: ctx.repo };
+}
+
+/**
+ * Issue #501 (B9): the reviewer round's stall backstop — the PR-loop sibling
+ * of the issue-worker stall sweep (issue #467, which excludes reviewers and
+ * defers their lifecycle to this loop). A reviewer parked at `running` since
+ * its round started (the record's `updatedAt` — bumped at prompt delivery and
+ * re-review) with NO attributable review submission observed for the whole
+ * stall window has silently finished its turn (gh failure, abort) or will
+ * never be attributable (a mis-cased review identity, a same-second watermark
+ * tie): it rests at the loop's resting status like a settled round, so the
+ * sidebar stops showing a phantom working agent. The window reuses the sweep's
+ * {@link DEFAULT_STALL_IDLE_MS} — one "idle past the window" semantic. A
+ * still-working slow reviewer that posts later reconciles through the
+ * watermark: its settle skips a non-running reviewer, and the PR-level
+ * triggers (the author's fix round, approval archival) still fire.
+ */
+function stallSettleReviewer(tracked: TrackedPR, ctx: ReviewContext): void {
+  const reviewerId = tracked.reviewWorkerId;
+  if (reviewerId === null) return;
+  const reviewer = ctx.sessions.getWorker(reviewerId);
+  if (reviewer === undefined || reviewer.status !== "running") return;
+  const startedAt = Date.parse(reviewer.updatedAt);
+  if (Number.isNaN(startedAt) || ctx.now().getTime() - startedAt < DEFAULT_STALL_IDLE_MS) return;
+  setWorkerStatusQuietly(
+    ctx,
+    reviewerId,
+    "awaiting_ci",
+    `PR #${tracked.prNumber}: no review posted — reviewer resting (stall backstop)`,
+  );
+}
+
+/** GitHub logins are case-insensitive — identity compares are too (issue #501). */
+function sameLogin(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 /** Worker-status update that never throws (the record may have vanished). */
