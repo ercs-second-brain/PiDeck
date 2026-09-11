@@ -31,6 +31,14 @@
  *   notification last fired for (CI-green + approved + both agents idle). A
  *   new head or a new review round re-arms the trigger — each approved round
  *   notifies the orchestrator exactly once.
+ * - `pendingReviewDecision` / `reviewFixAttempts` (issue #440): the
+ *   changes-requested twin of the CI-fix cycle. A newly observed review
+ *   decision requesting changes parks `pendingReviewDecision` — recorded on
+ *   red polls too (the submission watermark consumes there), delivered by
+ *   the decision branch once the author is idle on green, so the decision
+ *   deterministically restarts the loop. `reviewFixAttempts` counts
+ *   consecutive decision-prompted fix rounds (reset when the PR is
+ *   approved); exhaustion stops driving the PR like the CI bound does.
  *
  * State is persisted to a JSON file (same pattern as the session
  * registry) so a daemon restart reconciles tracked PRs instead of losing
@@ -63,6 +71,10 @@ const trackedPRSchema = z.object({
   lastReviewSeenAt: z.string().nullable().default(null),
   /** Head SHA the ready-for-merge notification last fired for (issue #408). Defaults keep pre-#408 files loadable. */
   readyNotifiedHeadSha: z.string().nullable().default(null),
+  /** A newly observed changes-requested decision awaits its author prompt (issue #440). Defaults keep pre-#440 files loadable. */
+  pendingReviewDecision: z.boolean().default(false),
+  /** Consecutive changes-requested fix rounds driven (issue #440). Defaults keep pre-#440 files loadable. */
+  reviewFixAttempts: z.number().int().nonnegative().default(0),
   headSha: z.string().nullable(),
   cardSignature: z.string().nullable(),
   updatedAt: z.string(),
@@ -115,6 +127,8 @@ export class PRTracker {
       reviewedHeadSha: null,
       lastReviewSeenAt: null,
       readyNotifiedHeadSha: null,
+      pendingReviewDecision: false,
+      reviewFixAttempts: 0,
       headSha: null,
       cardSignature: null,
       updatedAt: now.toISOString(),

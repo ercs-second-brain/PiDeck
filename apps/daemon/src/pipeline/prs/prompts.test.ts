@@ -97,11 +97,12 @@ describe("PR prompts", () => {
     expect(prompt).toContain("gh pr review 12 --repo o/r");
   });
 
-  it("address-review prompt tells the author to fetch findings from the review body too", () => {
-    const prompt = buildAddressReviewPrompt(PR);
+  it("address-review prompt tells the author to fetch findings from the review body too, with the round bound (issue #440)", () => {
+    const prompt = buildAddressReviewPrompt(PR, { attempt: 2, maxAttempts: 5 });
     expect(prompt).not.toContain("\n");
     expect(prompt).toContain("requested changes on your PR #12");
     expect(prompt).toContain("Fetch the findings");
+    expect(prompt).toContain("Fix round 2 of 5");
     expect(prompt).not.toContain("review-comments skill");
     expect(prompt).toContain("`agent/issue-7`");
     expect(prompt).toContain("Do not open a new PR");

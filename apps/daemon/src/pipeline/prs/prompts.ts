@@ -122,19 +122,33 @@ export function buildReReviewPrompt(pr: PullRequest, options: ReviewAgentPromptO
 }
 
 /**
+ * Bound for the changes-requested fix cycle (issue #440): the prompt names
+ * the round so the author sees the same bounded-loop notice as CI fixes.
+ */
+export interface AddressReviewPromptOptions {
+  /** 1-based review-fix round number for this PR. */
+  attempt: number;
+  /** Max review-fix rounds before the pipeline stops driving the PR. */
+  maxAttempts: number;
+}
+
+/**
  * Builds the prompt sent to the PR-authoring worker when a completed review
  * round requested changes (issue #407): the deterministic trigger that makes
  * the reviewer's findings actionable even when they ride only in the review
  * body rather than inline comments.
+ *
+ * Issue #440: the decision-prompted fix cycle is bounded like the CI-fix
+ * cycle — the prompt carries the round counter.
  */
-export function buildAddressReviewPrompt(pr: PullRequest): string {
+export function buildAddressReviewPrompt(pr: PullRequest, options: AddressReviewPromptOptions): string {
   const parts = [
     `[pideck] A GitHub review requested changes on your PR #${pr.number} "${oneLine(pr.title)}" (${pr.url}).`,
     `Fetch the findings — the review body ` +
       `(\`gh api repos/<owner>/<repo>/pulls/${pr.number}/reviews\`) as well as the inline comments; findings can ride in the body alone.`,
     `Address every finding, commit, and push a follow-up commit to the PR branch \`${pr.headBranch}\`; ` +
       `mark threads you resolved as resolved if the platform supports it.`,
-    "Do not open a new PR. When done, reply with a short summary of what you changed.",
+    `Fix round ${options.attempt} of ${options.maxAttempts}. Do not open a new PR. When done, reply with a short summary of what you changed.`,
   ];
   return parts.map(oneLine).join(" ");
 }
