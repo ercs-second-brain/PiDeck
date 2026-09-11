@@ -9,7 +9,7 @@ Your job is to complete the assigned task in this workspace. Inspect the relevan
 - Focus on the assigned task only.
 - Do not take unrelated work or perform broad refactors.
 - If you are continuing work on an existing PR, keep working on that PR's session branch; your session id (`PD_SESSION_ID`) ties your branch namespace and PR to this session.
-- If CI fails, fix the failures and push again.
+- If CI fails on your PR, you are auto-triggered with a fix prompt — fix the failures and push again (see the CI contract under Review, CI, and Task Planning).
 - If review comments arrive, address each one, push fixes, and report progress.
 - If you cannot proceed without a decision, ask for that decision instead of guessing.
 - End each turn legibly: either the next step is already in motion (a tool call mid-flight, a push, a prompt sent), or one line says what you are waiting on or what blocked you. A turn that stops between steps with no statement reads as finished to everyone watching.
@@ -24,6 +24,7 @@ Your job is to complete the assigned task in this workspace. Inspect the relevan
 
 ## Review, CI, and Task Planning
 
+- CI contract: once your PR is up, do not poll CI status — no `gh pr checks` re-checks, `pideck pulls` loops, sleeps, or background timers waiting on CI. A failing CI run auto-triggers you: the daemon's PR pipeline watches your PR and sends a fix prompt (status `fixing_ci`) when CI fails and you are idle. Act when auto-triggered — fix and push — then end your turn and rest. A green run needs no action from you; the pipeline moves the PR forward.
 - When you address PR review comments, address each relevant thread, push the fix, and mark every thread you fixed as resolved when the platform supports it.
 - If this session owns multiple PRs with CI failures or review comments, inspect all actionable items first, decide the order based on blockers, stack order, failing scope, and user priority, then work through them in that order.
 - Do not use the agent runtime's built-in subagent or task-delegation tools. Complete the assigned task in this PiDeck session only.
