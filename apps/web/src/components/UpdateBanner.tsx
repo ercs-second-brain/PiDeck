@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { isTerminalUpdateStage, UPDATE_STAGE_TEXT, type UpdateStatusResponse } from "@pideck/shared";
 import { apiApplyUpdate, errorMessage } from "../lib/api";
-import {
-  RELOAD_DELAY_MS,
-  startApplyPolling,
-  startIdleStatusPolling,
-} from "./update-polling";
+import { startApplyPolling, startIdleStatusPolling } from "./update-polling";
 import { UpdateApplyModal } from "./UpdateApplyModal";
 
 /**
@@ -38,14 +34,15 @@ import { UpdateApplyModal } from "./UpdateApplyModal";
  * - During the (multi-minute) rebuild the shim writes a live stage file the
  *   daemon serves as `applyProgress`; the user sees that stage plus an
  *   honest elapsed timer instead of a silent wait.
- * - While a banner-initiated apply runs (and for the completion beat before
- *   the reload) this state is a **full-screen modal over the dimmed app**
- *   (issue #113, `UpdateApplyModal`) — the update is app-wide, so the
- *   presentation matches the scope. Normal browsing is unaffected.
- * - When the update is done, polling stops and the page reloads into the
- *   new build. A page that merely had the daemon restart under it (CLI
- *   update path) detects the new `runningSha` after the API returns and
- *   offers a one-click reload instead of auto-navigating mid-work.
+ * - While a banner-initiated apply runs this state is a **full-screen modal
+ *   over the dimmed app** (issue #113, `UpdateApplyModal`) — the update is
+ *   app-wide, so the presentation matches the scope. Normal browsing is
+ *   unaffected.
+ * - When the update is done, polling stops and the page reloads straight
+ *   into the new build — no completion message (issue #450, user decision:
+ *   it "can just go away"). A page that merely had the daemon restart under
+ *   it (CLI update path) detects the new `runningSha` after the API returns
+ *   and offers a one-click reload instead of auto-navigating mid-work.
  */
 
 /** Live state of a banner-initiated apply while the daemon rebuilds. */
@@ -112,8 +109,6 @@ export function UpdateBanner() {
   const [status, setStatus] = useState<UpdateStatusResponse | null>(null);
   const [phase, setPhase] = useState<"idle" | "updating">("idle");
   const [updating, setUpdating] = useState<UpdatingState | null>(null);
-  /** Right after a banner-initiated apply resolves: reload into the new build. */
-  const [reloading, setReloading] = useState(false);
   /** CLI-path detection: a build is live whose SHA differs from the page's. */
   const [reloadSha, setReloadSha] = useState<string | null>(null);
   /** Idle page, API unreachable (e.g. a CLI update restarted the daemon). */
@@ -146,9 +141,9 @@ export function UpdateBanner() {
   // Idle: fresh check on load/focus, slow cached fallback, and a backoff
   // reconnect loop whenever the API is unreachable (CLI-update restart).
   useEffect(() => {
-    if (phase !== "idle" || reloading) return;
+    if (phase !== "idle") return;
     return startIdleStatusPolling({ onStatus: adopt, onUnreachable: () => setReconnecting(true) });
-  }, [phase, reloading, adopt]);
+  }, [phase, adopt]);
 
   // Updating: poll until the daemon runs the target build (see docblock).
   useEffect(() => {
@@ -165,9 +160,10 @@ export function UpdateBanner() {
         setUpdating(null);
         setReloadSha(null);
         setError(null); // the apply completed — its cycle is fully closed
-        setReloading(true); // the view says "Update complete", then we reload
         setPhase("idle");
-        setTimeout(() => window.location.reload(), RELOAD_DELAY_MS);
+        // Issue #450: no completion message — reload into the new build
+        // right away (the reload replaces the whole page mid-handler).
+        window.location.reload();
       },
       onFailed: (message) => {
         setUpdating(null);
@@ -201,7 +197,6 @@ export function UpdateBanner() {
       status={status}
       phase={phase}
       updating={updating}
-      reloading={reloading}
       reloadSha={reloadSha}
       reconnecting={reconnecting}
       error={error?.message ?? null}
@@ -216,8 +211,6 @@ export interface UpdateBannerViewProps {
   phase: "idle" | "updating";
   /** Live apply state (`null` while not banner-initiated-updating). */
   updating: UpdatingState | null;
-  /** Banner-initiated apply resolved — the page is about to reload. */
-  reloading: boolean;
   /** New build's SHA detected after a CLI-update daemon restart. */
   reloadSha: string | null;
   /** The daemon is unreachable from the idle page (CLI-update restart). */
@@ -339,8 +332,9 @@ function UpdateAvailableStrip({
 
 /**
  * Pure view for the popup states — kept separate so tests exercise the
- * rendering without React effects/fetch. Active-apply and completion
- * states render through {@link UpdateApplyModal} (issue #113). Every other
+ * rendering without React effects/fetch. The live apply renders through
+ * {@link UpdateApplyModal} (issue #113); the completion beat is gone
+ * (issue #450 — the page reloads straight into the new build). Every other
  * state is a compact popup (issue #260): the strips stack inside an
  * `.update-popup` wrapper anchored above the sidebar's settings entry;
  * quiet when up to date / loading (`null` — no empty popup shell).
@@ -349,19 +343,16 @@ export function UpdateBannerView({
   status,
   phase,
   updating,
-  reloading,
   reloadSha,
   reconnecting,
   error,
   onApply,
   onReload,
 }: UpdateBannerViewProps) {
-  // Banner-initiated apply resolved: the modal says so for a beat, then we
-  // reload (the wrapper schedules it — this render is the last thing the
-  // user sees). Same for the active apply: the state lives in the modal
-  // over the dimmed app, not in a strip (issue #113).
-  if (reloading || (phase === "updating" && updating !== null)) {
-    return <UpdateApplyModal updating={reloading ? null : updating} reloading={reloading} />;
+  // A banner-initiated apply renders in the modal over the dimmed app; on
+  // resolution the wrapper reloads the page directly (issue #450).
+  if (phase === "updating" && updating !== null) {
+    return <UpdateApplyModal updating={updating} />;
   }
 
   let content: ReactNode;
