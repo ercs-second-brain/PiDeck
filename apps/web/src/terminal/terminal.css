@@ -522,10 +522,11 @@
   opacity: 0.6;
 }
 
-/* Issues #297/#300/#302: agent-kind sessions spawned by a worker nest under
+/* Issues #297/#300/#302 + #502: sessions spawned by/for a worker nest under
    their caller's row per the #187 child-group pattern (same tree-line
-   indent, one level deeper); the nested list wraps below the row's flex
-   line via flex-basis 100%. */
+   indent, one level deeper) — agent-kind sessions (researcher, audits) and
+   reviewer workers reviewing the worker's PR alike; the nested list wraps
+   below the row's flex line via flex-basis 100%. */
 .picker-agent-children {
   flex-basis: 100%;
   margin-left: 22px;

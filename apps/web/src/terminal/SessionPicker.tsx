@@ -42,11 +42,9 @@ import {
   ArchivedSection,
   ProjectRow,
   SidebarToggle,
-  WorkerRow,
-  workerFor,
 } from "./picker-rows";
 import { ConfirmModals } from "./picker-confirms";
-import { AgentChildrenList, splitAgentSessions } from "./agent-nesting";
+import { projectWorkerLayout, workerRowWithAgents } from "./picker-worker-rows";
 import { GlobalAgentRow } from "./GlobalAgentRow";
 import { usePickerState } from "./use-picker-state";
 import { useTickingNow } from "./use-ticking-now";
@@ -55,58 +53,6 @@ export interface ProjectEntry {
   project: Project;
   sessions: Session[];
   workers: Worker[];
-}
-
-/** Props of {@link workerRowWithAgents} — everything one worker row needs. */
-type WorkerRowBag = {
-  workers: Worker[];
-  selectedSessionId: string | null;
-  pendingTerminateWorkerId: string | null;
-  /** Agent-kind session whose terminate request is in flight (#311). */
-  pendingTerminateSessionId: string | null;
-  now: number;
-  nestedByParent: Map<string, Session[]>;
-  onSelectSession: (sessionId: string) => void;
-  onTerminateWorker?: (workerId: string) => Promise<void>;
-  onAskTerminate: (sessionId: string) => void;
-  /** Present only when a terminate handler is wired (undefined hides the ⋯). */
-  agentAskTerminate: ((sessionId: string) => void) | undefined;
-  /** Session id whose row ⋯ context menu is open (issue #355, B5). */
-  openRowMenuSessionId: string | null;
-  onToggleRowMenu: (sessionId: string) => void;
-};
-
-/** One live/archived worker row, with its nested agent-kind spawns (if any) — module-level so ProjectSection stays within budget. */
-function workerRowWithAgents(bag: WorkerRowBag, session: Session, archived: boolean) {
-  const worker = workerFor(session, bag.workers);
-  return (
-    <WorkerRow
-      key={session.id}
-      session={session}
-      workers={bag.workers}
-      archived={archived}
-      selectedSessionId={bag.selectedSessionId}
-      pending={worker !== undefined && bag.pendingTerminateWorkerId === worker.id}
-      now={bag.now}
-      onSelectSession={bag.onSelectSession}
-      onTerminateWorker={bag.onTerminateWorker}
-      onAskTerminate={bag.onAskTerminate}
-      rowMenuOpen={bag.openRowMenuSessionId === session.id}
-      onToggleRowMenu={bag.onToggleRowMenu}
-    >
-      {!archived && (
-        <AgentChildrenList
-          sessions={bag.nestedByParent.get(session.id)}
-          selectedSessionId={bag.selectedSessionId}
-          pendingTerminateSessionId={bag.pendingTerminateSessionId}
-          onAskTerminate={bag.agentAskTerminate}
-          onSelectSession={bag.onSelectSession}
-          openRowMenuSessionId={bag.openRowMenuSessionId}
-          onToggleRowMenu={bag.onToggleRowMenu}
-        />
-      )}
-    </WorkerRow>
-  );
 }
 
 /**
@@ -163,27 +109,14 @@ function ProjectSection(props: {
   /** Opens the terminate-confirmation modal on a session row (issue #64/#116/#311). */
   onAskTerminate: (sessionId: string) => void;
 }) {
-  const { project, sessions, workers } = props.entry;
+  const { project, sessions } = props.entry;
   const orchestrator = sessions.find((session) => session.role === "orchestrator");
-  // Issue #316: agent-kind sessions carry role "worker" (they are sessions,
-  // never worker records) — they render only through the agent-row grouping
-  // below (splitAgentSessions); selection keys on the shared session id.
-  const workerSessions = sessions.filter((session) => session.role === "worker" && session.agentKind === undefined);
-  // Issue #64: terminated workers move to the collapsed archived section — only live ones render under the row.
-  const activeWorkers = workerSessions.filter((session) => workerFor(session, workers)?.status !== "archived");
-  const archivedWorkers = workerSessions.filter((session) => workerFor(session, workers)?.status === "archived");
   const starting = props.startingProjectId === project.id;
 
-  // Agent-kind sessions nest under their caller (#187 pattern) — see agent-nesting.ts.
-  const { rootAgents, nestedByParent } = splitAgentSessions(sessions, orchestrator?.id);
-  const bag: WorkerRowBag = {
-    workers, selectedSessionId: props.selectedSessionId,
-    pendingTerminateWorkerId: props.pendingTerminateWorkerId, pendingTerminateSessionId: props.pendingTerminateSessionId,
-    now: props.now, nestedByParent, onSelectSession: props.onSelectSession,
-    onTerminateWorker: props.onTerminateWorker, onAskTerminate: props.onAskTerminate,
-    agentAskTerminate: props.onTerminateAgentSession !== undefined ? props.onAskTerminate : undefined,
-    openRowMenuSessionId: props.openRowMenuSessionId, onToggleRowMenu: props.onToggleRowMenu,
-  };
+  // Worker rows + their nested spawns (agent-kind sessions, reviewer
+  // workers) — computed in picker-worker-rows.ts to keep this section
+  // within its size budget.
+  const { activeWorkers, archivedWorkers, rootWorkers, rootAgents, bag } = projectWorkerLayout(props.entry, props);
 
   return (
     <section className="picker-project">
@@ -206,7 +139,7 @@ function ProjectSection(props: {
       />
       {!props.collapsed && (activeWorkers.length > 0 || rootAgents.length > 0) && (
         <ul className="picker-list picker-workers">
-          {activeWorkers.map((session) => workerRowWithAgents(bag, session, false))}
+          {rootWorkers.map((session) => workerRowWithAgents(bag, session, false))}
           {rootAgents.map((agent) => (
             <AgentRow key={agent.id} session={agent} selectedSessionId={props.selectedSessionId} pending={props.pendingTerminateSessionId === agent.id} onAskTerminate={bag.agentAskTerminate} onSelectSession={props.onSelectSession} rowMenuOpen={props.openRowMenuSessionId === agent.id} onToggleRowMenu={props.onToggleRowMenu} />
           ))}
