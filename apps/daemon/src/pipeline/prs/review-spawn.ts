@@ -51,8 +51,11 @@ export interface ReviewSpawnDeps {
  * `deps.onError`; the pipeline retries on a later poll).
  */
 export async function spawnReviewAgent(projectId: string, request: ReviewSpawnRequest, deps: ReviewSpawnDeps): Promise<Worker | null> {
+  // Hoisted so the delivery-failure catch below can reach the record: the
+  // spawn itself succeeding is what creates the phantom.
+  let worker: Worker | null = null;
   try {
-    const { worker } = await deps.sessions.spawnWorker(projectId, {
+    const spawned = await deps.sessions.spawnWorker(projectId, {
       issueNumber: 0,
       kind: "reviewer",
       prNumber: request.prNumber,
@@ -61,6 +64,7 @@ export async function spawnReviewAgent(projectId: string, request: ReviewSpawnRe
       statusMessage: "review agent launching",
       ...(deps.reviewGhToken ? { env: { GH_TOKEN: deps.reviewGhToken } } : {}),
     });
+    worker = spawned.worker;
     deps.broadcastSpawned(worker);
     // Issue #56/#318 gated delivery — the ONE shared spawn-path dance
     // ({@link deliverSpawnPrompt}, issues #56/#318/#378; consolidated from
@@ -79,6 +83,24 @@ export async function spawnReviewAgent(projectId: string, request: ReviewSpawnRe
     );
     return worker;
   } catch (err) {
+    // Issue #501 (B9): the record already says `running` (spawnWorker's
+    // post-launch write) but its prompt was never delivered — this reviewer
+    // will never review, and nothing else settles it (no tracker linkage,
+    // the stall sweep excludes reviewers). Mark it `failed` per the prompt
+    // gate's own delivery-failure convention (a prompt is never silently
+    // lost, prompt-gate onDeliveryFailed) so the sidebar stops showing a
+    // phantom working reviewer; the pipeline's retry spawns a replacement.
+    if (worker !== null) {
+      try {
+        deps.sessions.updateWorkerStatus(
+          worker.id,
+          "failed",
+          `initial prompt delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      } catch {
+        // The record may have vanished between the spawn and the failure.
+      }
+    }
     deps.onError(err);
     return null;
   }

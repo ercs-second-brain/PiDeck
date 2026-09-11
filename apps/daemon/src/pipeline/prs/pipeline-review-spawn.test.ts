@@ -12,6 +12,7 @@ import { spawnReviewAgent } from "./review-spawn.js";
 
 function fakeSessions() {
   const spawns: Array<{ options: Record<string, unknown> }> = [];
+  const statusWrites: Array<{ workerId: string; status: string; statusMessage: string }> = [];
   const worker = {
     id: "worker-reviewer-1",
     projectId: "proj",
@@ -25,13 +26,19 @@ function fakeSessions() {
   };
   return {
     spawns,
+    statusWrites,
+    worker,
     sessions: {
       spawnWorker: async (_projectId: string, options: Record<string, unknown>) => {
         spawns.push({ options });
         return { worker };
       },
       deliverPromptWhenReady: async () => ({ typed: true, accepted: true }),
-      updateWorkerStatus: () => worker,
+      updateWorkerStatus: (workerId: string, status: string, statusMessage?: string) => {
+        statusWrites.push({ workerId, status, statusMessage: statusMessage ?? "" });
+        worker.status = status as typeof worker.status;
+        return worker;
+      },
     },
   };
 }
@@ -65,5 +72,48 @@ describe("spawnReviewAgent env (issue #407)", () => {
       onError: () => undefined,
     });
     expect(fake.spawns[0]?.options).not.toHaveProperty("env");
+  });
+
+  // Issue #501 (B9): a delivery failure after the spawn leaves the record
+  // `running` with no tracker linkage — a phantom working reviewer in the
+  // sidebar forever. The orphan is marked `failed` (the prompt gate's
+  // never-silently-lost convention) and the error stays sunk (the pipeline
+  // retries on a later poll).
+  it("marks the reviewer failed when its prompt delivery throws", async () => {
+    const fake = fakeSessions();
+    fake.sessions.deliverPromptWhenReady = async () => {
+      throw new Error("pane never accepted input");
+    };
+    const errors: unknown[] = [];
+    const result = await spawnReviewAgent("proj", REQUEST, {
+      sessions: fake.sessions as never,
+      broadcastSpawned: () => undefined,
+      reviewGhToken: "ghp_review",
+      ...READY_DEPS,
+      onError: (err) => errors.push(err),
+    });
+    expect(result).toBeNull(); // the pipeline's retry signal
+    expect(errors).toHaveLength(1); // sunk, not thrown
+    expect(fake.statusWrites).toEqual([
+      { workerId: "worker-reviewer-1", status: "failed", statusMessage: "initial prompt delivery failed: pane never accepted input" },
+    ]);
+  });
+
+  it("a spawn-path failure before the record exists only sinks the error", async () => {
+    const fake = fakeSessions();
+    fake.sessions.spawnWorker = async () => {
+      throw new Error("tmux launch failed");
+    };
+    const errors: unknown[] = [];
+    const result = await spawnReviewAgent("proj", REQUEST, {
+      sessions: fake.sessions as never,
+      broadcastSpawned: () => undefined,
+      reviewGhToken: "ghp_review",
+      ...READY_DEPS,
+      onError: (err) => errors.push(err),
+    });
+    expect(result).toBeNull();
+    expect(errors).toHaveLength(1);
+    expect(fake.statusWrites).toEqual([]); // nothing to mark — no record was created
   });
 });
