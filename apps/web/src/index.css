@@ -845,31 +845,36 @@ code {
 
 /* --- Update-apply modal (issue #113) ----------------------------------------- */
 
-/* Full-screen overlay while a banner-initiated apply runs (and for the
-   completion beat before the reload): the app underneath is dimmed — the
-   update is app-wide, the presentation matches the scope. Chrome is the
-   shared modal chrome (.modal-overlay/.modal-card/.modal-title below) —
-   the card only narrows; the overlay centers and sits above everything. */
+/* Full-screen overlay while a banner-initiated apply runs: the app
+   underneath is dimmed — the update is app-wide, the presentation matches
+   the scope. Chrome is the shared modal chrome (.modal-overlay/.modal-card
+   below) — the card only narrows; the overlay centers and sits above
+   everything. Issue #450: the card is bare — a spinner and plain text
+   lines; the recovery hint keeps its dim styling. */
 .update-modal {
-  max-width: 480px;
+  max-width: 360px;
 }
 
-.update-modal-detail {
+.update-modal-spinner {
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin: 0 auto 12px;
+  border: 2px solid var(--text-dim);
+  border-top-color: var(--issue);
+  border-radius: 50%;
+  animation: update-modal-spin 0.8s linear infinite;
+}
+
+@keyframes update-modal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.update-modal-line {
   margin: 0 0 4px;
   color: var(--text-dim);
-}
-
-.update-modal-detail code {
-  color: var(--issue);
-}
-
-.update-modal-elapsed {
-  margin: 0 0 8px;
-}
-
-.update-modal-elapsed strong {
-  color: var(--issue);
-  font-variant-numeric: tabular-nums;
 }
 
 .update-modal .update-banner-hint {
@@ -1319,7 +1324,8 @@ code {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .status-indicator-pulse::before {
+  .status-indicator-pulse::before,
+  .update-modal-spinner {
     animation: none;
   }
 }

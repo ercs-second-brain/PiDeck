@@ -44,7 +44,6 @@ function view(overrides: Partial<UpdateBannerViewProps> = {}): string {
       status={status()}
       phase="idle"
       updating={null}
-      reloading={false}
       reloadSha={null}
       reconnecting={false}
       error={null}
@@ -146,21 +145,35 @@ describe("UpdateBannerView — updating (apply accepted, modal over the dimmed a
     return { targetSha: "b".repeat(40), startedAt: 0, elapsedMs: 5_000, stage: null, apiUp: true, downMs: 0, ...overrides };
   }
 
-  it("renders the full-screen updating modal with the target short SHA and an elapsed clock", () => {
+  it("renders the bare updating modal — spinner, plain text, short SHA, elapsed clock (issue #450)", () => {
     const html = view({ phase: "updating", updating: updating() });
     expect(html).toContain("update-modal-overlay");
     expect(html).toContain("update-modal");
-    expect(html).toContain("Updating PiDeck");
+    expect(html).toContain("update-modal-spinner");
+    expect(html).toContain("Updating PiDeck to");
     expect(html).toContain("b".repeat(7));
-    expect(html).toContain("5s</strong> elapsed");
+    expect(html).toContain("5s");
+    expect(html).toContain("elapsed");
     expect(html).toContain("applying the update");
     expect(html).not.toContain("Update now");
+    // Issue #450: no decorated chrome — no modal title heading, no bold
+    // clock, no code-styled SHA.
+    expect(html).not.toContain("modal-title");
+    expect(html).not.toContain("<strong>");
+    expect(html).not.toContain("<code>");
+  });
+
+  it("has no completion state — the page reloads straight into the new build (issue #450)", () => {
+    const html = view({ phase: "updating", updating: updating() });
+    expect(html).not.toContain("Update complete");
+    expect(html).not.toContain("Reloading into the new build");
   });
 
   it("shows the shim's rebuild stage while the daemon is up (issue #89)", () => {
     const html = view({ phase: "updating", updating: updating({ stage: "building", elapsedMs: 185_000 }) });
     expect(html).toContain("rebuilding");
     expect(html).toContain("3m 05s");
+    expect(html).toContain("elapsed");
   });
 
   it("says the daemon is restarting once the API is unreachable (issue #89)", () => {
@@ -195,17 +208,17 @@ describe("UpdateBannerView — reload affordances (issue #89)", () => {
     expect(html).toContain("while this page was open");
   });
 
-  it("shows the completion state in the modal while a banner-initiated apply reloads the page", () => {
-    const html = view({ reloading: true });
-    expect(html).toContain("update-modal-overlay");
-    expect(html).toContain("Update complete");
-    expect(html).not.toContain("Reload new build");
-  });
-
   it("says it is waiting for the daemon while an idle page lost the API", () => {
     const html = view({ reconnecting: true });
     expect(html).toContain("Connection to the daemon was lost");
     expect(html).not.toContain("Reload new build");
+  });
+
+  it("renders no completion message on the idle page either (issue #450)", () => {
+    // The banner-initiated path reloads the page on resolution; the idle
+    // strips never carry an "update complete" line — quiet means quiet.
+    const html = view();
+    expect(html).not.toContain("Update complete");
   });
 });
 

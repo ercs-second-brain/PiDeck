@@ -34,8 +34,6 @@ export const RECOVERY_HINT_MS = 90_000;
 /** Updating longer than this → give up polling and fall back to manual
  * instructions instead of hitting the endpoint forever. */
 const MAX_APPLY_WAIT_MS = 20 * 60_000;
-/** One short beat so the user sees "Update complete" before the page reloads. */
-export const RELOAD_DELAY_MS = 1_200;
 
 export interface IdleStatusPollingHandlers {
   /** Every successful status fetch, however it was triggered. */
