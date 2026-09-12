@@ -78,7 +78,10 @@ case "$cmd" in
     [ -d "$STATE/$name" ] || { echo "no such session" >&2; exit 1; }
     ;;
   list-sessions)
-    for dir in "$STATE"/*/; do [ -d "$dir" ] && basename "$dir"; done
+    for dir in "$STATE"/*/; do
+      if [ -d "$dir" ]; then basename "$dir"; fi
+    done
+    exit 0
     ;;
   kill-session)
     name=""
