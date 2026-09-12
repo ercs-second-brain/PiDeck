@@ -9,6 +9,8 @@ import { Button } from "./ui/Button";
 import { Empty } from "./ui/Empty";
 import { Page } from "./ui/Page";
 import { Toast } from "./ui/Toast";
+import { GlobalSettings } from "./settings/GlobalSettings";
+import { ProjectSettings } from "./settings/ProjectSettings";
 
 /** The 2.4/2.5 routes render this until those phases land. */
 function Placeholder({ title }: { title: string }) {
@@ -100,9 +102,9 @@ export function App() {
       case "onboarding":
         return <Placeholder title="Onboarding" />;
       case "settings":
-        return <Placeholder title="Settings" />;
+        return <GlobalSettings />;
       case "projectSettings":
-        return <Placeholder title="Project settings" />;
+        return <ProjectSettings projectId={route.id} />;
       case "home":
         return home;
     }
