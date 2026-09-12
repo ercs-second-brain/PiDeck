@@ -165,20 +165,22 @@ function ReviewAccountSection({
 }) {
   const [username, setUsername] = useState(settings.reviewAccount?.username ?? "");
   const [token, setToken] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [tokenError, setTokenError] = useState<string | null>(null);
   const action = useAction();
   const tokenSet = settings.reviewAccount?.tokenSet ?? false;
 
   const onSave = () => {
-    setValidationError(null);
+    setUsernameError(null);
+    setTokenError(null);
     const name = username.trim();
     const trimmed = token.trim();
     if (!name) {
-      setValidationError("Username is required.");
+      setUsernameError("Username is required.");
       return;
     }
     if (!trimmed && !tokenSet) {
-      setValidationError("A personal access token is required.");
+      setTokenError("A personal access token is required.");
       return;
     }
     const put: GlobalSettingsPut = {
@@ -192,7 +194,8 @@ function ReviewAccountSection({
   };
 
   const onClear = () => {
-    setValidationError(null);
+    setUsernameError(null);
+    setTokenError(null);
     void action.run(async () => {
       const saved = await saveGlobalSettings({ reviewAccount: null });
       onSaved(saved);
@@ -207,8 +210,8 @@ function ReviewAccountSection({
       description="The second GitHub account reviewers review from. Required for the loop."
       footer={
         <>
-          {(validationError ?? action.error) && (
-            <p style={{ color: "var(--red)", margin: 0 }}>{validationError ?? action.error}</p>
+          {action.error && (
+            <p style={{ color: "var(--red)", margin: 0 }}>{action.error}</p>
           )}
           {tokenSet && (
             <Button variant="ghost" disabled={action.state === "busy"} onClick={onClear}>
@@ -222,7 +225,13 @@ function ReviewAccountSection({
       }
     >
       <Row label="Username" description="The reviewer's GitHub login.">
-        <Field type="text" value={username} onChange={setUsername} />
+        <Field
+          type="text"
+          value={username}
+          onChange={setUsername}
+          error={usernameError ?? undefined}
+          label="Reviewer username"
+        />
       </Row>
       <Row
         label="Token"
@@ -232,7 +241,14 @@ function ReviewAccountSection({
             : "A fine-grained personal access token that can open reviews."
         }
       >
-        <Field type="password" value={token} onChange={setToken} placeholder={tokenSet ? "••••••••" : ""} />
+        <Field
+          type="password"
+          value={token}
+          onChange={setToken}
+          placeholder={tokenSet ? "••••••••" : ""}
+          error={tokenError ?? undefined}
+          label="Reviewer access token"
+        />
       </Row>
     </Section>
   );

@@ -32,7 +32,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const [contextLimitPercent, setContextLimitPercent] = useState("");
   const [stallMinutes, setStallMinutes] = useState("");
   const [autoMerge, setAutoMerge] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<string, string>>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const save = useAction();
@@ -64,7 +64,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   };
 
   const onSave = () => {
-    setValidationError(null);
+    setFieldErrors({});
     const candidate = {
       workerConcurrency: Number(workerConcurrency),
       maxFixAttempts: Number(maxFixAttempts),
@@ -74,9 +74,12 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
     };
     const parsed = ProjectSettingsSchema.safeParse(candidate);
     if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      const path = issue?.path.map(String).join(".");
-      setValidationError(issue ? (path ? `${path}: ${issue.message}` : issue.message) : "Invalid settings.");
+      const errors: Partial<Record<string, string>> = {};
+      for (const issue of parsed.error.issues) {
+        const path = issue.path.map(String).join(".");
+        if (path && errors[path] === undefined) errors[path] = issue.message;
+      }
+      setFieldErrors(errors);
       return;
     }
     void save.run(async () => {
@@ -112,9 +115,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         description="Knobs for this project's loop. They apply from the next reconciliation."
         footer={
           <>
-            {(validationError ?? save.error) && (
-              <p style={{ color: "var(--red)", margin: 0 }}>{validationError ?? save.error}</p>
-            )}
+            {save.error && <p style={{ color: "var(--red)", margin: 0 }}>{save.error}</p>}
             <Button
               variant="primary"
               disabled={save.state === "busy" || !settings}
@@ -126,19 +127,48 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         }
       >
         <Row label="Worker concurrency" description="Maximum workers running at once for this project.">
-          <Field type="number" min={1} value={workerConcurrency} onChange={setWorkerConcurrency} />
+          <Field
+            type="number"
+            min={1}
+            value={workerConcurrency}
+            onChange={setWorkerConcurrency}
+            error={fieldErrors.workerConcurrency}
+            label="Worker concurrency"
+          />
         </Row>
         <Row
           label="Max fix attempts"
           description="CI/review fix rounds before the worker reports back and goes idle."
         >
-          <Field type="number" min={1} value={maxFixAttempts} onChange={setMaxFixAttempts} />
+          <Field
+            type="number"
+            min={1}
+            value={maxFixAttempts}
+            onChange={setMaxFixAttempts}
+            error={fieldErrors.maxFixAttempts}
+            label="Max fix attempts"
+          />
         </Row>
         <Row label="Context limit" description="Percent of context usage that replaces a session.">
-          <Field type="number" min={1} max={100} value={contextLimitPercent} onChange={setContextLimitPercent} />
+          <Field
+            type="number"
+            min={1}
+            max={100}
+            value={contextLimitPercent}
+            onChange={setContextLimitPercent}
+            error={fieldErrors.contextLimitPercent}
+            label="Context limit percent"
+          />
         </Row>
         <Row label="Stall minutes" description="Silence for this long steers the orchestrator to check on the worker.">
-          <Field type="number" min={1} value={stallMinutes} onChange={setStallMinutes} />
+          <Field
+            type="number"
+            min={1}
+            value={stallMinutes}
+            onChange={setStallMinutes}
+            error={fieldErrors.stallMinutes}
+            label="Stall minutes"
+          />
         </Row>
         <Row
           label="Auto-merge"

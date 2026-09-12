@@ -148,7 +148,7 @@ describe("<ProjectSettings />", () => {
     });
     await flush();
     expect(mocked.saveProjectSettings).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("contextLimitPercent");
+    expect(container.textContent).toContain("Too big");
   });
 
   it("toggles auto-merge", async () => {
