@@ -129,7 +129,26 @@ case "$cmd" in
     update_apply
     ;;
   logs)
-    tail -n 100 "$@" "$PD_HOME/log/daemon.out.log" "$PD_HOME/log/daemon.err.log" 2>/dev/null
+    _log_files=""
+    _log_count=0
+    for _lf in "$PD_HOME/log/daemon.out.log" "$PD_HOME/log/daemon.err.log"; do
+      if [ -f "$_lf" ]; then
+        _log_files="$_log_files $_lf"
+        _log_count=$((_log_count + 1))
+      else
+        printf 'pideck: log file not found: %s — has the daemon run yet?\n' "$_lf" >&2
+      fi
+    done
+    if [ "$_log_count" -eq 0 ]; then
+      printf 'pideck: no daemon logs under %s/log — start the service first\n' "$PD_HOME" >&2
+      exit 1
+    fi
+    if [ "$_log_count" -eq 1 ]; then
+      # tail only prints ==> headers for multiple files — add one ourselves.
+      printf '==> %s <==\n' "$_log_files"
+    fi
+    # shellcheck disable=SC2086 # word splitting intended: the two log paths
+    tail -n 100 "$@" $_log_files
     ;;
   help | -h | --help)
     print_help

@@ -3,7 +3,7 @@
 #
 # PiDeck one-line installer entrypoint.
 #
-#   curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/agentsKISS/main/install/bootstrap.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/PiDeck/main/install/bootstrap.sh | sh
 #
 # Works when piped (curl | sh) and when run from a checkout. Flow:
 #   1. detect OS (macOS or Linux)
@@ -22,7 +22,7 @@
 # Flags:
 #   --dry-run       print mutating commands instead of running them
 #   --no-onboard    skip the interactive onboarding step
-#   --repo URL      monorepo git URL (default: ercs-second-brain/agentsKISS)
+#   --repo URL      monorepo git URL (default: ercs-second-brain/PiDeck)
 #   --ref REF       branch/tag to install (default: main)
 #   --dir PATH      use an existing checkout instead of cloning
 #   --port N        webapp port (default: 8321)
@@ -30,16 +30,30 @@
 
 set -u
 
-usage() { sed -n '3,24p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() {
+  cat <<'EOF'
+Usage: bootstrap.sh [--dry-run] [--no-onboard] [--repo URL] [--ref REF] [--dir PATH] [--port N]
+
+  --dry-run       print every mutating step instead of running it
+  --no-onboard    skip interactive onboarding
+  --repo URL      monorepo git URL        (default: ercs-second-brain/PiDeck)
+  --ref REF       branch/tag to install   (default: main)
+  --dir PATH      build from an existing checkout
+  --port N        webapp port             (default: 8321)
+  -h, --help      show this help
+EOF
+}
 
 # ---------------------------------------------------------------------------
-# `curl | sh` handling (must run before flag parsing so "$@" survives the
-# re-exec): stdin is the pipe, so interactive prompts would eat the script.
-# Unpack the repo tarball, then re-exec this same script from disk with tty
-# stdin restored and the original flags forwarded.
+# `curl | sh` handling. MUST run before flag parsing and MUST fetch the
+# source first: stdin is the pipe (so interactive prompts would eat the
+# script), and the re-exec needs the repo on disk before any flag (or the
+# default --repo/--ref) can act on it. Unpack the repo tarball, then re-exec
+# this same script from disk with tty stdin restored and the original flags
+# forwarded.
 # ---------------------------------------------------------------------------
 if [ ! -t 0 ] && [ "${PD_BOOTSTRAP_REEXEC:-0}" != "1" ]; then
-  _pb_repo="${PD_REPO_URL:-https://github.com/ercs-second-brain/agentsKISS.git}"
+  _pb_repo="${PD_REPO_URL:-https://github.com/ercs-second-brain/PiDeck.git}"
   _pb_ref="${PD_REPO_REF:-main}"
   # Neutral temp dir, NOT the install home (the child runs from it; exec
   # never returns, so it is left behind — /tmp cleans it up).
@@ -107,7 +121,7 @@ info "PiDeck installer (OS: $DETECTED_OS, arch: $PD_ARCH${PD_DRY_RUN:+, dry-run}
 info "installing into $PD_HOME (source, private node if needed, logs, config)"
 printf '\n'
 
-run mkdir -p "$PD_HOME" "$PD_HOME/bin" "$PD_HOME/lib" "$PD_HOME/log" "$PD_HOME/state" "$PD_HOME/opt"
+run_fatal mkdir -p "$PD_HOME" "$PD_HOME/bin" "$PD_HOME/lib" "$PD_HOME/log" "$PD_HOME/state" "$PD_HOME/opt"
 
 # --- dependencies ---------------------------------------------------------
 ensure_local_bin_path

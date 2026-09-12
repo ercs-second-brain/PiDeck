@@ -14,7 +14,7 @@ set -u
 export PD_HOME="${PD_HOME:-$HOME/.pideck}"
 PD_DRY_RUN="${PD_DRY_RUN:-0}"
 PD_NONINTERACTIVE="${PD_NONINTERACTIVE:-0}"
-export PD_REPO_URL="${PD_REPO_URL:-https://github.com/ercs-second-brain/agentsKISS.git}"
+export PD_REPO_URL="${PD_REPO_URL:-https://github.com/ercs-second-brain/PiDeck.git}"
 export PD_REPO_REF="${PD_REPO_REF:-main}"
 export PD_WEB_PORT="${PD_WEB_PORT:-8321}"
 export PD_NODE_VERSION="${PD_NODE_VERSION:-22.23.2}"
@@ -24,6 +24,8 @@ export PD_GH_VERSION="${PD_GH_VERSION:-2.63.2}"
 export PD_PI_PACKAGE="${PD_PI_PACKAGE:-@earendil-works/pi-coding-agent}"
 export PD_PI_DIR="${PD_PI_DIR:-$HOME/.pi/agent}"
 PD_LOCAL_BIN="$HOME/.local/bin"
+PD_NODE_BIN="${PD_NODE_BIN:-}"
+PD_NODE_BIN_DIR="${PD_NODE_BIN_DIR:-}"
 # Corepack shims download their package manager on first use; never prompt
 # mid-install.
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -75,8 +77,23 @@ run_ignore() {
   "$@" >/dev/null 2>&1 || true
 }
 
+# Like run(), but a real-mode failure is fatal — for mutating steps whose
+# silent failure would leave a broken install behind (file copies, moves,
+# permission changes).
+run_fatal() {
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    run "$@"
+    return 0
+  fi
+  "$@" || die "command failed: $*"
+}
+
 # Run a command as root when necessary (root itself, else passwordless sudo).
 run_sudo() {
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    run "$@"
+    return 0
+  fi
   if [ "$(id -u)" = "0" ]; then
     run "$@"
   elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
@@ -162,7 +179,7 @@ fetch_to() { # fetch_to <url> <outfile>
 # (future shells), so installed CLIs (node, pnpm, gh, pi, pideck) resolve.
 # ---------------------------------------------------------------------------
 ensure_local_bin_path() {
-  mkdir -p "$PD_LOCAL_BIN" 2>/dev/null || :
+  run mkdir -p "$PD_LOCAL_BIN"
   case ":$PATH:" in
     *":$PD_LOCAL_BIN:"*) ;;
     *) PATH="$PD_LOCAL_BIN:$PATH" ;;
@@ -222,7 +239,7 @@ env_set() { # env_set <file> <KEY> <value>
   fi
   grep -v "^${_es_key}=" "$_es_file" > "$_es_file.tmp" 2>/dev/null || :
   printf '%s="%s"\n' "$_es_key" "$_es_val" >> "$_es_file.tmp"
-  mv "$_es_file.tmp" "$_es_file"
+  mv "$_es_file.tmp" "$_es_file" || die "could not write $_es_file"
 }
 
 # Minimal JSON string escaping for values we control.
@@ -245,13 +262,13 @@ install_shell_layer() { # install_shell_layer <lib-dir>
     if ! sh -n "$_cli_file" 2>/dev/null; then
       die "refusing to deploy a shim that fails sh -n: $_cli_file"
     fi
-    run cp "$_cli_file" "$PD_HOME/bin/$(basename "$_cli_file")"
-    run chmod +x "$PD_HOME/bin/$(basename "$_cli_file")"
+    run_fatal cp "$_cli_file" "$PD_HOME/bin/$(basename "$_cli_file")"
+    run_fatal chmod +x "$PD_HOME/bin/$(basename "$_cli_file")"
   done
   for _lib_file in "$PD_SRC/install/lib/"*.sh "$PD_SRC/install/onboard.sh"; do
     [ -f "$_lib_file" ] || continue
-    run cp "$_lib_file" "$_isl_lib/$(basename "$_lib_file")"
+    run_fatal cp "$_lib_file" "$_isl_lib/$(basename "$_lib_file")"
   done
-  run mkdir -p "$PD_LOCAL_BIN"
-  run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
+  run_fatal mkdir -p "$PD_LOCAL_BIN"
+  run_fatal ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
 }

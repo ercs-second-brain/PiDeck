@@ -6,9 +6,7 @@
 
 [Unit]
 Description=PiDeck daemon + webapp
-Documentation=https://github.com/ercs-second-brain/agentsKISS
-After=network-online.target
-Wants=network-online.target
+Documentation=https://github.com/ercs-second-brain/PiDeck
 # Never enter a permanent failed state after repeated crashes — keep
 # restarting (the default start-rate limit would give up after 5 tries).
 StartLimitIntervalSec=0

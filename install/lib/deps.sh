@@ -15,6 +15,10 @@ ensure_git() {
     ok "git $(git --version | awk '{print $3}')"
     return 0
   fi
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    printf "[dry-run] install git (Xcode Command Line Tools on macOS, system package manager on Linux)\n"
+    return 0
+  fi
   case "$DETECTED_OS" in
     darwin)
       # git ships with the Xcode Command Line Tools; the installer dialog is
@@ -73,6 +77,11 @@ ensure_node() {
       return 0
     fi
     warn "found Node $(node -v) but pideck needs >= $PD_NODE_MIN_VERSION; installing a private Node v$PD_NODE_VERSION"
+  fi
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    printf "[dry-run] install Node.js v%s tarball into %s/opt and symlink its bins into %s\n" \
+      "$PD_NODE_VERSION" "$PD_HOME" "$PD_LOCAL_BIN"
+    return 0
   fi
   _install_node_tarball
   # Make sure the freshly installed node wins for the rest of the install.
@@ -153,6 +162,12 @@ ensure_pnpm() {
     warn "pnpm at $(command -v pnpm) is a corepack shim, does not run, or is too old; installing a standalone one"
   fi
 
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    printf "[dry-run] install standalone pnpm@%s via npm into %s and symlink it into %s\n" \
+      "$PD_PNPM_VERSION" "$PD_HOME/opt/npm-global" "$PD_LOCAL_BIN"
+    return 0
+  fi
+
   ensure_local_bin_path
   _pnpm_prefix="$PD_HOME/opt/npm-global"
   run env NPM_CONFIG_PREFIX="$_pnpm_prefix" "$PD_NODE_BIN_DIR/npm" install -g "pnpm@$PD_PNPM_VERSION"
@@ -183,6 +198,11 @@ ensure_gh() {
   step "Checking gh CLI"
   if command -v gh >/dev/null 2>&1; then
     ok "using gh $(gh --version | head -n 1 | awk '{print $3}') at $(command -v gh)"
+    return 0
+  fi
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    printf "[dry-run] install gh v%s tarball into %s/opt and symlink it into %s\n" \
+      "$PD_GH_VERSION" "$PD_HOME" "$PD_LOCAL_BIN"
     return 0
   fi
 
@@ -236,6 +256,11 @@ ensure_gh() {
 # always lands on the runtime pi was installed under.
 # ---------------------------------------------------------------------------
 install_pi_agent() {
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    printf "[dry-run] npm install -g --ignore-scripts %s under the active node into %s\n" \
+      "$PD_PI_PACKAGE" "$PD_HOME/opt/npm-global"
+    return 0
+  fi
   _pa_node="${PD_NODE_BIN:-}"
   [ -x "$_pa_node" ] || _pa_node=$(command -v node 2>/dev/null) || die "no node found — run the pideck installer first"
   _pa_node_dir=$(dirname "$_pa_node")

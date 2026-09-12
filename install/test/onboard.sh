@@ -76,7 +76,10 @@ if [ -f "$PD_HOME/settings.json" ]; then
     "$(sed -n 's/.*"username": "\([^"]*\)".*/\1/p' "$PD_HOME/settings.json")"
   check_eq 'settings record the review token' 'ghp_good' \
     "$(sed -n 's/.*"token": "\([^"]*\)".*/\1/p' "$PD_HOME/settings.json")"
-  check_eq 'settings are owner-only' '600' "$(stat -c %a "$PD_HOME/settings.json" 2>/dev/null)"
+  # Portable owner-only check: ls -l perms field is -rw------- on GNU and BSD.
+  # shellcheck disable=SC2012 # ls is the portable way to read perms here
+  check_eq 'settings are owner-only' '-rw-------' \
+    "$(ls -l "$PD_HOME/settings.json" | awk '{print $1}')"
 else
   check_grep 'settings written for the daemon' 'settings.json exists' 'MISSING'
 fi

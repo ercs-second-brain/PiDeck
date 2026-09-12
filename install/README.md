@@ -7,7 +7,7 @@ One-line installer, service registration and guided onboarding for PiDeck.
 macOS or Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/agentsKISS/main/install/bootstrap.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/PiDeck/main/install/bootstrap.sh | sh
 ```
 
 When piped, the bootstrap fetches the repo tarball, re-execs itself with tty
@@ -145,6 +145,8 @@ plain-shell tests in `test/` (no bats dependency):
   restart-on-crash, start-at-login)
 - `test/bootstrap-order.sh` — dry-run bootstrap: CLI + config land before
   the build
+- `test/bootstrap-dry-run.sh` — dry-run on a BARE box (node/gh/pi/pnpm
+  absent from PATH): every step printed, exit 0
 - `test/onboard.sh` — review-account requirement, verification, settings
   contract
 
@@ -152,8 +154,9 @@ No daemons, no network, no systemd.
 
 ## Tested matrix
 
-- **Tested (Linux x64):** `shellcheck` clean on all scripts; all four test
-  suites green; shim forwarding against a stub daemon CLI.
+- **Tested (Linux x64):** `shellcheck` clean on all scripts; all five test
+  suites green; shim forwarding against a stub daemon CLI; `--dry-run`
+  bootstrap with no toolchain on PATH (bare box).
 - **Reviewed, untested (needs hardware):** the macOS paths — launchd
   bootstrap, `ipconfig getifaddr`, Xcode CLT install dialog, `plutil` lint.
   The OS-specific paths are kept in clearly separated functions

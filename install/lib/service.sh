@@ -134,7 +134,7 @@ _systemd_main_pid() {
   systemctl --user show -p MainPID --value "$PD_SERVICE_NAME" 2>/dev/null
 }
 
-# _svc_wait_restart <what> <old-pid> <pid-fn> — poll (up to ~15s) until the
+# _svc_wait_restart <what> <old-pid> <pid-fn> — poll (up to ~30s) until the
 # service's main pid differs from <old-pid>, proving the restart actually
 # happened. Dies loudly on timeout.
 _svc_wait_restart() {
@@ -149,9 +149,9 @@ _svc_wait_restart() {
       return 0
     fi
     _sw_i=$((_sw_i + 1))
-    sleep 0.5
+    sleep 1
   done
-  die "service restart did not take ($_sw_what still runs pid ${_sw_old:-unknown} after 15s) — check 'pideck service status'"
+  die "service restart did not take ($_sw_what still runs pid ${_sw_old:-unknown} after 30s) — check 'pideck service status'"
 }
 
 svc_restart() {

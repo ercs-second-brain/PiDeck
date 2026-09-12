@@ -53,10 +53,22 @@ update_check() {
     return 1
   fi
 
-  UPDATE_REMOTE_SHA=$(git ls-remote "$UPDATE_URL" "refs/heads/$UPDATE_REF" | cut -f1 | head -n 1)
-  if [ -z "$UPDATE_REMOTE_SHA" ]; then
-    # Not a branch (or fetch blocked) — try a tag of the same name.
-    UPDATE_REMOTE_SHA=$(git ls-remote "$UPDATE_URL" "refs/tags/$UPDATE_REF" | cut -f1 | head -n 1)
+  _update_remote_head() {
+    git ls-remote "$UPDATE_URL" "refs/heads/$UPDATE_REF" | cut -f1 | head -n 1
+  }
+  _update_remote_tag() {
+    git ls-remote "$UPDATE_URL" "refs/tags/$UPDATE_REF" | cut -f1 | head -n 1
+  }
+  UPDATE_REMOTE_SHA=$(_update_remote_head)
+  [ -n "$UPDATE_REMOTE_SHA" ] || UPDATE_REMOTE_SHA=$(_update_remote_tag)
+  if [ -z "$UPDATE_REMOTE_SHA" ] && command -v gh >/dev/null 2>&1 &&
+    gh auth status >/dev/null 2>&1; then
+    # Same fallback as resolve_source: wire git to gh's credential store so
+    # private repos check and update like public ones.
+    warn "using gh's GitHub credentials for git"
+    gh auth setup-git >/dev/null 2>&1 || true
+    UPDATE_REMOTE_SHA=$(_update_remote_head)
+    [ -n "$UPDATE_REMOTE_SHA" ] || UPDATE_REMOTE_SHA=$(_update_remote_tag)
   fi
   if [ -z "$UPDATE_REMOTE_SHA" ]; then
     warn "could not read $UPDATE_URL@$UPDATE_REF — check network and credentials"
