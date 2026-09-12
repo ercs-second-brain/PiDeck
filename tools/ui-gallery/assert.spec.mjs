@@ -141,13 +141,13 @@ async function touchTargetViolations(page) {
         element.getAttribute("aria-label") ??
         element.textContent?.trim().slice(0, 40) ??
         element.tagName;
-      const known = known.some(
+      const allowed = known.some(
         (entry) =>
           element.tagName.toLowerCase() === entry.tag &&
           (entry.label === label ||
             (entry.labelPrefix !== undefined && label.startsWith(entry.labelPrefix))),
       );
-      if (known) continue;
+      if (allowed) continue;
       violations.push(`${element.tagName.toLowerCase()} "${label}" ${Math.round(box.width)}×${Math.round(box.height)}`);
     }
     return violations;
