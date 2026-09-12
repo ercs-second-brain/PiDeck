@@ -79,13 +79,16 @@ it(
     await fakeGh.openIssue(1, "Add rate limiting");
     await fakeGh.openIssue(2, "Add pagination", [PRIMARY_LOGIN], [1]);
 
-    // Tick 1: the orchestrator is briefed; nothing is assigned to the worker
-    // account, and #2 is blocked by #1 — no workers.
+    // Tick 1: the orchestrator is briefed (in its system prompt, not as a
+    // typed line); nothing is assigned to the worker account, and #2 is
+    // blocked by #1 — no workers.
     await tick();
     expect(registry.list({ persona: "global" })).toHaveLength(1);
     expect(orchestrator()).toBeDefined();
     expect(registry.list({ persona: "worker" })).toHaveLength(0);
-    expect(sentLines(tmuxCalls).some((line) => line.startsWith("Briefing for Loop Repo"))).toBe(true);
+    const prompt = readFileSync(join(stateDir, "system-prompts", `${orchestrator()!.id}.md`), "utf8");
+    expect(prompt).toContain("Briefing for Loop Repo");
+    expect(sentLines(tmuxCalls)).toEqual([]);
     const access = await fakeGh.state();
     expect(access.readAccess["acme/loop"]).toContain(REVIEW_LOGIN);
     // Assign #1 → a worker is spawned with the spawn delivery.
