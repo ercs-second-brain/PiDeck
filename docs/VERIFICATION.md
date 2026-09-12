@@ -139,6 +139,7 @@ Seen via `/api/sessions` (`state` + `status` lines) throughout the run:
 | `CONFLICTING` PR: worker never told, state misleading | [#566](https://github.com/ercs-second-brain/PiDeck/pull/566) | `desired.test.ts` (once-per-head delivery), `state.test.ts` (fixing/conflicts state) |
 | Worker answered a review with a top-level PR comment; same-login loop re-delivered it to itself | [#568](https://github.com/ercs-second-brain/PiDeck/pull/568) | prompt/delivery-text change; comment in `desired.ts` |
 | (Earlier run, before this verification) review account without repo access silently killed the review leg | #559 → [#564](https://github.com/ercs-second-brain/PiDeck/pull/564) | ensureReviewAccess on registration + every tick |
+| Running check runs (`conclusion: ""`) reported CI as failed | this PR | `client.test.ts` over a real `gh pr list --json statusCheckRollup` fixture (`src/github/fixtures/`) |
 
 ## Observations
 
