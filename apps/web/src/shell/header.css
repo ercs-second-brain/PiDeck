@@ -80,3 +80,11 @@
     display: inline-flex;
   }
 }
+
+@media (pointer: coarse) {
+  /* DESIGN.md §6: touch targets ≥ 40px — the glyph size is unchanged. */
+  .header__icon {
+    width: 40px;
+    height: 40px;
+  }
+}
