@@ -270,6 +270,28 @@ describe("deriveActions — worker deliveries", () => {
     expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
   });
 
+  it("a conflicting PR delivers prConflict once per head, not per tick", () => {
+    const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const conflicting = facts({ issues: [issue()], prs: [pr({ mergeable: "CONFLICTING", green: false, ciStatus: "ok" })] });
+    const first = derive(conflicting, [worker]).filter((a) => a.kind === "deliver");
+    expect(first).toHaveLength(1);
+    expect(first[0]!.target.id).toBe(worker.id);
+    expect(first[0]!.text).toContain("conflicts with main");
+    expect(first[0]!.watermark?.patch).toEqual({ lastNotifiedConflictSha: "sha-1" });
+    const notified = session("worker", {
+      issueNumber: 1,
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastNotifiedConflictSha: "sha-1",
+    });
+    expect(derive(conflicting, [notified]).filter((a) => a.kind === "deliver")).toHaveLength(0);
+    const stillConflicting = facts({
+      issues: [issue()],
+      prs: [pr({ mergeable: "CONFLICTING", green: false, ciStatus: "ok", headSha: "sha-2" })],
+    });
+    expect(derive(stillConflicting, [notified]).filter((a) => a.kind === "deliver")).toHaveLength(1);
+  });
+
   it("CI red on an already-prompted head delivers nothing", () => {
     const worker = session("worker", { issueNumber: 1, lastPromptedHeadSha: "sha-1", fixAttempts: 1 });
     const actions = derive(
