@@ -61,46 +61,49 @@ jobs:
           cat > "$FAKE_GH_STATE" <<'EOF'
           {
             "seq": 1000,
-            "repo": "acme/it",
             "primaryLogin": "acme-primary",
             "tokens": {},
-            "issues": [
-              {
-                "number": 517,
-                "title": "Integration issue",
-                "url": "https://github.com/acme/it/issues/517",
-                "state": "open",
-                "assignees": [],
-                "labels": [],
-                "blockedBy": []
-              }
-            ],
-            "comments": {
-              "517": [
-                {
-                  "id": 1001,
-                  "user": "acme-primary",
-                  "body": "integration comment",
-                  "created_at": "2026-01-01T00:00:00Z"
-                }
-              ]
-            },
-            "prs": [
-              {
-                "number": 537,
-                "headRefName": "pideck-517",
-                "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "mergeable": "MERGEABLE",
-                "checks": [
-                  { "name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS" }
+            "repos": {
+              "acme/it": {
+                "issues": [
+                  {
+                    "number": 517,
+                    "title": "Integration issue",
+                    "url": "https://github.com/acme/it/issues/517",
+                    "state": "open",
+                    "assignees": [],
+                    "labels": [],
+                    "blockedBy": []
+                  }
                 ],
-                "reviews": [],
-                "reviewComments": [],
-                "requestedReviewers": [],
-                "body": "Integration PR",
-                "state": "open"
+                "comments": {
+                  "517": [
+                    {
+                      "id": 1001,
+                      "user": "acme-primary",
+                      "body": "integration comment",
+                      "created_at": "2026-01-01T00:00:00Z"
+                    }
+                  ]
+                },
+                "prs": [
+                  {
+                    "number": 537,
+                    "headRefName": "pideck-517",
+                    "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "mergeable": "MERGEABLE",
+                    "checks": [
+                      { "name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS" }
+                    ],
+                    "reviews": [],
+                    "reviewComments": [],
+                    "requestedReviewers": [],
+                    "body": "Integration PR",
+                    "state": "open"
+                  }
+                ]
               }
-            ],
+            },
             "invitations": [],
             "readAccess": {}
           }

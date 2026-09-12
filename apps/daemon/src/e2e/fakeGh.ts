@@ -3,7 +3,9 @@
  * the state semantics; this helper installs it on `PATH` as `gh`, seeds the
  * JSON state file, and exposes the small mutation API tests drive the loop
  * with (`setCI`, `addReview`, `assign`, `merge`, ...). Every mutation is a
- * write to the same state file the fake reads.
+ * write to the same state file the fake reads. The state is multi-repo:
+ * mutations target the first registered repo by default and `fakeGh.repo(...)`
+ * scopes a helper to any other one.
  */
 
 import { execFile } from "node:child_process";
@@ -67,14 +69,20 @@ export interface FakeGhPr {
   state: "open" | "merged" | "closed";
 }
 
-export interface FakeGhState {
-  seq: number;
-  repo: string;
-  primaryLogin: string;
-  tokens: Record<string, string>;
+/** One repo's slice of the fake GitHub state. */
+export interface FakeGhRepo {
   issues: FakeGhIssue[];
   comments: Record<string, FakeGhComment[]>;
   prs: FakeGhPr[];
+  /** The head SHA `gh api repos/<repo>/commits/<ref>` reports (update checks). */
+  upstreamSha?: string | null;
+}
+
+export interface FakeGhState {
+  seq: number;
+  primaryLogin: string;
+  tokens: Record<string, string>;
+  repos: Record<string, FakeGhRepo>;
   invitations: { id: number; repo: string; invitee: string }[];
   readAccess: Record<string, string[]>;
 }
@@ -89,10 +97,25 @@ export interface FakeGhOptions {
   reviewToken: string;
 }
 
+/** The mutation surface of one repo, as `FakeGh` itself exposes for its default. */
+export interface FakeGhRepoApi {
+  state(): Promise<FakeGhRepo>;
+  openIssue(number: number, title: string, assignees?: string[], blockedBy?: number[]): Promise<void>;
+  setBlockedBy(issue: number, blockers: number[]): Promise<void>;
+  assign(issue: number, login: string): Promise<void>;
+  openPr(number: number, issue: number, headSha: string): Promise<void>;
+  push(pr: number, headSha: string, ci?: { status: FakeCi; failingChecks?: string[] }): Promise<void>;
+  setCI(pr: number, status: FakeCi, failingChecks?: string[]): Promise<void>;
+  addReview(pr: number, reviewState: FakeReviewState, by: string, body?: string): Promise<number>;
+  merge(pr: number): Promise<void>;
+  addComment(number: number, author: string, body: string): Promise<number>;
+}
+
 export class FakeGh {
   readonly statePath: string;
   readonly binDir: string;
   readonly reviewToken: string;
+  readonly defaultRepo: string;
   #previousPath: string;
   #previousStateEnv: string | undefined;
 
@@ -103,14 +126,12 @@ export class FakeGh {
     chmodSync(bin, 0o755);
     this.statePath = join(this.binDir, "state.json");
     this.reviewToken = options.reviewToken;
+    this.defaultRepo = options.repo;
     const state: FakeGhState = {
       seq: 1000,
-      repo: options.repo,
       primaryLogin: options.primaryLogin,
       tokens: { [options.reviewToken]: options.reviewLogin },
-      issues: [],
-      comments: {},
-      prs: [],
+      repos: { [options.repo]: { issues: [], comments: {}, prs: [] } },
       invitations: [],
       readAccess: {},
     };
@@ -121,9 +142,54 @@ export class FakeGh {
     process.env.FAKE_GH_STATE = this.statePath;
   }
 
-  /** The current repo state, exactly as the fake serves it. */
+  /** The full state, exactly as the fake serves it. */
   async state(): Promise<FakeGhState> {
     return JSON.parse(await this.op("state")) as FakeGhState;
+  }
+
+  /** A helper whose mutations target one specific repo. */
+  repo(name: string): FakeGhRepoApi {
+    return {
+      state: () => this.repoState(name),
+      openIssue: async (number, title, assignees = [], blockedBy = []) => {
+        await this.repoOp(name, "openIssue", { number, title, assignees, blockedBy });
+      },
+      setBlockedBy: async (issue, blockers) => {
+        await this.repoOp(name, "setBlockedBy", { issue, blockers });
+      },
+      assign: async (issue, login) => {
+        await this.repoOp(name, "assign", { issue, login });
+      },
+      openPr: async (number, issue, headSha) => {
+        await this.repoOp(name, "openPr", { number, issue, headSha });
+      },
+      push: async (pr, headSha, ci) => {
+        await this.repoOp(name, "push", { pr, headSha, ci });
+      },
+      setCI: async (pr, status, failingChecks = []) => {
+        await this.repoOp(name, "setCI", { pr, status, failingChecks });
+      },
+      addReview: async (pr, reviewState, by, body) => {
+        const result = JSON.parse(
+          await this.repoOp(name, "addReview", { pr, reviewState, by, body }),
+        ) as { id: number };
+        return result.id;
+      },
+      merge: async (pr) => {
+        await this.repoOp(name, "merge", { pr });
+      },
+      addComment: async (number, author, body) => {
+        const result = JSON.parse(
+          await this.repoOp(name, "addComment", { number, author, body }),
+        ) as { id: number };
+        return result.id;
+      },
+    };
+  }
+
+  /** Registers an additional repo so its issues and PRs can be seeded. */
+  async addRepo(name: string): Promise<void> {
+    await this.op("addRepo", { repo: name });
   }
 
   async openIssue(
@@ -181,6 +247,18 @@ export class FakeGh {
   }
 
   async op(name: string, payload: Record<string, unknown> = {}): Promise<string> {
+    return this.execOp(name, payload);
+  }
+
+  private async repoOp(repo: string, name: string, payload: Record<string, unknown>): Promise<string> {
+    return this.execOp(name, { ...payload, repo });
+  }
+
+  private async repoState(repo: string): Promise<FakeGhRepo> {
+    return JSON.parse(await this.execOp("repoState", { repo })) as FakeGhRepo;
+  }
+
+  private async execOp(name: string, payload: Record<string, unknown>): Promise<string> {
     const result = await execFileP(
       process.execPath,
       [join(this.binDir, "gh"), "__op", name, JSON.stringify(payload)],
