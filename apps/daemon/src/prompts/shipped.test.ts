@@ -12,6 +12,14 @@ afterEach(() => {
   else process.env.PD_AGENT_DIR = previousAgentDir;
 });
 
+/** SPEC §3 prompt-style targets, in lines. */
+const LINE_BUDGETS: Record<(typeof Personas)[number], number> = {
+  orchestrator: 80,
+  worker: 50,
+  reviewer: 40,
+  global: 40,
+};
+
 describe("loadShippedPrompt", () => {
   it("loads a non-empty prompt for every persona", () => {
     for (const persona of Personas) {
@@ -35,5 +43,12 @@ describe("loadShippedPrompt", () => {
     expect(agentDir()).toBe(dir);
     expect(loadShippedPrompt("worker")).toBe("# Custom worker");
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps every persona within its SPEC line budget", () => {
+    for (const persona of Personas) {
+      const shipped = loadShippedPrompt(persona).replace(/\n$/, "");
+      expect(shipped.split("\n").length).toBeLessThanOrEqual(LINE_BUDGETS[persona]);
+    }
   });
 });
