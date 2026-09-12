@@ -80,10 +80,15 @@ class FakeTerminal {
 
 class FakeFitAddon {
   static last: FakeFitAddon | null = null;
+  /** Optional stand-in for the fit addon's measurement; mutates the fake
+   *  terminal's cols/rows like a real fit would. Default: no-op (80x24). */
+  static fitImpl: (() => void) | null = null;
   constructor() {
     FakeFitAddon.last = this;
   }
-  fit() {}
+  fit() {
+    FakeFitAddon.fitImpl?.();
+  }
 }
 
 class FakeWebglAddon {
@@ -151,6 +156,15 @@ class FakeResizeObserver {
   disconnect() {}
 }
 
+/** Controllable animation frames: callbacks run via flushFrames(). */
+let rafQueue: Map<number, FrameRequestCallback>;
+let nextRafId: number;
+function flushFrames(): void {
+  const pending = [...rafQueue.values()];
+  rafQueue.clear();
+  for (const cb of pending) cb(16);
+}
+
 declare global {
    
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -159,6 +173,16 @@ declare global {
 function stubGlobals() {
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
   globalThis.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
+  rafQueue = new Map();
+  nextRafId = 1;
+  globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    const id = nextRafId++;
+    rafQueue.set(id, cb);
+    return id;
+  };
+  globalThis.cancelAnimationFrame = (id: number) => {
+    rafQueue.delete(id);
+  };
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 }
 
@@ -189,6 +213,7 @@ beforeEach(() => {
   FakeWebSocket.reset();
   FakeResizeObserver.instances = [];
   FakeFitAddon.last = null;
+  FakeFitAddon.fitImpl = null;
   stubGlobals();
 });
 
@@ -231,6 +256,69 @@ describe("<Terminal />", () => {
     expect(ws.url).toBe("ws://localhost:3000/ws");
     expect(ws.lastFrame).toEqual({ type: "terminal.attach", sessionId: "s1", cols: 80, rows: 24 });
     expect(host.container.querySelector(".terminal-status")).toBeNull();
+  });
+
+  it("attaches with the post-fit size: the fit runs before the attach frame", () => {
+    // The fit measures the container and resizes xterm before attach is sent.
+    FakeFitAddon.fitImpl = () => {
+      const term = FakeTerminal.instances[0];
+      if (term) {
+        term.cols = 123;
+        term.rows = 42;
+      }
+    };
+    host = mount("s1");
+    const ws = connect();
+    expect(ws.lastFrame).toEqual({ type: "terminal.attach", sessionId: "s1", cols: 123, rows: 42 });
+  });
+
+  it("re-fits on the next animation frame after a replay and propagates the new size", () => {
+    host = mount("s1");
+    connect();
+    // The layout settles while the pane is attached: the fit now measures a
+    // wider container.
+    FakeFitAddon.fitImpl = () => {
+      const term = FakeTerminal.instances[0];
+      if (term) {
+        term.cols = 140;
+        term.rows = 44;
+      }
+    };
+    act(() => {
+      FakeWebSocket.instances[0]?.drop();
+    });
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    const ws = connect(1); // onReplay schedules the next-frame re-fit
+    act(() => {
+      flushFrames();
+    });
+    expect(ws.frames).toEqual([
+      { type: "terminal.attach", sessionId: "s1", cols: 80, rows: 24 },
+      { type: "terminal.resize", sessionId: "s1", cols: 140, rows: 44 },
+    ]);
+  });
+
+  it("cancels the pending next-frame re-fit on unmount", () => {
+    FakeFitAddon.fitImpl = () => {
+      const term = FakeTerminal.instances[0];
+      if (term) {
+        term.cols = 140;
+        term.rows = 44;
+      }
+    };
+    host = mount("s1");
+    connect();
+    act(() => {
+      host?.root.unmount();
+    });
+    host = null;
+    act(() => {
+      flushFrames();
+    });
+    // The cancelled frame must not fit the disposed terminal.
+    expect(FakeTerminal.instances[0]?.disposed).toBe(true);
   });
 
   it("resets the pane before the replay and streams terminal.data into xterm", () => {

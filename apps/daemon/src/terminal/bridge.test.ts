@@ -109,6 +109,31 @@ describe("terminal bridge", () => {
     await vi.waitFor(() => expect(socket.received()).toBe("startup banner\r\n"));
   });
 
+  it("resizes the tmux window before the replay is captured on attach", async () => {
+    const { tmux, open } = setup();
+    tmux.setCapturePane(TMUX_SESSION, "startup banner\r\n");
+    const socket = open();
+    // Hold the resize long enough that a fire-and-forget ordering would
+    // replay first; record what the client has received when it completes.
+    const seenAtResize: string[] = [];
+    const base = tmux.run.bind(tmux);
+    tmux.run = (args) => {
+      if (args[0] !== "resize-window") return base(args);
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          seenAtResize.push(...socket.sent);
+          resolve(base(args));
+        }, 50);
+      });
+    };
+    socket.clientSend(
+      JSON.stringify({ type: "terminal.attach", sessionId: SESSION_ID, cols: 100, rows: 30 }),
+    );
+    await vi.waitFor(() => expect(socket.received()).toBe("startup banner\r\n"));
+    // The replay was written only after the resize completed.
+    expect(seenAtResize).toEqual([]);
+  });
+
   it("streams raw pane output with escape sequences untouched", async () => {
     const { tmux, bridge, open } = setup();
     const socket = open();

@@ -132,9 +132,16 @@ function useTerminalMount(
     loadRenderer(term);
     termRef.current = term;
 
+    // Set once the fit controller exists; the connection's onReplay fires
+    // on every fresh socket — exactly the reattach moments that need the
+    // pane re-fitted to its settled layout before the replay renders.
+    let refitOnFrame: () => void = () => {};
     const connection = new TerminalConnection({
       onData: (data) => term.write(data),
-      onReplay: () => term.reset(),
+      onReplay: () => {
+        term.reset();
+        refitOnFrame();
+      },
       onStatus,
     });
     // Coalesce keystroke bursts into fewer, larger WS frames.
@@ -146,6 +153,21 @@ function useTerminalMount(
     const observer = new ResizeObserver(() => fitNow());
     observer.observe(container);
     fitNow();
+    // The container can settle after the synchronous first fit (sidebar
+    // state, font swap, mobile view change): re-fit on the next frame, and
+    // again on every replay so the ring-buffer content is drawn at the size
+    // the pane actually has. The flush skips the debounce — the frame is
+    // already the timing, and a late resize would leave the replay rendered
+    // for a stale width.
+    let frame: number | undefined;
+    refitOnFrame = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        fitNow.flush();
+      });
+    };
+    refitOnFrame();
 
     // Jump-to-bottom pill visibility: shown while the viewport sits above the
     // last line of the buffer.
@@ -162,6 +184,7 @@ function useTerminalMount(
       termRef.current = null;
       scrollSub.dispose();
       observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
       // Cancel a pending trailing fit so teardown never fits a disposed terminal.
       fitNow.dispose();
       batcher.close();

@@ -189,8 +189,12 @@ export class TerminalBridge {
       client.socket.close(CLOSE_SESSION_GONE, "tmux session no longer exists");
       return;
     }
+    // The resize must complete before the replay is captured: the ring
+    // buffer holds whatever tmux last rendered, so the window must already
+    // be at the client's size or the replayed screen is drawn for a width
+    // the pane is not showing (content cut off after reattach).
     if (cols !== undefined && rows !== undefined) {
-      void this.resizeWindow(session.tmuxSession, cols, rows);
+      await this.resizeWindow(session.tmuxSession, cols, rows);
     }
 
     await stream.ensureSeeded();
