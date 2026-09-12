@@ -1,0 +1,141 @@
+#!/bin/sh
+# shellcheck shell=sh disable=SC1090,SC1091
+#
+# pideck CLI — installed to ~/.pideck/bin/pideck (symlinked into
+# ~/.local/bin by the installer).
+#
+# One entry point, two surfaces:
+#
+#   Service verbs, handled by this shim:
+#     pideck service start|stop|restart|status
+#     pideck logs [-f]                daemon logs
+#     pideck addr                     webapp URL for this machine
+#     pideck onboard [flags]          (re-)run guided onboarding
+#     pideck update                   fetch/rebuild/restart when the
+#                                     upstream ref advanced
+#     pideck help
+#
+#   Everything else is forwarded verbatim (args intact, exit code
+#   propagated) to the daemon CLI (apps/daemon/dist/cli.js):
+#     status, project ls|get, sessions, workers, send, ...
+
+set -u
+
+PD_HOME="${PD_HOME:-$HOME/.pideck}"
+
+PD_ENV="$PD_HOME/env"
+
+if [ -f "$PD_ENV" ]; then
+  # set -a: export everything to the daemon CLI we exec below (it reads
+  # PD_WEB_PORT & co. from its process environment).
+  set -a
+  . "$PD_ENV"
+  set +a
+else
+  printf 'pideck: %s not found — run the pideck installer\n' "$PD_ENV" >&2
+  exit 1
+fi
+
+PD_LIB="$PD_HOME/lib"
+[ -f "$PD_LIB/common.sh" ] || { printf 'pideck: install broken, %s missing\n' "$PD_LIB" >&2; exit 1; }
+. "$PD_LIB/common.sh"
+. "$PD_LIB/service.sh"
+
+# One canonical node runtime: PD_NODE from the env file, else node on PATH.
+PD_NODE_BIN=${PD_NODE:-}
+[ -x "$PD_NODE_BIN" ] || PD_NODE_BIN=$(command -v node 2>/dev/null) || :
+if [ -z "$PD_NODE_BIN" ] || [ ! -x "$PD_NODE_BIN" ]; then
+  printf 'pideck: no node runtime found (PD_NODE unset and no node on PATH) — run the pideck installer\n' >&2
+  exit 1
+fi
+
+detect_os
+
+daemon_cli_bin() {
+  printf '%s/apps/daemon/dist/cli.js' "${PD_SRC:-$PD_HOME/src}"
+}
+
+forward_to_daemon_cli() {
+  _cli_bin=$(daemon_cli_bin)
+  if [ ! -f "$_cli_bin" ]; then
+    printf 'pideck: daemon CLI missing (%s) — re-run the installer or build apps/daemon\n' "$_cli_bin" >&2
+    exit 1
+  fi
+  # Loopback URL for the daemon API unless the caller picked one.
+  PD_DAEMON_URL="${PD_DAEMON_URL:-http://127.0.0.1:${PD_WEB_PORT:-8321}}"
+  export PD_DAEMON_URL
+  exec "$PD_NODE_BIN" "$_cli_bin" "$@"
+}
+
+print_help() {
+  cat <<'EOF'
+pideck — control the PiDeck daemon/webapp and talk to it
+
+Service control (this shim):
+  service start|stop|restart|status   manage the persistent service
+  addr                                print the webapp URL for this machine
+  onboard [flags]                     (re-)run guided onboarding
+                                      (--dry-run, --noninteractive, --skip-pi, --skip-gh)
+  update                              fetch the tracked ref, rebuild, restart
+                                      (no-op when already at the ref)
+  logs [-f]                           tail daemon logs
+
+Agent CLI (forwarded to the daemon):
+  status
+  project ls | project get <id>
+  sessions
+  workers
+  send --session <id> --message <text>
+
+Any other subcommand is forwarded to the daemon CLI untouched.
+EOF
+}
+
+cmd=${1:-help}
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+  service)
+    svc_cmd=${1:-help}
+    [ $# -gt 0 ] && shift
+    case "$svc_cmd" in
+      start) svc_start ;;
+      stop) svc_stop ;;
+      restart) svc_restart ;;
+      status)
+        svc_status
+        printf '\nwebapp: %s\n' "$(webapp_url)"
+        ;;
+      help | -h | --help) print_help ;;
+      *)
+        printf 'pideck: unknown service command: %s\n' "$svc_cmd" >&2
+        printf 'usage: pideck service start|stop|restart|status\n' >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  addr)
+    webapp_url
+    printf '\n'
+    ;;
+  onboard)
+    # shellcheck disable=SC2086
+    sh "$PD_LIB/onboard.sh" "$@"
+    ;;
+  update)
+    [ -f "$PD_LIB/update.sh" ] || { printf 'pideck: install broken, %s missing\n' "$PD_LIB/update.sh" >&2; exit 1; }
+    # shellcheck disable=SC1090 # installed lib dir, sourced on purpose
+    . "$PD_LIB/update.sh"
+    update_apply
+    ;;
+  logs)
+    tail -n 100 "$@" "$PD_HOME/log/daemon.out.log" "$PD_HOME/log/daemon.err.log" 2>/dev/null
+    ;;
+  help | -h | --help)
+    print_help
+    ;;
+  *)
+    # Not a shim verb — hand it to the daemon CLI verbatim.
+    forward_to_daemon_cli "$cmd" "$@"
+    ;;
+esac

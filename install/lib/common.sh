@@ -1,0 +1,257 @@
+# shellcheck shell=sh
+#
+# Shared helpers for the pideck installer (POSIX sh, no bashisms).
+#
+# Sourced by bootstrap.sh, onboard.sh, uninstall.sh and the pideck CLI.
+# Never executed directly.
+
+set -u
+
+# ---------------------------------------------------------------------------
+# Defaults (overridable via environment or CLI flags). Exported: they are
+# consumed by the sibling scripts that source this file.
+# ---------------------------------------------------------------------------
+export PD_HOME="${PD_HOME:-$HOME/.pideck}"
+PD_DRY_RUN="${PD_DRY_RUN:-0}"
+PD_NONINTERACTIVE="${PD_NONINTERACTIVE:-0}"
+export PD_REPO_URL="${PD_REPO_URL:-https://github.com/ercs-second-brain/agentsKISS.git}"
+export PD_REPO_REF="${PD_REPO_REF:-main}"
+export PD_WEB_PORT="${PD_WEB_PORT:-8321}"
+export PD_NODE_VERSION="${PD_NODE_VERSION:-22.23.2}"
+export PD_NODE_MIN_VERSION="${PD_NODE_MIN_VERSION:-22.19.0}"
+export PD_PNPM_VERSION="${PD_PNPM_VERSION:-12}"
+export PD_GH_VERSION="${PD_GH_VERSION:-2.63.2}"
+export PD_PI_PACKAGE="${PD_PI_PACKAGE:-@earendil-works/pi-coding-agent}"
+export PD_PI_DIR="${PD_PI_DIR:-$HOME/.pi/agent}"
+PD_LOCAL_BIN="$HOME/.local/bin"
+# Corepack shims download their package manager on first use; never prompt
+# mid-install.
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
+# Set once OS detection ran (detect_os): darwin | linux | unknown.
+DETECTED_OS="unknown"
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+_pd_tty() { [ -t 2 ]; }
+
+info() {
+  if _pd_tty; then printf '\033[1;34m==>\033[0m %s\n' "$*"; else printf '==> %s\n' "$*"; fi
+}
+step() {
+  if _pd_tty; then printf '\033[1;36m-->\033[0m %s\n' "$*"; else printf '%s\n' "--> $*"; fi
+}
+warn() {
+  if _pd_tty; then printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; else printf 'warning: %s\n' "$*" >&2; fi
+}
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+ok() { printf '  [ok] %s\n' "$*"; }
+
+# ---------------------------------------------------------------------------
+# Dry-run aware command execution.
+#
+# Convention: every *mutating* command goes through run() (or run_ignore()).
+# Read-only inspection commands are called directly.
+# ---------------------------------------------------------------------------
+run() {
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    printf '[dry-run]'
+    for _arg in "$@"; do printf " '%s'" "$_arg"; done
+    printf '\n'
+    return 0
+  fi
+  "$@"
+}
+
+run_ignore() {
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    run "$@"
+    return 0
+  fi
+  "$@" >/dev/null 2>&1 || true
+}
+
+# Run a command as root when necessary (root itself, else passwordless sudo).
+run_sudo() {
+  if [ "$(id -u)" = "0" ]; then
+    run "$@"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    run sudo "$@"
+  else
+    die "root privileges required to run: $* (install it manually and re-run)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Interactive prompts. Always read from the controlling terminal when stdin
+# is not a tty (the `curl | sh` path re-execs with tty stdin, but be safe).
+# ---------------------------------------------------------------------------
+ask() { # ask <prompt> <varname>
+  _ask_prompt=$1
+  _ask_var=$2
+  printf '%s' "$_ask_prompt"
+  if [ "$PD_NONINTERACTIVE" = "1" ]; then
+    printf '\n'
+    eval "$_ask_var="
+    return 0
+  fi
+  if [ -t 0 ]; then
+    # shellcheck disable=SC2229 # dynamic read by variable name is intended
+    IFS= read -r "$_ask_var" || eval "$_ask_var="
+  elif [ -r /dev/tty ]; then
+    # shellcheck disable=SC2229 # dynamic read by variable name is intended
+    IFS= read -r "$_ask_var" < /dev/tty || eval "$_ask_var="
+  else
+    printf '\n'
+    warn "no terminal available for prompt; continuing with empty answer"
+    eval "$_ask_var="
+  fi
+}
+
+ask_yn() { # ask_yn <prompt> <default: y|n> -> exit 0 = yes
+  _yn_prompt=$1
+  _yn_def=$2
+  if [ "$_yn_def" = "y" ]; then _yn_hint="[Y/n] "; else _yn_hint="[y/N] "; fi
+  ask "$_yn_prompt $_yn_hint" _yn_reply
+  _yn_reply=$(printf '%s' "$_yn_reply" | tr '[:upper:]' '[:lower:]')
+  [ -z "$_yn_reply" ] && _yn_reply=$_yn_def
+  [ "$_yn_reply" = "y" ] || [ "$_yn_reply" = "yes" ]
+}
+
+# ---------------------------------------------------------------------------
+# OS / arch detection
+# ---------------------------------------------------------------------------
+detect_os() {
+  _detect_u=$(uname -s)
+  case "$_detect_u" in
+    Darwin) DETECTED_OS=darwin ;;
+    Linux) DETECTED_OS=linux ;;
+    *) DETECTED_OS=unknown ;;
+  esac
+}
+
+detect_arch() { # -> PD_ARCH: x64 | arm64
+  _detect_m=$(uname -m)
+  case "$_detect_m" in
+    x86_64 | amd64) PD_ARCH=x64 ;;
+    aarch64 | arm64) PD_ARCH=arm64 ;;
+    *) PD_ARCH="$_detect_m" ;;
+  esac
+  export PD_ARCH
+}
+
+# ---------------------------------------------------------------------------
+# Downloads (curl preferred, wget fallback)
+# ---------------------------------------------------------------------------
+fetch_to() { # fetch_to <url> <outfile>
+  if command -v curl >/dev/null 2>&1; then
+    run curl -fsSL "$1" -o "$2"
+  elif command -v wget >/dev/null 2>&1; then
+    run wget -qO "$2" "$1"
+  else
+    die "need curl or wget to download $1"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# PATH management: put ~/.local/bin first on PATH (now) and in shell rc files
+# (future shells), so installed CLIs (node, pnpm, gh, pi, pideck) resolve.
+# ---------------------------------------------------------------------------
+ensure_local_bin_path() {
+  mkdir -p "$PD_LOCAL_BIN" 2>/dev/null || :
+  case ":$PATH:" in
+    *":$PD_LOCAL_BIN:"*) ;;
+    *) PATH="$PD_LOCAL_BIN:$PATH" ;;
+  esac
+  export PATH
+
+  # Intentionally single-quoted: this line is written verbatim into rc files.
+  # shellcheck disable=SC2016
+  _rc_line='export PATH="$HOME/.local/bin:$PATH"'
+  if [ "$DETECTED_OS" = "darwin" ]; then
+    _rc_files="$HOME/.zprofile $HOME/.zshrc $HOME/.profile"
+  else
+    _rc_files="$HOME/.profile $HOME/.bashrc"
+  fi
+  for _rc in $_rc_files; do
+    if [ -f "$_rc" ]; then
+      grep -qF '.local/bin' "$_rc" 2>/dev/null || run printf '\n%s\n' "$_rc_line" >> "$_rc"
+    fi
+  done
+  # Guarantee at least one rc file carries the entry.
+  if ! grep -qF '.local/bin' "$HOME/.profile" 2>/dev/null &&
+    ! grep -qF '.local/bin' "$HOME/.zprofile" 2>/dev/null &&
+    ! grep -qF '.local/bin' "$HOME/.zshrc" 2>/dev/null &&
+    ! grep -qF '.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+    run sh -c "printf '\n%s\n' \"$_rc_line\" >> \"$HOME/.profile\""
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Version comparison: _node_version_ge <a> <b> — 0 when a >= b (MAJ.MIN.PATCH).
+# ---------------------------------------------------------------------------
+_node_version_ge() {
+  _ng_a1=$(printf '%s' "$1" | cut -d. -f1)
+  _ng_a2=$(printf '%s' "$1" | cut -d. -f2)
+  _ng_a3=$(printf '%s' "$1" | cut -d. -f3)
+  _ng_b1=$(printf '%s' "$2" | cut -d. -f1)
+  _ng_b2=$(printf '%s' "$2" | cut -d. -f2)
+  _ng_b3=$(printf '%s' "$2" | cut -d. -f3)
+  [ "${_ng_a1:-0}" -gt "${_ng_b1:-0}" ] && return 0
+  [ "${_ng_a1:-0}" -lt "${_ng_b1:-0}" ] && return 1
+  [ "${_ng_a2:-0}" -gt "${_ng_b2:-0}" ] && return 0
+  [ "${_ng_a2:-0}" -lt "${_ng_b2:-0}" ] && return 1
+  [ "${_ng_a3:-0}" -ge "${_ng_b3:-0}" ]
+}
+
+# ---------------------------------------------------------------------------
+# pideck env file (~/.pideck/env) — sourced by the service wrapper, the CLI,
+# and the daemon. env_set keeps a single "KEY=\"value\"" line.
+# ---------------------------------------------------------------------------
+env_set() { # env_set <file> <KEY> <value>
+  _es_file=$1
+  _es_key=$2
+  _es_val=$3
+  if [ "$PD_DRY_RUN" = "1" ]; then
+    printf "[dry-run] env_set %s=%s in %s\n" "$_es_key" "$_es_val" "$_es_file"
+    return 0
+  fi
+  grep -v "^${_es_key}=" "$_es_file" > "$_es_file.tmp" 2>/dev/null || :
+  printf '%s="%s"\n' "$_es_key" "$_es_val" >> "$_es_file.tmp"
+  mv "$_es_file.tmp" "$_es_file"
+}
+
+# Minimal JSON string escaping for values we control.
+json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# Timestamp helper.
+iso_now() { date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u; }
+
+# ---------------------------------------------------------------------------
+# Shell-layer install (shared by bootstrap.sh and the update path): copy the
+# fetched tree's CLI shims into $PD_HOME/bin and the libs + onboard.sh flat
+# into <lib-dir>, and keep the ~/.local/bin/pideck symlink.
+# ---------------------------------------------------------------------------
+install_shell_layer() { # install_shell_layer <lib-dir>
+  _isl_lib=$1
+  for _cli_file in "$PD_SRC/install/bin/"*; do
+    [ -f "$_cli_file" ] || continue
+    # Never deploy a shim that does not parse — a broken shim on PATH bricks
+    # the CLI. sh -n is a read-only syntax check.
+    if ! sh -n "$_cli_file" 2>/dev/null; then
+      die "refusing to deploy a shim that fails sh -n: $_cli_file"
+    fi
+    run cp "$_cli_file" "$PD_HOME/bin/$(basename "$_cli_file")"
+    run chmod +x "$PD_HOME/bin/$(basename "$_cli_file")"
+  done
+  for _lib_file in "$PD_SRC/install/lib/"*.sh "$PD_SRC/install/onboard.sh"; do
+    [ -f "$_lib_file" ] || continue
+    run cp "$_lib_file" "$_isl_lib/$(basename "$_lib_file")"
+  done
+  run mkdir -p "$PD_LOCAL_BIN"
+  run ln -sfn "$PD_HOME/bin/pideck" "$PD_LOCAL_BIN/pideck"
+}
