@@ -5,6 +5,9 @@
  * daemon takes.
  */
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { TerminalDataSchema } from "@pideck/shared";
 import {
@@ -268,6 +271,23 @@ describe("terminal bridge", () => {
     expect(tmux.sessions.has(TMUX_SESSION)).toBe(true);
     expect(tmux.pipeActive(TMUX_SESSION)).toBe(true);
     closeAll();
+  });
+
+  it("re-pipes a pane that still pipes from a previous daemon run", async () => {
+    const { tmux, bridge, open } = setup();
+    const stale = mkdtempSync(path.join(tmpdir(), "pideck-stale-"));
+    tmux.openPipe(TMUX_SESSION, path.join(stale, "stale.stream"));
+    expect(tmux.pipeActive(TMUX_SESSION)).toBe(true);
+
+    const socket = open();
+    attach(socket);
+    await expectClients(bridge, 1);
+
+    // The stream replaced the stale pipe: pane output lands in the new file
+    // and reaches the client.
+    tmux.paneOutput(TMUX_SESSION, "after restart\r\n");
+    await vi.waitFor(() => expect(socket.received()).toContain("after restart\r\n"));
+    expect(tmux.pipeStreamPath(TMUX_SESSION)).not.toBe(path.join(stale, "stale.stream"));
   });
 
   it("disposes every pane stream on close", async () => {

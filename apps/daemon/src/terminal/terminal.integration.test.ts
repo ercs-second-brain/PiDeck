@@ -42,8 +42,23 @@ describe.skipIf(!enabled)("terminal bridge integration", () => {
 
   afterAll(async () => {
     await closeBridge?.();
+    // The daemon shutdown path must stop the pipe-pane the stream opened.
+    const pipe = await pipeActive().catch(() => "1");
+    expect(pipe).toBe("0");
     await tmux.run(["kill-server"]).catch(() => {});
   });
+
+  /** Whether the pane still has a pipe-pane attached. */
+  async function pipeActive(): Promise<string> {
+    const result = await tmux.run([
+      "display-message",
+      "-p",
+      "-t",
+      `${tmuxSession}:`,
+      "#{pane_pipe}",
+    ]);
+    return result.stdout.trim();
+  }
 
   function connect(): Promise<WebSocket> {
     return new Promise((resolve, reject) => {

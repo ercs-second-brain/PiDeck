@@ -105,9 +105,11 @@ export class PaneStream {
     this.watcher = this.watchStreamFile();
     if (this.watcher === undefined) this.startPolling();
     try {
+      // Without -o: tmux closes any pipe left over from a previous run and
+      // opens ours, so a daemon restart re-pipes a pane that was still
+      // piping into a deleted temp file.
       await this.tmux.run([
         "pipe-pane",
-        "-o",
         "-t",
         this.tmuxSession,
         `cat >> ${shellQuote(this.file)}`,

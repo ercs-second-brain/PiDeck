@@ -54,6 +54,11 @@ export class FakeTmux implements Tmux {
     return this.pipes.has(target);
   }
 
+  /** Pre-seeds a pipe for the target (simulating a leftover from a restart). */
+  openPipe(target: string, file: string): void {
+    this.pipes.set(target, file);
+  }
+
   /** The stream file the pane's pipe appends to, if one is running. */
   pipeStreamPath(target: string): string | undefined {
     return this.pipes.get(target);
