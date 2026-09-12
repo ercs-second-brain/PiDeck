@@ -18,10 +18,11 @@ function tempDir(): string {
   return dir;
 }
 
-function initOrigin(branch = "main"): string {
+function initOrigin(branch = "main", commit = true): string {
   const stateDir = tempDir();
   const origin = join(stateDir, "gh", "acme", "widget");
   execFileSync("git", ["init", "-b", branch, origin]);
+  if (!commit) return origin;
   writeFileSync(join(origin, "README.md"), "x\n");
   execFileSync("git", ["-C", origin, "add", "."]);
   execFileSync("git", ["-C", origin, "-c", "user.name=t", "-c", "user.email=t@example.com",
@@ -80,6 +81,32 @@ describe("ProjectStore", () => {
     expect(project.name).toBe("fresh");
     expect(existsSync(join(project.path, "README.md"))).toBe(true);
     expect(ProjectSchema.parse(project)).toEqual(project);
+  });
+
+  it("creates an empty repo whose HEAD is unborn", async () => {
+    const origin = initOrigin("main", false);
+    const stateDir = dirname(origin);
+    const run: CommandRunner = (cmd, args, cwd) =>
+      cmd === "gh" ? { stdout: `file://${origin}\n` } : runCommand(cmd, args, cwd);
+    const store = new ProjectStore(stateDir, run);
+
+    const project = await store.add({ mode: "create", name: "fresh", private: true });
+
+    expect(project.defaultBranch).toBe("main");
+    expect(store.get("acme-widget")).toEqual(project);
+  });
+
+  it("falls back to main when the branch cannot be resolved", async () => {
+    const origin = initOrigin("main", false);
+    const run: CommandRunner = (cmd, args, cwd) => {
+      if (cmd === "gh") return { stdout: `file://${origin}\n` };
+      if (cmd === "git" && args[0] === "symbolic-ref") throw new Error("no branch");
+      return runCommand(cmd, args, cwd);
+    };
+    const store = new ProjectStore(dirname(origin), run);
+
+    expect((await store.add({ mode: "create", name: "fresh", private: true })).defaultBranch)
+      .toBe("main");
   });
 
   it("uniquifies ids on collision", async () => {

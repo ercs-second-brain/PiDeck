@@ -14,14 +14,14 @@ import { createUpdater } from "./update.js";
 
 /**
  * CommandRunner fake for ProjectStore: `git clone` creates the target dir,
- * `git rev-parse` reports `main`, everything else succeeds with no output.
+ * `git symbolic-ref` reports `main`, everything else succeeds with no output.
  */
 export const fakeCommandRunner: CommandRunner = (cmd, args) => {
   if (cmd === "git" && args[0] === "clone") {
     const target = args[2];
     if (target !== undefined) mkdirSync(target, { recursive: true });
   }
-  if (cmd === "git" && args[0] === "rev-parse") return { stdout: "main\n" };
+  if (cmd === "git" && args[0] === "symbolic-ref") return { stdout: "main\n" };
   return { stdout: "" };
 };
 
