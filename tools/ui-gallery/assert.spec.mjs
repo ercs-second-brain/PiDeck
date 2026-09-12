@@ -112,6 +112,7 @@ async function overflowOf(page) {
 /** Every visible interactive control measured against the 40px floor. */
 async function touchTargetViolations(page) {
   return page.evaluate(() => {
+    const slop = 1; // sub-pixel layout slop, mirrored inside the browser
     const selector =
       'button, a[href], input, select, textarea, [role="button"], [role="switch"], [role="tab"]';
     const violations = [];
@@ -120,7 +121,7 @@ async function touchTargetViolations(page) {
       if (style.visibility === "hidden" || style.display === "none") continue;
       const box = element.getBoundingClientRect();
       if (box.width === 0 || box.height === 0) continue;
-      if (box.width + PX >= 40 && box.height + PX >= 40) continue;
+      if (box.width + slop >= 40 && box.height + slop >= 40) continue;
       const label =
         element.getAttribute("aria-label") ??
         element.textContent?.trim().slice(0, 40) ??
