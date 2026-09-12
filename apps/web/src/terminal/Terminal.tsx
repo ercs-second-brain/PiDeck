@@ -170,12 +170,17 @@ function useTerminalMount(
     refitOnFrame();
 
     // Jump-to-bottom pill visibility: shown while the viewport sits above the
-    // last line of the buffer.
+    // last line of the buffer. Driven by the viewport element's DOM scroll
+    // event — xterm's onScroll fires only for buffer scrolls (live output),
+    // not for wheel/touch scrolling through the scrollback — plus onScroll so
+    // programmatic viewport moves without a DOM scroll are not missed.
+    const viewportEl = container.querySelector<HTMLElement>(".xterm-viewport");
     const updateJump = () => {
       const buffer = term.buffer.active;
       onJump(buffer.viewportY < buffer.baseY);
     };
     const scrollSub = term.onScroll(updateJump);
+    viewportEl?.addEventListener("scroll", updateJump);
 
     connection.attach(sessionId, term.cols, term.rows);
 
@@ -183,6 +188,7 @@ function useTerminalMount(
       sendRef.current = null;
       termRef.current = null;
       scrollSub.dispose();
+      viewportEl?.removeEventListener("scroll", updateJump);
       observer.disconnect();
       if (frame !== undefined) cancelAnimationFrame(frame);
       // Cancel a pending trailing fit so teardown never fits a disposed terminal.
