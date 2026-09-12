@@ -13,12 +13,28 @@ set -u
 # shellcheck disable=SC1091 # shared test harness, sourced on purpose
 . "$(dirname -- "$0")/harness.sh"
 
-# --- stub gh: auth status succeeds unless the token is rejected; api user ---
-# prints the account the token belongs to.
+# --- stub gh: the device login prints gh's one-time-code text and records
+# --- the config dir it runs under; auth status succeeds unless the token is
+# --- rejected; api user prints the account the token belongs to.
 fakebin="$tmp/fakebin"
 mkdir -p "$fakebin"
 cat > "$fakebin/gh" <<'EOF'
 #!/bin/sh
+case "$1 $2" in
+  "auth login")
+    printf '%s\n' "${GH_CONFIG_DIR:-unset}" >> "$GH_CONFIG_LOG"
+    printf '\n! First copy your one-time code: ABCD-1234\n' >&2
+    printf 'Open this URL to continue in your web browser: https://github.com/login/device\n' >&2
+    exit 0
+    ;;
+  "auth token")
+    case "${GH_CONFIG_DIR:-}" in
+      */gh-review) printf '%s\n' 'ghp_device' ;;
+      *) printf 'no device token outside the review config dir\n' >&2; exit 1 ;;
+    esac
+    exit 0
+    ;;
+esac
 case "$1" in
   auth)
     case "${GH_TOKEN:-}" in
@@ -54,7 +70,7 @@ out=$(PATH="$fakebin:$PATH" sh "$PD_HOME/lib/onboard.sh" --dry-run --skip-pi --s
 rc=$?
 check_eq 'dry-run exits 0' '0' "$rc"
 check_grep 'dry-run ran onboarding' 'onboarding summary' "$out"
-check_grep 'dry-run review step printed' "[dry-run] prompt for review account" "$out"
+check_grep "dry-run review step printed" "prompt for review account username + PAT" "$out"
 check_grep 'dry-run settings write printed' '[dry-run] write' "$out"
 
 # --- noninteractive without review credentials: REQUIRED step fails ---------
@@ -94,6 +110,20 @@ else
 fi
 check_grep 'onboarding record marks review ready' '"status": "ready"' "$(cat "$PD_HOME/onboarding.json" 2>/dev/null)"
 check_grep 'onboarding record stores the review username' '"username": "reviewer"' "$(cat "$PD_HOME/onboarding.json" 2>/dev/null)"
+check_grep 'onboarding record stores the PAT method' '"method": "pat"' "$(cat "$PD_HOME/onboarding.json" 2>/dev/null)"
+
+# --- device sign-in: PD_REVIEW_DEVICE=1 drives gh's device flow under its own
+# --- config dir; the token and username are read back and verified ---------
+out=$(env PATH="$fakebin:$PATH" GH_CONFIG_LOG="$tmp/gh-config-dirs.log" PD_REVIEW_DEVICE=1 \
+  sh "$PD_HOME/lib/onboard.sh" --noninteractive --skip-pi --skip-gh 2>&1)
+rc=$?
+check_eq 'device sign-in exits 0' '0' "$rc"
+check_grep 'device code shown' 'ABCD-1234' "$out"
+check_grep 'device sign-in verified the review account' 'review account verified: reviewer' "$out"
+check_eq 'device login ran under the review gh config dir' "$PD_HOME/state/gh-review" \
+  "$(cat "$tmp/gh-config-dirs.log" 2>/dev/null)"
+check_grep 'settings record the device token' '"token": "ghp_device"' "$(cat "$PD_HOME/settings.json" 2>/dev/null)"
+check_grep 'onboarding record stores the device method' '"method": "device"' "$(cat "$PD_HOME/onboarding.json" 2>/dev/null)"
 
 # --- mismatched review token owner: verification fails ----------------------
 out=$(env PATH="$fakebin:$PATH" FAKE_TOKEN_LOGIN=someone_else PD_REVIEW_USER=reviewer PD_REVIEW_TOKEN=ghp_good \

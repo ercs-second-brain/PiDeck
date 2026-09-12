@@ -8,10 +8,14 @@
 #     reimplement auth, we only detect it and launch pi when needed.
 #  2. primary gh auth — uses a PAT from ~/.env (GH_TOKEN/GITHUB_TOKEN) when
 #     present, else walks through `gh auth login`; verifies the result.
-#  3. review account — REQUIRED: a second GitHub account (username + PAT),
-#     verified with `gh auth status` under that token. The PR review leg
-#     cannot run without it, so onboarding does not complete until it is
-#     set and verified.
+#  3. review account — REQUIRED: a second GitHub account. The primary path is
+#     gh's own device flow under a dedicated config dir
+#     (GH_CONFIG_DIR=$PD_HOME/state/gh-review gh auth login --web): a
+#     one-time code + URL is shown, the user signs in as the review account in
+#     the browser, and the token + username are read back from that config
+#     dir. A username + PAT prompt remains as the fallback. The PR review leg
+#     cannot run without it, so onboarding does not complete until the account
+#     is set and verified.
 #
 # Results are written to ~/.pideck/onboarding.json (record), and the review
 # account + per-persona model to ~/.pideck/settings.json in the shared
@@ -51,6 +55,7 @@ recorded under ~/.pideck/ and remembered across restarts.
 Environment (noninteractive runs):
   PD_REVIEW_USER    review account username
   PD_REVIEW_TOKEN   review account personal access token
+  PD_REVIEW_DEVICE  1 forces the device sign-in in noninteractive runs
 EOF
 }
 
@@ -249,6 +254,36 @@ _gh_setup() {
 # ---------------------------------------------------------------------------
 # review account (required)
 # ---------------------------------------------------------------------------
+_review_device_login() {
+  _rd_dir="$PD_HOME/state/gh-review"
+  info "sign in as the REVIEW account in the browser — a one-time code is shown next"
+  _rd_rc=0
+  if [ -t 0 ]; then
+    GH_CONFIG_DIR="$_rd_dir" gh auth login --web --git-protocol https || _rd_rc=1
+  elif ! GH_CONFIG_DIR="$_rd_dir" gh auth login --web --git-protocol https </dev/tty 2>/dev/null; then
+    # No controlling terminal (service/CI environments): let gh try on its
+    # own stdin — it fails cleanly there and onboarding falls back to the PAT.
+    GH_CONFIG_DIR="$_rd_dir" gh auth login --web --git-protocol https || _rd_rc=1
+  fi
+  if [ "$_rd_rc" != "0" ]; then
+    warn "gh's device sign-in did not complete"
+    return 1
+  fi
+  REVIEW_TOKEN=$(GH_CONFIG_DIR="$_rd_dir" gh auth token 2>/dev/null) || REVIEW_TOKEN=""
+  if [ -z "$REVIEW_TOKEN" ]; then
+    warn "could not read the review token from gh"
+    return 1
+  fi
+  # Read the account as the new token itself: an ambient GH_TOKEN would
+  # otherwise resolve to the primary account.
+  REVIEW_USER=$(GH_TOKEN="$REVIEW_TOKEN" gh api user --jq .login 2>/dev/null) || REVIEW_USER=""
+  if [ -z "$REVIEW_USER" ]; then
+    warn "could not resolve the review account's username"
+    return 1
+  fi
+  return 0
+}
+
 _verify_review_account() {
   [ -n "$REVIEW_USER" ] || return 1
   [ -n "$REVIEW_TOKEN" ] || return 1
@@ -273,24 +308,40 @@ _review_account() {
   step "review account (required)"
   info "the review leg files real PR reviews as a SECOND GitHub account —"
   info "with a single account the loop has no review leg at all"
-  info "create a PAT for that account with repo access (github.com/settings/tokens)"
+  info "easiest: gh's device sign-in (one-time code at github.com/login/device)"
+  info "fallback: create a PAT for that account (github.com/settings/tokens)"
 
   while :; do
     if [ "$PD_DRY_RUN" = "1" ]; then
-      printf "[dry-run] prompt for review account username + PAT, verify with 'gh auth status'\n"
+      printf '[dry-run] device sign-in under %s/state/gh-review, or prompt for review account username + PAT\n' "$PD_HOME"
       REVIEW_STATUS=dry-run
       return 0
     fi
     if [ -n "${PD_REVIEW_USER:-}" ] && [ -n "${PD_REVIEW_TOKEN:-}" ]; then
       REVIEW_USER=$PD_REVIEW_USER
       REVIEW_TOKEN=$PD_REVIEW_TOKEN
-    elif [ "$PD_NONINTERACTIVE" = "1" ]; then
+      REVIEW_METHOD=pat
+    elif [ "$PD_NONINTERACTIVE" = "1" ] && [ "${PD_REVIEW_DEVICE:-0}" != "1" ]; then
       warn "review account required but not provided (set PD_REVIEW_USER + PD_REVIEW_TOKEN)"
       REVIEW_STATUS=none
       return 1
     else
+      if [ "${PD_REVIEW_DEVICE:-0}" = "1" ] || ask_yn "Sign in with gh's device flow (one-time code in the browser)?" y; then
+        if _review_device_login && _verify_review_account; then
+          REVIEW_STATUS=ready
+          REVIEW_METHOD=device
+          ok "review account verified: $REVIEW_USER"
+          return 0
+        fi
+        warn "device sign-in did not produce a verified account — falling back to the PAT form"
+      fi
       ask "review account username: " REVIEW_USER
       ask "review account PAT: " REVIEW_TOKEN
+      if [ "$PD_NONINTERACTIVE" = "1" ] && [ -z "$REVIEW_USER" ] && [ -z "$REVIEW_TOKEN" ]; then
+        warn "review account required but not provided (set PD_REVIEW_USER + PD_REVIEW_TOKEN, or run interactively)"
+        REVIEW_STATUS=none
+        return 1
+      fi
     fi
 
     if [ "$PD_DRY_RUN" != "1" ] && _verify_review_account; then
@@ -369,6 +420,7 @@ _write_results() {
     printf '  },\n'
     printf '  "review": {\n'
     printf '    "status": "%s",\n' "$(json_str "${REVIEW_STATUS:-none}")"
+    printf '    "method": "%s",\n' "$(json_str "${REVIEW_METHOD:-}")"
     printf '    "username": "%s"\n' "$(json_str "${REVIEW_USER:-}")"
     printf '  }\n'
     printf '}\n'
@@ -412,6 +464,7 @@ main() {
   GH_TOKEN_SOURCE="none"
   REVIEW_USER=""
   REVIEW_TOKEN=""
+  REVIEW_METHOD=""
   REVIEW_STATUS="none"
 
   if [ "$DO_PI" = "1" ]; then

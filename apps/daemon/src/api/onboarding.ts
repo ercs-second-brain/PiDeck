@@ -60,7 +60,7 @@ export class ReviewLoginFlow {
   }
 
   private env(): NodeJS.ProcessEnv {
-    const env = { ...process.env, GH_CONFIG_DIR: join(this.stateDir, "gh-review") };
+    const env: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: join(this.stateDir, "gh-review") };
     // The flow must authenticate as itself; a token in the daemon's
     // environment is the primary account's and would override the config dir.
     delete env.GH_TOKEN;

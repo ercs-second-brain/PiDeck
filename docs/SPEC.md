@@ -208,8 +208,10 @@ the audience is the owner's own machine, LAN, and phone — authentication is a 
 
 ### Settings
 
-Global (onboarding): pi auth, primary `gh` auth, **review account (required)**: username + PAT,
-model per persona.
+Global (onboarding): pi auth, primary `gh` auth, **review account (required)**: signed in via
+gh's own device flow under a dedicated gh config dir (`<stateDir>/gh-review`) — one-time code +
+URL, then the daemon reads the token with `gh auth token` and the username with `gh api user` —
+or, as a collapsed fallback, a username + PAT; model per persona.
 
 Per project: `workerConcurrency` (default 3), `maxFixAttempts` (default 5), `contextLimitPercent`
 (default 80), `stallMinutes` (default 20), `autoMerge` (default false).
