@@ -123,6 +123,8 @@ export function UpdateBanner() {
   if (check === null || !check.updateAvailable) return null;
 
   const stuck = phase === "stuck";
+  const shownHint =
+    hint ?? (phase === "available" && agentsLive ? "agents are live — the update waits until they finish" : null);
   return (
     <div className="update">
       <button
@@ -134,9 +136,9 @@ export function UpdateBanner() {
       >
         {phase === "updating" ? "Updating…" : stuck ? "Reload" : "Update"}
       </button>
-      {hint !== null && (
-        <span className="update__hint" title={hint}>
-          {hint}
+      {shownHint !== null && (
+        <span className="update__hint" title={shownHint}>
+          {shownHint}
         </span>
       )}
     </div>
