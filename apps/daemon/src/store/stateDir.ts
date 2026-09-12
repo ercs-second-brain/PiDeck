@@ -28,5 +28,3 @@ export function statePaths(stateDir: string) {
     tracesDir: join(stateDir, "traces"),
   };
 }
-
-export type StatePaths = ReturnType<typeof statePaths>;

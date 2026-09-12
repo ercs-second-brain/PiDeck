@@ -33,7 +33,6 @@ import {
 } from "./desired.js";
 import { ProjectReader, type ProjectFacts } from "./read.js";
 
-export { deriveState, type SessionStateFacts } from "./state.js";
 export { type ProjectFacts } from "./read.js";
 
 /** The slice of the GitHub client the reconciler reads through. */
