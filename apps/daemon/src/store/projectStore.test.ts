@@ -98,11 +98,11 @@ describe("ProjectStore", () => {
 
   it("falls back to main when the branch cannot be resolved", async () => {
     const origin = initOrigin("main", false);
-    const run: CommandRunner = (cmd, args, cwd) =>
-      cmd === "gh" ? { stdout: `file://${origin}\n` }
-      : cmd === "git" && args.includes("symbolic-ref")
-      ? (() => { throw new Error("no branch"); })()
-      : runCommand(cmd, args, cwd);
+    const run: CommandRunner = (cmd, args, cwd) => {
+      if (cmd === "gh") return { stdout: `file://${origin}\n` };
+      if (cmd === "git" && args[0] === "symbolic-ref") throw new Error("no branch");
+      return runCommand(cmd, args, cwd);
+    };
     const store = new ProjectStore(dirname(origin), run);
 
     expect((await store.add({ mode: "create", name: "fresh", private: true })).defaultBranch)
