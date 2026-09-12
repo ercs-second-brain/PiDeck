@@ -1,0 +1,77 @@
+/*
+ * Archived session log viewer chrome: a metadata header strip on the raised
+ * surface and the read-only xterm filling the rest of the pane, sharing the
+ * app surface so the log never reads as a box. Tokens reference the app's
+ * CSS custom properties with literal fallbacks so the pane renders correctly
+ * wherever it is mounted.
+ */
+
+.log-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg, #0c0d10);
+}
+
+.log-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border, #262a33);
+  background: var(--bg-raised, #13151a);
+}
+
+.log-head__persona {
+  flex: none;
+  font-weight: 600;
+}
+
+.log-head__link {
+  flex: none;
+  color: var(--blue, #5b9cff);
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  text-decoration: none;
+}
+
+.log-head__link:hover,
+.log-head__link:focus-visible {
+  text-decoration: underline;
+}
+
+.log-head__times {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim, #8b93a0);
+  font-size: var(--fs-md, 13px);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.log-head__state {
+  flex: none;
+  margin-left: auto;
+}
+
+.log-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The xterm host: no padding, so the fit addon measures exactly what is
+   visible and the screen background fills the pane edge to edge. */
+.log-screen {
+  position: absolute;
+  inset: 0;
+}
+
+.log-screen .xterm,
+.log-screen .xterm-viewport,
+.log-screen .xterm-screen {
+  height: 100%;
+}

@@ -53,7 +53,7 @@ export function disconnected(status: TerminalStatus): boolean {
 }
 
 /** The mono font from the app's `--font-mono` token, with a safe fallback. */
-function monoFontFamily(): string {
+export function monoFontFamily(): string {
   const token = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
   return token || '"JetBrainsMono Nerd Font", "FiraCode Nerd Font", ui-monospace, Menlo, monospace';
 }
@@ -68,7 +68,7 @@ function monoFontFamily(): string {
  * — `onContextLoss` swaps in the canvas renderer so the pane keeps rendering
  * for the rest of its life. Loaded after the terminal opens.
  */
-function loadRenderer(term: XTerm): void {
+export function loadRenderer(term: XTerm): void {
   let canvasLoaded = false;
   const loadCanvas = () => {
     if (canvasLoaded) return;

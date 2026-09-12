@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Project, SessionView } from "@pideck/shared";
 import { api, watchSessions } from "./lib/api";
+import { SessionPane } from "./logs/SessionPane";
 import { navigate, useRoute } from "./router";
 import { Shell } from "./shell/Shell";
 import { rowText } from "./shell/tree";
-import { Terminal } from "./terminal/Terminal";
 import { Button } from "./ui/Button";
 import { Empty } from "./ui/Empty";
 import { Page } from "./ui/Page";
@@ -98,7 +98,7 @@ export function App() {
   const content = (() => {
     switch (route.name) {
       case "session":
-        return <Terminal sessionId={route.id} />;
+        return <SessionPane sessionId={route.id} views={sessions} projects={projects} />;
       case "onboarding":
         return <Placeholder title="Onboarding" />;
       case "settings":
