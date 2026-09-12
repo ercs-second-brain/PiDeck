@@ -2,6 +2,9 @@
 // A scripted stand-in for the gh CLI. Serves a mutable JSON repo state —
 // pointed at by FAKE_GH_STATE — with exactly the surface the daemon's GitHub
 // client uses, and applies writes back to that state file. No network.
+// The state is multi-repo: every gh invocation carries its repo (the --repo
+// flag, a repos/<owner>/<name>/... api path, or the --repo of repo view), and
+// reads and writes the matching entry of state.repos.
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 
 const statePath = process.env.FAKE_GH_STATE;
@@ -31,24 +34,40 @@ function loginFor(state) {
   return (token !== undefined && state.tokens[token]) || state.primaryLogin;
 }
 
+function repoNames(state) {
+  return Object.keys(state.repos);
+}
+
+function repoEntry(state, repo) {
+  const entry = state.repos[repo];
+  if (entry === undefined) fail(`no repo ${repo} in fake state`);
+  return entry;
+}
+
+/** The repo an argv carries: the --repo flag value, if present. */
+function repoFlag(rest) {
+  const values = flagValues(rest, "--repo");
+  return values.length === 0 ? null : values[0];
+}
+
 function canRead(state, login, repo) {
   if (login === state.primaryLogin) return true;
   return (state.readAccess[repo] ?? []).includes(login);
 }
 
-function findIssue(state, number) {
-  return state.issues.find((issue) => issue.number === number) ?? null;
+function findIssue(repo, number) {
+  return repo.issues.find((issue) => issue.number === number) ?? null;
 }
 
-function findPrOrDie(state, number) {
-  const pr = state.prs.find((pr) => pr.number === number);
+function findPrOrDie(repo, number) {
+  const pr = repo.prs.find((pr) => pr.number === number);
   if (pr === undefined) fail(`no pull request #${number}`);
   return pr;
 }
 
-function closeReferencedIssues(state, pr) {
+function closeReferencedIssues(repo, pr) {
   for (const match of pr.body.matchAll(/(?:[Cc]loses|[Ff]ixes|[Rr]esolves) #(\d+)/g)) {
-    const issue = findIssue(state, Number(match[1]));
+    const issue = findIssue(repo, Number(match[1]));
     if (issue !== null) issue.state = "closed";
   }
 }
@@ -84,10 +103,19 @@ function gh(state) {
   const [rawPath] = path.split("?");
   const segments = rawPath.replace(/^\//, "").split("/");
   const write = () => save(state);
+  // The repo a repos/<owner>/<name>/... path addresses; null for user paths.
+  const repo =
+    segments[0] === "repos" && segments.length >= 3 ? `${segments[1]}/${segments[2]}` : null;
 
   if (method === "GET" && segmentsEqual(segments, ["repos", "*", "*"])) {
     if (canRead(state, login, `${segments[1]}/${segments[2]}`)) return emit("{}");
     fail(`Must have read access to ${segments[1]}/${segments[2]} (as ${login})`);
+  }
+  if (method === "GET" && segmentsEqual(segments, ["repos", "*", "*", "commits", "*"])) {
+    if (!canRead(state, login, repo)) fail(`Must have read access to ${repo} (as ${login})`);
+    const sha = repoEntry(state, repo).upstreamSha ?? "0".repeat(40);
+    if (args.includes("--jq") && args[args.indexOf("--jq") + 1] === ".sha") return emit(sha);
+    return emit(JSON.stringify({ sha }));
   }
   if (method === "PUT" && segmentsEqual(segments, ["repos", "*", "*", "collaborators", "*"])) {
     const repo = `${segments[1]}/${segments[2]}`;
@@ -122,39 +150,41 @@ function gh(state) {
     return emit("");
   }
   if (segmentsEqual(segments, ["repos", "*", "*", "issues", "*", "dependencies", "blocked_by"])) {
-    const issue = findIssue(state, Number(segments[4]));
+    const r = repoEntry(state, repo);
+    const issue = findIssue(r, Number(segments[4]));
     if (issue === null) fail(`no issue #${segments[4]}`);
     const blockers = issue.blockedBy.map((number) => ({
       number,
-      state: findIssue(state, number)?.state ?? "open",
+      state: findIssue(r, number)?.state ?? "open",
     }));
     return emit(JSON.stringify(blockers));
   }
   if (segmentsEqual(segments, ["repos", "*", "*", "issues", "*", "comments"])) {
+    const r = repoEntry(state, repo);
     const number = Number(segments[4]);
     if (method === "GET") {
-      return emit(JSON.stringify((state.comments[String(number)] ?? []).map(asGhComment)));
+      return emit(JSON.stringify((r.comments[String(number)] ?? []).map(asGhComment)));
     }
     if (method === "POST") {
       const comment = { id: nextId(state), user: login, body: fields.body ?? "", created_at: nowIso() };
-      const list = state.comments[String(number)] ?? [];
+      const list = r.comments[String(number)] ?? [];
       list.push(comment);
-      state.comments[String(number)] = list;
+      r.comments[String(number)] = list;
       write();
       return emit(JSON.stringify({ id: comment.id }));
     }
     fail("api: unsupported method on issue comments");
   }
   if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*", "reviews"])) {
-    const pr = findPrOrDie(state, Number(segments[4]));
+    const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
     return emit(JSON.stringify(pr.reviews.map(asGhReview)));
   }
   if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*", "comments"])) {
-    const pr = findPrOrDie(state, Number(segments[4]));
+    const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
     return emit(JSON.stringify(pr.reviewComments.map(asGhComment)));
   }
   if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*"])) {
-    const pr = findPrOrDie(state, Number(segments[4]));
+    const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
     return emit(JSON.stringify({ body: pr.body }));
   }
   fail(`api: unhandled ${method} ${rawPath}`);
@@ -176,7 +206,7 @@ function asGhReview(review) {
 
 function issueList(state) {
   if (!jsonFlagWith(args, "number,title,url,assignees,labels")) fail("issue list: unexpected --json fields");
-  const issues = state.issues
+  const issues = repoEntry(state, repoFlag(args)).issues
     .filter((issue) => issue.state === "open")
     .map((issue) => ({
       number: issue.number,
@@ -190,7 +220,7 @@ function issueList(state) {
 
 function issueEdit(state) {
   const number = Number(args[2]);
-  const issue = findIssue(state, number);
+  const issue = findIssue(repoEntry(state, repoFlag(args)), number);
   if (issue === null) fail(`no issue #${number}`);
   let changed = false;
   const add = flagValues(args, "--add-assignee");
@@ -215,7 +245,7 @@ function prList(state) {
   if (!jsonFlagWith(args, "number,headRefName,headRefOid,mergeable,reviewDecision,statusCheckRollup")) {
     fail("pr list: unexpected --json fields");
   }
-  const prs = state.prs
+  const prs = repoEntry(state, repoFlag(args)).prs
     .filter((pr) => pr.state === "open")
     .map((pr) => ({
       number: pr.number,
@@ -229,15 +259,15 @@ function prList(state) {
 }
 
 function prMerge(state) {
-  const pr = findPrOrDie(state, Number(args[2]));
+  const pr = findPrOrDie(repoEntry(state, repoFlag(args)), Number(args[2]));
   pr.state = "merged";
-  closeReferencedIssues(state, pr);
+  closeReferencedIssues(repoEntry(state, repoFlag(args)), pr);
   save(state);
   return emit("");
 }
 
 function prEdit(state) {
-  const pr = findPrOrDie(state, Number(args[2]));
+  const pr = findPrOrDie(repoEntry(state, repoFlag(args)), Number(args[2]));
   for (const login of flagValues(args, "--add-reviewer")) {
     if (!pr.requestedReviewers.includes(login)) pr.requestedReviewers.push(login);
   }
@@ -246,7 +276,7 @@ function prEdit(state) {
 }
 
 function prReview(state) {
-  const pr = findPrOrDie(state, Number(args[2]));
+  const pr = findPrOrDie(repoEntry(state, repoFlag(args)), Number(args[2]));
   const stateArg = args.includes("--approve")
     ? "APPROVED"
     : args.includes("--request-changes")
@@ -266,8 +296,8 @@ function prReview(state) {
 }
 
 function repoView(state) {
-  const repoIndex = args.indexOf("--repo");
-  const repo = repoIndex === -1 ? state.repo : args[repoIndex + 1];
+  const repo = repoFlag(args) ?? repoNames(state)[0];
+  if (repo === undefined) fail("no repo in fake state");
   if (!canRead(state, loginFor(state), repo)) fail(`Must have read access to ${repo}`);
   return emit(`* ${repo}`);
 }
@@ -299,7 +329,14 @@ function emit(text, trailingNewline = true) {
   process.stdout.write(trailingNewline ? `${text}\n` : text);
 }
 
-// Test-facing state mutations: `gh __op <operation> <json>`.
+// Test-facing state mutations: `gh __op <operation> <json>`. Operations
+// carry an explicit repo (payload.repo); it defaults to the first repo.
+function targetRepo(state, payload) {
+  const repo = payload.repo ?? repoNames(state)[0];
+  if (repo === undefined) fail("no repo in fake state");
+  return repoEntry(state, repo);
+}
+
 function applyChecks(pr, payload) {
   pr.checks =
     payload.status === "failed"
@@ -316,13 +353,24 @@ function applyChecks(pr, payload) {
 function op(state) {
   const name = args[1];
   const payload = args[2] === undefined ? {} : JSON.parse(args[2]);
-  const repo = state.repo;
+  if (name === "addRepo") {
+    const newRepo = payload.repo;
+    if (state.repos[newRepo] === undefined) {
+      state.repos[newRepo] = { issues: [], comments: {}, prs: [], upstreamSha: payload.upstreamSha ?? null };
+    }
+    save(state);
+    emit("");
+    return;
+  }
+  const repoName = payload.repo ?? repoNames(state)[0];
+  if (repoName === undefined) fail("no repo in fake state");
+  const repo = repoEntry(state, repoName);
   switch (name) {
     case "openIssue":
-      state.issues.push({
+      repo.issues.push({
         number: payload.number,
         title: payload.title,
-        url: `https://github.com/${repo}/issues/${payload.number}`,
+        url: `https://github.com/${repoName}/issues/${payload.number}`,
         state: "open",
         assignees: payload.assignees ?? [],
         labels: [],
@@ -330,13 +378,13 @@ function op(state) {
       });
       break;
     case "setBlockedBy": {
-      const issue = findIssue(state, payload.issue);
+      const issue = findIssue(repo, payload.issue);
       if (issue === null) fail(`no issue #${payload.issue}`);
       issue.blockedBy = payload.blockers;
       break;
     }
     case "openPr":
-      state.prs.push({
+      repo.prs.push({
         number: payload.number,
         headRefName: `pideck/issue-${payload.issue}`,
         headRefOid: payload.headSha,
@@ -350,12 +398,12 @@ function op(state) {
       });
       break;
     case "setCI": {
-      const pr = findPrOrDie(state, payload.pr);
+      const pr = findPrOrDie(repo, payload.pr);
       applyChecks(pr, payload);
       break;
     }
     case "push": {
-      const pr = findPrOrDie(state, payload.pr);
+      const pr = findPrOrDie(repo, payload.pr);
       pr.headRefOid = payload.headSha;
       if (payload.ci !== undefined) {
         applyChecks(pr, payload.ci);
@@ -363,7 +411,7 @@ function op(state) {
       break;
     }
     case "addReview": {
-      const pr = findPrOrDie(state, payload.pr);
+      const pr = findPrOrDie(repo, payload.pr);
       const review = {
         id: nextId(state),
         user: payload.by,
@@ -377,19 +425,19 @@ function op(state) {
       return;
     }
     case "assign": {
-      const issue = findIssue(state, payload.issue);
+      const issue = findIssue(repo, payload.issue);
       if (issue === null) fail(`no issue #${payload.issue}`);
       if (!issue.assignees.includes(payload.login)) issue.assignees.push(payload.login);
       break;
     }
     case "merge": {
-      const pr = findPrOrDie(state, payload.pr);
+      const pr = findPrOrDie(repo, payload.pr);
       pr.state = "merged";
-      closeReferencedIssues(state, pr);
+      closeReferencedIssues(repo, pr);
       break;
     }
     case "addComment": {
-      const list = state.comments[String(payload.number)] ?? [];
+      const list = repo.comments[String(payload.number)] ?? [];
       const comment = {
         id: nextId(state),
         user: payload.author,
@@ -397,13 +445,16 @@ function op(state) {
         created_at: nowIso(),
       };
       list.push(comment);
-      state.comments[String(payload.number)] = list;
+      repo.comments[String(payload.number)] = list;
       emit(JSON.stringify({ id: comment.id }), false);
       save(state);
       return;
     }
     case "state":
       emit(JSON.stringify(state), false);
+      return;
+    case "repoState":
+      emit(JSON.stringify(repo), false);
       return;
     default:
       fail(`unknown __op ${name}`);

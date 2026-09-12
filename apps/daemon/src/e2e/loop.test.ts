@@ -6,15 +6,14 @@
  * unblocks. Every delivery text and watermark is asserted on the way.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { ProjectSchema, ProjectSettingsSchema } from "@pideck/shared";
 import { GhClient } from "../github/client.js";
 import { PromptOverrides } from "../prompts/overrides.js";
-import { startReconciler, type ReconcilerHandle } from "../reconciler/index.js";
-import { Trace } from "../reconciler/trace.js";
+import { startReconciler, Trace, type ReconcilerHandle } from "../reconciler/index.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import { ProjectStore } from "../store/projectStore.js";
@@ -56,11 +55,13 @@ beforeEach(() => {
     registry,
     tmux: tmux.tmux,
     prompts: new PromptOverrides(stateDir),
-    trace: new Trace(stateDir),
     stateDir,
+    trace: new Trace(stateDir),
     intervalMs: 3_600_000,
     git: async () => "",
-    log: (line) => logs.push(line),
+    log: (line) => {
+      logs.push(line);
+    },
   });
 });
 
@@ -86,7 +87,6 @@ it(
     expect(sentLines(tmuxCalls).some((line) => line.startsWith("Briefing for Loop Repo"))).toBe(true);
     const access = await fakeGh.state();
     expect(access.readAccess["acme/loop"]).toContain(REVIEW_LOGIN);
-
     // Assign #1 → a worker is spawned with the spawn delivery.
     clearPanes();
     await fakeGh.assign(1, PRIMARY_LOGIN);
@@ -191,8 +191,8 @@ it(
     await tick();
     expect(registry.get(worker.id)!.archivedAt).toBeDefined();
     const state = await fakeGh.state();
-    expect(state.prs.find((pr) => pr.number === 11)!.state).toBe("merged");
-    expect(state.issues.find((issue) => issue.number === 1)!.state).toBe("closed");
+    expect(state.repos["acme/loop"]!.prs.find((pr) => pr.number === 11)!.state).toBe("merged");
+    expect(state.repos["acme/loop"]!.issues.find((issue) => issue.number === 1)!.state).toBe("closed");
     const dependent = registry.list({ persona: "worker", projectId: "loop", archived: false })[0]!;
     expect(dependent.issueNumber).toBe(2);
     expect(sentLines(tmuxCalls)).toEqual([
@@ -205,6 +205,25 @@ it(
     await tick();
     const summary = logs.filter((line) => line.includes("spawned,"))!.at(-1)!;
     expect(summary).toContain("0 spawned, 0 archived, 0 delivered");
+
+    // Per-project isolation: a second registered project with its own
+    // assigned issue gets its own worker, and the first project gains none.
+    clearPanes();
+    await fakeGh.addRepo("acme/api");
+    await fakeGh.repo("acme/api").openIssue(1, "Add webhooks");
+    await fakeGh.repo("acme/api").assign(1, PRIMARY_LOGIN);
+    registerProject(stateDir, {
+      id: "api",
+      name: "API Repo",
+      repoUrl: "https://github.com/acme/api",
+      owner: "acme",
+      repo: "api",
+    });
+    await tick();
+    expect(registry.list({ persona: "worker", projectId: "api", archived: false }).map((s) => s.issueNumber))
+      .toEqual([1]);
+    expect(registry.list({ persona: "worker", projectId: "loop", archived: false }).map((s) => s.issueNumber))
+      .toEqual([2]);
   },
   30_000,
 );
@@ -227,23 +246,36 @@ function paneEnvHasGhToken(args: string[]): boolean {
 }
 
 function seededProjects(dir: string): ProjectStore {
-  const project = ProjectSchema.parse({
+  registerProject(dir, {
     id: "loop",
     name: "Loop Repo",
     repoUrl: "https://github.com/acme/loop",
     owner: "acme",
     repo: "loop",
+  });
+  return new ProjectStore(dir);
+}
+
+/** Appends one project (with default settings) to the store's projects.json. */
+function registerProject(
+  dir: string,
+  spec: { id: string; name: string; repoUrl: string; owner: string; repo: string },
+): void {
+  const project = ProjectSchema.parse({
+    ...spec,
     defaultBranch: "main",
-    path: join(dir, "clone"),
+    path: join(dir, "clone", spec.id),
   });
   mkdirSync(project.path, { recursive: true });
   const file = join(dir, "projects.json");
+  const current = existsSync(file)
+    ? (JSON.parse(readFileSync(file, "utf8")) as { projects: unknown[] })
+    : { projects: [] };
   writeFileSync(
     file,
     JSON.stringify({
-      projects: [{ project, settings: ProjectSettingsSchema.parse({}) }],
+      projects: [...current.projects, { project, settings: ProjectSettingsSchema.parse({}) }],
     }),
     "utf8",
   );
-  return new ProjectStore(dir);
 }
