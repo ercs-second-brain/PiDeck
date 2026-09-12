@@ -14,6 +14,15 @@ Reproduce the §2 loop with `pnpm e2e` — the same assertions automated (see AG
   #564, #565 were merged into main during the run and the daemon was rebuilt
   and restarted on them at the points marked below).
 - `PD_HOME=/tmp/pideck-live`, serving `http://0.0.0.0:8321`, poll interval 30 s.
+- `gh` **2.63.2** — the version the bootstrap pins (`PD_GH_VERSION`, `install/lib/common.sh`) and
+  what `tools/fake-gh` reports. Known bad: **gh ~2.45** — `gh pr view` and `gh pr edit` fail
+  because GitHub's GraphQL rejects the Projects-classic field gh still requests
+  (`repository.pullRequest.projectCards`: "Projects (classic) is being deprecated…"). Workarounds
+  on any version: `--json`-scoped queries (`gh pr view N --json state,mergedAt,…`), REST
+  (`gh api repos/:owner/:repo/pulls/:n -X PATCH -f body=…`), or the raw `updatePullRequest`
+  mutation. Per `docs/PHILOSOPHY.md` there is deliberately no version-detecting probe — agents use
+  the `pideck` session verbs, which already go through `--json`/REST-safe paths; this note is
+  recorded environment knowledge for humans and prompts, not a trigger for one.
 - Project `pideck-live` registered through the web onboarding earlier; review
   account `ercs-second-brain-reviewer` configured in the daemon with manual
   collaborator grant on the repo (the automatic guarantee landed later as
