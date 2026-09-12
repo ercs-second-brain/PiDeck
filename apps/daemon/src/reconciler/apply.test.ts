@@ -7,6 +7,7 @@ import { SessionRegistry } from "../sessions/registry.js";
 import { Tmux, TmuxError, type TmuxRunner } from "../sessions/tmux.js";
 import { applyActions, type ApplyDeps, type PromptSource } from "./apply.js";
 import type { IssueFacts, PrFacts } from "./read.js";
+import { Trace } from "./trace.js";
 
 const project = ProjectSchema.parse({
   id: "my-api",
@@ -112,6 +113,7 @@ describe("applyActions", () => {
       registry,
       stateDir,
       prompts,
+      trace: new Trace(stateDir),
       notifyChange: () => {
         changes++;
       },
@@ -153,6 +155,10 @@ describe("applyActions", () => {
     expect(sentLines(tmuxCalls).join("\n")).toContain('issue #1 "Add rate limiting"');
     expect(sentLines(tmuxCalls).join("\n")).toContain("pideck/issue-1");
     expect(changes).toBeGreaterThan(0);
+
+    const spawns = new Trace(stateDir).read(worker.id).filter((entry) => entry.kind === "spawn");
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0]).toMatchObject({ kind: "spawn", detail: "spawned worker for issue #1" });
   });
 
   it("spawns a reviewer with the review token as GH_TOKEN", async () => {
@@ -234,6 +240,11 @@ describe("applyActions", () => {
     expect(sentLines(tmuxCalls)).toContain("CI failed: build");
     expect(registry.get("s-worker")!.fixAttempts).toBe(1);
     expect(tally.delivered).toBe(1);
+
+    const trace = new Trace(stateDir);
+    const deliveries = trace.read("s-worker").filter((entry) => entry.kind === "delivery");
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({ kind: "delivery", text: "CI failed: build", watermark: { fixAttempts: 1 } });
   });
 
   it("archives a live pane: captured log, killed session, archived record", async () => {
@@ -256,6 +267,10 @@ describe("applyActions", () => {
     expect(registry.get("s-worker")!.archivedAt).toBeDefined();
     expect(calls.some((args) => args[0] === "kill-session")).toBe(true);
     expect(changes).toBeGreaterThan(0);
+
+    const archives = new Trace(stateDir).read("s-worker").filter((entry) => entry.kind === "archive");
+    expect(archives).toHaveLength(1);
+    expect(archives[0]).toMatchObject({ kind: "archive", detail: "test" });
   });
 
   it("counts action failures without stopping the rest", async () => {

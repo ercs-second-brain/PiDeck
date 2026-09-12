@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { PiProbeSchema, ProbeSchema, SessionSchema, type Session } from "@pideck/shared";
 import { PromptOverrides } from "../prompts/overrides.js";
 import { SessionRegistry } from "../sessions/registry.js";
+import { Trace } from "../reconciler/trace.js";
 import { Tmux } from "../sessions/tmux.js";
 import { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import { ProjectStore, type CommandRunner } from "../store/projectStore.js";
@@ -95,6 +96,7 @@ export function makeDeps(stateDir: string, tmux: FakeTmux): DaemonDeps & { updat
     registry,
     tmux,
     prompts: new PromptOverrides(stateDir),
+    trace: new Trace(stateDir),
     updates: createUpdater({
       srcDir: stateDir,
       registry,

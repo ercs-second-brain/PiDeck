@@ -231,6 +231,26 @@ describe("REST contract", () => {
     expect((await call(base, "GET", "/api/sessions/nope/log")).status).toBe(404);
   });
 
+  it("serves a session's trace entries and pi transcript path", async () => {
+    const { base, deps } = await startDaemon();
+    const worker = sessionRecord();
+    deps.registry.add(worker);
+    deps.trace.append(worker.id, { at: "2026-01-01T00:00:00Z", kind: "spawn", detail: "spawned worker for issue #7" });
+    deps.trace.append(worker.id, { at: "2026-01-01T00:01:00Z", kind: "delivery", text: "fix CI on PR #11" });
+    mkdirSync(join(deps.stateDir, "pi-sessions", worker.id), { recursive: true });
+    writeFileSync(join(deps.stateDir, "pi-sessions", worker.id, "pi.jsonl"), "{}\n");
+
+    const res = await call(base, "GET", `/api/sessions/${worker.id}/trace`);
+    expect(res.status).toBe(200);
+    const trace = validate(restEndpoints["sessionTrace"].response, res.body);
+    expect(trace.entries).toHaveLength(2);
+    expect(trace.entries[0]).toMatchObject({ kind: "spawn", detail: "spawned worker for issue #7" });
+    expect(trace.entries[1]).toMatchObject({ kind: "delivery", text: "fix CI on PR #11" });
+    expect(trace.transcriptPath?.endsWith("pi.jsonl")).toBe(true);
+
+    expect((await call(base, "GET", "/api/sessions/nope/trace")).status).toBe(404);
+  });
+
   it("masks the review token in global settings", async () => {
     const { base } = await startDaemon();
     const initial = validate(restEndpoints["globalSettingsGet"].response, (await call(base, "GET", "/api/settings")).body);

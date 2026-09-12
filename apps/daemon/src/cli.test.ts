@@ -104,6 +104,47 @@ describe("cli", () => {
     expect(stdout.join("\n")).toContain("sent to");
   });
 
+  it("prints a session's trace one entry per line, as JSON with --json", async () => {
+    const { base, deps } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: null });
+    deps.registry.add(worker);
+    deps.trace.append(worker.id, { at: "2026-01-01T00:00:00Z", kind: "spawn", detail: "spawned worker for issue #7" });
+    deps.trace.append(worker.id, {
+      at: "2026-01-01T00:01:00Z",
+      kind: "delivery",
+      text: "CI failed: build",
+      watermark: { fixAttempts: 1 },
+    });
+    deps.trace.append(worker.id, {
+      at: "2026-01-01T00:02:00Z",
+      kind: "state",
+      from: "working",
+      to: "fixing",
+      status: "fixing CI on PR #11",
+    });
+
+    const { io, stdout } = cliFor(base);
+    expect(await runCli(["trace", worker.id], io)).toBe(0);
+    const lines = stdout.join("\n").trimEnd().split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("spawn  spawned worker for issue #7");
+    expect(lines[1]).toContain("delivery  CI failed: build");
+    expect(lines[2]).toContain("working → fixing · fixing CI on PR #11");
+
+    const { io: jsonIo, stdout: jsonOut } = cliFor(base);
+    expect(await runCli(["trace", worker.id, "--json"], jsonIo)).toBe(0);
+    const parsed = JSON.parse(jsonOut.join(""));
+    expect(parsed.entries).toHaveLength(3);
+    expect(parsed.transcriptPath).toBeNull();
+  });
+
+  it("usage-errors when trace has no session id", async () => {
+    const { base } = await startCliDaemon();
+    const { io, stderr } = cliFor(base);
+    expect(await runCli(["trace"], io)).toBe(2);
+    expect(stderr.join("\n")).toContain("trace needs a session id");
+  });
+
   it("reports daemon errors on stderr with exit code 1", async () => {
     const { base } = await startCliDaemon();
     const { io, stderr } = cliFor(base);

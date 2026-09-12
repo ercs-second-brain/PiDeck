@@ -5,7 +5,7 @@
  */
 
 import { pathToFileURL } from "node:url";
-import type { Project, SessionView, Status } from "@pideck/shared";
+import type { Project, SessionTrace, SessionView, Status, TraceEntry, TraceFacts } from "@pideck/shared";
 
 export interface CliIo {
   url: string;
@@ -19,7 +19,8 @@ const USAGE = `usage:
   pideck project get <id> [--json]
   pideck sessions [--project <id>] [--json]
   pideck workers --project <id> [--json]
-  pideck send --session <id> --message <text>`;
+  pideck send --session <id> --message <text>
+  pideck trace <session-id> [--follow]`;
 
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
   try {
@@ -107,6 +108,19 @@ async function dispatch(argv: string[], io: CliIo): Promise<number> {
       return 0;
     }
 
+    case "trace": {
+      const id = rest[0];
+      if (!id) return usageError(io, "trace needs a session id");
+      const trace = await request<SessionTrace>(io, "GET", `/api/sessions/${enc(id)}/trace`);
+      if (asJson) {
+        io.stdout(JSON.stringify(trace, null, 2));
+        return 0;
+      }
+      for (const line of trace.entries.map(traceLine)) io.stdout(line);
+      if (flag(args, "--follow")) await followTrace(io, id, trace.entries.length);
+      return 0;
+    }
+
     default:
       return usageError(io, `unknown command: ${String(cmd)}`);
   }
@@ -180,6 +194,46 @@ function sessionLine(view: SessionView): string {
     s.prNumber === undefined ? "-" : `!${s.prNumber}`,
     s.archivedAt === undefined ? "active" : "archived",
   ].join("  ");
+}
+
+function traceLine(entry: TraceEntry): string {
+  const head = `${entry.at}  ${entry.kind}`;
+  if (entry.kind === "delivery") return `${head}  ${entry.text ?? ""}`;
+  if (entry.kind === "state") {
+    return `${head}  ${entry.from ?? "-"} → ${entry.to ?? "-"} · ${entry.status ?? ""}`;
+  }
+  if (entry.kind === "facts") return `${head}  ${factsLine(entry.facts)}`;
+  return `${head}  ${entry.detail ?? ""}`;
+}
+
+function factsLine(facts: TraceFacts | undefined): string {
+  if (facts === undefined) return "";
+  const parts: string[] = [];
+  if (facts.issueNumber !== undefined) parts.push(`issue #${facts.issueNumber}`);
+  if (facts.openBlockers !== undefined) parts.push(`blockers ${facts.openBlockers}`);
+  if (facts.prNumber !== undefined) parts.push(`PR #${facts.prNumber}`);
+  if (facts.headSha !== undefined) parts.push(`head ${facts.headSha.slice(0, 7)}`);
+  if (facts.ci !== undefined) parts.push(`ci ${facts.ci}`);
+  if (facts.failingChecks !== undefined && facts.failingChecks.length > 0) {
+    parts.push(`failing: ${facts.failingChecks.join(", ")}`);
+  }
+  if (facts.reviewDecision !== undefined) parts.push(`review ${facts.reviewDecision ?? "-"}`);
+  if (facts.mergeable !== undefined) parts.push(facts.mergeable.toLowerCase());
+  return parts.join(" · ");
+}
+
+/** Follows a session's trace: re-fetches every second, printing new entries. */
+async function followTrace(io: CliIo, id: string, seen: number): Promise<never> {
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const trace = await request<SessionTrace>(io, "GET", `/api/sessions/${enc(id)}/trace`);
+      for (const entry of trace.entries.slice(seen)) io.stdout(traceLine(entry));
+      seen = Math.max(seen, trace.entries.length);
+    } catch {
+      // Daemon restarting or reloading — keep polling.
+    }
+  }
 }
 
 function flag(args: string[], name: string): string | undefined {

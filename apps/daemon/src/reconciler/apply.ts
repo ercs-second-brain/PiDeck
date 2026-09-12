@@ -16,7 +16,9 @@ import type { SessionPatch, SessionRegistry } from "../sessions/registry.js";
 import { archiveSession, spawnPiSession, type GitRunner, type SpawnPiOptions } from "../sessions/spawn.js";
 import type { Tmux } from "../sessions/tmux.js";
 import { spawnReviewer, spawnWorker, type PromptVars } from "../prompts/index.js";
+import type { TraceEntry } from "@pideck/shared";
 import type { Action } from "./desired.js";
+import type { Trace } from "./trace.js";
 
 /** Supplies persona system prompts (override or shipped, rendered) and models. */
 export interface PromptSource {
@@ -36,6 +38,8 @@ export interface ApplyDeps {
   markNotified?: (projectId: string | null, prNumber: number, headSha: string) => void;
   /** Records a stall notice after it was delivered, for once-per-silence. */
   markStallNotice?: (sessionId: string, at: string) => void;
+  /** The per-session trace: deliveries, spawns, and archives land here. */
+  trace: Trace;
   log: (line: string) => void;
 }
 
@@ -53,6 +57,12 @@ export interface Tally {
   errors: number;
 }
 
+/** What an executed action contributes to the session's trace. */
+interface TraceNote {
+  sessionId: string;
+  entry: Omit<TraceEntry, "at">;
+}
+
 export async function applyActions(
   deps: ApplyDeps,
   ctx: ApplyContext,
@@ -61,7 +71,10 @@ export async function applyActions(
 ): Promise<void> {
   for (const action of actions) {
     try {
-      await applyAction(deps, ctx, action);
+      const note = await applyAction(deps, ctx, action);
+      if (note !== null) {
+        deps.trace.append(note.sessionId, { at: new Date().toISOString(), ...note.entry });
+      }
       if (
         action.kind === "spawn-global" ||
         action.kind === "spawn-orchestrator" ||
@@ -81,10 +94,10 @@ export async function applyActions(
   }
 }
 
-async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): Promise<void> {
+async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): Promise<TraceNote | null> {
   switch (action.kind) {
-    case "spawn-global":
-      spawnPersona(deps, {
+    case "spawn-global": {
+      const session = await spawnPersona(deps, {
         persona: "global",
         projectId: null,
         cwd: deps.stateDir,
@@ -93,9 +106,10 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         }),
         model: deps.prompts.model("global"),
       });
-      return;
+      return { sessionId: session.id, entry: { kind: "spawn", detail: "spawned global agent" } };
+    }
     case "spawn-orchestrator": {
-      if (ctx.project === null || ctx.settings === null) return;
+      if (ctx.project === null || ctx.settings === null) return null;
       const vars: PromptVars = {
         PROJECT_ID: ctx.project.id,
         PROJECT_NAME: ctx.project.name,
@@ -113,10 +127,10 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         model: deps.prompts.model("orchestrator"),
       });
       await deps.tmux.sendLine(session.tmuxSession, action.briefing);
-      return;
+      return { sessionId: session.id, entry: { kind: "spawn", detail: "spawned orchestrator" } };
     }
     case "spawn-worker": {
-      if (ctx.project === null) return;
+      if (ctx.project === null) return null;
       const branch = `pideck/issue-${action.issue.number}`;
       const session = await spawnPersona(deps, {
         persona: "worker",
@@ -137,10 +151,13 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         spawnWorker({ number: action.issue.number, title: action.issue.title, url: action.issue.url, branch }),
       );
       if (Object.keys(action.initial).length > 0) update(deps, session.id, action.initial);
-      return;
+      return {
+        sessionId: session.id,
+        entry: { kind: "spawn", detail: `spawned worker for issue #${action.issue.number}` },
+      };
     }
     case "spawn-reviewer": {
-      if (ctx.project === null) return;
+      if (ctx.project === null) return null;
       if (ctx.reviewToken === null) throw new Error("no review account: the review leg is off");
       const session = await spawnPersona(deps, {
         persona: "reviewer",
@@ -161,11 +178,14 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         spawnReviewer({ prNumber: action.pr.number, repo: `${ctx.project.owner}/${ctx.project.repo}` }),
       );
       if (Object.keys(action.initial).length > 0) update(deps, session.id, action.initial);
-      return;
+      return {
+        sessionId: session.id,
+        entry: { kind: "spawn", detail: `spawned reviewer for PR #${action.pr.number}` },
+      };
     }
     case "attach-pr":
       update(deps, action.session.id, { prNumber: action.prNumber });
-      return;
+      return null;
     case "archive":
       await archiveSession(
         {
@@ -178,7 +198,7 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         action.session,
       );
       deps.notifyChange?.();
-      return;
+      return { sessionId: action.session.id, entry: { kind: "archive", detail: action.reason } };
     case "deliver":
       await deps.tmux.sendLine(action.target.tmuxSession, action.text);
       if (action.watermark) update(deps, action.watermark.sessionId, action.watermark.patch);
@@ -188,10 +208,17 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
       if (action.stallNotice) {
         deps.markStallNotice?.(action.stallNotice.sessionId, action.stallNotice.at);
       }
-      return;
+      return {
+        sessionId: action.target.id,
+        entry: {
+          kind: "delivery",
+          text: action.text,
+          ...(action.watermark ? { watermark: { ...action.watermark.patch } } : {}),
+        },
+      };
     case "watermarks":
       update(deps, action.sessionId, action.patch);
-      return;
+      return null;
   }
 }
 

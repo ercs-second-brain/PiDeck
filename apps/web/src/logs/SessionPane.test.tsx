@@ -104,13 +104,15 @@ describe("SessionPane", () => {
     expect(container.querySelector(".log-pane")).not.toBeNull();
   });
 
-  it("keeps the live terminal for a session that is not archived", () => {
+  it("keeps the live terminal for a session that is not archived", async () => {
     const container = mount(<SessionPane sessionId="s1" views={[makeView()]} projects={[]} />);
+    await act(async () => {});
     expect(container.querySelector(".terminal-pane")).not.toBeNull();
   });
 
-  it("keeps the live terminal while the session list has not loaded yet", () => {
+  it("keeps the live terminal while the session list has not loaded yet", async () => {
     const container = mount(<SessionPane sessionId="s1" views={[]} projects={[]} />);
+    await act(async () => {});
     expect(container.querySelector(".terminal-pane")).not.toBeNull();
   });
 });

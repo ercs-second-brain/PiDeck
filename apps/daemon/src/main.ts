@@ -20,6 +20,7 @@ import { reconcileWithTmux, defaultGitRunner } from "./sessions/spawn.js";
 import { SessionRegistry } from "./sessions/registry.js";
 import { Tmux } from "./sessions/tmux.js";
 import { startReconciler } from "./reconciler/index.js";
+import { Trace } from "./reconciler/trace.js";
 import { GlobalSettingsStore } from "./store/globalSettingsStore.js";
 import { ProjectStore } from "./store/projectStore.js";
 import { resolveStateDir } from "./store/stateDir.js";
@@ -40,6 +41,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
   const registry = new SessionRegistry(stateDir);
   const prompts = new PromptOverrides(stateDir);
   const tmux = new Tmux();
+  const trace = new Trace(stateDir);
 
   const deps: DaemonDeps = {
     version: (require("../package.json") as { version: string }).version,
@@ -50,6 +52,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
     registry,
     tmux,
     prompts,
+    trace,
     ghPrimary: () => ghPrimaryProbe(),
     ghReview: () => ghReviewProbe(settings.reviewToken()?.token ?? null),
     pi: async () => piProbe(),
@@ -80,6 +83,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
     stateDir,
     intervalMs: deps.pollIntervalSeconds * 1000,
     git: defaultGitRunner(),
+    trace,
     notifyChange: () => deps.notifyChange?.(),
   });
   deps.reconcilerFacts = (projectId) => reconciler.factsFor(projectId);

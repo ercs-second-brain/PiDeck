@@ -91,6 +91,14 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
       return { log: readFileSync(file, "utf8") };
     },
 
+    sessionTrace: ({ params }) => {
+      const session = sessionOr404(deps, params.id!);
+      return {
+        entries: deps.trace.read(session.id),
+        transcriptPath: deps.trace.transcriptPath(session.id),
+      };
+    },
+
     globalSettingsGet: () => deps.settings.read(),
     globalSettingsPut: ({ body }) => {
       deps.settings.put(body as GlobalSettingsPut);

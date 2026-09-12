@@ -5,6 +5,7 @@ import type { PromptOverrides } from "../prompts/overrides.js";
 import type { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import type { ProjectStore } from "../store/projectStore.js";
 import type { ProjectFacts } from "../reconciler/index.js";
+import type { Trace } from "../reconciler/trace.js";
 import type { Updater } from "./update.js";
 
 /**
@@ -27,6 +28,8 @@ export interface DaemonDeps {
   pi: () => Promise<PiProbe>;
   /** The reconciler's last GitHub read pass for a project; null before the first. */
   reconcilerFacts?: (projectId: string) => ProjectFacts | null;
+  /** The per-session trace, shared with the reconciler's apply path. */
+  trace: Trace;
   /** Called after an API mutation changes the session registry. */
   notifyChange?: () => void;
 }
