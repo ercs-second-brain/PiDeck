@@ -34,7 +34,7 @@ import {
   saveGlobalSettings,
 } from "./client";
 import { actionLabel, useAction } from "./use-action";
-import { updateButtonLabel, useUpdateApply } from "../update/use-update-apply";
+import { updateActionLabel, updateButtonLabel, useUpdateApply } from "../update/use-update-apply";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -118,31 +118,35 @@ function SettingsNav({
 function GeneralSection({ status }: { status: Status | null }) {
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const action = useAction();
-  const hasUpdate = update?.updateAvailable === true;
-  const apply = useUpdateApply(hasUpdate);
+  const apply = useUpdateApply(update?.state ?? null);
+  const stateLine =
+    update === null
+      ? null
+      : update.state === "updateAvailable"
+        ? `Update available (${update.latestVersion ?? "unknown"})`
+        : update.state === "restartNeeded"
+          ? "Restart needed — the checkout is current but the daemon runs older code"
+          : "Up to date";
 
   return (
     <Section
       title="General"
-      description="Read-only daemon facts; the update check compares against the running version."
+      description="Read-only daemon facts; the update check answers for the running daemon, not the checkout."
       footer={
         <>
           {action.error && <p style={{ color: "var(--red)", margin: 0 }}>{action.error}</p>}
-          {update && (
-            <span style={{ color: "var(--text-dim)" }}>
-              {update.updateAvailable
-                ? `Update available (${update.latestVersion ?? "unknown"})`
-                : "Up to date"}
-            </span>
-          )}
+          {stateLine !== null && <span style={{ color: "var(--text-dim)" }}>{stateLine}</span>}
           {apply.hint !== null && <span style={{ color: "var(--text-dim)" }}>{apply.hint}</span>}
-          {hasUpdate && (
+          {apply.actionable && (
             <Button
               variant="primary"
               disabled={apply.phase === "updating" || apply.agentsLive}
               onClick={() => (apply.phase === "stuck" ? apply.reload() : void apply.apply())}
             >
-              {updateButtonLabel(apply.phase, "Update now")}
+              {updateButtonLabel(
+                apply.phase,
+                update === null ? "Update" : `${updateActionLabel(update.state)} now`,
+              )}
             </Button>
           )}
           <Button

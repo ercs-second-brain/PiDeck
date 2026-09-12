@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SessionView } from "@pideck/shared";
+import type { SessionView, UpdateState } from "@pideck/shared";
 import { api, ApiError } from "../lib/api";
 
 const SESSION_POLL_MS = 30_000;
@@ -37,7 +37,16 @@ export function updateButtonLabel(phase: UpdatePhase, idle: string): string {
   return idle;
 }
 
+/** Idle label for the actionable state: a stale daemon restarts, the rest update. */
+export function updateActionLabel(state: UpdateState): string {
+  return state === "restartNeeded" ? "Restart" : "Update";
+}
+
 export interface UpdateApply {
+  /** The check's state this hook was given; null before the first check. */
+  state: UpdateState | null;
+  /** An update or a restart is actionable right now. */
+  actionable: boolean;
   /** Workers or reviewers are live; the daemon refuses the apply until they finish. */
   agentsLive: boolean;
   phase: UpdatePhase;
@@ -46,7 +55,8 @@ export interface UpdateApply {
   reload: () => void;
 }
 
-export function useUpdateApply(hasUpdate: boolean): UpdateApply {
+export function useUpdateApply(state: UpdateState | null): UpdateApply {
+  const actionable = state !== null && state !== "upToDate";
   const [agentsLive, setAgentsLive] = useState(false);
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [hint, setHint] = useState<string | null>(null);
@@ -71,11 +81,11 @@ export function useUpdateApply(hasUpdate: boolean): UpdateApply {
   }, []);
 
   useEffect(() => {
-    if (!hasUpdate || phase !== "idle") return;
+    if (!actionable || phase !== "idle") return;
     void refreshAgents();
     const timer = setInterval(() => void refreshAgents(), SESSION_POLL_MS);
     return () => clearInterval(timer);
-  }, [hasUpdate, phase, refreshAgents]);
+  }, [actionable, phase, refreshAgents]);
 
   /** Polls /api/status until the daemon answers with its new version. */
   const watchRestart = useCallback(async (startedAt: number): Promise<void> => {
@@ -107,7 +117,11 @@ export function useUpdateApply(hasUpdate: boolean): UpdateApply {
   }, []);
 
   const apply = useCallback(async () => {
-    setHint("fetching, rebuilding and restarting…");
+    setHint(
+      state === "restartNeeded"
+        ? "restarting the service…"
+        : "fetching, rebuilding and restarting…",
+    );
     setPhase("updating");
     try {
       versionRef.current = (await api("status")).version;
@@ -123,10 +137,10 @@ export function useUpdateApply(hasUpdate: boolean): UpdateApply {
       return;
     }
     void watchRestart(Date.now());
-  }, [watchRestart]);
+  }, [state, watchRestart]);
 
   const reload = useCallback(() => window.location.reload(), []);
 
   const shownHint = hint ?? (phase === "idle" && agentsLive ? AGENTS_LIVE_HINT : null);
-  return { agentsLive, phase, hint: shownHint, apply, reload };
+  return { state, actionable, agentsLive, phase, hint: shownHint, apply, reload };
 }

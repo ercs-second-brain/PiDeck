@@ -8,7 +8,7 @@ import { Personas, PersonaSchema } from "./persona.js";
 import { ProjectCreateSchema, ProjectSettingsSchema } from "./project.js";
 import { SessionSchema, SessionViewSchema } from "./session.js";
 import { WorkerStates, WorkerStateSchema } from "./state.js";
-import { PiProbeSchema, restEndpoints } from "./rest.js";
+import { PiProbeSchema, restEndpoints, UpdateCheckSchema } from "./rest.js";
 import { ProjectsChangedSchema, SessionsChangedSchema, WsClientMessageSchema, WsServerMessageSchema } from "./ws.js";
 
 describe("persona", () => {
@@ -270,6 +270,13 @@ describe("rest endpoint map", () => {
       path: "/api/sessions/:id",
     });
     expect(restEndpoints.updateApply.method).toBe("POST");
+  });
+
+  it("gives the update check exactly the three service states", () => {
+    for (const state of ["upToDate", "updateAvailable", "restartNeeded"]) {
+      expect(UpdateCheckSchema.parse({ state, latestVersion: "abc1234" }).state).toBe(state);
+    }
+    expect(() => UpdateCheckSchema.parse({ state: "behind", latestVersion: null })).toThrow();
   });
 
   it("never exposes a write-only token in read responses", () => {

@@ -30,9 +30,10 @@ export function tempStateDir(prefix = "pideck-api-"): string {
 }
 
 /**
- * Runner fake for the updater: `git rev-parse` reports a local SHA, `gh` a
- * different upstream SHA, `git remote` a repo URL — so a check reports an
- * update as available.
+ * Runner fake for the updater: `git rev-parse` reports a checkout SHA, `gh`
+ * a different upstream SHA, `git remote` a repo URL — so a check reports an
+ * update as available (the deps' buildSha matches the checkout, not the
+ * upstream).
  */
 const fakeUpdateRunner: CommandRunner = (cmd, args) => {
   if (cmd === "git" && args[0] === "rev-parse") return { stdout: "aaaaaaaaaaa\n" };
@@ -49,6 +50,7 @@ export function makeDeps(stateDir: string, tmux: FakeTmux): DaemonDeps & { updat
   const updateSpawns: string[][] = [];
   const deps: DaemonDeps = {
     version: "0.0.0-test",
+    buildSha: "aaaaaaaaaaa",
     stateDir,
     pollIntervalSeconds: 30,
     projects: new ProjectStore(stateDir, fakeCommandRunner),

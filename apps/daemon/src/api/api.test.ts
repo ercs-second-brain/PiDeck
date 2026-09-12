@@ -390,7 +390,7 @@ describe("REST contract", () => {
   it("checks and applies updates, and answers unknown routes with 404", async () => {
     const { base, deps } = await startDaemon();
     const check = validate(restEndpoints["updateCheck"].response, (await call(base, "GET", "/api/update")).body);
-    expect(check).toEqual({ updateAvailable: true, latestVersion: "bbbbbbb" });
+    expect(check).toEqual({ state: "updateAvailable", latestVersion: "bbbbbbb" });
     const fresh = validate(
       restEndpoints["updateCheckNow"].response,
       (await call(base, "POST", "/api/update/check")).body,

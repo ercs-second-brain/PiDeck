@@ -11,6 +11,7 @@ import { createRequire } from "node:module";
 import { DEFAULT_PORT } from "@pideck/shared";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runCommand } from "./store/projectStore.js";
 import { PromptOverrides } from "./prompts/overrides.js";
 import { ghPrimaryProbe, ghReviewProbe, piProbe } from "./api/probes.js";
 import { ReviewLoginFlow } from "./api/onboarding.js";
@@ -47,9 +48,13 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
   // other's panes as orphans.
   const tmux = new Tmux({ socketName: env.PD_TMUX_SOCKET?.trim() || undefined });
   const trace = new Trace(stateDir);
+  const srcDir = env.PD_SRC?.trim() || defaultSrcDir();
 
   const deps: DaemonDeps = {
     version: (require("../package.json") as { version: string }).version,
+    // The running build's commit, read once here — the update check never
+    // re-reads the checkout to decide what the daemon is running.
+    buildSha: runningBuildSha(srcDir),
     stateDir,
     pollIntervalSeconds: pollIntervalSeconds(env),
     projects,
@@ -63,7 +68,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
     pi: async () => piProbe(),
     reviewLogin: new ReviewLoginFlow(stateDir, settings),
     updates: createUpdater({
-      srcDir: env.PD_SRC?.trim() || defaultSrcDir(),
+      srcDir,
       configJson: join(stateDir, "config.json"),
       registry,
     }),
@@ -137,6 +142,15 @@ function pollIntervalSeconds(env: NodeJS.ProcessEnv): number {
 /** The built web app sits next to the daemon package in the monorepo. */
 function defaultWebDistDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
+}
+
+/** The commit the running build came from; empty when srcDir has no git. */
+function runningBuildSha(srcDir: string): string {
+  try {
+    return runCommand("git", ["rev-parse", "HEAD"], srcDir).stdout.trim();
+  } catch {
+    return "";
+  }
 }
 
 /** The monorepo root — the checkout a dev-run daemon updates from. */
