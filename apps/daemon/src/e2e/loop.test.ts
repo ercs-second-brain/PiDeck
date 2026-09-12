@@ -159,7 +159,8 @@ it(
     expect(worker.issueNumber).toBe(1);
     expect(sentLines(tmuxCalls)).toEqual([
       'Worker session for issue #1 "Add rate limiting" — work on branch pideck/issue-1, ' +
-        'open the PR with pideck pr open (it adds "Closes #1"). https://github.com/acme/loop/issues/1',
+        'open the PR with pideck pr open (it adds "Closes #1") and give it a real body ' +
+        '— a short "## What" summary of the change, never just Closes. https://github.com/acme/loop/issues/1',
     ]);
     expect(registry.get(worker.id)!.lastDeliveredIssueCommentId).toBeNull();
 
@@ -270,7 +271,8 @@ it(
     expect(dependent.issueNumber).toBe(2);
     expect(sentLines(tmuxCalls)).toEqual([
       'Worker session for issue #2 "Add pagination" — work on branch pideck/issue-2, ' +
-        'open the PR with pideck pr open (it adds "Closes #2"). https://github.com/acme/loop/issues/2',
+        'open the PR with pideck pr open (it adds "Closes #2") and give it a real body ' +
+        '— a short "## What" summary of the change, never just Closes. https://github.com/acme/loop/issues/2',
     ]);
 
     // The next reconciliation finds everything in its desired state.

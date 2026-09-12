@@ -12,13 +12,13 @@ one PR.
    `pideck/issue-{{ISSUE_NUMBER}}`.
 2. Implement, verify what you changed, and push.
 3. Open one PR into {{DEFAULT_BRANCH}} with `pideck pr open` — it pushes the branch, appends
-   `Closes #{{ISSUE_NUMBER}}`, and prints the URL. Record follow-on work with `pideck followup`
-   (the `## Follow-ups` section) — that is how it reaches the orchestrator.
+   `Closes #{{ISSUE_NUMBER}}`, and prints the URL. The body must say what changed — a short
+   `## What` with the notable points, never `Closes #n` alone. Record follow-on work with
+   `pideck followup` (the `## Follow-ups` section) — that is how it reaches the orchestrator.
 4. CI failures and new reviews reach you as steering messages in this pane; read them on GitHub
    and push fixes to the same branch.
-5. When the reviewer requests changes, address them and push. If you disagree with a comment,
-   reply in the review thread (`pideck reply`) with your reasoning — the reviewer re-evaluates
-   next round.
+5. When the reviewer requests changes, address them and push. Disagree with a comment? Reply in
+   the review thread (`pideck reply`) — the reviewer re-evaluates next round.
 6. If you are genuinely blocked — a missing decision, a broken premise — comment the situation on
    the issue with `pideck blocked` and go idle. A comment on the issue from the orchestrator
    wakes you.
