@@ -98,18 +98,55 @@ describe("TracePanel", () => {
     expect(text?.textContent).toBe("CI failed: build");
   });
 
-  it("links to the pi transcript when it exists and hides the link when it does not", async () => {
-    apiMock.mockResolvedValue(trace);
+  it("opens the transcript view when the transcript exists and hides the toggle when it does not", async () => {
+    const transcriptEntries = [
+      { role: "user", at: "2026-01-01T00:00:01Z", text: "Run the shell command 'echo hi' and then stop." },
+      { role: "tool", at: "2026-01-01T00:00:02Z", text: 'bash({"command": "echo hi"})' },
+      { role: "assistant", at: "2026-01-01T00:00:03Z", text: "The command output `hi`" },
+    ] as const;
+    apiMock.mockImplementation(((name: string) =>
+      name === "sessionTranscript"
+        ? Promise.resolve({ entries: transcriptEntries })
+        : Promise.resolve(trace)) as unknown as typeof api);
     const container = mount("s1");
     await flush();
-    expect(container.querySelector<HTMLAnchorElement>(".trace__transcript")?.getAttribute("href")).toBe(
-      `file://${trace.transcriptPath}`,
-    );
+    const button = container.querySelector<HTMLButtonElement>(".trace__transcript");
+    expect(button).not.toBeNull();
+    expect(container.querySelector("[data-testid=transcript-view]")).toBeNull();
 
-    apiMock.mockResolvedValue({ entries: trace.entries, transcriptPath: null });
-    const container2 = mount("s2");
+    act(() => button!.click());
     await flush();
-    expect(container2.querySelector(".trace__transcript")).toBeNull();
+
+    const view = container.querySelector("[data-testid=transcript-view]");
+    expect(view).not.toBeNull();
+    expect(apiMock).toHaveBeenCalledWith("sessionTranscript", { id: "s1" });
+    const badges = [...view!.querySelectorAll(".trace__row .badge")].map((el) => el.textContent);
+    // Newest last: user first, then the tool call, then the assistant reply.
+    expect(badges).toEqual(["user", "tool", "assistant"]);
+    expect(view!.textContent).toContain("Run the shell command 'echo hi' and then stop.");
+    expect(view!.textContent).toContain("bash(");
+
+    apiMock.mockClear();
+    act(() => button!.click());
+    await flush();
+    expect(container.querySelector("[data-testid=transcript-view]")).toBeNull();
+  });
+
+  it("shows a no-transcript-yet state when the session has no transcript entries", async () => {
+    apiMock.mockImplementation(((name: string) =>
+      name === "sessionTranscript" ? Promise.resolve({ entries: [] }) : Promise.resolve(trace)) as unknown as typeof api);
+    const container = mount("s1");
+    await flush();
+    act(() => container.querySelector<HTMLButtonElement>(".trace__transcript")!.click());
+    await flush();
+    expect(container.querySelector("[data-testid=transcript-view]")!.textContent).toContain("No transcript yet.");
+  });
+
+  it("shows no transcript toggle when the trace has no transcript path", async () => {
+    apiMock.mockResolvedValue({ entries: trace.entries, transcriptPath: null });
+    const container = mount("s2");
+    await flush();
+    expect(container.querySelector(".trace__transcript")).toBeNull();
   });
 
   it("shows an empty list message for a session with nothing traced", async () => {

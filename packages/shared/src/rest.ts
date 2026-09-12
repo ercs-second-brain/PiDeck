@@ -5,7 +5,11 @@ import {
   ProjectSchema,
   ProjectSettingsSchema,
 } from "./project.js";
-import { SessionTraceSchema, SessionViewSchema } from "./session.js";
+import {
+  SessionTraceSchema,
+  SessionTranscriptSchema,
+  SessionViewSchema,
+} from "./session.js";
 import {
   GlobalSettingsPutSchema,
   GlobalSettingsReadSchema,
@@ -120,6 +124,11 @@ export const restEndpoints = {
     method: "GET",
     path: "/api/sessions/:id/trace",
     response: SessionTraceSchema,
+  },
+  sessionTranscript: {
+    method: "GET",
+    path: "/api/sessions/:id/transcript",
+    response: SessionTranscriptSchema,
   },
 
   globalSettingsGet: {

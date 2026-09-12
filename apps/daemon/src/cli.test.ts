@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { serve, type DaemonServer } from "./api/server.js";
 import { makeDeps, sessionRecord } from "./api/testing.js";
 import { FakeTmux } from "./sessions/testing/fakeTmux.js";
 import { runCli, type CliIo } from "./cli.js";
+import { PI_TRANSCRIPT_JSONL } from "./sessions/testFixture.js";
 import type { Trace } from "./reconciler/trace.js";
 
 let daemons: DaemonServer[] = [];
@@ -152,6 +153,39 @@ describe("cli", () => {
     expect(parsed.entries).toHaveLength(4);
     expect(parsed.entries[0]).toMatchObject({ kind: "state", from: null, to: "working", status: "working" });
     expect(parsed.transcriptPath).toBeNull();
+  });
+
+  it("prints a session's transcript one entry per line, as JSON with --json", async () => {
+    const { base, deps } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: null });
+    deps.registry.add(worker);
+    const dir = join(deps.stateDir, "pi-sessions", worker.id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl"), PI_TRANSCRIPT_JSONL, "utf8");
+
+    const { io, stdout } = cliFor(base);
+    expect(await runCli(["transcript", worker.id], io)).toBe(0);
+    const lines = stdout.join("\n").trimEnd().split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("user");
+    expect(lines[0]).toContain("Run the shell command 'echo hi' and then stop.");
+    expect(lines[1]).toContain("tool");
+    expect(lines[1]).toContain('bash({"command":"echo hi"})');
+    expect(lines[2]).toContain("assistant");
+    expect(lines[2]).toContain("The command output `hi`");
+
+    const { io: jsonIo, stdout: jsonOut } = cliFor(base);
+    expect(await runCli(["transcript", worker.id, "--json"], jsonIo)).toBe(0);
+    const parsed = JSON.parse(jsonOut.join(""));
+    expect(parsed.entries).toHaveLength(3);
+    expect(parsed.entries[0]).toMatchObject({ role: "user" });
+  });
+
+  it("usage-errors when transcript has no session id", async () => {
+    const { base } = await startCliDaemon();
+    const { io, stderr } = cliFor(base);
+    expect(await runCli(["transcript"], io)).toBe(2);
+    expect(stderr.join("\n")).toContain("transcript needs a session id");
   });
 
   it("usage-errors when trace has no session id", async () => {

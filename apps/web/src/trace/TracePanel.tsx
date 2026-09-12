@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import type { SessionTrace, TraceEntry, TraceFacts } from "@pideck/shared";
+import type {
+  SessionTrace,
+  SessionTranscript,
+  TraceEntry,
+  TraceFacts,
+  TranscriptEntry,
+} from "@pideck/shared";
 import { api } from "../lib/api";
 import { relativeTime } from "../shell/relativeTime";
 import { Badge } from "../ui/Badge";
@@ -13,19 +19,29 @@ const KIND_TONES: Record<TraceEntry["kind"], "blue" | "amber" | "purple" | "gree
   facts: "green",
 };
 
+const ROLE_TONES: Record<TranscriptEntry["role"], "blue" | "green" | "purple"> = {
+  user: "blue",
+  assistant: "green",
+  tool: "purple",
+};
+
 /** Live sessions gain new entries as the daemon works; refresh while open. */
 const REFRESH_MS = 5000;
 
 /**
  * The collapsible Trace panel under a session's terminal (live and
  * archived): what the daemon saw and sent, newest first. Deliveries expand
- * to show the exact line that went into the pane; the header links to the
- * session's pi transcript when it still exists.
+ * to show the exact line that went into the pane. A second toggle in the
+ * bar opens the session's pi transcript — parsed conversation entries,
+ * newest last — since the JSONL under the state dir cannot be opened from
+ * the browser.
  */
 export function TracePanel({ sessionId }: { sessionId: string }) {
   const [open, setOpen] = useState(false);
   const [trace, setTrace] = useState<SessionTrace | null>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [transcript, setTranscript] = useState<SessionTranscript | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +63,22 @@ export function TracePanel({ sessionId }: { sessionId: string }) {
   }, [sessionId, open]);
 
   const entries = trace?.entries ?? [];
+
+  useEffect(() => {
+    if (!transcriptOpen || transcript !== null) return;
+    let cancelled = false;
+    void api("sessionTranscript", { id: sessionId })
+      .then((result) => {
+        if (!cancelled) setTranscript(result);
+      })
+      .catch(() => {
+        // A missing or unreadable transcript is just an empty view.
+        if (!cancelled) setTranscript({ entries: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, transcriptOpen, transcript]);
   const toggle = (index: number) => {
     setExpanded((current) => {
       const next = new Set(current);
@@ -64,15 +96,18 @@ export function TracePanel({ sessionId }: { sessionId: string }) {
           Trace{trace !== null ? ` (${entries.length})` : ""}
         </button>
         {trace?.transcriptPath != null && (
-          <a
+          <button
+            type="button"
             className="trace__transcript"
-            href={`file://${trace.transcriptPath}`}
             title={trace.transcriptPath}
-            target="_blank"
-            rel="noreferrer"
+            aria-expanded={transcriptOpen}
+            onClick={() => {
+              if (transcriptOpen) setTranscript(null);
+              setTranscriptOpen(!transcriptOpen);
+            }}
           >
             pi transcript
-          </a>
+          </button>
         )}
       </div>
       {open && (
@@ -105,6 +140,27 @@ export function TracePanel({ sessionId }: { sessionId: string }) {
               </div>
             );
           })}
+        </div>
+      )}
+      {transcriptOpen && (
+        <div className="trace__transcript-view" data-testid="transcript-view">
+          {transcript === null ? (
+            <p className="trace__empty">Loading…</p>
+          ) : transcript.entries.length === 0 ? (
+            <p className="trace__empty">No transcript yet.</p>
+          ) : (
+            transcript.entries.map((entry, index) => (
+              <div key={index} className="trace__row">
+                <span className="trace__time" title={entry.at ?? undefined}>
+                  {entry.at !== null ? relativeTime(entry.at) : ""}
+                </span>
+                <Badge tone={ROLE_TONES[entry.role]}>{entry.role}</Badge>
+                <span className="trace__summary trace__summary--wrap" title={entry.text}>
+                  {entry.text}
+                </span>
+              </div>
+            ))
+          )}
         </div>
       )}
     </section>

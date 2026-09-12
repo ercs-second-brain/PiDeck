@@ -82,3 +82,20 @@ export const SessionTraceSchema = z.object({
 });
 
 export type SessionTrace = z.infer<typeof SessionTraceSchema>;
+
+/** One conversational turn parsed from a session's pi transcript JSONL.
+ *  Tool calls appear as `tool` entries whose text is `name(one-line args)`. */
+export const TranscriptEntrySchema = z.object({
+  role: z.enum(["user", "assistant", "tool"]),
+  /** ISO timestamp from pi, when the JSONL line carried one. */
+  at: z.string().nullable(),
+  text: z.string(),
+});
+
+export type TranscriptEntry = z.infer<typeof TranscriptEntrySchema>;
+
+export const SessionTranscriptSchema = z.object({
+  entries: z.array(TranscriptEntrySchema),
+});
+
+export type SessionTranscript = z.infer<typeof SessionTranscriptSchema>;
