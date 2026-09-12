@@ -468,14 +468,14 @@ describe("deriveActions — worker deliveries", () => {
   it("a silent worker is reported stalled to the orchestrator once, then the clock restarts", () => {
     const worker = session("worker", {
       issueNumber: 1,
-      lastActivityAt: "2025-06-01T11:30:00Z",
+      lastActivityAt: "2025-06-01T11:00:00Z",
     });
     const orch = session("orchestrator");
     const actions = derive(facts({ issues: [issue()] }), [worker, orch]);
     const delivers = actions.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
     expect(delivers[0]!.target.id).toBe(orch.id);
-    expect(delivers[0]!.text).toContain("has been silent for 20 minutes");
+    expect(delivers[0]!.text).toContain("has been silent for 45 minutes");
     expect(delivers[0]!.watermark?.patch).toEqual({ lastActivityAt: "2025-06-01T12:00:00.000Z" });
 
     // With the notice applied (as apply would record it), no repeat while
@@ -488,7 +488,7 @@ describe("deriveActions — worker deliveries", () => {
     // ...but a new silence after activity reports again.
     const active = session("worker", { issueNumber: 1, lastActivityAt: "2025-06-01T12:05:00Z" });
     const noticed2 = derive(facts({ issues: [issue()] }), [active, orch], {
-      now: new Date("2025-06-01T12:40:00Z"),
+      now: new Date("2025-06-01T13:00:00Z"),
       stallNotices: new Map([[active.id, "2025-06-01T12:00:00.000Z"]]),
     });
     expect(noticed2.filter((a) => a.kind === "deliver" && a.target.id === orch.id)).toHaveLength(1);

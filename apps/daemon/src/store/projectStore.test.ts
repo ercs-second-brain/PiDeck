@@ -47,8 +47,8 @@ describe("ProjectStore", () => {
     expect(store.settings("acme-widget")).toEqual({
       workerConcurrency: 3,
       maxFixAttempts: 5,
-      contextLimitPercent: 80,
-      stallMinutes: 20,
+      contextLimitPercent: 30,
+      stallMinutes: 45,
       autoMerge: false,
     });
   });
@@ -108,9 +108,48 @@ describe("ProjectStore", () => {
     expect(reopened.settings("acme-widget")).toEqual({
       workerConcurrency: 2,
       maxFixAttempts: 5,
+      contextLimitPercent: 30,
+      stallMinutes: 45,
+      autoMerge: true,
+    });
+  });
+
+  it("keeps stored settings that differ from the defaults", () => {
+    const stateDir = tempDir();
+    writeFileSync(
+      join(stateDir, "projects.json"),
+      JSON.stringify({
+        projects: [
+          {
+            project: {
+              id: "acme-widget",
+              name: "widget",
+              repoUrl: "https://github.com/acme/widget",
+              owner: "acme",
+              repo: "widget",
+              defaultBranch: "main",
+              path: join(stateDir, "projects", "acme-widget", "clone"),
+            },
+            settings: {
+              workerConcurrency: 3,
+              maxFixAttempts: 5,
+              contextLimitPercent: 80,
+              stallMinutes: 20,
+              autoMerge: false,
+            },
+          },
+        ],
+      }),
+    );
+
+    const store = new ProjectStore(stateDir);
+
+    expect(store.settings("acme-widget")).toEqual({
+      workerConcurrency: 3,
+      maxFixAttempts: 5,
       contextLimitPercent: 80,
       stallMinutes: 20,
-      autoMerge: true,
+      autoMerge: false,
     });
   });
 
