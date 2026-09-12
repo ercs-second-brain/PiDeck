@@ -17,7 +17,10 @@
  * - a `connection.resize` frame is sent only when the fitted size actually
  *   differs from the last one sent, so viewport jitter doesn't spam the daemon;
  * - `dispose()` cancels a pending trailing fit — pane teardown must not fit a
- *   disposed terminal.
+ *   disposed terminal;
+ * - `flush()` runs a fit immediately, cancelling any pending trailing fit —
+ *   the post-replay re-fit is already timed (next animation frame), so it
+ *   must not sit through another debounce window.
  */
 
 interface TerminalSize {
@@ -41,6 +44,8 @@ export interface FitControllerOptions {
 /** The observer callback: coalesces bursts, fits, reports, propagates. */
 export interface FitController {
   (): void;
+  /** Fits immediately, cancelling a pending trailing fit (post-replay re-fit). */
+  flush(): void;
   /** Cancels a pending trailing fit (pane teardown). */
   dispose(): void;
 }
@@ -79,6 +84,11 @@ export function createFitController(options: FitControllerOptions): FitControlle
     }
     timer = setTimeout(run, debounceMs);
   }) as FitController;
+  controller.flush = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    run();
+  };
   controller.dispose = () => {
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
