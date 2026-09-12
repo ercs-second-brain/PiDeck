@@ -209,8 +209,13 @@ export class ProjectStore {
   }
 
   private defaultBranch(cloneDir: string): string {
-    const { stdout } = this.run("git", ["rev-parse", "--abbrev-ref", "HEAD"], cloneDir);
-    return stdout.trim();
+    // `rev-parse HEAD` fails on a freshly created repo with no commits, so use
+    // `symbolic-ref`, which also respects init.defaultBranch on an unborn HEAD.
+    try {
+      return this.run("git", ["symbolic-ref", "--short", "HEAD"], cloneDir).stdout.trim();
+    } catch {
+      return "main";
+    }
   }
 
   private uniqueId(records: ProjectRecord[], base: string): string {
