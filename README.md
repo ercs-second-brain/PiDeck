@@ -16,12 +16,32 @@ The loop:
 5. Approved + green → the orchestrator does an alignment check.
 6. Merge (auto or on your say-so) closes the issue and unblocks dependents.
 
-The repo is being rebuilt from the spec; the v1 implementation was removed
-entirely (no migration, no backwards compatibility).
+## Quick start
 
-Docs:
+macOS or Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/PiDeck/main/install/bootstrap.sh | sh
+```
+
+The bootstrap installs user-level dependencies (git, Node 22, pnpm, gh, pi),
+builds the daemon and webapp, registers a persistent service, and runs guided
+onboarding. `pideck addr` prints the webapp URL.
+
+## Docs
 
 - [docs/SPEC.md](docs/SPEC.md) — the spec of record
 - [docs/DECISIONS.md](docs/DECISIONS.md) — why each spec decision was made
 - [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) — the PiDeck-vs-pi line
 - [docs/DESIGN.md](docs/DESIGN.md) — web UI design: tokens, terminal config, layout, primitives
+
+## Testing
+
+```sh
+pnpm test
+```
+
+runs the whole suite, including the in-process loop test (`apps/daemon/src/e2e/`)
+that boots the real reconciler against the fake gh (`tools/fake-gh/`) and walks
+the loop end to end without GitHub or real agents. `pnpm lint`, `pnpm build`,
+and `pnpm typecheck` must pass too — see `AGENTS.md`.

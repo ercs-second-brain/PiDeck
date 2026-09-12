@@ -12,6 +12,9 @@ resettable to default in the web UI.
 
 The daemon substitutes these when rendering a prompt:
 
+The canonical list is `Placeholders` in `apps/daemon/src/prompts/render.ts`; a test
+(`apps/daemon/src/prompts/render.test.ts`) verifies that this table matches it token for token.
+
 | Token | Value |
 |---|---|
 | `{{PROJECT_ID}}` | Project id (slug) |
