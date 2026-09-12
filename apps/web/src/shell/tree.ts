@@ -104,14 +104,22 @@ export function sessionRow(view: SessionView): RowText {
       return { num: null, glyph: null, label: "Global agent" };
     case "orchestrator":
       return { num: null, glyph: null, label: "Orchestrator" };
-    case "worker":
+    case "worker": {
+      if (view.session.label !== undefined) {
+        return { num: null, glyph: null, label: view.session.label };
+      }
       return {
         num: view.session.issueNumber !== undefined ? `#${view.session.issueNumber}` : null,
         glyph: null,
         label: view.title ?? view.status,
       };
+    }
     case "reviewer":
-      return { num: null, glyph: "↳", label: view.title ?? (view.status === "" ? "Reviewer" : view.status) };
+      return {
+        num: null,
+        glyph: "↳",
+        label: view.session.label ?? view.title ?? (view.status === "" ? "Reviewer" : view.status),
+      };
   }
 }
 

@@ -105,13 +105,18 @@ Browser back returns to the list. Settings pages are likewise full-screen.
 ```
 
 - Rows are 36px (44px on touch), `--fs-md`, one line, ellipsised; issue number in `--blue` mono.
+  A worker or reviewer with a user-given label shows that instead of `#N title`.
 - Nesting by indent only (16px per level) plus a `↳` glyph for reviewers under their worker.
-- State badge at the right: text label in the state's colour tint, 11px, pill. States and
-  colours: `working` blue · `ci` amber · `fixing` amber · `in review` purple · `addressing`
-  amber · `ready` green · `blocked` red · `done` dim.
+- State badge at the right: an 8px circle in the state's colour, the state wording in a hover
+  tooltip and as the `aria-label`. States and colours: `working` blue · `ci` amber · `fixing`
+  amber · `in review` purple · `addressing` amber · `ready` green · `blocked` red · `done` dim.
 - The selected row has `--bg-hover` plus a 2px accent bar on the left edge.
 - `⋯` on a project row: Settings, Open on GitHub, Delete project. Long-press on touch.
+- `⋯` on a worker or reviewer row: Rename… (inline edit; persists as the row's label), GitHub
+  links, Terminate.
 - Live via WS; a tiny relative timestamp ("2m") in `--text-dim` mono on hover shows last activity.
+- `+ Add project` is the last row, styled like the other rows (36px, 44px on touch); the sidebar
+  row is the only entry point — the header has no `+`.
 
 ### Header
 
@@ -141,14 +146,15 @@ screen built on the primitives:
 | `Field` | `value: string` (always a string; consumers parse numbers) · `onChange(value: string)` · `type?: "text" \| "password" \| "number" \| "select"` · `options?: { value, label }[]` (select only) · `placeholder?` · `disabled?` · `min?` · `max?` · `step?` · `error?: string` (inline under the control in `--red`) · `label?: string` (accessible name) |
 | `Switch` | `checked: boolean` · `onChange(checked: boolean)` · `label: string` (accessible name) |
 | `Button` | `variant?: "default" \| "primary" \| "danger" \| "ghost"` · `type?: "button" \| "submit"` · `disabled?` · `autoFocus?` · `onClick?` · `children` |
-| `Badge` | `tone: "blue" \| "amber" \| "purple" \| "green" \| "red" \| "dim"` · `children` |
+| `Badge` | `tone: "blue" \| "amber" \| "purple" \| "green" \| "red" \| "dim"` · `dot?: boolean` (8px circle in the tone's colour; `children` become the `title` and `aria-label` instead of visible text) · `children` |
 | `Dialog` | `open: boolean` · `title: string` · `children?` (description line) · `confirmLabel?: string` (default "Confirm") · `danger?: boolean` · `busy?: boolean` (disables the buttons while the confirmed action runs) · `onConfirm` · `onCancel` |
 | `Empty` | `children` (the dim one-liner) · `action?: ReactNode` (CTA button) |
 | `Toast` | `message: string \| null` · `onDismiss?: () => void` (auto-dismisses after 3 s when given) |
 
 Worker states map to badge tones via `src/ui/tones.ts` (`stateBadge(state)` → tone + label),
 never hand-rolled by a screen: `working` blue · `ci`/`fixing`/`addressing` amber ·
-`in_review` purple (labelled "in review") · `ready` green · `blocked` red · `done` dim.
+`in_review` purple (labelled "in review") · `ready` green · `blocked` red · `done` dim. The
+sidebar shows them as dots; other screens use the full-text pill.
 
 ## 5. Screens
 

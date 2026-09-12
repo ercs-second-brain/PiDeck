@@ -24,6 +24,11 @@ type Pending =
   | { kind: "terminate"; id: string; title: string }
   | { kind: "deleteProject"; id: string; name: string };
 
+interface Renaming {
+  id: string;
+  value: string;
+}
+
 export interface SidebarProps {
   projects: Project[];
   sessions: SessionView[];
@@ -93,8 +98,8 @@ function RowMenu({ menu, onClose }: { menu: OpenMenu; onClose: () => void }) {
 /**
  * The session sidebar: global agent row, per-project collapsible groups with
  * the orchestrator, workers with nested reviewers, and a collapsed Archived
- * group. Clicking a session attaches; ⋯ opens row actions (GitHub links,
- * terminate with confirm); project ⋯ opens Settings / GitHub / Delete.
+ * group. Clicking a session attaches; ⋯ opens row actions (rename, GitHub
+ * links, terminate with confirm); project ⋯ opens Settings / GitHub / Delete.
  */
 export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged, onToast }: SidebarProps) {
   const tree = useMemo(() => buildTree(projects, sessions), [projects, sessions]);
@@ -102,6 +107,7 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
   const [archivedOpen, setArchivedOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [renaming, setRenaming] = useState<Renaming | null>(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -120,6 +126,11 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
   const openGithub = (link: GithubLink) => window.open(link.url, "_blank", "noopener");
 
   const sessionMenu = (project: Project, view: SessionView): MenuItem[] => [
+    {
+      label: "Rename…",
+      onSelect: () =>
+        setRenaming({ id: view.session.id, value: view.session.label ?? view.title ?? "" }),
+    },
     ...githubLinks(project, view).map((link) => ({ label: link.label, onSelect: () => openGithub(link) })),
     { label: "Terminate", danger: true, onSelect: () => setPending({ kind: "terminate", id: view.session.id, title: terminateTitle(view) }) },
   ];
@@ -149,26 +160,59 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
     }
   };
 
+  const saveRename = async (id: string, value: string) => {
+    setRenaming(null);
+    const label = value.trim();
+    if (label === "") return;
+    try {
+      await api("sessionLabel", { id }, { label });
+      onChanged();
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "The daemon refused the request");
+    }
+  };
+
   const renderSessionRow = (view: SessionView, level: number, items: MenuItem[]) => {
     const row = sessionRow(view);
     const badge = view.state !== null ? stateBadge(view.state) : null;
+    const editing = renaming?.id === view.session.id;
     return (
       <div key={view.session.id} className="srow-line" data-selected={selectedId === view.session.id || undefined}>
-        <button
-          type="button"
-          className="srow"
-          style={{ paddingLeft: `calc(10px + ${level} * 16px)` }}
-          title={rowText(view)}
-          onClick={() => onNavigate(`/sessions/${view.session.id}`)}
-        >
-          {row.num !== null && <span className="srow__num">{row.num}</span>}
-          {row.glyph !== null && <span className="srow__glyph" aria-hidden="true">{row.glyph}</span>}
-          <span className="srow__label">{row.label}</span>
-          {view.session.lastActivityAt !== null && (
-            <span className="srow__time">{relativeTime(view.session.lastActivityAt, now)}</span>
-          )}
-          {badge !== null && <Badge tone={badge.tone}>{badge.label}</Badge>}
-        </button>
+        {editing ? (
+          <input
+            type="text"
+            className="srow__rename"
+            style={{ paddingLeft: `calc(10px + ${level} * 16px)` }}
+            aria-label="Session name"
+            defaultValue={renaming.value}
+            autoFocus
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void saveRename(view.session.id, event.currentTarget.value);
+              else if (event.key === "Escape") setRenaming(null);
+            }}
+            onBlur={(event) => void saveRename(view.session.id, event.currentTarget.value)}
+          />
+        ) : (
+          <button
+            type="button"
+            className="srow"
+            style={{ paddingLeft: `calc(10px + ${level} * 16px)` }}
+            title={rowText(view)}
+            onClick={() => onNavigate(`/sessions/${view.session.id}`)}
+          >
+            {row.num !== null && <span className="srow__num">{row.num}</span>}
+            {row.glyph !== null && <span className="srow__glyph" aria-hidden="true">{row.glyph}</span>}
+            <span className="srow__label">{row.label}</span>
+            {view.session.lastActivityAt !== null && (
+              <span className="srow__time">{relativeTime(view.session.lastActivityAt, now)}</span>
+            )}
+            {badge !== null && (
+              <Badge tone={badge.tone} dot>
+                {badge.label}
+              </Badge>
+            )}
+          </button>
+        )}
         {items.length > 0 && (
           <button
             type="button"
@@ -248,7 +292,11 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
                         onClick={() => onNavigate(`/sessions/${view.session.id}`)}
                       >
                         <span className="srow__label">{rowText(view)}</span>
-                        {badge !== null && <Badge tone="dim">{badge.label}</Badge>}
+                        {badge !== null && (
+                          <Badge tone="dim" dot>
+                            {badge.label}
+                          </Badge>
+                        )}
                       </button>
                     );
                   })}
@@ -265,7 +313,7 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
       {tree.globalAgent !== null && renderSessionRow(tree.globalAgent, 0, [])}
       {tree.projects.map(renderProject)}
       <button type="button" className="srow sidebar__add" onClick={() => onNavigate("/onboarding")}>
-        + Add project
+        <span className="srow__label">+ Add project</span>
       </button>
       {menu !== null && <RowMenu menu={menu} onClose={() => setMenu(null)} />}
       <Dialog

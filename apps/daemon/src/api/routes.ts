@@ -9,6 +9,7 @@ import {
   type Prompt,
   type PromptPut,
   type Session,
+  type SessionLabel,
   type SessionSend,
 } from "@pideck/shared";
 import { existsSync, readFileSync } from "node:fs";
@@ -92,6 +93,11 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
         throw new ApiError(409, `tmux session is gone: ${errorMessage(err)}`);
       }
       return { ok: true };
+    },
+
+    sessionLabel: ({ params, body }) => {
+      const session = sessionOr404(deps, params.id!);
+      return sessionViews([deps.registry.update(session.id, { label: (body as SessionLabel).label })], deps)[0];
     },
 
     sessionTerminate: async ({ params }) => {

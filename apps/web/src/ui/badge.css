@@ -35,3 +35,11 @@
   color: var(--text-dim);
   background: color-mix(in srgb, var(--text-dim) 15%, transparent);
 }
+
+.badge--dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  background: currentColor;
+}

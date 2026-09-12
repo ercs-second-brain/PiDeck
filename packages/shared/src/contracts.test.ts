@@ -83,6 +83,12 @@ describe("session", () => {
     expect(session.prNumber).toBeUndefined();
     expect(session.archivedAt).toBeUndefined();
   });
+
+  it("accepts an optional label", () => {
+    expect(SessionSchema.parse(base).label).toBeUndefined();
+    const session = SessionSchema.parse({ ...base, label: "Rate limiting" });
+    expect(session.label).toBe("Rate limiting");
+  });
 });
 
 describe("session view", () => {
@@ -258,6 +264,10 @@ describe("rest endpoint map", () => {
     expect(restEndpoints.probeGhReview).toMatchObject({
       method: "GET",
       path: "/api/onboarding/gh/review",
+    });
+    expect(restEndpoints.sessionLabel).toMatchObject({
+      method: "PATCH",
+      path: "/api/sessions/:id",
     });
     expect(restEndpoints.updateApply.method).toBe("POST");
   });
