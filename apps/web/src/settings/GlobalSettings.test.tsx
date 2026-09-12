@@ -44,6 +44,7 @@ const STATUS: Status = {
   pollIntervalSeconds: 30,
   piReady: true,
   ghReady: true,
+  github: { throttledUntil: null, lastError: null },
 };
 
 const SETTINGS: GlobalSettingsRead = {

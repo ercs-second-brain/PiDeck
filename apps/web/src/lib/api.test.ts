@@ -47,7 +47,7 @@ afterEach(() => {
 describe("api", () => {
   it("fetches the endpoint path with params and validates the response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ version: "1.0", stateDir: "/s", pollIntervalSeconds: 30, piReady: true, ghReady: true }), {
+      new Response(JSON.stringify({ version: "1.0", stateDir: "/s", pollIntervalSeconds: 30, piReady: true, ghReady: true, github: { throttledUntil: null, lastError: null } }), {
         status: 200,
       }),
     );

@@ -38,6 +38,7 @@ export function rateLimitError(stderr: string): GhRateLimited | null {
     lowered.includes("http 429") ||
     lowered.includes("x-ratelimit-remaining: 0") ||
     lowered.includes("secondary rate limit") ||
+    lowered.includes("rate limit exceeded") ||
     (lowered.includes("http 403") && lowered.includes("rate limit"));
   if (!limited) return null;
   const match = RESET_AT.exec(stderr);

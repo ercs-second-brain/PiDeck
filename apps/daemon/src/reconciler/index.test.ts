@@ -13,7 +13,6 @@ import { ciRollup, type GhComment, type GhPr, type GhReview } from "../github/sc
 import { startReconciler, type GhClientLike, type ProjectFacts, type ReconcilerDeps } from "./index.js";
 import { Trace } from "./trace.js";
 import { GhRateLimited } from "../github/error.js";
-import { Trace } from "./trace.js";
 
 const project = ProjectSchema.parse({
   id: "my-api",
@@ -149,7 +148,12 @@ describe("startReconciler", () => {
   let ghStates: Map<string, FakeGhState>;
   let logs: string[];
   let deps: ReconcilerDeps;
-  let handle: { stop(): void; tick(): Promise<void>; factsFor(projectId: string): ProjectFacts | null } | null = null;
+  let handle: {
+  stop(): void;
+  tick(): Promise<void>;
+  factsFor(projectId: string): ProjectFacts | null;
+  githubStatus(): { throttledUntil: string | null; lastError: string | null };
+} | null = null;
 
   beforeEach(() => {
     stateDir = mkdtempSync(join(tmpdir(), "pideck-reconciler-"));
@@ -437,10 +441,17 @@ describe("startReconciler", () => {
       comments: [],
       invites: [],
     });
+    // The store clones into its own slug, so the test project is registered
+    // through the store (not the seed file) to control its id.
+    const store = new ProjectStore(stateDir, fakeCommandRunner, async () => undefined);
+    store.remove("my-api");
+    store.remove("my-web");
+    const added = await store.add({ mode: "clone", repoUrl: "https://github.com/acme/my-api" });
+    expect(added.id).toBe("acme-my-api");
     deps = {
       ...deps,
       ghReview: () => ({ hasReadAccess: async () => true, acceptInvitations: async () => 0 }),
-      projects: new ProjectStore(stateDir, fakeCommandRunner, async () => undefined),
+      projects: store,
     };
     handle = startReconciler(deps);
 
@@ -449,13 +460,13 @@ describe("startReconciler", () => {
     const approvalsBefore = sentLines(tmuxCalls).filter((l) => l.includes("approved and green"));
     expect(approvalsBefore).toHaveLength(1);
 
-    deps.projects.remove("my-api");
+    deps.projects.remove("acme-my-api");
     await handle.tick();
     const readded = await deps.projects.add({
       mode: "clone",
       repoUrl: "https://github.com/acme/my-api",
     });
-    expect(readded.id).toBe("my-api");
+    expect(readded.id).toBe("acme-my-api");
 
     await handle.tick();
     await handle.tick();

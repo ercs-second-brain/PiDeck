@@ -38,6 +38,7 @@ const statusFresh: Status = {
   pollIntervalSeconds: 30,
   piReady: false,
   ghReady: false,
+  github: { throttledUntil: null, lastError: null },
 };
 
 const project: Project = {

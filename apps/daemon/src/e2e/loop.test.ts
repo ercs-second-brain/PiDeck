@@ -60,6 +60,7 @@ beforeEach(() => {
     stateDir,
     intervalMs: 3_600_000,
     git: async () => "",
+    trace: new Trace(stateDir),
     log: (line) => logs.push(line),
   });
 });
