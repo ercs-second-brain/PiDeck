@@ -3,8 +3,9 @@
 /**
  * Component tests for <Sidebar />: the project row surfaces the review
  * account's access failure as a red badge, worker states render as the dot
- * badge, worker/reviewer rows rename from the ⋯ menu, and the add-project
- * row sits last styled like every other row.
+ * badge, worker/reviewer rows rename from the ⋯ menu, the add-project row
+ * sits last styled like every other row, and archived rows keep their real
+ * name, dim archived badge, nesting, and selection highlight.
  */
 
 import { act } from "react";
@@ -39,9 +40,12 @@ function view(overrides: {
   projectId?: string | null;
   reviewAccess?: string | null;
   issueNumber?: number;
+  prNumber?: number;
   title?: string | null;
   label?: string;
   state?: SessionView["state"];
+  archivedAt?: string;
+  parentSessionId?: string | null;
 }): SessionView {
   const id = overrides.id ?? "s1";
   return {
@@ -50,10 +54,12 @@ function view(overrides: {
       persona: overrides.persona ?? "orchestrator",
       projectId: overrides.projectId ?? "p1",
       issueNumber: overrides.issueNumber,
+      prNumber: overrides.prNumber,
       tmuxSession: `tmux-${id}`,
       spawnedAt: "2026-01-01T00:00:00Z",
       model: null,
       label: overrides.label,
+      archivedAt: overrides.archivedAt,
       lastPromptedHeadSha: null,
       lastDeliveredIssueCommentId: null,
       lastDeliveredPrCommentId: null,
@@ -64,7 +70,7 @@ function view(overrides: {
     },
     state: overrides.state ?? null,
     status: "orchestrator",
-    parentSessionId: null,
+    parentSessionId: overrides.parentSessionId ?? null,
     title: overrides.title ?? null,
     reviewAccess: overrides.reviewAccess ?? null,
   };
@@ -72,7 +78,7 @@ function view(overrides: {
 
 const roots: Root[] = [];
 
-function mountSidebar(sessions: SessionView[]): HTMLElement {
+function mountSidebar(sessions: SessionView[], selectedId: string | null = null): HTMLElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -82,7 +88,7 @@ function mountSidebar(sessions: SessionView[]): HTMLElement {
       <Sidebar
         projects={[PROJECT]}
         sessions={sessions}
-        selectedId={null}
+        selectedId={selectedId}
         onNavigate={() => {}}
         onChanged={() => {}}
         onToast={() => {}}
@@ -191,5 +197,63 @@ describe("<Sidebar />", () => {
     expect(add.classList.contains("srow")).toBe(true);
     expect(add.textContent).toBe("+ Add project");
     expect(container.querySelector("nav")!.lastElementChild).toBe(add);
+  });
+
+  it("collapses the archived group by default, counts it in the header, and shows real names inside", () => {
+    const container = mountSidebar([
+      view({ id: "w", persona: "worker", issueNumber: 42, title: "Add rate limiting", archivedAt: "2026-01-02T00:00:00Z", state: "done" }),
+    ]);
+    const header = [...container.querySelectorAll(".srow")].find((el) => el.textContent?.includes("Archived (1)"))!;
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector(".srow__num")).toBeNull();
+
+    click(header);
+    const row = workerRow(container);
+    expect(row.querySelector(".srow__num")?.textContent).toBe("#42");
+    expect(row.querySelector(".srow__label")?.textContent).toBe("Add rate limiting");
+    expect(row.textContent).not.toContain("archived 2026");
+    const dot = row.querySelector(".badge--dot")!;
+    expect(dot.classList.contains("badge--dim")).toBe(true);
+    expect(dot.getAttribute("title")).toMatch(/^done · archived /);
+    expect(dot.getAttribute("aria-label")).toMatch(/^done · archived /);
+  });
+
+  it("shows a user-given label on an archived row instead of the issue number and title", () => {
+    const container = mountSidebar([
+      view({ id: "w", persona: "worker", issueNumber: 42, title: "Add rate limiting", label: "Rate limiting", archivedAt: "2026-01-02T00:00:00Z", state: "done" }),
+    ]);
+    click([...container.querySelectorAll(".srow")].find((el) => el.textContent?.includes("Archived ("))!);
+    const row = [...container.querySelectorAll(".srow")].find((el) => el.textContent?.includes("Rate limiting"))!;
+    expect(row.querySelector(".srow__num")).toBeNull();
+    expect(row.querySelector(".srow__label")?.textContent).toBe("Rate limiting");
+  });
+
+  it("highlights a selected archived row like a selected live row", () => {
+    const sessions = [
+      view({ id: "w", persona: "worker", issueNumber: 42, title: "Add rate limiting", archivedAt: "2026-01-02T00:00:00Z", state: "done" }),
+      view({ id: "live", persona: "worker", issueNumber: 43, title: "Fix flaky test" }),
+    ];
+    const archivedContainer = mountSidebar(sessions, "w");
+    click([...archivedContainer.querySelectorAll(".srow")].find((el) => el.textContent?.includes("Archived ("))!);
+    const archivedLine = workerRow(archivedContainer).closest(".srow-line")!;
+    expect(archivedLine.hasAttribute("data-selected")).toBe(true);
+
+    const liveContainer = mountSidebar(sessions, "live");
+    const liveLine = [...liveContainer.querySelectorAll(".srow-line")].find((el) =>
+      el.querySelector(".srow__num")?.textContent === "#43",
+    )!;
+    expect(liveLine.hasAttribute("data-selected")).toBe(true);
+  });
+
+  it("nests an archived reviewer under its archived worker with the ↳ glyph", () => {
+    const container = mountSidebar([
+      view({ id: "w", persona: "worker", issueNumber: 42, title: "Add rate limiting", archivedAt: "2026-01-02T00:00:00Z", state: "done" }),
+      view({ id: "r", persona: "reviewer", prNumber: 99, parentSessionId: "w", title: "Add rate limiting", archivedAt: "2026-01-02T00:00:00Z", state: "done" }),
+    ]);
+    click([...container.querySelectorAll(".srow")].find((el) => el.textContent?.includes("Archived (2)"))!);
+    const rows = [...container.querySelectorAll(".srow-line")].filter((el) => el.querySelector(".srow__num, .srow__glyph"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.querySelector(".srow__num")?.textContent).toBe("#42");
+    expect(rows[1]!.querySelector(".srow__glyph")?.textContent).toBe("↳");
   });
 });

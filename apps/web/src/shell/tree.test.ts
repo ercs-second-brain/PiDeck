@@ -109,7 +109,50 @@ describe("buildTree", () => {
     const tree = buildTree([p], [done, liveWorker]);
     const node = tree.projects[0];
     expect(node?.workers.map((worker) => worker.view.session.id)).toEqual(["w2"]);
-    expect(node?.archived.map((v) => v.session.id)).toEqual(["w1"]);
+    expect(node?.archived.map((entry) => entry.view.session.id)).toEqual(["w1"]);
+  });
+
+  it("keeps an archived reviewer nested under the worker whose PR it reviewed", () => {
+    const p = project("p1", "my-api");
+    const w = view({
+      id: "w",
+      projectId: "p1",
+      issueNumber: 42,
+      prNumber: 99,
+      archivedAt: "2026-01-03T00:00:00Z",
+      state: "done",
+    });
+    const rev = view({
+      id: "r",
+      persona: "reviewer",
+      projectId: "p1",
+      prNumber: 99,
+      parentSessionId: "w",
+      archivedAt: "2026-01-03T00:00:00Z",
+      state: "done",
+    });
+    const tree = buildTree([p], [rev, w]);
+    const node = tree.projects[0];
+    expect(node?.workers).toHaveLength(0);
+    expect(node?.archived.map((entry) => entry.view.session.id)).toEqual(["w"]);
+    expect(node?.archived[0]?.reviewers.map((r) => r.session.id)).toEqual(["r"]);
+  });
+
+  it("keeps an archived reviewer whose worker is gone as its own root row", () => {
+    const p = project("p1", "my-api");
+    const rev = view({
+      id: "r",
+      persona: "reviewer",
+      projectId: "p1",
+      prNumber: 99,
+      parentSessionId: "gone",
+      archivedAt: "2026-01-03T00:00:00Z",
+      state: "done",
+    });
+    const tree = buildTree([p], [rev]);
+    const node = tree.projects[0];
+    expect(node?.archived.map((entry) => entry.view.session.id)).toEqual(["r"]);
+    expect(node?.archived[0]?.reviewers).toHaveLength(0);
   });
 
   it("sorts archived sessions newest first", () => {
@@ -117,7 +160,7 @@ describe("buildTree", () => {
     const older = view({ id: "a", projectId: "p1", archivedAt: "2026-01-02T00:00:00Z" });
     const newer = view({ id: "b", projectId: "p1", archivedAt: "2026-01-03T00:00:00Z" });
     const tree = buildTree([p], [older, newer]);
-    expect(tree.projects[0]?.archived.map((v) => v.session.id)).toEqual(["b", "a"]);
+    expect(tree.projects[0]?.archived.map((entry) => entry.view.session.id)).toEqual(["b", "a"]);
   });
 
   it("carries the review-access failure from any of the project's sessions onto the node", () => {

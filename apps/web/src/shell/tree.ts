@@ -16,12 +16,18 @@ interface WorkerNode {
   reviewers: SessionView[];
 }
 
+/** One archived root row (orchestrator or worker) with its reviewers nested under it. */
+export interface ArchivedNode {
+  view: SessionView;
+  reviewers: SessionView[];
+}
+
 /** A project's slice of the sidebar tree. */
 export interface ProjectNode {
   project: Project;
   orchestrator: SessionView | null;
   workers: WorkerNode[];
-  archived: SessionView[];
+  archived: ArchivedNode[];
   /** Set when the review account cannot read this project's repo. */
   reviewAccess: string | null;
 }
@@ -50,6 +56,7 @@ export function buildTree(projects: Project[], views: SessionView[]): SidebarTre
 
   let globalAgent: SessionView | null = null;
   const live = new Map<string, SessionView[]>();
+  const dead = new Map<string, SessionView[]>();
   for (const view of views) {
     if (view.session.persona === "global") {
       if (globalAgent === null || (globalAgent.session.archivedAt !== undefined && view.session.archivedAt === undefined)) {
@@ -64,7 +71,9 @@ export function buildTree(projects: Project[], views: SessionView[]): SidebarTre
     // carries it.
     if (node.reviewAccess === null && view.reviewAccess !== null) node.reviewAccess = view.reviewAccess;
     if (view.session.archivedAt !== undefined) {
-      node.archived.push(view);
+      const bucket = dead.get(projectId ?? "");
+      if (bucket === undefined) dead.set(projectId ?? "", [view]);
+      else bucket.push(view);
     } else {
       const bucket = live.get(projectId ?? "");
       if (bucket === undefined) live.set(projectId ?? "", [view]);
@@ -85,7 +94,23 @@ export function buildTree(projects: Project[], views: SessionView[]): SidebarTre
           .filter((candidate) => candidate.parentSessionId === view.session.id)
           .sort(bySpawnedAt),
       }));
-    node.archived.sort(byArchivedDesc);
+    // The archived group mirrors the live tree: reviewers nest under the
+    // worker whose PR they reviewed, and an archived reviewer whose worker
+    // is gone stays reachable as its own root row.
+    const gone = dead.get(node.project.id) ?? [];
+    const goneReviewers = gone.filter((view) => view.session.persona === "reviewer");
+    const goneRoots = gone.filter((view) => view.session.persona !== "reviewer").sort(byArchivedDesc);
+    const orphans = goneReviewers.filter(
+      (candidate) => !goneRoots.some((root) => root.session.id === candidate.parentSessionId),
+    );
+    node.archived = goneRoots
+      .map((view) => ({
+        view,
+        reviewers: goneReviewers
+          .filter((candidate) => candidate.parentSessionId === view.session.id)
+          .sort(bySpawnedAt),
+      }))
+      .concat(orphans.sort(byArchivedDesc).map((view) => ({ view, reviewers: [] })));
   }
 
   return { globalAgent, projects: [...nodes.values()] };
