@@ -16,11 +16,18 @@ import {
   type TraceEntry,
   type TraceFacts,
 } from "@pideck/shared";
+import { runVerbCommand, type VerbGh, type VerbGit } from "./verbs.js";
 
 export interface CliIo {
   url: string;
   stdout: (line: string) => void;
   stderr: (line: string) => void;
+  /** Environment the verbs run in; defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
+  /** gh runner for the verbs; defaults to a real `gh` exec. */
+  gh?: VerbGh;
+  /** git runner for the verbs; defaults to a real `git` exec. */
+  git?: VerbGit;
 }
 
 const USAGE = `usage:
@@ -31,7 +38,16 @@ const USAGE = `usage:
   pideck workers --project <id> [--json]
   pideck send --session <id> --message <text>
   pideck trace <session-id> [--follow]
-  pideck transcript <session-id>`;
+  pideck transcript <session-id>
+
+  session verbs (run as this pane's GitHub identity via PD_SESSION_ID):
+  pideck pr open [--title t] [--body-file f | --body b]
+  pideck review approve|request-changes|comment --body b [--file path --line n --body b]...
+  pideck reply <comment-id> --body b
+  pideck blocked --body b
+  pideck followup --body b
+  pideck threads
+  pideck resolve <thread-id>`;
 
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
   try {
@@ -46,6 +62,9 @@ async function dispatch(argv: string[], io: CliIo): Promise<number> {
   const asJson = argv.includes("--json");
   const args = argv.filter((arg) => arg !== "--json");
   const [cmd, ...rest] = args;
+
+  const verbResult = await runVerbCommand(args, io, (message) => usageError(io, message));
+  if (verbResult !== null) return verbResult;
 
   switch (cmd) {
     case undefined:
@@ -256,7 +275,9 @@ function factsLine(facts: TraceFacts | undefined): string {
   return parts.join(" · ");
 }
 
-/** Follows a session's trace: re-fetches every second, printing new entries. */
+/**
+ * Follows a session's trace: re-fetches every second, printing new entries.
+ */
 async function followTrace(io: CliIo, id: string, seen: number): Promise<never> {
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, 1000));

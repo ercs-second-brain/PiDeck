@@ -250,7 +250,7 @@ describe("deriveActions — worker deliveries", () => {
     );
     const delivers = actions.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
-    expect(delivers[0]!.text).toContain("starting with BLOCKED:");
+    expect(delivers[0]!.text).toContain("pideck blocked");
     expect(delivers[0]!.watermark?.patch).toEqual({
       lastPromptedHeadSha: "sha-2",
       lastActivityAt: "2025-06-01T12:00:00.000Z",

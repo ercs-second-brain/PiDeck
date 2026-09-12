@@ -129,6 +129,21 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     sessionTranscript: ({ params }) =>
       readTranscript(deps.stateDir, sessionOr404(deps, params.id!).id),
 
+    sessionContext: ({ params }) => {
+      const session = sessionOr404(deps, params.id!);
+      if (session.projectId === null) {
+        throw new ApiError(409, `session ${session.id} has no project`);
+      }
+      const project = projectOr404(deps, session.projectId);
+      return {
+        repo: `${project.owner}/${project.repo}`,
+        defaultBranch: project.defaultBranch,
+        issueNumber: session.issueNumber ?? null,
+        prNumber: session.prNumber ?? null,
+        branch: session.issueNumber === undefined ? null : `pideck/issue-${session.issueNumber}`,
+      };
+    },
+
     globalSettingsGet: () => deps.settings.read(),
     globalSettingsPut: ({ body }) => {
       deps.settings.put(body as GlobalSettingsPut);

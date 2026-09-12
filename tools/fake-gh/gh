@@ -13,6 +13,8 @@ if (!statePath) {
 }
 
 const args = process.argv.slice(2);
+/** Raw body supplied with `gh api … --input -`. */
+let stdinData = "";
 
 function fail(message) {
   process.stderr.write(`fake-gh: ${message}\n`);
@@ -42,6 +44,10 @@ function repoEntry(state, repo) {
   const entry = state.repos[repo];
   if (entry === undefined) fail(`no repo ${repo} in fake state`);
   return entry;
+}
+
+function prUrl(repoName, number) {
+  return `https://github.com/${repoName}/pull/${number}`;
 }
 
 /** The repo an argv carries: the --repo flag value, if present. */
@@ -115,6 +121,11 @@ function gh(state) {
     if (canRead(state, login, `${segments[1]}/${segments[2]}`)) return emit("{}");
     fail(`Must have read access to ${segments[1]}/${segments[2]} (as ${login})`);
   }
+  if (method === "GET" && segmentsEqual(segments, ["repos", "*", "*", "issues", "*"])) {
+    const issue = findIssue(repoEntry(state, repo), Number(segments[4]));
+    if (issue === null) fail(`no issue #${segments[4]}`);
+    return emit(JSON.stringify({ title: issue.title, body: issue.body ?? "" }));
+  }
   if (method === "GET" && segmentsEqual(segments, ["repos", "*", "*", "commits", "*"])) {
     if (!canRead(state, login, repo)) fail(`Must have read access to ${repo} (as ${login})`);
     const sha = repoEntry(state, repo).upstreamSha ?? "0".repeat(40);
@@ -179,19 +190,112 @@ function gh(state) {
     }
     fail("api: unsupported method on issue comments");
   }
+  if (method === "POST" && segmentsEqual(segments, ["repos", "*", "*", "pulls", "*", "reviews"])) {
+    const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
+    const payload = stdinData ? JSON.parse(stdinData) : {};
+    const states = { APPROVE: "APPROVED", REQUEST_CHANGES: "CHANGES_REQUESTED", COMMENT: "COMMENTED" };
+    const reviewState = states[payload.event];
+    if (reviewState === undefined) fail(`reviews: unknown event ${payload.event}`);
+    const review = {
+      id: nextId(state),
+      user: login,
+      state: reviewState,
+      submitted_at: nowIso(),
+      body: payload.body ?? null,
+    };
+    pr.reviews.push(review);
+    for (const c of payload.comments ?? []) {
+      const id = nextId(state);
+      pr.reviewComments.push({
+        id,
+        threadId: `PRRT_${id}`,
+        user: login,
+        body: c.body ?? "",
+        created_at: nowIso(),
+        path: c.path,
+        line: c.line ?? null,
+      });
+    }
+    save(state);
+    return emit(JSON.stringify({ id: review.id }));
+  }
   if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*", "reviews"])) {
     const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
     return emit(JSON.stringify(pr.reviews.map(asGhReview)));
+  }
+  if (method === "POST" && segmentsEqual(segments, ["repos", "*", "*", "pulls", "*", "comments", "*", "replies"])) {
+    const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
+    const parent = pr.reviewComments.find((c) => c.id === Number(segments[6]));
+    if (parent === undefined) fail(`no review comment ${segments[6]}`);
+    const id = nextId(state);
+    pr.reviewComments.push({
+      id,
+      user: login,
+      body: fields.body ?? "",
+      created_at: nowIso(),
+      in_reply_to: parent.id,
+      path: parent.path,
+      line: parent.line ?? null,
+    });
+    save(state);
+    return emit(JSON.stringify({ id }));
   }
   if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*", "comments"])) {
     const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
     return emit(JSON.stringify(pr.reviewComments.map(asGhComment)));
   }
-  if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*"])) {
+  if (method === "GET" && segmentsEqual(segments, ["repos", "*", "*", "pulls", "*"])) {
     const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
     return emit(JSON.stringify({ body: pr.body }));
   }
+  if (method === "PATCH" && segmentsEqual(segments, ["repos", "*", "*", "pulls", "*"])) {
+    const pr = findPrOrDie(repoEntry(state, repo), Number(segments[4]));
+    if (fields.body !== undefined) pr.body = fields.body;
+    save(state);
+    return emit(JSON.stringify({ body: pr.body }));
+  }
+  if (path === "graphql") return graphql(state, login, fields);
   fail(`api: unhandled ${method} ${rawPath}`);
+}
+
+/** The two GraphQL shapes the CLI verbs use: thread listing and resolution. */
+function graphql(state, login, fields) {
+  const query = fields.query ?? "";
+  if (query.includes("resolveReviewThread")) {
+    for (const entry of Object.values(state.repos)) {
+      for (const pr of entry.prs) {
+        const thread = pr.reviewComments.find(
+          (c) => c.in_reply_to === undefined && threadIdOf(c) === fields.id,
+        );
+        if (thread !== undefined) {
+          thread.resolved = true;
+          save(state);
+          return emit(JSON.stringify({ data: { resolveReviewThread: { thread: { isResolved: true } } } }));
+        }
+      }
+    }
+    fail(`graphql: no review thread ${fields.id}`);
+  }
+  if (query.includes("reviewThreads")) {
+    const pr = findPrOrDie(repoEntry(state, `${fields.owner}/${fields.name}`), Number(fields.number));
+    const nodes = pr.reviewComments
+      .filter((c) => c.in_reply_to === undefined)
+      .map((c) => ({
+        id: threadIdOf(c),
+        isResolved: c.resolved ?? false,
+        path: c.path ?? null,
+        line: c.line ?? null,
+        comments: { nodes: [{ body: c.body }] },
+      }));
+    return emit(
+      JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes } } } } }),
+    );
+  }
+  fail("graphql: unhandled query");
+}
+
+function threadIdOf(comment) {
+  return comment.threadId ?? `PRRT_${comment.id}`;
 }
 
 function segmentsEqual(segments, pattern) {
@@ -209,7 +313,10 @@ function asGhReview(review) {
 }
 
 function issueList(state) {
-  if (!jsonFlagWith(args, "number,title,url,assignees,labels")) fail("issue list: unexpected --json fields");
+  const requested = jsonFields(args);
+  if (requested === null || requested.join(",") !== "number,title,url,assignees,labels") {
+    fail("issue list: unexpected --json fields");
+  }
   const issues = repoEntry(state, repoFlag(args)).issues
     .filter((issue) => issue.state === "open")
     .map((issue) => ({
@@ -246,11 +353,17 @@ function issueEdit(state) {
 }
 
 function prList(state) {
-  if (!jsonFlagWith(args, "number,headRefName,headRefOid,mergeable,reviewDecision,statusCheckRollup")) {
+  const requested = jsonFields(args);
+  const known = ["number", "headRefName", "headRefOid", "mergeable", "reviewDecision", "statusCheckRollup", "url"];
+  if (requested === null || !requested.every((field) => known.includes(field))) {
     fail("pr list: unexpected --json fields");
   }
-  const prs = repoEntry(state, repoFlag(args)).prs
-    .filter((pr) => pr.state === "open")
+  const repoName = repoFlag(args);
+  const head = singleFlag(args, "--head");
+  const stateArg = singleFlag(args, "--state") ?? "open";
+  const prs = repoEntry(state, repoName).prs
+    .filter((pr) => pr.state === stateArg)
+    .filter((pr) => head === undefined || pr.headRefName === head)
     .map((pr) => ({
       number: pr.number,
       headRefName: pr.headRefName,
@@ -258,8 +371,33 @@ function prList(state) {
       mergeable: pr.mergeable,
       reviewDecision: reviewDecisionOf(pr),
       statusCheckRollup: pr.checks,
-    }));
+      url: prUrl(repoName, pr.number),
+    }))
+    .map((full) => Object.fromEntries(requested.map((field) => [field, full[field]])));
   return emit(JSON.stringify(prs));
+}
+
+function prCreate(state) {
+  const repoName = repoFlag(args);
+  const entry = repoEntry(state, repoName);
+  const head = singleFlag(args, "--head");
+  if (head === undefined) fail("pr create: needs --head");
+  const number = entry.prs.reduce((max, pr) => Math.max(max, pr.number), 0) + 1;
+  entry.prs.push({
+    number,
+    headRefName: head,
+    headRefOid: `sha-${number}`,
+    mergeable: "MERGEABLE",
+    checks: [],
+    reviews: [],
+    reviewComments: [],
+    requestedReviewers: [],
+    body: singleFlag(args, "--body") ?? "",
+    title: singleFlag(args, "--title") ?? "",
+    state: "open",
+  });
+  save(state);
+  return emit(prUrl(repoName, number));
 }
 
 function prMerge(state) {
@@ -324,9 +462,15 @@ function authToken(state) {
   return emit(entry[0]);
 }
 
-function jsonFlagWith(rest, expected) {
+function jsonFields(rest) {
   const index = rest.indexOf("--json");
-  return index !== -1 && rest[index + 1] === expected;
+  if (index === -1 || rest[index + 1] === undefined) return null;
+  return rest[index + 1].split(",");
+}
+
+function singleFlag(rest, flag) {
+  const values = flagValues(rest, flag);
+  return values.length === 0 ? undefined : values[0];
 }
 
 function flagValues(rest, flag) {
@@ -481,31 +625,49 @@ function op(state) {
   emit("");
 }
 
-const state = load();
-if (args[0] === "__op") {
-  op(state);
-} else if (args[0] === "auth" && args[1] === "status") {
-  authStatus(state);
-} else if (args[0] === "auth" && args[1] === "login") {
-  authLogin(state);
-} else if (args[0] === "auth" && args[1] === "token") {
-  authToken(state);
-} else if (args[0] === "issue" && args[1] === "list") {
-  issueList(state);
-} else if (args[0] === "issue" && args[1] === "edit") {
-  issueEdit(state);
-} else if (args[0] === "pr" && args[1] === "list") {
-  prList(state);
-} else if (args[0] === "pr" && args[1] === "merge") {
-  prMerge(state);
-} else if (args[0] === "pr" && args[1] === "edit") {
-  prEdit(state);
-} else if (args[0] === "pr" && args[1] === "review") {
-  prReview(state);
-} else if (args[0] === "repo" && args[1] === "view") {
-  repoView(state);
-} else if (args[0] === "api") {
-  gh(state);
-} else {
-  fail(`unhandled command: ${args.join(" ")}`);
+async function dispatch() {
+  const state = load();
+  if (args.includes("--input")) stdinData = await readStdin();
+  if (args[0] === "__op") {
+    op(state);
+  } else if (args[0] === "auth" && args[1] === "status") {
+    authStatus(state);
+  } else if (args[0] === "auth" && args[1] === "login") {
+    authLogin(state);
+  } else if (args[0] === "auth" && args[1] === "token") {
+    authToken(state);
+  } else if (args[0] === "issue" && args[1] === "list") {
+    issueList(state);
+  } else if (args[0] === "issue" && args[1] === "edit") {
+    issueEdit(state);
+  } else if (args[0] === "pr" && args[1] === "list") {
+    prList(state);
+  } else if (args[0] === "pr" && args[1] === "create") {
+    prCreate(state);
+  } else if (args[0] === "pr" && args[1] === "merge") {
+    prMerge(state);
+  } else if (args[0] === "pr" && args[1] === "edit") {
+    prEdit(state);
+  } else if (args[0] === "pr" && args[1] === "review") {
+    prReview(state);
+  } else if (args[0] === "repo" && args[1] === "view") {
+    repoView(state);
+  } else if (args[0] === "api") {
+    gh(state);
+  } else {
+    fail(`unhandled command: ${args.join(" ")}`);
+  }
 }
+
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    process.stdin.on("data", (chunk) => chunks.push(chunk));
+    process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    process.stdin.on("error", reject);
+  });
+}
+
+void (async () => {
+  await dispatch();
+})();

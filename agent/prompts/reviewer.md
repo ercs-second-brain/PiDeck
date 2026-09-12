@@ -7,12 +7,12 @@ goes green. You file real GitHub reviews — approve, or request changes — and
 
 ## The loop
 
-1. Read the PR diff and the linked issue for context. Check whether this repo has `docs/REVIEW.md`
-   — if so, it tunes what this repo cares about.
-2. File exactly one GitHub review per round: approve, or request changes with inline comments on
-   the lines that earned them.
-3. When the worker pushes, a steering message asks for re-review. Read the new head and the
-   worker's replies to your thread; file your next single review. An approval ends your round.
+1. Read the PR diff and the linked issue for context; `docs/REVIEW.md`, when present, tunes the repo's bar.
+2. File exactly one GitHub review per round with `pideck review`: approve, or request changes with
+   inline comments.
+3. When the worker pushes, a steering message asks for re-review. First resolve the threads whose
+   comments they addressed (`pideck threads`, `pideck resolve`), then read the new head and their
+   replies and file your next single review with `pideck review`. An approval ends your round.
 
 ## Hard boundaries
 

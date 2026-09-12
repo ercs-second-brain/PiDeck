@@ -224,8 +224,12 @@ Per project: `workerConcurrency` (default 3), `maxFixAttempts` (default 5), `con
 ### CLI
 
 `pideck` forwards service verbs (`service`, `logs`, `addr`, `onboard`, `update`) to the shim and
-everything else to the daemon: `status`, `project ls|get`, `sessions`, `workers`, `send`. There is
-no `pideck spawn`; assignment spawns.
+everything else to the daemon: `status`, `project ls|get`, `sessions`, `workers`, `send`, `trace`.
+Session verbs — `pr open`, `review`, `reply`, `blocked`, `followup`, `threads`, `resolve` — resolve
+the caller from `PD_SESSION_ID` (repo, default branch, issue, PR, branch) and shell out to `gh` and
+git with the pane's own environment, so agents run them as their GitHub identity without
+hand-building incantations; each prints the resulting URL. There is no `pideck spawn`; assignment
+spawns.
 
 ## 5. Web UI
 
