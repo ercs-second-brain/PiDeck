@@ -1,0 +1,22 @@
+.toast {
+  position: fixed;
+  z-index: 40;
+  right: var(--sp-4);
+  bottom: calc(var(--sp-4) + env(safe-area-inset-bottom));
+  max-width: min(400px, calc(100vw - 32px));
+  padding: 10px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 899px) {
+  .toast {
+    right: var(--sp-4);
+    left: var(--sp-4);
+    text-align: center;
+  }
+}
