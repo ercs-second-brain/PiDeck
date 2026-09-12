@@ -114,6 +114,21 @@ describe("ProjectStore", () => {
     });
   });
 
+  it("updates editable project fields and persists them", () => {
+    const origin = initOrigin();
+    const stateDir = dirname(origin);
+    const store = new ProjectStore(stateDir);
+    const project = store.add({ mode: "clone", repoUrl: origin });
+
+    const updated = store.update(project.id, { name: "Widget 2", defaultBranch: "trunk" });
+
+    expect(updated.name).toBe("Widget 2");
+    expect(updated.defaultBranch).toBe("trunk");
+    const reopened = new ProjectStore(stateDir);
+    expect(reopened.get(project.id).name).toBe("Widget 2");
+    expect(reopened.get(project.id).defaultBranch).toBe("trunk");
+  });
+
   it("rejects an unknown project", () => {
     const store = new ProjectStore(tempDir());
     expect(() => store.updateSettings("nope", { autoMerge: true })).toThrow(/unknown project/);
