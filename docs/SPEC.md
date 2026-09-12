@@ -274,7 +274,8 @@ The loop is exercised without GitHub, real agents, or the network:
   with a fake tmux and walks §2 end to end in seconds.
 - **Scenario runner** — scripts a whole §2 story (multi-issue, red CI, change
   requests, merge) as a sequence of state mutations, for reproducing bugs
-  locally against a live daemon.
+  locally against a live daemon; run as `pnpm e2e` (`tools/e2e/`,
+  `--scenario blocked|restart`) — needs real GitHub, not the fake gh.
 - **Session trace** — replays one session's deliveries, watermarks, and pane
   log from the state dir, to answer "why was I prompted".
 - **UI gallery** — renders every web primitive and screen state on one page.

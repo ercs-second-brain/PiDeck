@@ -46,6 +46,13 @@ that boots the real reconciler against the fake gh (`tools/fake-gh/`) and walks
 the loop end to end without GitHub or real agents. `pnpm lint`, `pnpm build`,
 and `pnpm typecheck` must pass too — see `AGENTS.md`.
 
+`pnpm e2e` runs the live loop once against real GitHub: it builds, pushes
+`tools/e2e/fixture/` to a private throwaway repo, registers it in a throwaway
+daemon, and asserts the scenario on GitHub facts and `/api/sessions` before
+deleting the repo (unless `--keep`; other legs: `--scenario blocked|restart`).
+It needs the primary `gh` auth and the review account's PAT in
+`PD_E2E_REVIEW_TOKEN`, so like the gallery it is a pre-merge check, not CI.
+
 `pnpm ui-gallery` boots the real daemon against the fake gh and a fake tmux,
 drives headless Playwright through every route at desktop and mobile widths,
 and writes a labelled screenshot grid to `runs/ui/<timestamp>/` — read it
