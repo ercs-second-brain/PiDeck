@@ -7,7 +7,12 @@
  *   to that file exactly like the real `cat >>` would (fs.watch then
  *   wakes the real reader).
  * - `send-keys -t <target> -H <hex>...` decodes into per-target input.
- * - `resize-window -t <target>: -x -y` records the pane size.
+ * - `set-option -w -t <target> remain-on-exit on` is accepted; the payload
+ *   exit it corresponds to is simulated with {@link FakeTmux.exitPayload}
+ *   (the pane persists, flagged dead — what the real option does).
+ * - `display-message -p -t <target>` answers the format it is asked for:
+ *   `#{pane_dead}` is "1" after {@link FakeTmux.exitPayload}, and the pane
+ *   size otherwise.
  * - `capture-pane -p -e -N -t <target> -S -<n>` returns the canned text set
  *   with {@link FakeTmux.setCapturePane}.
  *
@@ -35,6 +40,8 @@ export class FakeTmux extends Tmux {
   private readonly pipes = new Map<string, string>();
   private readonly inputs = new Map<string, Buffer[]>();
   private readonly captures = new Map<string, string>();
+  /** Sessions whose payload exited under remain-on-exit (pane persists). */
+  private readonly dead = new Set<string>();
 
   constructor() {
     super({ runner: async () => ({ stdout: "", stderr: "" }), enterDelayMs: 0 });
@@ -87,6 +94,13 @@ export class FakeTmux extends Tmux {
 
   killSession(name: string): void {
     this.sessions.delete(name);
+    this.dead.delete(name);
+  }
+
+  /** Simulates the pane's payload exiting under remain-on-exit. */
+  exitPayload(name: string): void {
+    if (!this.sessions.has(name)) throw new Error(`no such session ${name}`);
+    this.dead.add(name);
   }
 
   /** Whether a pipe-pane is active for the target. */
@@ -168,6 +182,7 @@ export class FakeTmux extends Tmux {
         const target = this.flagValue(args, "-t").replace(/:$/, "");
         const pane = this.sessions.get(target);
         if (!pane) this.fail(`can't find window ${target}`, args);
+        if (args.includes("#{pane_dead}")) return this.dead.has(target) ? "1" : "0";
         return `${pane.cols} ${pane.rows}`;
       }
       case "capture-pane": {

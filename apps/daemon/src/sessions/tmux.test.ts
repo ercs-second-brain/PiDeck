@@ -28,7 +28,7 @@ const err = (exitCode: number, stderr = ""): CommandResult & { failed: true } =>
 };
 
 describe("Tmux", () => {
-  it("creates a detached session whose wrapped command prints its exit code and survives as a shell", async () => {
+  it("creates a detached session whose wrapper execs the payload, with remain-on-exit on", async () => {
     const { tmux, calls } = fakeRunner();
     await tmux.create("s1", {
       cwd: "/repo",
@@ -53,16 +53,18 @@ describe("Tmux", () => {
     expect(cmd.slice(12)).toEqual([
       "sh",
       "-c",
-      expect.stringContaining('[pideck] pi exited %s'),
+      expect.stringContaining('exec "$@"'),
       "sh",
       "pi",
       "--model",
       "m",
     ]);
     const script = cmd[14]!;
-    expect(script).toContain('"$@"; code=$?;');
-    expect(script).toContain('exec "${SHELL:-/bin/sh}" -l');
+    expect(script).toContain('exec "$@"');
+    expect(script).not.toContain("[pideck] pi exited");
+    expect(script).not.toContain("exec \"${SHELL:-/bin/sh}\"");
     expect(calls[1]).toEqual(["set-option", "-t", "s1", "window-size", "manual"]);
+    expect(calls[2]).toEqual(["set-option", "-w", "-t", "s1", "remain-on-exit", "on"]);
   });
 
   it("injects env pane-side via an export wrapper", async () => {
@@ -76,7 +78,7 @@ describe("Tmux", () => {
     const script = cmd[cmd.length - 3]!;
     expect(script).toContain("PD_SESSION_ID='abc'");
     expect(script).toContain("GH_TOKEN='it'\\''s'");
-    expect(script).toContain('"$@"; code=$?;');
+    expect(script).toContain('exec "$@"');
     expect(cmd[cmd.length - 2]).toBe("sh");
     expect(cmd.slice(-1)).toEqual(["pi"]);
   });
@@ -94,18 +96,20 @@ describe("Tmux", () => {
     expect(calls[0]!.slice(12)).toEqual([]);
   });
 
-  it("reads the active pane's current command", async () => {
-    const { tmux, calls } = fakeRunner(() => ({ stdout: "zsh\n", stderr: "" }));
-    await expect(tmux.paneCurrentCommand("s1")).resolves.toBe("zsh");
+  it("reads #{pane_dead} for the payload-exited check", async () => {
+    const { tmux, calls } = fakeRunner(() => ({ stdout: "1\n", stderr: "" }));
+    await expect(tmux.paneDead("s1")).resolves.toBe(true);
     expect(calls[0]).toEqual([
       "display-message",
       "-p",
       "-t",
       "s1",
-      "#{pane_current_command}",
+      "#{pane_dead}",
     ]);
+    const live = fakeRunner(() => ({ stdout: "0\n", stderr: "" }));
+    await expect(live.tmux.paneDead("s1")).resolves.toBe(false);
     const blank = fakeRunner(() => ({ stdout: "", stderr: "" }));
-    await expect(blank.tmux.paneCurrentCommand("s1")).resolves.toBeNull();
+    await expect(blank.tmux.paneDead("s1")).resolves.toBe(false);
   });
 
   it("isAlive maps exit code 1 to false and rethrows other failures", async () => {
