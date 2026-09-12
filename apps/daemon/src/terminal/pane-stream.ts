@@ -28,7 +28,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { RingBuffer } from "./ring-buffer.js";
-import type { Tmux } from "./tmux.js";
+import type { Tmux } from "../sessions/tmux.js";
 
 export interface PaneStreamOptions {
   /** Ring buffer capacity in bytes (recent scrollback kept for replay). */

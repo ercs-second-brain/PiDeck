@@ -10,13 +10,13 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { TmuxCli } from "./tmux.js";
+import { Tmux } from "../sessions/tmux.js";
 import { attachTerminalBridge, TERMINAL_WS_PATH } from "./ws-server.js";
 
 const enabled = process.env.PIDECK_TERMINAL_IT === "1";
 
 describe.skipIf(!enabled)("terminal bridge integration", () => {
-  const tmux = new TmuxCli({ socket: `pideck-it-${process.pid}` });
+  const tmux = new Tmux({ socketName: `pideck-it-${process.pid}` });
   const tmuxSession = `pideck-it-${process.pid}`;
   const sessions = new Map([["s1", { id: "s1", tmuxSession }]]);
   let baseUrl = "";

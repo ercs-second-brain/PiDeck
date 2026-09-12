@@ -188,6 +188,16 @@ export class Tmux {
   }
 
   /**
+   * Whether the tmux session exists, with every failure — including a
+   * server that is not running at all — reading as "not there". The
+   * polling-friendly sibling of {@link isAlive}, which rethrows unexpected
+   * errors.
+   */
+  async hasSession(name: string): Promise<boolean> {
+    return this.isAlive(name).catch(() => false);
+  }
+
+  /**
    * Lists tmux session names. Returns `[]` when the server is not running.
    */
   async listSessions(): Promise<string[]> {

@@ -17,7 +17,7 @@ import {
   type TerminalBridgeOptions,
   type TerminalSocket,
 } from "./bridge.js";
-import { FakeTmux } from "./testing/fake-tmux.js";
+import { FakeTmux } from "../sessions/testing/fake-tmux.js";
 
 class FakeSocket implements TerminalSocket {
   readonly sent: string[] = [];

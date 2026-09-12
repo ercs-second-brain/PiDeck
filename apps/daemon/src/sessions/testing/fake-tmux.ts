@@ -1,6 +1,6 @@
 /**
- * In-memory fake `Tmux` for the terminal bridge unit tests. Simulates the
- * subset of tmux the bridge uses:
+ * In-memory fake `Tmux` shared by the sessions and terminal test suites.
+ * Simulates the subset of tmux the daemon uses:
  *
  * - `pipe-pane -o -t <target> 'cat >> <file>'` records the stream file;
  *   tests emit pane output with {@link FakeTmux.paneOutput}, which appends
@@ -13,14 +13,14 @@
  */
 
 import { appendFileSync } from "node:fs";
-import { TmuxError, type CommandResult, type Tmux } from "../tmux.js";
+import { Tmux, TmuxError, type CommandResult } from "../tmux.js";
 
 export interface FakeTmuxPane {
   cols: number;
   rows: number;
 }
 
-export class FakeTmux implements Tmux {
+export class FakeTmux extends Tmux {
   readonly sessions = new Map<string, FakeTmuxPane>();
   /** Every invocation, in order. */
   readonly invocations: string[][] = [];
@@ -28,7 +28,11 @@ export class FakeTmux implements Tmux {
   private readonly inputs = new Map<string, Buffer[]>();
   private readonly captures = new Map<string, string>();
 
-  run(args: string[]): Promise<CommandResult> {
+  constructor() {
+    super({ runner: async () => ({ stdout: "", stderr: "" }), enterDelayMs: 0 });
+  }
+
+  override run(args: string[]): Promise<CommandResult> {
     this.invocations.push(args);
     try {
       return Promise.resolve({ stdout: this.execute(args), stderr: "" });
@@ -37,7 +41,11 @@ export class FakeTmux implements Tmux {
     }
   }
 
-  hasSession(name: string): Promise<boolean> {
+  override hasSession(name: string): Promise<boolean> {
+    return Promise.resolve(this.sessions.has(name));
+  }
+
+  override isAlive(name: string): Promise<boolean> {
     return Promise.resolve(this.sessions.has(name));
   }
 
