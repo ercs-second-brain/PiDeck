@@ -68,7 +68,7 @@ function slug(raw: string): string {
  * at `<stateDir>/projects/<id>/clone`, then guarantees the review account can
  * read the repo (check, invite with push, accept — never fatal: the reconciler
  * re-checks every poll and reports what it cannot fix). `remove` deletes the
- * whole `<stateDir>/projects/<id>` directory — clone and any worktrees with it.
+ * whole `<stateDir>/projects/<id>` directory — clone included.
  */
 export class ProjectStore {
   private file: JsonFile<ProjectsFile>;

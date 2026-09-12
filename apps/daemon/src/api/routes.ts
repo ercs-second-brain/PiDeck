@@ -88,12 +88,7 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     sessionTerminate: async ({ params }) => {
       const session = sessionOr404(deps, params.id!);
       await archiveSession(
-        {
-          tmux: deps.tmux,
-          registry: deps.registry,
-          stateDir: deps.stateDir,
-          cloneDir: cloneDirOf(deps, session),
-        },
+        { tmux: deps.tmux, registry: deps.registry, stateDir: deps.stateDir },
         session,
       );
       deps.notifyChange?.();
@@ -165,15 +160,6 @@ function promptView(deps: DaemonDeps, persona: Persona): Prompt {
     prompt: override ?? loadShippedPrompt(persona),
     edited: override !== null,
   };
-}
-
-function cloneDirOf(deps: DaemonDeps, session: Session): string | null {
-  if (session.projectId === null) return null;
-  try {
-    return deps.projects.get(session.projectId).path;
-  } catch {
-    return null;
-  }
 }
 
 /** Maps store errors ("unknown project/session: …") onto 404. */

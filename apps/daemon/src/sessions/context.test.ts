@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { SessionSchema, type Session } from "@pideck/shared";
 import { contextPercent } from "./context.js";
 
-const CWD_UNUSED = "/repo/worktrees/w1";
+const CWD_UNUSED = "/repo/w1";
 
 function session(): Session {
   return SessionSchema.parse({

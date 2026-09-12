@@ -43,30 +43,27 @@ function fakeTmux(state: FakeTmuxState): Tmux {
 
 interface FakeGitState {
   calls: string[][];
-  /** Branches that "exist" in the clone. */
+  /** Branches that exist on the session clone's remote. */
   branches: Set<string>;
 }
 
 function fakeGit(state: FakeGitState): GitRunner {
-  return async (args, options) => {
+  return async (args) => {
     state.calls.push([...args]);
     const [cmd, ...rest] = args;
     if (cmd === "show-ref") {
-      const ref = rest.at(-1)!.replace("refs/heads/", "");
+      const ref = rest.at(-1)!.replace("refs/remotes/origin/", "");
       if (state.branches.has(ref)) return "";
       throw new TmuxError("no such ref", { args, exitCode: 1 });
     }
     if (cmd === "symbolic-ref") return "origin/main\n";
-    if (cmd === "fetch") return "";
+    if (cmd === "fetch" || cmd === "clone" || cmd === "remote" || cmd === "checkout") return "";
     if (cmd === "rev-parse") return "abc123\n";
-    if (cmd === "worktree") {
-      // `worktree add -b <branch> <path> <base>` — register the branch.
-      if (rest[0] === "add" && rest[1] === "-b") state.branches.add(rest[2]!);
-      return "";
-    }
-    throw new Error(`unexpected git command: ${args.join(" ")} (cwd ${options?.cwd})`);
+    throw new Error(`unexpected git command: ${args.join(" ")}`);
   };
 }
+
+const REPO_URL = "https://github.com/acme/widget";
 
 let stateDir: string;
 let cloneDir: string;
@@ -77,7 +74,7 @@ beforeEach(() => {
 });
 
 describe("spawnPiSession", () => {
-  it("spawns a worker in a fresh worktree on pideck/issue-<n> from the default branch", async () => {
+  it("spawns a worker in its own clone, basing pideck/issue-<n> on the default branch when it does not exist upstream", async () => {
     const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
     const gitState: FakeGitState = { calls: [], branches: new Set() };
     const deps = {
@@ -91,16 +88,21 @@ describe("spawnPiSession", () => {
       persona: "worker",
       projectId: "proj",
       cwd: cloneDir,
+      repoUrl: REPO_URL,
       systemPrompt: "You are a worker.",
       model: "anthropic/claude",
       env: { GH_TOKEN: "t" },
       issueNumber: 42,
     });
 
+    const repo = join(stateDir, "sessions", session.id, "repo");
     expect(gitState.calls).toEqual([
-      ["show-ref", "--verify", "--quiet", "refs/heads/pideck/issue-42"],
+      ["clone", cloneDir, repo],
+      ["remote", "set-url", "origin", REPO_URL],
+      ["fetch", "origin"],
+      ["show-ref", "--verify", "--quiet", "refs/remotes/origin/pideck/issue-42"],
       ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-      ["worktree", "add", "-b", "pideck/issue-42", join(stateDir, "worktrees", session.id), "main"],
+      ["checkout", "-B", "pideck/issue-42", "origin/main"],
     ]);
 
     const create = tmuxState.created[0]!.args;
@@ -116,7 +118,7 @@ describe("spawnPiSession", () => {
       "-n",
       "worker",
       "-c",
-      join(stateDir, "worktrees", session.id),
+      repo,
     ]);
     // env wrapper: ["sh", "-c", script, "sh", ...command] follows the new-session args
     const script = create[14]!;
@@ -141,7 +143,7 @@ describe("spawnPiSession", () => {
     expect(session.model).toBe("anthropic/claude");
   });
 
-  it("reuses an existing issue branch instead of resetting it", async () => {
+  it("checks out the upstream issue branch when it exists, keeping in-progress work", async () => {
     const gitState: FakeGitState = { calls: [], branches: new Set(["pideck/issue-42"]) };
     const deps = {
       tmux: fakeTmux({ alive: new Set(), created: [], killed: [] }),
@@ -149,17 +151,21 @@ describe("spawnPiSession", () => {
       stateDir,
       git: fakeGit(gitState),
     };
-    await spawnPiSession(deps, {
+    const session = await spawnPiSession(deps, {
       persona: "worker",
       projectId: "proj",
       cwd: cloneDir,
+      repoUrl: REPO_URL,
       systemPrompt: "p",
       model: null,
       issueNumber: 42,
     });
     expect(gitState.calls).toEqual([
-      ["show-ref", "--verify", "--quiet", "refs/heads/pideck/issue-42"],
-      ["worktree", "add", expect.any(String), "pideck/issue-42"],
+      ["clone", cloneDir, join(stateDir, "sessions", session.id, "repo")],
+      ["remote", "set-url", "origin", REPO_URL],
+      ["fetch", "origin"],
+      ["show-ref", "--verify", "--quiet", "refs/remotes/origin/pideck/issue-42"],
+      ["checkout", "pideck/issue-42"],
     ]);
   });
 
@@ -222,7 +228,7 @@ describe("spawnPiSession", () => {
     expect(deps.registry.get(session.id)).toEqual(session);
   });
 
-  it("spawns a reviewer in a detached worktree of the PR head", async () => {
+  it("spawns a reviewer in its own clone, detached at the PR head", async () => {
     const gitState: FakeGitState = { calls: [], branches: new Set() };
     const deps = {
       tmux: fakeTmux({ alive: new Set(), created: [], killed: [] }),
@@ -234,18 +240,21 @@ describe("spawnPiSession", () => {
       persona: "reviewer",
       projectId: "proj",
       cwd: cloneDir,
+      repoUrl: REPO_URL,
       systemPrompt: "review",
       model: null,
       prNumber: 7,
     });
     expect(gitState.calls).toEqual([
+      ["clone", cloneDir, join(stateDir, "sessions", session.id, "repo")],
+      ["remote", "set-url", "origin", REPO_URL],
       ["fetch", "origin", "pull/7/head"],
-      ["worktree", "add", "--detach", join(stateDir, "worktrees", session.id), "FETCH_HEAD"],
+      ["checkout", "--detach", "FETCH_HEAD"],
     ]);
     expect(session.prNumber).toBe(7);
   });
 
-  it("spawns an orchestrator directly in the clone with no git work", async () => {
+  it("spawns an orchestrator directly in the project clone with no git work", async () => {
     const gitState: FakeGitState = { calls: [], branches: new Set() };
     const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
     const deps = {
@@ -290,12 +299,11 @@ describe("archiveSession", () => {
         registry,
         stateDir,
         git: fakeGit(gitState),
-        cloneDir,
       },
     };
   }
 
-  it("captures scrollback, kills tmux, removes the worktree, archives the record", async () => {
+  it("captures scrollback, kills tmux, removes the session directory, archives the record", async () => {
     const { deps, tmuxState, registry } = setup();
     const session = SessionSchema.parse({
       id: "s1",
@@ -307,11 +315,11 @@ describe("archiveSession", () => {
     });
     registry.add(session);
     tmuxState.alive.add("pideck-s1");
-    const worktree = join(stateDir, "worktrees", "s1");
-    mkdirSync(worktree, { recursive: true });
+    const sessionDir = join(stateDir, "sessions", "s1");
+    mkdirSync(join(sessionDir, "repo"), { recursive: true });
     mkdirSync(join(stateDir, "system-prompts"), { recursive: true });
     mkdirSync(join(stateDir, "pi-sessions", "s1"), { recursive: true });
-    writeFileSync(join(worktree, "file.txt"), "x");
+    writeFileSync(join(sessionDir, "repo", "file.txt"), "x");
     writeFileSync(join(stateDir, "system-prompts", "s1.md"), "p");
     writeFileSync(join(stateDir, "pi-sessions", "s1", "session.jsonl"), "{}\n");
     mkdirSync(join(stateDir, "traces"), { recursive: true });
@@ -321,7 +329,7 @@ describe("archiveSession", () => {
 
     expect(readFileSync(join(stateDir, "logs", "s1.log"), "utf8")).toBe("pane log\nlast line\n");
     expect(tmuxState.killed).toEqual(["pideck-s1"]);
-    expect(existsSync(worktree)).toBe(false);
+    expect(existsSync(sessionDir)).toBe(false);
     expect(existsSync(join(stateDir, "system-prompts", "s1.md"))).toBe(false);
     expect(existsSync(join(stateDir, "pi-sessions", "s1"))).toBe(false);
     // The trace outlives archive, sitting next to the captured pane log.
@@ -346,7 +354,7 @@ describe("archiveSession", () => {
     expect(tmuxState.killed).toEqual([]);
     expect(existsSync(join(stateDir, "logs", "s2.log"))).toBe(false);
     expect(archived.archivedAt).toEqual(expect.any(String));
-    expect(gitState.calls.some((c) => c[0] === "worktree")).toBe(true);
+    expect(gitState.calls).toEqual([]);
   });
 });
 
