@@ -43,7 +43,10 @@ export interface PrFacts {
   green: boolean;
   issueNumber: number | null;
   reviews: GhReview[];
+  /** Inline review-thread comments (/pulls/{n}/comments). */
   reviewComments: GhComment[];
+  /** Conversation comments on the PR as an issue (/issues/{n}/comments). */
+  prComments: GhComment[];
 }
 
 export interface ProjectFacts {
@@ -96,9 +99,10 @@ export class ProjectReader {
 
     const prs: PrFacts[] = await Promise.all(
       rawPrs.map(async (pr) => {
-        const [reviews, reviewComments] = await Promise.all([
+        const [reviews, reviewComments, prComments] = await Promise.all([
           this.#gh.prReviews(pr.number),
           this.#gh.prReviewComments(pr.number),
+          this.#gh.issueComments(pr.number),
         ]);
         const previousHead = this.#heads.get(pr.number);
         this.#heads.set(pr.number, pr.headSha);
@@ -108,6 +112,7 @@ export class ProjectReader {
           issueNumber: parseIssueBranch(pr.headBranch),
           reviews,
           reviewComments,
+          prComments,
         };
       }),
     );

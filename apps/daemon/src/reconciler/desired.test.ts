@@ -52,6 +52,7 @@ function pr(overrides: Partial<PrFacts> = {}): PrFacts {
     issueNumber: 1,
     reviews: [],
     reviewComments: [],
+    prComments: [],
     ...overrides,
   };
 }
@@ -63,7 +64,13 @@ function facts(overrides: Partial<ProjectFacts> = {}): ProjectFacts {
 function derive(
   projectFacts: ProjectFacts,
   live: ReturnType<typeof session>[] = [],
-  overrides: Partial<{ context: Map<string, number | null>; notifiedHeads: Map<number, string>; now: Date }> = {},
+  overrides: Partial<{
+    context: Map<string, number | null>;
+    notifiedHeads: Map<number, string>;
+    stallNotices: Map<string, string>;
+    reviewLogin: string | null;
+    now: Date;
+  }> = {},
 ) {
   return deriveActions({
     project,
@@ -71,7 +78,9 @@ function derive(
     facts: projectFacts,
     live,
     context: overrides.context ?? new Map(),
+    reviewLogin: overrides.reviewLogin !== undefined ? overrides.reviewLogin : "acme-review",
     notifiedHeads: overrides.notifiedHeads ?? new Map(),
+    stallNotices: overrides.stallNotices ?? new Map(),
     now: overrides.now ?? new Date("2025-06-01T12:00:00Z"),
   });
 }
@@ -103,7 +112,9 @@ describe("deriveActions — the SPEC §4 table", () => {
       facts: facts({ issues: [issue({ number: 1 }), issue({ number: 2 })] }),
       live: [],
       context: new Map(),
+      reviewLogin: "acme-review",
       notifiedHeads: new Map(),
+      stallNotices: new Map(),
       now: new Date("2025-06-01T12:00:00Z"),
     });
     expect(spawnWorkerActions(actions)).toHaveLength(1);
@@ -175,10 +186,24 @@ describe("deriveActions — the SPEC §4 table", () => {
     expect(actions.filter((a) => a.kind === "spawn-reviewer")).toHaveLength(0);
   });
 
+  it("no reReview when CI is not green, even on a new head", () => {
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "old" });
+    const actions = derive(
+      facts({ prs: [pr({ headSha: "sha-2", green: false, ciStatus: "pending" })] }),
+      [reviewer],
+    );
+    expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
+  });
+
   it("approved PR → the reviewer is archived", () => {
     const reviewer = session("reviewer", { prNumber: 11 });
     const actions = derive(facts({ prs: [pr({ reviewDecision: "APPROVED" })] }), [reviewer]);
     expect(actions).toContainEqual({ kind: "archive", session: reviewer, reason: "PR #11 approved" });
+  });
+
+  it("no reviewer is spawned without a review account — the review leg is off", () => {
+    const actions = derive(facts({ prs: [pr()] }), [], { reviewLogin: null });
+    expect(actions.filter((a) => a.kind === "spawn-reviewer")).toHaveLength(0);
   });
 
   it("merged or closed PR → the reviewer is archived", () => {
@@ -218,7 +243,7 @@ describe("deriveActions — worker deliveries", () => {
     );
     const delivers = actions.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
-    expect(delivers[0]!.text).toContain("Comment your status on the issue and go idle");
+    expect(delivers[0]!.text).toContain("starting with BLOCKED:");
     expect(delivers[0]!.watermark?.patch).toEqual({
       lastPromptedHeadSha: "sha-2",
       lastActivityAt: "2025-06-01T12:00:00.000Z",
@@ -230,7 +255,11 @@ describe("deriveActions — worker deliveries", () => {
     const actions = derive(facts({ issues: [issue()], prs: [pr()] }), [worker]);
     const marks = actions.filter((a) => a.kind === "watermarks");
     expect(marks).toHaveLength(1);
-    expect(marks[0]!.patch).toEqual({ fixAttempts: 0, lastPromptedHeadSha: "sha-1" });
+    expect(marks[0]!.patch).toEqual({
+      fixAttempts: 0,
+      lastPromptedHeadSha: "sha-1",
+      lastActivityAt: "2025-06-01T12:00:00.000Z",
+    });
     expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
   });
 
@@ -268,6 +297,63 @@ describe("deriveActions — worker deliveries", () => {
     expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredPrCommentId: 8 });
   });
 
+  it("a new PR conversation comment (the failed-alignment channel) reaches the worker", () => {
+    const worker = session("worker", { issueNumber: 1, prNumber: 11 });
+    const comment = { id: 9, author: "acme-worker", body: "alignment failed: wrong field", createdAt: "2025-06-01T10:00:00Z" };
+    const actions = derive(
+      facts({ issues: [issue()], prs: [pr({ green: false, ciStatus: "pending", prComments: [comment] })] }),
+      [worker],
+    );
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect((delivers[0] as { text: string }).text).toContain("PR #11");
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastDeliveredPrCommentId: 9,
+      lastActivityAt: "2025-06-01T12:00:00.000Z",
+    });
+  });
+
+  it("opening the PR is activity and the head is attributed from first sight", () => {
+    const worker = session("worker", { issueNumber: 1 });
+    const actions = derive(
+      facts({ issues: [issue()], prs: [pr({ green: false, ciStatus: "pending" })] }),
+      [worker],
+    );
+    expect(actions).toContainEqual({ kind: "attach-pr", session: worker, prNumber: 11 });
+    const marks = actions.filter((a) => a.kind === "watermarks");
+    expect(marks[0]!.patch).toEqual({
+      lastPromptedHeadSha: "sha-1",
+      lastActivityAt: "2025-06-01T12:00:00.000Z",
+    });
+  });
+
+  it("a freshly pushed worker with pending CI is not stalled", () => {
+    // First tick: PR attached, head attributed, activity recorded.
+    const worker = session("worker", { issueNumber: 1 });
+    const attached = derive(
+      facts({ issues: [issue()], prs: [pr({ green: false, ciStatus: "pending" })] }),
+      [worker],
+    );
+    const patch = attached.find((a) => a.kind === "watermarks")!.patch;
+
+    // Next tick, 15 minutes later: no new GitHub facts, no stall notice —
+    // the push that opened the PR was attributed, not lost to a spawn-time
+    // baseline.
+    const worker2 = session("worker", {
+      issueNumber: 1,
+      prNumber: 11,
+      lastPromptedHeadSha: patch.lastPromptedHeadSha,
+      lastActivityAt: patch.lastActivityAt,
+    });
+    const orch = session("orchestrator");
+    const again = derive(
+      facts({ issues: [issue()], prs: [pr({ green: false, ciStatus: "pending" })] }),
+      [worker2, orch],
+      { now: new Date("2025-06-01T12:15:00Z") },
+    );
+    expect(again.filter((a) => a.kind === "deliver")).toHaveLength(0);
+  });
+
   it("a review requesting changes and new comments in one tick deliver one reviewChanges", () => {
     const worker = session("worker", { issueNumber: 1, prNumber: 11 });
     const review = { id: 5, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null };
@@ -281,9 +367,9 @@ describe("deriveActions — worker deliveries", () => {
     expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredPrCommentId: 8, lastDeliveredReviewId: 5 });
   });
 
-  it("a new issue comment from someone other than the worker wakes the worker", () => {
+  it("a new issue comment without the marker wakes the worker, whoever wrote it", () => {
     const worker = session("worker", { issueNumber: 1 });
-    const comment = { id: 3, author: "acme-orch", body: "answer", createdAt: "2025-06-01T10:00:00Z" };
+    const comment = { id: 3, author: "acme-worker", body: "answer", createdAt: "2025-06-01T10:00:00Z" };
     const orch = session("orchestrator");
     const actions = derive(facts({ issues: [issue({ comments: [comment] })] }), [worker, orch]);
     const delivers = actions.filter((a) => a.kind === "deliver");
@@ -293,9 +379,9 @@ describe("deriveActions — worker deliveries", () => {
     expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredIssueCommentId: 3 });
   });
 
-  it("a blocker comment by the worker goes to the orchestrator instead", () => {
+  it("a BLOCKED: comment goes to the orchestrator instead", () => {
     const worker = session("worker", { issueNumber: 1 });
-    const comment = { id: 4, author: "acme-worker", body: "blocked: missing decision", createdAt: "2025-06-01T10:00:00Z" };
+    const comment = { id: 4, author: "acme-worker", body: "BLOCKED: missing decision", createdAt: "2025-06-01T10:00:00Z" };
     const orch = session("orchestrator");
     const actions = derive(facts({ issues: [issue({ comments: [comment] })] }), [worker, orch]);
     const delivers = actions.filter((a) => a.kind === "deliver");
@@ -308,9 +394,9 @@ describe("deriveActions — worker deliveries", () => {
     });
   });
 
-  it("a worker blocker comment with no live orchestrator is deferred, not dropped", () => {
+  it("a BLOCKED: comment with no live orchestrator is deferred, not dropped", () => {
     const worker = session("worker", { issueNumber: 1 });
-    const comment = { id: 4, author: "acme-worker", body: "blocked", createdAt: "2025-06-01T10:00:00Z" };
+    const comment = { id: 4, author: "acme-worker", body: "BLOCKED: blocked", createdAt: "2025-06-01T10:00:00Z" };
     const actions = derive(facts({ issues: [issue({ comments: [comment] })] }), [worker]);
     expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
     // Only the activity clock advanced; the comment watermark is untouched.
@@ -336,10 +422,20 @@ describe("deriveActions — worker deliveries", () => {
     expect(delivers[0]!.text).toContain("has been silent for 20 minutes");
     expect(delivers[0]!.watermark?.patch).toEqual({ lastActivityAt: "2025-06-01T12:00:00.000Z" });
 
-    // With the watermark applied (as the registry would hold it), no repeat.
-    const reset = session("worker", { issueNumber: 1, lastActivityAt: "2025-06-01T12:00:00Z" });
-    const again = derive(facts({ issues: [issue()] }), [reset, orch], { now: new Date("2025-06-01T12:01:00Z") });
-    expect(again.filter((a) => a.kind === "deliver" && a.target.id === orch.id)).toHaveLength(0);
+    // With the notice applied (as apply would record it), no repeat while
+    // the silence continues...
+    const noticed = derive(facts({ issues: [issue()] }), [worker, orch], {
+      stallNotices: new Map([[worker.id, "2025-06-01T12:00:00.000Z"]]),
+    });
+    expect(noticed.filter((a) => a.kind === "deliver")).toHaveLength(0);
+
+    // ...but a new silence after activity reports again.
+    const active = session("worker", { issueNumber: 1, lastActivityAt: "2025-06-01T12:05:00Z" });
+    const noticed2 = derive(facts({ issues: [issue()] }), [active, orch], {
+      now: new Date("2025-06-01T12:40:00Z"),
+      stallNotices: new Map([[active.id, "2025-06-01T12:00:00.000Z"]]),
+    });
+    expect(noticed2.filter((a) => a.kind === "deliver" && a.target.id === orch.id)).toHaveLength(1);
   });
 
   it("a worker observed pushing or commenting counts as active, not stalled", () => {
@@ -351,7 +447,10 @@ describe("deriveActions — worker deliveries", () => {
     );
     expect(actions.filter((a) => a.kind === "deliver" && a.target.id === orch.id)).toHaveLength(0);
     const marks = actions.filter((a) => a.kind === "watermarks");
-    expect(marks[0]!.patch).toEqual({ lastActivityAt: "2025-06-01T12:00:00.000Z" });
+    expect(marks[0]!.patch).toEqual({
+      lastPromptedHeadSha: "new-head",
+      lastActivityAt: "2025-06-01T12:00:00.000Z",
+    });
   });
 
   it("context usage over the limit archives the worker for replacement", () => {
@@ -407,6 +506,7 @@ describe("ensure sessions", () => {
       facts: facts({ issues: [issue()] }),
       live: [],
       context: new Map(),
+      reviewLogin: "acme-review",
       now: new Date("2025-06-01T12:00:00Z"),
     });
     expect(spawned?.kind).toBe("spawn-orchestrator");
@@ -420,6 +520,7 @@ describe("ensure sessions", () => {
       facts: facts(),
       live: [session("orchestrator")],
       context: new Map(),
+      reviewLogin: "acme-review",
       now: new Date("2025-06-01T12:00:00Z"),
     });
     expect(existing).toBeNull();

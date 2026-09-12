@@ -44,6 +44,7 @@ function prFact(): PrFacts {
     issueNumber: 1,
     reviews: [],
     reviewComments: [],
+    prComments: [],
   };
 }
 
@@ -172,6 +173,18 @@ describe("applyActions", () => {
     const createCall = tmuxCalls.find((args) => args[0] === "new-session");
     expect(createCall?.join(" ")).toContain("GH_TOKEN=");
     expect(sentLines(tmuxCalls).join("\n")).toContain("file exactly one review");
+  });
+
+  it("refuses to spawn a reviewer without a review account", async () => {
+    const tally = { spawned: 0, archived: 0, delivered: 0, errors: 0 };
+    await applyActions(
+      deps,
+      { project, settings, reviewToken: null },
+      [{ kind: "spawn-reviewer", pr: prFact(), initial: {} }],
+      tally,
+    );
+    expect(tally).toMatchObject({ spawned: 0, errors: 1 });
+    expect(registry.list({ persona: "reviewer" })).toHaveLength(0);
   });
 
   it("spawns the orchestrator with the briefing and patches ORCHESTRATOR_SESSION_ID", async () => {

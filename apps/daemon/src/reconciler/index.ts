@@ -83,6 +83,7 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
   const log = deps.log ?? ((line: string) => console.log(line));
   const readers = new Map<string, ProjectReader>();
   const notifiedHeadsByProject = new Map<string, Map<number, string>>();
+  const stallNotices = new Map<string, string>();
   const prompts = overridesPromptSource(deps.prompts, deps.settings);
   const applyDeps: ApplyDeps = {
     tmux: deps.tmux,
@@ -93,6 +94,9 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     notifyChange: deps.notifyChange,
     markNotified: (projectId, prNumber, headSha) => {
       notifiedHeadsFor(projectId ?? "").set(prNumber, headSha);
+    },
+    markStallNotice: (sessionId, at) => {
+      stallNotices.set(sessionId, at);
     },
     log,
   };
@@ -135,6 +139,10 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     const tally: Tally = { spawned: 0, archived: 0, delivered: 0, errors: 0 };
     const registry = deps.registry;
     const reviewToken = deps.settings.reviewToken();
+    const reviewLogin = reviewToken?.username ?? null;
+    if (reviewToken === null) {
+      log("reconciler: no review account — the review leg is off");
+    }
 
     try {
       const globalAction = deriveGlobalAction(registry.list({ archived: false }));
@@ -157,11 +165,25 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
         const context = new Map(
           live.map((s) => [s.id, contextPercent(s, { stateDir: deps.stateDir })]),
         );
-        const deriveInput = { project, settings, facts, live, context, now: new Date() };
+        const deriveInput = {
+          project,
+          settings,
+          facts,
+          live,
+          context,
+          reviewLogin,
+          now: new Date(),
+        };
         const actions: Action[] = [];
         const orchestrator = orchestratorAction(deriveInput);
         if (orchestrator !== null) actions.push(orchestrator);
-        actions.push(...deriveActions({ ...deriveInput, notifiedHeads: notifiedHeadsFor(project.id) }));
+        actions.push(
+          ...deriveActions({
+            ...deriveInput,
+            notifiedHeads: notifiedHeadsFor(project.id),
+            stallNotices,
+          }),
+        );
         await applyActions(applyDeps, { project, settings, reviewToken }, actions, tally);
       } catch (err) {
         tally.errors++;

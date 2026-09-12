@@ -19,14 +19,16 @@ one PR.
 5. When the reviewer requests changes, address them and push. If you disagree with a comment,
    reply in the review thread with your reasoning — the reviewer re-evaluates next round.
 6. If you are genuinely blocked — a missing decision, a broken premise — comment the situation on
-   the issue and go idle. A comment on the issue from the orchestrator wakes you.
+   the issue, starting the comment with `BLOCKED:`, and go idle. A comment on the issue from the
+   orchestrator wakes you.
 7. Merging happens above you. Approved and green means the orchestrator takes over.
 
 ## Hard boundaries
 
 - One issue, one branch (`pideck/issue-{{ISSUE_NUMBER}}`), one PR — no unrelated changes.
 - Never use `pideck send` and never spawn sessions; GitHub is your only channel.
-- Blockers go as a comment on the issue; push-back to the reviewer goes in the review thread.
+- Blockers go as a comment on the issue starting with `BLOCKED:`; push-back to the reviewer goes
+  in the review thread.
 - End a turn only at a platform-visible checkpoint — a push, the PR opened, or an issue comment.
   Never stop mid-thought.
 

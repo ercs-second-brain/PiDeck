@@ -34,6 +34,8 @@ export interface ApplyDeps {
   notifyChange?: () => void;
   /** Records an approved+green head after its notice was delivered. */
   markNotified?: (projectId: string | null, prNumber: number, headSha: string) => void;
+  /** Records a stall notice after it was delivered, for once-per-silence. */
+  markStallNotice?: (sessionId: string, at: string) => void;
   log: (line: string) => void;
 }
 
@@ -139,6 +141,7 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
     }
     case "spawn-reviewer": {
       if (ctx.project === null) return;
+      if (ctx.reviewToken === null) throw new Error("no review account: the review leg is off");
       const session = await spawnPersona(deps, {
         persona: "reviewer",
         projectId: ctx.project.id,
@@ -151,7 +154,7 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         }),
         model: deps.prompts.model("reviewer"),
         prNumber: action.pr.number,
-        env: ctx.reviewToken === null ? undefined : { GH_TOKEN: ctx.reviewToken.token },
+        env: { GH_TOKEN: ctx.reviewToken.token },
       });
       await deps.tmux.sendLine(
         session.tmuxSession,
@@ -181,6 +184,9 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
       if (action.watermark) update(deps, action.watermark.sessionId, action.watermark.patch);
       if (action.approvedGreenHead) {
         deps.markNotified?.(action.target.projectId, action.approvedGreenHead.prNumber, action.approvedGreenHead.headSha);
+      }
+      if (action.stallNotice) {
+        deps.markStallNotice?.(action.stallNotice.sessionId, action.stallNotice.at);
       }
       return;
     case "watermarks":

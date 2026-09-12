@@ -65,7 +65,7 @@ export function ciRed(input: CiRedInput): string {
 export function ciRedExhausted(input: CiRedInput): string {
   return singleLine(
     `CI failed: ${input.failingChecks.join(", ")} — fix attempts exhausted after ${input.maxAttempts}. ` +
-      `Comment your status on the issue and go idle.`,
+      `Comment your status on the issue starting with BLOCKED: and go idle.`,
   );
 }
 

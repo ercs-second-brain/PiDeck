@@ -5,10 +5,22 @@
  * enumerate every table row.
  *
  * Deliveries are watermarked on the session record (see the shared Session
- * contract): losing a watermark costs at most one duplicate prompt. The
- * approved+green notice to the orchestrator is gated once per PR head in
- * `notifiedHeads`, which the caller keeps for the daemon's lifetime — a
- * restart costs at most one duplicate, like any other watermark.
+ * contract): losing a watermark costs at most one duplicate prompt. Two
+ * once-per-X gates live in maps the caller keeps for the daemon's lifetime
+ * — approved+green notices keyed on PR head (`notifiedHeads`) and stall
+ * notices per session (`stallNotices`), both marked by apply after the
+ * send succeeded. A restart costs at most one duplicate, like any other
+ * watermark.
+ *
+ * One watermark covers both PR comment lists: PR conversation comments
+ * (/issues/{n}/comments) and inline review-thread comments
+ * (/pulls/{n}/comments) share GitHub's comment id sequence, so
+ * `lastDeliveredPrCommentId` is advanced to the max id seen across both.
+ *
+ * The worker and the orchestrator share the primary GitHub account, so
+ * issue-comment routing goes by content, not author: a comment starting
+ * with `BLOCKED:` is the worker going idle (to the orchestrator); every
+ * other new comment is a wake-up (to the worker).
  */
 
 import type { Project, ProjectSettings, Session } from "@pideck/shared";
@@ -24,6 +36,7 @@ import {
   reviewChanges,
   stalled,
 } from "../prompts/index.js";
+import type { GhComment } from "../github/schemas.js";
 import type { IssueFacts, PrFacts, ProjectFacts } from "./read.js";
 
 export type Action =
@@ -40,6 +53,8 @@ export type Action =
       watermark?: { sessionId: string; patch: SessionPatch };
       /** Marked once-per-head after this delivery is sent successfully. */
       approvedGreenHead?: { prNumber: number; headSha: string };
+      /** Marked once-per-silence after this delivery is sent successfully. */
+      stallNotice?: { sessionId: string; at: string };
     }
   | { kind: "watermarks"; sessionId: string; patch: SessionPatch };
 
@@ -51,9 +66,18 @@ export interface DeriveInput {
   live: Session[];
   /** Context-window percent per live session id, when measurable. */
   context: ReadonlyMap<string, number | null>;
+  /** The review account; the review leg is off when null. */
+  reviewLogin: string | null;
   /** Heads already announced as approved+green; apply marks it after the send. */
   notifiedHeads: Map<number, string>;
+  /** Sessions already told about their current silence; apply marks it after the send. */
+  stallNotices: Map<string, string>;
   now: Date;
+}
+
+/** A worker blocker comment announces itself, so routing needs no author. */
+export function isBlockerComment(comment: GhComment): boolean {
+  return comment.body.trimStart().startsWith("BLOCKED:");
 }
 
 export function deriveActions(input: DeriveInput): Action[] {
@@ -94,10 +118,11 @@ export function deriveActions(input: DeriveInput): Action[] {
     }
 
     const pr = prForWorker(facts, worker);
-    if (pr !== null && worker.prNumber === undefined) {
+    const firstSeenPr = pr !== null && worker.prNumber === undefined;
+    if (firstSeenPr) {
       actions.push({ kind: "attach-pr", session: worker, prNumber: pr.number });
     }
-    deriveWorkerDeliveries(input, issue, worker, pr, orchestrator ?? null, nowIso, actions);
+    deriveWorkerDeliveries(input, issue, worker, pr, orchestrator ?? null, firstSeenPr, nowIso, actions);
   }
 
   // A live worker whose issue no longer exists (closed, or merged via its PR),
@@ -116,7 +141,7 @@ export function deriveActions(input: DeriveInput): Action[] {
   for (const pr of facts.prs) {
     const reviewer = input.live.find((s) => s.persona === "reviewer" && s.prNumber === pr.number);
     const reviewable = pr.green && pr.reviewDecision !== "APPROVED" && pr.mergeable !== "CONFLICTING";
-    if (reviewable && reviewer === undefined) {
+    if (reviewable && reviewer === undefined && input.reviewLogin !== null) {
       actions.push({
         kind: "spawn-reviewer",
         pr,
@@ -167,6 +192,7 @@ function deriveWorkerDeliveries(
   worker: Session,
   pr: PrFacts | null,
   orchestrator: Session | null,
+  firstSeenPr: boolean,
   nowIso: string,
   actions: Action[],
 ): void {
@@ -174,22 +200,24 @@ function deriveWorkerDeliveries(
   const login = input.facts.primaryLogin;
   const patch: SessionPatch = {};
   const deliveries: { target: Session; text: string }[] = [];
+  let stallNotice: { sessionId: string; at: string } | undefined;
 
-  // New issue comments: others wake the worker, the worker's own blocker
-  // comment goes to the orchestrator instead.
+  // New issue comments: a `BLOCKED:` comment is the worker going idle and
+  // goes to the orchestrator; every other comment is a wake-up for the
+  // worker. Both run as the primary account, so content decides, not author.
   const newComments = issue.comments.filter((c) => c.id > (worker.lastDeliveredIssueCommentId ?? 0));
-  const own = newComments.filter((c) => login !== null && c.author === login);
-  const others = newComments.filter((c) => !own.includes(c));
-  if (newComments.length > 0 && !(own.length > 0 && orchestrator === null)) {
-    if (others.length > 0) {
-      const last = others[others.length - 1]!;
+  const blockers = newComments.filter(isBlockerComment);
+  const wakes = newComments.filter((c) => !isBlockerComment(c));
+  if (newComments.length > 0 && !(blockers.length > 0 && orchestrator === null)) {
+    if (wakes.length > 0) {
+      const last = wakes[wakes.length - 1]!;
       deliveries.push({
         target: worker,
         text: issueComment({ issueNumber: issue.number, commentUrl: `${issue.url}#issuecomment-${last.id}` }),
       });
     }
-    if (own.length > 0 && orchestrator !== null) {
-      const last = own[own.length - 1]!;
+    if (blockers.length > 0 && orchestrator !== null) {
+      const last = blockers[blockers.length - 1]!;
       deliveries.push({
         target: orchestrator,
         text: blockerText(issue, last.id),
@@ -198,27 +226,42 @@ function deriveWorkerDeliveries(
     patch.lastDeliveredIssueCommentId = Math.max(...newComments.map((c) => c.id));
   }
 
-  const newPrComments = pr === null ? [] : pr.reviewComments.filter((c) => c.id > (worker.lastDeliveredPrCommentId ?? 0));
-  const ownPrComments = newPrComments.filter((c) => login !== null && c.author === login);
+  // PR activity reaches the worker as one reviewChanges line. Conversation
+  // comments (the orchestrator's failed-alignment notes land here) are
+  // always delivered; review-thread replies authored by the worker itself
+  // are its push-back to the reviewer, not something to wake it for.
+  const newPrComments =
+    pr === null ? [] : pr.prComments.filter((c) => c.id > (worker.lastDeliveredPrCommentId ?? 0));
+  const newThreadComments =
+    pr === null ? [] : pr.reviewComments.filter((c) => c.id > (worker.lastDeliveredPrCommentId ?? 0));
+  const threadForWorker = newThreadComments.filter((c) => login === null || c.author !== login);
   let reviewChangesSent = false;
-  if (newPrComments.some((c) => !ownPrComments.includes(c))) {
+  if (newPrComments.length > 0 || threadForWorker.length > 0) {
     deliveries.push({ target: worker, text: reviewChanges({ prNumber: pr!.number }) });
     reviewChangesSent = true;
   }
-  if (newPrComments.length > 0) {
-    patch.lastDeliveredPrCommentId = Math.max(...newPrComments.map((c) => c.id));
+  const allNewPrIds = [...newPrComments, ...newThreadComments];
+  if (allNewPrIds.length > 0) {
+    patch.lastDeliveredPrCommentId = Math.max(...allNewPrIds.map((c) => c.id));
   }
 
   const newReviews = pr === null ? [] : pr.reviews.filter((r) => r.id > (worker.lastDeliveredReviewId ?? 0));
-  if (!reviewChangesSent && newReviews.some((r) => r.state === "CHANGES_REQUESTED") && pr !== null) {
-    deliveries.push({ target: worker, text: reviewChanges({ prNumber: pr.number }) });
+  if (!reviewChangesSent && newReviews.some((r) => r.state === "CHANGES_REQUESTED")) {
+    deliveries.push({ target: worker, text: reviewChanges({ prNumber: pr!.number }) });
   }
   if (newReviews.length > 0) {
     patch.lastDeliveredReviewId = Math.max(...newReviews.map((r) => r.id));
   }
 
-  // A push we can attribute to this worker (its watermark is set) counts as
-  // activity; with a null watermark the head is just "a PR exists".
+  // Opening the PR is worker activity, and the head it pushed is attributed
+  // from first sight — so a just-pushed worker never reads as stalled while
+  // CI is still pending.
+  if (firstSeenPr && pr !== null) {
+    patch.lastPromptedHeadSha = pr.headSha;
+  }
+
+  // A push we can attribute to this worker (its watermark was set) counts
+  // as activity; with a null watermark the head is just "a PR exists".
   const pushed = pr !== null && pr.headSha !== worker.lastPromptedHeadSha;
   const attributedPush = pushed && worker.lastPromptedHeadSha !== null;
   if (pr !== null && pr.ciStatus === "failed" && pushed) {
@@ -241,26 +284,39 @@ function deriveWorkerDeliveries(
     patch.lastPromptedHeadSha = pr.headSha;
   }
 
+  // Activity: the worker's own words (blocker comment, PR replies), its
+  // pushes, or the PR it just opened.
   const active =
-    own.length > 0 ||
-    ownPrComments.length > 0 ||
-    attributedPush;
+    blockers.length > 0 ||
+    firstSeenPr ||
+    attributedPush ||
+    newPrComments.some((c) => login !== null && c.author === login) ||
+    newThreadComments.some((c) => login !== null && c.author === login);
   if (active) {
     patch.lastActivityAt = nowIso;
   } else {
     const baseline = worker.lastActivityAt ?? worker.spawnedAt;
     const silentMs = input.now.getTime() - Date.parse(baseline);
-    if (silentMs > settings.stallMinutes * 60_000 && orchestrator !== null) {
+    // Once per silence: a notice stands until the worker acts again, so a
+    // long stall is reported once, not every stallMinutes.
+    const lastNotice = input.stallNotices.get(worker.id);
+    const alreadyNoticed = lastNotice !== undefined && Date.parse(lastNotice) >= Date.parse(baseline);
+    if (silentMs > settings.stallMinutes * 60_000 && !alreadyNoticed && orchestrator !== null) {
       deliveries.push({
         target: orchestrator,
         text: stalled({ issueNumber: issue.number, stallMinutes: settings.stallMinutes }),
       });
       patch.lastActivityAt = nowIso;
+      stallNotice = { sessionId: worker.id, at: nowIso };
     }
   }
 
   for (const delivery of deliveries) {
     actions.push({ kind: "deliver", ...delivery });
+  }
+  if (stallNotice) {
+    const last = actions[actions.length - 1] as Extract<Action, { kind: "deliver" }>;
+    last.stallNotice = stallNotice;
   }
   if (Object.keys(patch).length > 0) {
     if (deliveries.length > 0) {
@@ -280,7 +336,9 @@ function deriveWorkerDeliveries(
 }
 
 /** Exactly one orchestrator per project; a (re)launched one gets the briefing. */
-export function orchestratorAction(input: Omit<DeriveInput, "notifiedHeads">): Action | null {
+export function orchestratorAction(
+  input: Omit<DeriveInput, "notifiedHeads" | "stallNotices">,
+): Action | null {
   const live = input.live.find((s) => s.persona === "orchestrator");
   if (live !== undefined) return null;
   return {

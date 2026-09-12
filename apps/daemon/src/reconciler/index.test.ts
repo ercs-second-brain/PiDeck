@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectSchema, ProjectSettingsSchema, ProbeSchema } from "@pideck/shared";
 import { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import { ProjectStore } from "../store/projectStore.js";
@@ -182,12 +182,14 @@ describe("startReconciler", () => {
     const lines = sentLines(tmuxCalls);
     expect(lines.some((l) => l.startsWith("Briefing for My API"))).toBe(true);
     expect(lines.some((l) => l.includes('issue #1 "Add rate limiting"'))).toBe(true);
-    expect(logs.find((l) => l.includes("reconciler:"))).toContain("4 spawned");
+    const summary = logs.find((l) => l.includes("spawned,"))!;
+    expect(summary).toContain("4 spawned");
 
     // The second tick finds everything in its desired state.
     await handle.tick();
     expect(registry.list({ persona: "worker" })).toHaveLength(1);
-    expect(logs.filter((l) => l.includes("0 spawned")).length).toBeGreaterThan(0);
+    const summaries = logs.filter((l) => l.includes("spawned,"));
+    expect(summaries[summaries.length - 1]).toContain("0 spawned");
   });
 
   it("an error in one project never stops the others", async () => {
@@ -203,18 +205,30 @@ describe("startReconciler", () => {
   });
 
   it("stops the interval loop", async () => {
-    ghStates.set("my-api", { issues: [rawIssue()], prs: [], comments: [] });
-    deps = { ...deps, intervalMs: 10 };
+    vi.useFakeTimers();
+    try {
+      ghStates.set("my-api", { issues: [rawIssue()], prs: [], comments: [] });
+      deps = { ...deps, intervalMs: 10 };
+      handle = startReconciler(deps);
+
+      await vi.advanceTimersByTimeAsync(45);
+      const ticksBefore = logs.filter((l) => l.startsWith("reconciler:")).length;
+      expect(ticksBefore).toBeGreaterThanOrEqual(4);
+
+      handle.stop();
+      handle = null;
+      await vi.advanceTimersByTimeAsync(100);
+      expect(logs.filter((l) => l.startsWith("reconciler:")).length).toBe(ticksBefore);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs once per tick that the review leg is off without a review account", async () => {
+    ghStates.set("my-api", { issues: [], prs: [], comments: [] });
     handle = startReconciler(deps);
-
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    const ticksBefore = logs.filter((l) => l.startsWith("reconciler:")).length;
-    expect(ticksBefore).toBeGreaterThan(1);
-
-    handle.stop();
-    handle = null;
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    expect(logs.filter((l) => l.startsWith("reconciler:")).length).toBe(ticksBefore);
+    await handle.tick();
+    expect(logs.filter((l) => l.includes("the review leg is off"))).toHaveLength(1);
   });
 
   it("wiping the registry watermarks costs at most one duplicate delivery", async () => {

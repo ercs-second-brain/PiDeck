@@ -48,7 +48,7 @@ describe("delivery templates", () => {
     );
     expect(line).toContain("CI failed: test");
     expect(line).toContain("exhausted after 5");
-    expect(line).toContain("Comment your status on the issue and go idle");
+    expect(line).toContain("starting with BLOCKED:");
   });
 
   it("reviewChanges points at the PR", () => {
