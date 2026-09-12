@@ -28,6 +28,7 @@ export type SessionPatch = Partial<
     | "lastDeliveredPrCommentId"
     | "lastDeliveredReviewId"
     | "lastNotifiedConflictSha"
+    | "lastAddressedHeadSha"
     | "fixAttempts"
     | "lastActivityAt"
   >

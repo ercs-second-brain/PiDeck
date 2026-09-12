@@ -15,6 +15,8 @@ export interface SessionStateFacts {
   issueBlocked: boolean;
   /** CI fix attempts are used up and the worker was told to go idle. */
   fixAttemptsExhausted: boolean;
+  /** Who holds the attached PR's baton, or null when nobody does. */
+  batonHolder: "worker" | "reviewer" | null;
 }
 
 export function deriveState(
@@ -28,7 +30,14 @@ export function deriveState(
     case "reviewer":
       return {
         state: "in_review",
-        status: session.prNumber === undefined ? "reviewing" : `reviewing PR #${session.prNumber}`,
+        status:
+          facts.batonHolder === "worker"
+            ? session.prNumber === undefined
+              ? "awaiting author"
+              : `awaiting author on PR #${session.prNumber}`
+            : session.prNumber === undefined
+              ? "reviewing"
+              : `reviewing PR #${session.prNumber}`,
       };
     case "orchestrator":
       return { state: null, status: "orchestrator" };
@@ -49,6 +58,15 @@ export function deriveState(
       if (facts.pr.mergeable === "CONFLICTING") {
         return { state: "fixing", status: `conflicts with main on ${label}` };
       }
+      // The baton says who the PR is waiting on: the reviewer holds it — the
+      // worker is quiet — while it reviews, and the worker holds it from the
+      // review submission until its next push.
+      if (facts.batonHolder === "reviewer") {
+        return { state: "in_review", status: `awaiting review on ${label}` };
+      }
+      if (facts.batonHolder === "worker" || facts.pr.reviewDecision === "CHANGES_REQUESTED") {
+        return { state: "addressing", status: `addressing review on ${label}` };
+      }
       if (facts.pr.ciStatus === "failed") {
         return { state: "fixing", status: `fixing CI on ${label}` };
       }
@@ -57,9 +75,6 @@ export function deriveState(
       }
       if (facts.pr.reviewDecision === "APPROVED") {
         return { state: "ready", status: `approved and green, ${label}` };
-      }
-      if (facts.pr.reviewDecision === "CHANGES_REQUESTED") {
-        return { state: "addressing", status: `addressing review on ${label}` };
       }
       return { state: "in_review", status: `awaiting review on ${label}` };
     }

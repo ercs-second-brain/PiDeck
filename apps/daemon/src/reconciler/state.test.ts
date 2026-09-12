@@ -18,6 +18,7 @@ const facts: SessionStateFacts = {
   pr: null,
   issueBlocked: false,
   fixAttemptsExhausted: false,
+  batonHolder: null,
 };
 
 describe("deriveState — the eight worker states", () => {
@@ -117,5 +118,49 @@ describe("deriveState — the eight worker states", () => {
     });
     expect(deriveState(session("orchestrator"), facts)).toEqual({ state: null, status: "orchestrator" });
     expect(deriveState(session("global"), facts)).toEqual({ state: null, status: "global agent" });
+  });
+
+  it("the baton decides who the PR is waiting on", () => {
+    // The reviewer holds it: the worker reads in review, even while a stale
+    // changes-requested decision or failing CI lingers from the last round.
+    const reviewerHolds = deriveState(
+      session("worker", { issueNumber: 12, prNumber: 21 }),
+      {
+        ...facts,
+        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE" },
+        batonHolder: "reviewer",
+      },
+    );
+    expect(reviewerHolds.state).toBe("in_review");
+    expect(reviewerHolds.status).toBe("awaiting review on PR #21");
+
+    // The worker holds it: the reviewer's row reads awaiting author.
+    expect(
+      deriveState(session("reviewer", { prNumber: 21 }), {
+        ...facts,
+        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE" },
+        batonHolder: "worker",
+      }),
+    ).toEqual({ state: "in_review", status: "awaiting author on PR #21" });
+
+    // The worker holding the baton reads addressing on its own row.
+    const workerHolds = deriveState(
+      session("worker", { issueNumber: 12, prNumber: 21 }),
+      {
+        ...facts,
+        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE" },
+        batonHolder: "worker",
+      },
+    );
+    expect(workerHolds.state).toBe("addressing");
+    expect(workerHolds.status).toBe("addressing review on PR #21");
+
+    // No baton keeps the previous ladder: failing CI is fixing.
+    expect(
+      deriveState(session("worker", { issueNumber: 12, prNumber: 21 }), {
+        ...facts,
+        pr: { ciStatus: "failed", reviewDecision: null, mergeable: "MERGEABLE" },
+      }).state,
+    ).toBe("fixing");
   });
 });

@@ -20,6 +20,9 @@ export const SessionSchema = z.object({
   lastDeliveredReviewId: z.number().int().nullable().default(null),
   /** Head of the PR whose conflicts the worker was last told to resolve. */
   lastNotifiedConflictSha: z.string().nullable().default(null),
+  /** The PR head the worker was last told to address review changes on;
+   *  the worker holds the baton while the PR head still matches. */
+  lastAddressedHeadSha: z.string().nullable().default(null),
   fixAttempts: z.number().int().default(0),
   lastActivityAt: z.string().nullable().default(null),
 });
@@ -57,7 +60,7 @@ export type TraceFacts = z.infer<typeof TraceFactsSchema>;
 /** One line of the per-session trace: what the daemon saw and sent. */
 export const TraceEntrySchema = z.object({
   at: z.string(),
-  kind: z.enum(["delivery", "state", "spawn", "archive", "facts"]),
+  kind: z.enum(["delivery", "state", "spawn", "archive", "facts", "baton"]),
   /** delivery: the single line sent into the pane. */
   text: z.string().optional(),
   /** delivery: the watermark patch applied after the send succeeded. */

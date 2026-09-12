@@ -21,6 +21,14 @@
  * issue-comment routing goes by content, not author: a comment starting
  * with `BLOCKED:` is the worker going idle (to the orchestrator); every
  * other new comment is a wake-up (to the worker).
+ *
+ * The PR passes between the worker and its reviewer like a baton — never
+ * both active at once. The reviewer's round starts only when the worker is
+ * quiet (head unchanged across polls, CI green, no fixing/addressing prompt
+ * outstanding; `prBaton` says who holds it). While the reviewer holds the
+ * baton, its own inline comments do not steer the worker and no CI-red
+ * prompt goes out; the baton returns to the worker when its submission
+ * requesting changes is observed, as one `reviewChanges` delivery.
  */
 
 import type { Project, ProjectSettings, Session } from "@pideck/shared";
@@ -39,6 +47,41 @@ import {
 } from "../prompts/index.js";
 import type { GhComment } from "../github/schemas.js";
 import type { IssueFacts, PrFacts, ProjectFacts } from "./read.js";
+
+/** Who currently holds a PR's baton, or null when nobody does. */
+export type Baton = "worker" | "reviewer";
+
+/**
+ * The baton derivation. The reviewer holds it from the moment it was
+ * prompted for the current head (spawn or re-review) until a submission
+ * requesting changes — newer than the reviews it was prompted past — is
+ * observed. Then the worker holds it until it pushes (a new head), either
+ * because the reviewer said so or, when no reviewer is live, because the
+ * head still matches the one the worker was last told to address. An
+ * approved PR has no baton; the reviewer is archived and the worker is done.
+ */
+export function prBaton(
+  pr: Pick<PrFacts, "headSha" | "reviewDecision" | "reviews">,
+  reviewer: Session | null,
+  worker: Session | null,
+): Baton | null {
+  if (pr.reviewDecision === "APPROVED") return null;
+  if (reviewer !== null && reviewer.lastPromptedHeadSha === pr.headSha) {
+    const concluded = pr.reviews.some(
+      (review) =>
+        review.state === "CHANGES_REQUESTED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
+    );
+    return concluded ? "worker" : "reviewer";
+  }
+  if (
+    worker !== null &&
+    pr.reviewDecision === "CHANGES_REQUESTED" &&
+    (worker.lastAddressedHeadSha ?? pr.headSha) === pr.headSha
+  ) {
+    return "worker";
+  }
+  return null;
+}
 
 export type Action =
   | { kind: "spawn-global" }
@@ -141,26 +184,47 @@ export function deriveActions(input: DeriveInput): Action[] {
 
   for (const pr of facts.prs) {
     const reviewer = input.live.find((s) => s.persona === "reviewer" && s.prNumber === pr.number);
+    const worker =
+      input.live.find((s) => s.persona === "worker" && prForWorker(facts, s)?.number === pr.number) ?? null;
+    const baton = prBaton(pr, reviewer ?? null, worker);
     const reviewable = pr.green && pr.reviewDecision !== "APPROVED" && pr.mergeable !== "CONFLICTING";
     // A review account with no read access would 404 on every call — no
     // reviewer until the daemon's access check turns the leg back on.
     const reviewLegOn = input.reviewLogin !== null && input.facts.reviewAccess === undefined;
-    if (reviewable && reviewer === undefined && reviewLegOn) {
+    // A round starts only while the worker is quiet: green (head stable,
+    // CI complete) and no addressing prompt outstanding to it.
+    if (reviewable && reviewer === undefined && reviewLegOn && baton !== "worker") {
       actions.push({
         kind: "spawn-reviewer",
         pr,
-        initial: { lastPromptedHeadSha: pr.headSha },
+        initial: {
+          lastPromptedHeadSha: pr.headSha,
+          lastDeliveredReviewId: maxId(pr.reviews.map((r) => r.id)),
+        },
       });
     }
     if (reviewer !== undefined) {
       if (pr.reviewDecision === "APPROVED") {
         actions.push({ kind: "archive", session: reviewer, reason: `PR #${pr.number} approved` });
-      } else if (pr.green && pr.headSha !== reviewer.lastPromptedHeadSha) {
+      } else if (
+        pr.green &&
+        pr.mergeable !== "CONFLICTING" &&
+        baton !== "worker" &&
+        pr.headSha !== reviewer.lastPromptedHeadSha
+      ) {
         actions.push({
           kind: "deliver",
           target: reviewer,
           text: reReview({ prNumber: pr.number }),
-          watermark: { sessionId: reviewer.id, patch: { lastPromptedHeadSha: pr.headSha } },
+          // The re-armed reviewer knows every review filed so far; only a
+          // newer submission concludes its next round.
+          watermark: {
+            sessionId: reviewer.id,
+            patch: {
+              lastPromptedHeadSha: pr.headSha,
+              lastDeliveredReviewId: maxId(pr.reviews.map((r) => r.id)),
+            },
+          },
         });
       }
     }
@@ -202,6 +266,9 @@ function deriveWorkerDeliveries(
 ): void {
   const settings = input.settings;
   const login = input.facts.primaryLogin;
+  const reviewer =
+    pr === null ? null : (input.live.find((s) => s.persona === "reviewer" && s.prNumber === pr.number) ?? null);
+  const baton = pr === null ? null : prBaton(pr, reviewer, worker);
   const patch: SessionPatch = {};
   const deliveries: { target: Session; text: string }[] = [];
   let stallNotice: { sessionId: string; at: string } | undefined;
@@ -238,7 +305,14 @@ function deriveWorkerDeliveries(
     pr === null ? [] : pr.prComments.filter((c) => c.id > (worker.lastDeliveredPrCommentId ?? 0));
   const newThreadComments =
     pr === null ? [] : pr.reviewComments.filter((c) => c.id > (worker.lastDeliveredPrCommentId ?? 0));
-  const threadForWorker = newThreadComments.filter((c) => login === null || c.author !== login);
+  // Inline comments the review account files during its own round are part
+  // of that round, not steering: consumed silently, delivered with the
+  // submission that ends the round. Comments by anyone else always deliver.
+  const reviewerRoundInFlight = baton === "reviewer";
+  const fromReviewAccount = (c: GhComment) => input.reviewLogin !== null && c.author === input.reviewLogin;
+  const threadForWorker = newThreadComments.filter(
+    (c) => (login === null || c.author !== login) && !(reviewerRoundInFlight && fromReviewAccount(c)),
+  );
   let reviewChangesSent = false;
   if (newPrComments.length > 0 || threadForWorker.length > 0) {
     deliveries.push({ target: worker, text: reviewChanges({ prNumber: pr!.number }) });
@@ -250,11 +324,17 @@ function deriveWorkerDeliveries(
   }
 
   const newReviews = pr === null ? [] : pr.reviews.filter((r) => r.id > (worker.lastDeliveredReviewId ?? 0));
-  if (!reviewChangesSent && newReviews.some((r) => r.state === "CHANGES_REQUESTED")) {
+  const changesRequested = newReviews.some((r) => r.state === "CHANGES_REQUESTED");
+  if (!reviewChangesSent && changesRequested) {
     deliveries.push({ target: worker, text: reviewChanges({ prNumber: pr!.number }) });
   }
   if (newReviews.length > 0) {
     patch.lastDeliveredReviewId = Math.max(...newReviews.map((r) => r.id));
+  }
+  // The submission ends the reviewer's round: the worker holds the baton on
+  // this head until it pushes.
+  if (changesRequested && pr !== null) {
+    patch.lastAddressedHeadSha = pr.headSha;
   }
 
   // Opening the PR is worker activity, and the head it pushed is attributed
@@ -275,7 +355,7 @@ function deriveWorkerDeliveries(
     deliveries.push({ target: worker, text: prConflict({ prNumber: pr.number }) });
     patch.lastNotifiedConflictSha = pr.headSha;
   }
-  if (pr !== null && pr.ciStatus === "failed" && pushed) {
+  if (pr !== null && pr.ciStatus === "failed" && pushed && baton !== "reviewer") {
     if (worker.fixAttempts >= settings.maxFixAttempts) {
       deliveries.push({
         target: worker,

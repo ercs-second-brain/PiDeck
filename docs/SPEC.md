@@ -176,8 +176,9 @@ tick; and the `/api/status` probes (`pi`, `gh`) are cached for 30 s.
 
 `persona`, `projectId`, `issueNumber`, `prNumber`, `tmuxSession`, `spawnedAt`, `model`, and
 delivery watermarks keyed on GitHub ids: `lastPromptedHeadSha`, `lastDeliveredIssueCommentId`,
-`lastDeliveredPrCommentId`, `lastDeliveredReviewId`, `lastNotifiedConflictSha`, `fixAttempts`,
-`lastActivityAt`. Losing a watermark costs at most one duplicate prompt.
+`lastDeliveredPrCommentId`, `lastDeliveredReviewId`, `lastNotifiedConflictSha`,
+`lastAddressedHeadSha`, `fixAttempts`, `lastActivityAt`. Losing a watermark costs at most one
+duplicate prompt.
 
 Everything in this section is a pure derivation over GitHub state, exercised end to end against
 the fake gh (§10); the session trace (§10) replays one session's deliveries and watermarks to
@@ -201,6 +202,19 @@ answer "why was I prompted".
 The (re)launch briefing (§3) is not a delivery: it is rendered into the orchestrator's system
 prompt at spawn, so a fresh orchestrator starts with context and no typed message — it says
 nothing until the user speaks.
+
+**Hand-off.** A PR passes between its worker and its reviewer like a baton — never both active at
+once. The reviewer's round starts only when the worker is quiet: the PR head unchanged across two
+consecutive polls, CI green, and no `fixing`/`addressing` prompt outstanding to the worker (the
+same rule re-arms the reviewer for a re-review). While the reviewer holds the baton, its own
+inline comments do not steer the worker and no CI-red prompt goes out for that head; a push by the
+worker ends the round and re-arms the reviewer through the quiet rule. The baton returns to the
+worker when the reviewer's submission (`CHANGES_REQUESTED`) is observed — one `reviewChanges`
+delivery, with the round's inline comments read alongside it; comments from anyone else (a human,
+the orchestrator) reach the worker immediately. The worker reads `in review` while the reviewer
+holds the baton and `addressing` while it holds it itself; the reviewer's row reads `awaiting
+author` while the worker holds it. Every hand-off is written to both sessions' traces —
+`baton: worker → reviewer`, `baton: reviewer → worker` — with the head SHA.
 
 Steering messages to the orchestrator queue for pi's next turn; they never interrupt.
 The fix-attempt bound is a safety net: on exhaustion the *worker* is told to comment its status on

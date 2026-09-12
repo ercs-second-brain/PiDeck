@@ -17,6 +17,7 @@ const KIND_TONES: Record<TraceEntry["kind"], "blue" | "amber" | "purple" | "gree
   spawn: "purple",
   archive: "dim",
   facts: "green",
+  baton: "purple",
 };
 
 const ROLE_TONES: Record<TranscriptEntry["role"], "blue" | "green" | "purple"> = {
