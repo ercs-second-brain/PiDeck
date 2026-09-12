@@ -10,7 +10,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GlobalSettingsRead, PiProbe, Probe, Project, RestEndpointName, Status } from "@pideck/shared";
+import type { GlobalSettingsRead, PiProbe, Probe, Project, RestEndpointName, ReviewLoginStart, ReviewLoginStatus, Status } from "@pideck/shared";
 import { api } from "../lib/api";
 import { OnboardingWizard } from "./OnboardingWizard";
 
@@ -20,8 +20,12 @@ const piOk: PiProbe = { ok: true, detail: "", providers: ["anthropic", "github-c
 const piFail: PiProbe = { ok: false, detail: "pi is not authenticated — run `pi auth` in a terminal", providers: [], models: [], defaultModel: null };
 const ghOk: Probe = { ok: true, detail: "logged in as primary" };
 const ghFail: Probe = { ok: false, detail: "gh is not authenticated — run `gh auth login`" };
-const reviewOk: Probe = { ok: true, detail: "verified" };
+const reviewOk: Probe = { ok: true, detail: "logged in as reviewer-bot" };
 const reviewFail: Probe = { ok: false, detail: "bad credentials for reviewer account" };
+
+const reviewLoginPending: ReviewLoginStatus = { status: "pending", detail: null };
+const reviewLoginDone: ReviewLoginStatus = { status: "done", detail: null };
+const reviewLoginStart: ReviewLoginStart = { code: "ABCD-1234", url: "https://github.com/login/device" };
 
 const settingsNone: GlobalSettingsRead = {
   reviewAccount: null,
@@ -120,6 +124,8 @@ beforeEach(() => {
     probePi: piOk,
     probeGhPrimary: ghOk,
     probeGhReview: reviewOk,
+    reviewLoginStart: reviewLoginStart,
+    reviewLoginStatus: reviewLoginPending,
     globalSettingsPut: settingsSet,
     projectCreate: project,
   });
@@ -195,6 +201,88 @@ describe("OnboardingWizard", () => {
     expect(api).not.toHaveBeenCalledWith("globalSettingsPut", undefined, expect.anything());
     expect(container.textContent).toContain("Username is required");
     expect(container.textContent).toContain("A personal access token is required");
+  });
+
+  it("starts the device flow on entry and shows the code, link, copy button, and live status", async () => {
+    const container = await mountWizard();
+    await click(container, "Next");
+    await click(container, "Next");
+    expect(api).toHaveBeenCalledWith("reviewLoginStart");
+    expect(container.textContent).toContain("ABCD-1234");
+    expect(container.querySelector("a")?.getAttribute("href")).toBe("https://github.com/login/device");
+    expect(buttonByText(container, "Copy code")).toBeDefined();
+    expect(container.textContent).toContain("Waiting for you to finish the sign-in");
+  });
+
+  it("copies the one-time code to the clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const container = await mountWizard();
+    await click(container, "Next");
+    await click(container, "Next");
+    await click(container, "Copy code");
+    expect(writeText).toHaveBeenCalledWith("ABCD-1234");
+    expect(container.textContent).toContain("Copied");
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+  });
+
+  it("marks the step done and enables Next once the device sign-in completes", async () => {
+    responses.reviewLoginStatus = reviewLoginDone;
+    const container = await mountWizard();
+    await click(container, "Next");
+    await click(container, "Next");
+    expect(api).toHaveBeenCalledWith("reviewLoginStatus");
+    expect(api).toHaveBeenCalledWith("probeGhReview");
+    expect(container.textContent).toContain("logged in as reviewer-bot");
+    expect(buttonByText(container, "Next").disabled).toBe(false);
+  });
+
+  it("moves from pending to done on a status poll", async () => {
+    vi.useFakeTimers();
+    try {
+      const container = await mountWizard();
+      await click(container, "Next");
+      await click(container, "Next");
+      expect(container.textContent).toContain("Waiting for you to finish the sign-in");
+      responses.reviewLoginStatus = reviewLoginDone;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3100);
+      });
+      expect(container.textContent).toContain("logged in as reviewer-bot");
+      expect(buttonByText(container, "Next").disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a failed device flow with a retry and keeps the PAT fallback available", async () => {
+    responses.reviewLoginStatus = { status: "failed", detail: "device sign-in timed out after 15 minutes" };
+    const container = await mountWizard();
+    await click(container, "Next");
+    await click(container, "Next");
+    expect(container.textContent).toContain("device sign-in timed out after 15 minutes");
+    expect(buttonByText(container, "Next").disabled).toBe(true);
+
+    const startsBefore = vi.mocked(api).mock.calls.filter(([name]) => name === "reviewLoginStart").length;
+    await click(container, "Sign in as the reviewer");
+    const startsAfter = vi.mocked(api).mock.calls.filter(([name]) => name === "reviewLoginStart");
+    expect(startsAfter.length).toBeGreaterThan(startsBefore);
+  });
+
+  it("keeps the PAT form as a collapsed fallback that still saves and verifies", async () => {
+    const container = await mountWizard();
+    await click(container, "Next");
+    await click(container, "Next");
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(container.textContent).toContain("Use a personal access token instead");
+    await typeInto(container, "Username", "reviewer-bot");
+    await typeInto(container, "Personal access token", "ghp_secret");
+    await click(container, "Verify");
+    expect(api).toHaveBeenCalledWith("globalSettingsPut", undefined, {
+      reviewAccount: { username: "reviewer-bot", token: "ghp_secret" },
+    });
+    expect(buttonByText(container, "Next").disabled).toBe(false);
   });
 
   it("saves the review account, verifies via the probe, and never shows the token afterwards", async () => {

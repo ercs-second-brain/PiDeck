@@ -151,6 +151,9 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     probeGhPrimary: () => deps.ghPrimary(),
     probeGhReview: () => deps.ghReview(),
 
+    reviewLoginStart: () => deps.reviewLogin.start(),
+    reviewLoginStatus: () => deps.reviewLogin.status(),
+
     updateCheck: () => deps.updates.check(),
     updateApply: () => deps.updates.apply(),
   };

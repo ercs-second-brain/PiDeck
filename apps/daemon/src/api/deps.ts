@@ -6,6 +6,7 @@ import type { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import type { ProjectStore } from "../store/projectStore.js";
 import type { ProjectFacts } from "../reconciler/index.js";
 import type { Trace } from "../reconciler/trace.js";
+import type { ReviewLoginFlow } from "./onboarding.js";
 import type { Updater } from "./update.js";
 
 /**
@@ -26,6 +27,8 @@ export interface DaemonDeps {
   ghPrimary: () => Promise<Probe>;
   ghReview: () => Promise<Probe>;
   pi: () => Promise<PiProbe>;
+  /** The review account's device-code login flow. */
+  reviewLogin: ReviewLoginFlow;
   /** The reconciler's last GitHub read pass for a project; null before the first. */
   reconcilerFacts?: (projectId: string) => ProjectFacts | null;
   /** The reconciler's GitHub throttle/error state, for Status. */
