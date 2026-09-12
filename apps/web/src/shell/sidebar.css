@@ -119,7 +119,6 @@
 }
 
 .srow--dead {
-  cursor: default;
   color: var(--text-dim);
 }
 

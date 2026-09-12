@@ -234,10 +234,17 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
                   node.archived.map((view) => {
                     const badge = view.state !== null ? stateBadge(view.state) : null;
                     return (
-                      <div key={view.session.id} className="srow srow--dead" style={{ paddingLeft: "calc(10px + 16px)" }}>
+                      <button
+                        key={view.session.id}
+                        type="button"
+                        className="srow srow--dead"
+                        style={{ paddingLeft: "calc(10px + 16px)" }}
+                        title={rowText(view)}
+                        onClick={() => onNavigate(`/sessions/${view.session.id}`)}
+                      >
                         <span className="srow__label">{rowText(view)}</span>
                         {badge !== null && <Badge tone="dim">{badge.label}</Badge>}
-                      </div>
+                      </button>
                     );
                   })}
               </>
