@@ -1,0 +1,125 @@
+/**
+ * One GitHub read pass per project, turned into plain facts for the
+ * reconciler. `blockedBy` is a per-issue call, so it (and the issue comment
+ * list) is fetched only for assigned issues; unassigned issues carry no
+ * comment data. Green is guarded against the empty-rollup race right after
+ * a push: a PR counts as green only when its head SHA was already seen on
+ * the previous read, so a PR that just appeared — or just changed head —
+ * is never treated as green on first sight.
+ */
+
+import type { Probe } from "@pideck/shared";
+import type { GhClient } from "../github/client.js";
+import type { CiStatus, GhComment, GhReview } from "../github/schemas.js";
+
+/** The slice of GhClient the reconciler reads through. */
+export interface GhRead {
+  openIssues(): ReturnType<GhClient["openIssues"]>;
+  blockedBy(issueNumber: number): ReturnType<GhClient["blockedBy"]>;
+  issueComments(issueNumber: number, sinceId?: number): Promise<GhComment[]>;
+  openPrs(): ReturnType<GhClient["openPrs"]>;
+  prReviews(prNumber: number): Promise<GhReview[]>;
+  prReviewComments(prNumber: number, sinceId?: number): Promise<GhComment[]>;
+  authStatus(): Promise<Probe>;
+}
+
+export interface IssueFacts {
+  number: number;
+  title: string;
+  url: string;
+  assignees: string[];
+  openBlockers: number;
+  comments: GhComment[];
+}
+
+export interface PrFacts {
+  number: number;
+  headBranch: string;
+  headSha: string;
+  mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+  reviewDecision: string | null;
+  ciStatus: CiStatus;
+  failingChecks: string[];
+  green: boolean;
+  issueNumber: number | null;
+  reviews: GhReview[];
+  reviewComments: GhComment[];
+}
+
+export interface ProjectFacts {
+  issues: IssueFacts[];
+  prs: PrFacts[];
+  primaryLogin: string | null;
+}
+
+const ISSUE_BRANCH = /^pideck\/issue-(\d+)$/;
+const LOGIN_DETAIL = /logged in as ([A-Za-z0-9-]+)/;
+
+export function parseIssueBranch(branch: string): number | null {
+  const match = ISSUE_BRANCH.exec(branch);
+  return match === null ? null : Number(match[1]);
+}
+
+export class ProjectReader {
+  readonly #gh: GhRead;
+  readonly #heads = new Map<number, string>();
+  #login: Promise<string | null> | null = null;
+
+  constructor(gh: GhRead) {
+    this.#gh = gh;
+  }
+
+  async read(): Promise<ProjectFacts> {
+    const primaryLogin = await this.#resolveLogin();
+    const [rawIssues, rawPrs] = await Promise.all([this.#gh.openIssues(), this.#gh.openPrs()]);
+
+    const issues: IssueFacts[] = await Promise.all(
+      rawIssues.map(async (issue) => {
+        const assigned =
+          primaryLogin === null
+            ? issue.assignees.length > 0
+            : issue.assignees.includes(primaryLogin);
+        if (!assigned) {
+          return { ...issue, openBlockers: 0, comments: [] };
+        }
+        const [blockers, comments] = await Promise.all([
+          this.#gh.blockedBy(issue.number),
+          this.#gh.issueComments(issue.number),
+        ]);
+        return {
+          ...issue,
+          openBlockers: blockers.filter((b) => b.state === "open").length,
+          comments,
+        };
+      }),
+    );
+
+    const prs: PrFacts[] = await Promise.all(
+      rawPrs.map(async (pr) => {
+        const [reviews, reviewComments] = await Promise.all([
+          this.#gh.prReviews(pr.number),
+          this.#gh.prReviewComments(pr.number),
+        ]);
+        const previousHead = this.#heads.get(pr.number);
+        this.#heads.set(pr.number, pr.headSha);
+        return {
+          ...pr,
+          green: pr.ciStatus === "ok" && previousHead === pr.headSha,
+          issueNumber: parseIssueBranch(pr.headBranch),
+          reviews,
+          reviewComments,
+        };
+      }),
+    );
+
+    return { issues, prs, primaryLogin };
+  }
+
+  #resolveLogin(): Promise<string | null> {
+    this.#login ??= this.#gh
+      .authStatus()
+      .then((probe) => probe.detail.match(LOGIN_DETAIL)?.[1] ?? null)
+      .catch(() => null);
+    return this.#login;
+  }
+}
