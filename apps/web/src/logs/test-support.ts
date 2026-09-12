@@ -23,5 +23,6 @@ export function makeView(overrides: Partial<SessionView["session"]> = {}): Sessi
     status: "archived",
     parentSessionId: null,
     title: null,
+    reviewAccess: null,
   };
 }

@@ -150,6 +150,18 @@ Seen via `/api/sessions` (`state` + `status` lines) throughout the run:
   archive; the issue was already closed by then so no replacement was needed.
   Worth tracking: an agent runtime that can exit between turns without a
   platform-visible signal.
+- **Probe of the pi-exit hypothesis (2026-09-12, after #573's wrapper
+  landed)**: pi 0.85.1 run as `pi --session-dir <fresh dir>` in a detached
+  tmux 3.4 pane (`remain-on-exit on`), no client attached, flash model
+  (`z-ai/glm-5.3-flash`). One trivial prompt sent via `tmux send-keys`; the
+  turn completed ("ok" + status bar redrawn) and pi **stayed alive** —
+  `#{pane_dead}` stayed 0 and `#{pane_current_command}` stayed `pi` for
+  3.5+ minutes after the turn ended, when the probe was torn down. So a
+  completed detached turn alone does not make pi 0.85.1 exit; the live run's
+  exit (above) must have had another cause (runtime/model-specific, or a
+  transient failure that still surfaced as a clean exit). The pane-exit
+  wrapper now guarantees that whichever way a pi dies, the pane keeps the
+  scrollback plus a `[pideck] pi exited <code>` line for the archive.
 - The **reviewer exercises judgment**: it approved PR #6's reciprocal design
   (judging the issue's scope) even though `docs/REVIEW.md` had just made
   silently-wrong numeric behaviour blocking — the orchestrator's alignment

@@ -14,6 +14,7 @@ import type {
   ProjectSettings,
   Prompt,
   PromptPut,
+  SessionView,
   Status,
   UpdateCheck,
 } from "@pideck/shared";
@@ -32,6 +33,8 @@ export const savePrompt = (persona: Persona, put: PromptPut): Promise<Prompt> =>
 export const resetPrompt = (persona: Persona): Promise<Prompt> => api("promptReset", { persona });
 
 export const loadProject = (id: string): Promise<Project> => api("projectGet", { id });
+export const loadProjectSessions = (id: string): Promise<SessionView[]> =>
+  api("projectSessionList", { id });
 export const loadProjectSettings = (id: string): Promise<ProjectSettings> =>
   api("projectSettingsGet", { id });
 export const saveProjectSettings = (

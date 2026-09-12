@@ -272,7 +272,10 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     if (!sawProjectError) lastGithubError = null;
 
     try {
-      const { dead } = await reconcileWithTmux(registry, deps.tmux);
+      const { dead, orphanTmuxSessions } = await reconcileWithTmux(registry, deps.tmux, {
+        stateDir: deps.stateDir,
+        log,
+      });
       for (const session of dead) {
         await applyActions(
           applyDeps,
@@ -280,6 +283,9 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
           [{ kind: "archive", session, reason: "pane gone" }],
           tally,
         );
+      }
+      if (orphanTmuxSessions.length > 0) {
+        log(`reconciler: archived ${orphanTmuxSessions.length} orphan pane(s)`);
       }
     } catch (err) {
       tally.errors++;

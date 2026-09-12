@@ -28,6 +28,7 @@ function view(overrides: {
   title?: string | null;
   state?: SessionView["state"];
   spawnedAt?: string;
+  reviewAccess?: string | null;
 }): SessionView {
   const id = overrides.id ?? `s${++nextId}`;
   return {
@@ -53,6 +54,7 @@ function view(overrides: {
     status: overrides.status ?? "",
     parentSessionId: overrides.parentSessionId ?? null,
     title: overrides.title ?? null,
+    reviewAccess: overrides.reviewAccess ?? null,
   };
 }
 
@@ -114,6 +116,23 @@ describe("buildTree", () => {
     const newer = view({ id: "b", projectId: "p1", archivedAt: "2026-01-03T00:00:00Z" });
     const tree = buildTree([p], [older, newer]);
     expect(tree.projects[0]?.archived.map((v) => v.session.id)).toEqual(["b", "a"]);
+  });
+
+  it("carries the review-access failure from any of the project's sessions onto the node", () => {
+    const p = project("p1", "my-api");
+    const orch = view({ id: "o", persona: "orchestrator", projectId: "p1" });
+    const worker = view({
+      id: "w",
+      persona: "worker",
+      projectId: "p1",
+      issueNumber: 7,
+      reviewAccess: "review account has no access to acme/my-api",
+    });
+    const tree = buildTree([p], [worker, orch]);
+    expect(tree.projects[0]!.reviewAccess).toBe("review account has no access to acme/my-api");
+
+    const healthy = buildTree([p], [orch]);
+    expect(healthy.projects[0]!.reviewAccess).toBeNull();
   });
 
   it("ignores sessions for unknown projects and drops reviewers whose worker is gone", () => {

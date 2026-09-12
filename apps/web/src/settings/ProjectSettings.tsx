@@ -18,6 +18,7 @@ import { Empty } from "../ui/Empty";
 import {
   deleteProject,
   loadProject,
+  loadProjectSessions,
   loadProjectSettings,
   saveProjectSettings,
 } from "./client";
@@ -26,6 +27,7 @@ import { actionLabel, useAction } from "./use-action";
 export function ProjectSettings({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<Project | null>(null);
   const [settings, setSettings] = useState<ProjectSettings | null>(null);
+  const [reviewAccess, setReviewAccess] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [workerConcurrency, setWorkerConcurrency] = useState("");
   const [maxFixAttempts, setMaxFixAttempts] = useState("");
@@ -40,11 +42,12 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([loadProject(projectId), loadProjectSettings(projectId)])
-      .then(([loadedProject, loadedSettings]) => {
+    Promise.all([loadProject(projectId), loadProjectSettings(projectId), loadProjectSessions(projectId)])
+      .then(([loadedProject, loadedSettings, loadedSessions]) => {
         if (!alive) return;
         setProject(loadedProject);
         setSettings(loadedSettings);
+        setReviewAccess(loadedSessions.find((view) => view.reviewAccess !== null)?.reviewAccess ?? null);
         apply(loadedSettings);
       })
       .catch((err: unknown) => {
@@ -109,7 +112,12 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
 
   return (
     <Page title={project ? `${name} settings` : "Project settings"}>
-      {loadError && <p style={{ color: "var(--red)" }}>Settings could not be loaded: {loadError}</p>}
+      {reviewAccess !== null && (
+        <p style={{ color: "var(--red)", margin: "0 0 16px" }} role="status">
+          {reviewAccess} — no reviewer will run until it is fixed.
+        </p>
+      )}
+      {loadError && <p style={{ color: "var(--red)", margin: "0 0 16px" }}>Settings could not be loaded: {loadError}</p>}
       <Section
         title="Settings"
         description="Knobs for this project's loop. They apply from the next reconciliation."

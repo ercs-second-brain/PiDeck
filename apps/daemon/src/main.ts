@@ -64,10 +64,16 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
   };
 
   // A restart is the first reconciliation: report sessions whose tmux pane
-  // is gone. Records stay unarchived — the reconciler decides replacement.
-  const { dead } = await reconcileWithTmux(registry, tmux);
+  // is gone or whose pi exited, and archive orphan panes with no record.
+  // Records stay unarchived — the reconciler decides replacement.
+  const { dead, orphanTmuxSessions } = await reconcileWithTmux(registry, tmux, {
+    stateDir,
+  });
   for (const session of dead) {
     console.log(`[daemon] session ${session.id} (${session.persona}) has no tmux pane`);
+  }
+  for (const orphan of orphanTmuxSessions) {
+    console.log(`[daemon] archived orphan pane ${orphan} with no registry record`);
   }
 
   // The reconciler: every poll reads GitHub, derives desired state, and

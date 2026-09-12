@@ -141,10 +141,28 @@ describe("REST contract", () => {
     expect(views.map((v) => v.state)).toEqual(["working", null]);
     expect(views.find((v) => v.session.id === worker.id)?.status).toBe("working on #7");
     expect(views.find((v) => v.session.id === orchestrator.id)?.status).toBe("orchestrator");
+    expect(views.every((v) => v.reviewAccess === null)).toBe(true);
 
     const perProject = await call(base, "GET", `/api/projects/${project.id}/sessions`);
     expect(validate(restEndpoints["projectSessionList"].response, perProject.body)).toHaveLength(2);
     expect((await call(base, "GET", "/api/projects/nope/sessions")).status).toBe(404);
+  });
+
+  it("carries the project's review-access failure on its session views", async () => {
+    const { base, deps } = await startDaemon();
+    const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
+    const worker = sessionRecord({ persona: "worker", projectId: project.id, issueNumber: 7 });
+    deps.registry.add(worker);
+    deps.reconcilerFacts = (projectId) =>
+      projectId === project.id
+        ? { issues: [], prs: [], primaryLogin: "acme", reviewAccess: "review account has no access to acme/widget" }
+        : null;
+
+    const views: SessionView[] = validate(
+      restEndpoints["projectSessionList"].response,
+      (await call(base, "GET", `/api/projects/${project.id}/sessions`)).body,
+    );
+    expect(views[0]!.reviewAccess).toBe("review account has no access to acme/widget");
   });
 
   it("derives worker state, title and reviewer parent from the reconciler's facts", async () => {

@@ -123,6 +123,63 @@ describe("GhClient", () => {
     expect(all[1]).toEqual({ id: 11, author: null, body: "out of order", createdAt: "2026-01-01T00:02:00Z" });
   });
 
+  it("issueComments reads every page and filters by the watermark", async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      user: { login: "orch" },
+      body: `c${i + 1}`,
+      created_at: "2026-01-01T00:00:00Z",
+    }));
+    const page2 = Array.from({ length: 60 }, (_, i) => ({
+      id: 101 + i,
+      user: { login: "orch" },
+      body: `c${101 + i}`,
+      created_at: "2026-01-01T00:01:00Z",
+    }));
+    const { client, calls } = fakeExec((call) =>
+      call.args.some((a) => a.includes("page=2")) ? ok(JSON.stringify(page2)) : ok(JSON.stringify(page1)),
+    );
+    const all = await client.issueComments(517);
+    expect(all).toHaveLength(160);
+    expect(all.at(-1)?.id).toBe(160);
+    expect(calls[0]?.args[1]).toContain("per_page=100&page=1");
+    expect(calls[1]?.args[1]).toContain("page=2");
+    expect(calls).toHaveLength(2);
+
+    const since = await client.issueComments(517, 150);
+    expect(since.map((c) => c.id)).toEqual([151, 152, 153, 154, 155, 156, 157, 158, 159, 160]);
+  });
+
+  it("stops paginating when a page repeats ids it already has", async () => {
+    // A server that ignores the page parameter returns the same page forever.
+    const only = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      user: { login: "orch" },
+      body: "x",
+      created_at: "2026-01-01T00:00:00Z",
+    }));
+    const { client, calls } = fakeExec(() => ok(JSON.stringify(only)));
+    const all = await client.issueComments(517);
+    expect(all).toHaveLength(100);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("prReviewComments paginates before filtering", async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      user: { login: "reviewer-bot" },
+      body: "inline",
+      created_at: "2026-01-02T00:00:00Z",
+    }));
+    const page2 = [{ id: 101, user: { login: "reviewer-bot" }, body: "last", created_at: "2026-01-02T01:00:00Z" }];
+    const { client, calls } = fakeExec((call) =>
+      call.args.some((a) => a.includes("page=2")) ? ok(JSON.stringify(page2)) : ok(JSON.stringify(page1)),
+    );
+    const comments = await client.prReviewComments(537, 99);
+    expect(comments.map((c) => c.id)).toEqual([100, 101]);
+    expect(calls).toHaveLength(2);
+  });
+
   it("openPrs maps head, mergeable, reviewDecision and CI rollup", async () => {
     const { client } = fakeExec(() => ok(PR_LIST_JSON));
     const prs = await client.openPrs();
@@ -146,7 +203,7 @@ describe("GhClient", () => {
     });
   });
 
-  it("prReviews maps id, author, state, submittedAt and body", async () => {
+  it("prReviews maps id, author, state, submittedAt and body, across pages", async () => {
     const { client } = fakeExec(() => ok(REVIEWS_JSON));
     const reviews = await client.prReviews(537);
     expect(reviews).toEqual([
@@ -158,6 +215,30 @@ describe("GhClient", () => {
         body: "Please fix",
       },
     ]);
+
+    const page1 = Array.from({ length: 100 }, (_, i) => ({
+      id: 9000 + i,
+      user: { login: "reviewer-bot" },
+      state: "COMMENTED",
+      submitted_at: "2026-01-02T00:00:00Z",
+      body: null,
+    }));
+    const page2 = [
+      { id: 9100, user: { login: "reviewer-bot" }, state: "CHANGES_REQUESTED", submitted_at: "2026-01-03T00:00:00Z", body: "fix" },
+    ];
+    const paged = fakeExec((call) =>
+      call.args.some((a) => a.includes("page=2")) ? ok(JSON.stringify(page2)) : ok(JSON.stringify(page1)),
+    );
+    const reviewsPaged = await paged.client.prReviews(537);
+    expect(paged.calls).toHaveLength(2);
+    expect(reviewsPaged.map((r) => r.id)).toEqual([...Array.from({ length: 100 }, (_, i) => 9000 + i), 9100]);
+    expect(reviewsPaged.at(-1)).toEqual({
+      id: 9100,
+      author: "reviewer-bot",
+      state: "CHANGES_REQUESTED",
+      submittedAt: "2026-01-03T00:00:00Z",
+      body: "fix",
+    });
   });
 
   it("prReviewComments filters since an id", async () => {

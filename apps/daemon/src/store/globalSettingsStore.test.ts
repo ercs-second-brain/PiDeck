@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -59,6 +59,16 @@ describe("GlobalSettingsStore", () => {
 
     const raw = JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf8"));
     expect(raw.reviewAccount).toEqual({ username: "review-bot", token: "ghp_secret" });
+  });
+
+  it("keeps settings.json owner-only after a daemon-side save", () => {
+    // onboard.sh creates the file 0600; the daemon rewrites it atomically and
+    // must not loosen the mode — the PAT lives here.
+    const stateDir = tempDir();
+    const store = new GlobalSettingsStore(stateDir);
+    store.put({ reviewAccount: { username: "review-bot", token: "ghp_secret" } });
+    const mode = statSync(join(stateDir, "settings.json")).mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 
   it("reuses the existing token when a username is saved without one", () => {

@@ -23,7 +23,9 @@ import {
 } from "./schemas.js";
 
 const execFileP = promisify(execFile);
+/** gh `--limit` for list commands, and the REST `per_page`/page size. */
 const LIST_LIMIT = "100";
+const PAGE_SIZE = 100;
 
 export type GhExecResult = { stdout: string; stderr: string; exitCode: number };
 export type GhExec = (args: string[], env: NodeJS.ProcessEnv) => Promise<GhExecResult>;
@@ -82,6 +84,36 @@ export class GhClient {
     return result.data;
   }
 
+  /**
+   * Reads every page of a list endpoint, per_page at a time, ascending by id
+   * — so a thread with more items than one page is fully read. Stops when a
+   * page comes back short, or when a page adds no ids beyond the ones already
+   * collected (a server that ignores the page parameter would otherwise loop
+   * forever). Callers that only need newer items filter by watermark
+   * afterwards; the watermark may only advance over ids this returned.
+   */
+  private async listPages<T extends { id: number }>(
+    item: ZodType<T>,
+    url: (page: number) => string,
+  ): Promise<T[]> {
+    const collected: T[] = [];
+    let maxSeen: number | null = null;
+    for (let page = 1; ; page++) {
+      const raw = await this.runJson(z.array(item), ["api", url(page)]);
+      const previousMax: number | null = maxSeen;
+      let newest: number | null = null;
+      for (const entry of raw) {
+        newest = newest === null ? entry.id : Math.max(newest, entry.id);
+      }
+      if (previousMax === null || (newest !== null && newest > previousMax)) {
+        collected.push(...raw);
+        maxSeen = newest;
+      }
+      if (raw.length < PAGE_SIZE) return collected;
+      if (previousMax !== null && newest !== null && newest <= previousMax) return collected;
+    }
+  }
+
   async openIssues(): Promise<GhIssue[]> {
     const raw = await this.runJson(
       z.array(GhIssueSchema),
@@ -105,10 +137,12 @@ export class GhClient {
     return raw;
   }
 
+  /** Conversation comments on an issue (a PR's issue thread included),
+   * paginated; `sinceId` filters client-side after the full read. */
   async issueComments(issueNumber: number, sinceId?: number): Promise<GhComment[]> {
-    const raw = await this.runJson(
-      z.array(GhApiCommentSchema),
-      ["api", `repos/${this.repo}/issues/${issueNumber}/comments?per_page=${LIST_LIMIT}`],
+    const raw = await this.listPages(
+      GhApiCommentSchema,
+      (page) => `repos/${this.repo}/issues/${issueNumber}/comments?per_page=${PAGE_SIZE}&page=${page}`,
     );
     return commentsSince(raw.map(toComment), sinceId);
   }
@@ -134,17 +168,19 @@ export class GhClient {
   }
 
   async prReviews(prNumber: number): Promise<GhReview[]> {
-    const raw = await this.runJson(
-      z.array(GhReviewSchema),
-      ["api", `repos/${this.repo}/pulls/${prNumber}/reviews`],
+    const raw = await this.listPages(
+      GhReviewSchema,
+      (page) => `repos/${this.repo}/pulls/${prNumber}/reviews?per_page=${PAGE_SIZE}&page=${page}`,
     );
     return raw.map(toReview);
   }
 
+  /** Inline review-thread comments, paginated; `sinceId` filters after the
+   * full read. */
   async prReviewComments(prNumber: number, sinceId?: number): Promise<GhComment[]> {
-    const raw = await this.runJson(
-      z.array(GhApiCommentSchema),
-      ["api", `repos/${this.repo}/pulls/${prNumber}/comments?per_page=${LIST_LIMIT}`],
+    const raw = await this.listPages(
+      GhApiCommentSchema,
+      (page) => `repos/${this.repo}/pulls/${prNumber}/comments?per_page=${PAGE_SIZE}&page=${page}`,
     );
     return commentsSince(raw.map(toComment), sinceId);
   }

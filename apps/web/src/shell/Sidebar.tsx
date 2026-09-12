@@ -205,6 +205,11 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
           >
             <span className="srow__chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
             <span className="srow__label">{node.project.name}</span>
+            {node.reviewAccess !== null && (
+              <span title={node.reviewAccess}>
+                <Badge tone="red">review account has no access</Badge>
+              </span>
+            )}
           </button>
           <button
             type="button"

@@ -41,6 +41,7 @@ export function sessionView(session: Session, all: Session[], deps: DaemonDeps):
     status,
     parentSessionId: parentSessionId(session, all),
     title: titleFor(session, facts),
+    reviewAccess: facts?.reviewAccess ?? null,
   };
 }
 

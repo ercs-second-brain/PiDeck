@@ -9,7 +9,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProjectSettings as ProjectSettingsData, Project } from "@pideck/shared";
+import type { ProjectSettings as ProjectSettingsData, Project, SessionView as SessionViewData } from "@pideck/shared";
+import { SessionViewSchema } from "@pideck/shared";
 
 vi.mock("./client", () => ({
   loadStatus: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("./client", () => ({
   savePrompt: vi.fn(),
   resetPrompt: vi.fn(),
   loadProject: vi.fn(),
+  loadProjectSessions: vi.fn(),
   loadProjectSettings: vi.fn(),
   saveProjectSettings: vi.fn(),
   deleteProject: vi.fn(),
@@ -56,6 +58,25 @@ const PROJECT: Project = {
 };
 
 const roots: Root[] = [];
+
+/** A minimal SessionView, parsed through the shared contract like the daemon does. */
+function sessionView(overrides: Record<string, unknown> = {}): SessionViewData {
+  return SessionViewSchema.parse({
+    session: {
+      id: "s1",
+      persona: "orchestrator",
+      projectId: "my-api",
+      tmuxSession: "pideck-s1",
+      spawnedAt: new Date().toISOString(),
+      model: null,
+    },
+    state: null,
+    status: "orchestrator",
+    parentSessionId: null,
+    title: null,
+    ...overrides,
+  });
+}
 
 function mount(element: React.ReactElement): { root: Root; container: HTMLElement } {
   const container = document.createElement("div");
@@ -105,6 +126,23 @@ describe("<ProjectSettings />", () => {
   beforeEach(() => {
     mocked.loadProject.mockResolvedValue(PROJECT);
     mocked.loadProjectSettings.mockResolvedValue(SETTINGS);
+    mocked.loadProjectSessions.mockResolvedValue([]);
+  });
+
+  it("shows the review-access failure as a red line when the reconciler reports it", async () => {
+    mocked.loadProjectSessions.mockResolvedValue([
+      sessionView({ reviewAccess: "review account has no access to acme/my-api" }),
+    ]);
+    const { container } = mount(<ProjectSettings projectId="my-api" />);
+    await flush();
+    expect(container.textContent).toContain("review account has no access to acme/my-api");
+  });
+
+  it("omits the review-access line when the account can read the repo", async () => {
+    mocked.loadProjectSessions.mockResolvedValue([sessionView({})]);
+    const { container } = mount(<ProjectSettings projectId="my-api" />);
+    await flush();
+    expect(container.textContent).not.toContain("review account has no access");
   });
 
   it("loads the project and its settings and renders the five knobs", async () => {
