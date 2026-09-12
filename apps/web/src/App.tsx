@@ -3,23 +3,14 @@ import type { Project, SessionView } from "@pideck/shared";
 import { api, watchSessions } from "./lib/api";
 import { SessionPane } from "./logs/SessionPane";
 import { navigate, useRoute } from "./router";
+import { OnboardingWizard } from "./onboarding/OnboardingWizard";
 import { Shell } from "./shell/Shell";
 import { rowText } from "./shell/tree";
 import { Button } from "./ui/Button";
 import { Empty } from "./ui/Empty";
-import { Page } from "./ui/Page";
 import { Toast } from "./ui/Toast";
 import { GlobalSettings } from "./settings/GlobalSettings";
 import { ProjectSettings } from "./settings/ProjectSettings";
-
-/** The 2.4/2.5 routes render this until those phases land. */
-function Placeholder({ title }: { title: string }) {
-  return (
-    <Page title={title}>
-      <Empty>This screen arrives with the next phase.</Empty>
-    </Page>
-  );
-}
 
 export function App() {
   const route = useRoute();
@@ -100,7 +91,7 @@ export function App() {
       case "session":
         return <SessionPane sessionId={route.id} views={sessions} projects={projects} />;
       case "onboarding":
-        return <Placeholder title="Onboarding" />;
+        return <OnboardingWizard onDone={() => navigate("/")} />;
       case "settings":
         return <GlobalSettings />;
       case "projectSettings":
