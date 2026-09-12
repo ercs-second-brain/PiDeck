@@ -15,8 +15,8 @@ export type Project = z.infer<typeof ProjectSchema>;
 export const ProjectSettingsSchema = z.object({
   workerConcurrency: z.number().int().min(1).default(3),
   maxFixAttempts: z.number().int().min(1).default(5),
-  contextLimitPercent: z.number().int().min(1).max(100).default(80),
-  stallMinutes: z.number().int().min(1).default(20),
+  contextLimitPercent: z.number().int().min(1).max(100).default(30),
+  stallMinutes: z.number().int().min(1).default(45),
   autoMerge: z.boolean().default(false),
 });
 

@@ -142,8 +142,8 @@ describe("project settings", () => {
     expect(ProjectSettingsSchema.parse({})).toEqual({
       workerConcurrency: 3,
       maxFixAttempts: 5,
-      contextLimitPercent: 80,
-      stallMinutes: 20,
+      contextLimitPercent: 30,
+      stallMinutes: 45,
       autoMerge: false,
     });
   });

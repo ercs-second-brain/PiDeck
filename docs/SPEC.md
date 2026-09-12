@@ -212,7 +212,7 @@ Global (onboarding): pi auth, primary `gh` auth, **review account (required)**: 
 model per persona.
 
 Per project: `workerConcurrency` (default 3), `maxFixAttempts` (default 5), `contextLimitPercent`
-(default 80), `stallMinutes` (default 20), `autoMerge` (default false).
+(default 30), `stallMinutes` (default 45), `autoMerge` (default false).
 
 ### CLI
 

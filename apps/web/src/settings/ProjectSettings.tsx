@@ -134,7 +134,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
           </>
         }
       >
-        <Row label="Worker concurrency" description="Maximum workers running at once for this project.">
+        <Row label="Worker concurrency" description="Maximum workers running at once for this project. Default 3.">
           <Field
             type="number"
             min={1}
@@ -146,7 +146,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         </Row>
         <Row
           label="Max fix attempts"
-          description="CI/review fix rounds before the worker reports back and goes idle."
+          description="CI/review fix rounds before the worker reports back and goes idle. Default 5."
         >
           <Field
             type="number"
@@ -157,7 +157,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
             label="Max fix attempts"
           />
         </Row>
-        <Row label="Context limit" description="Percent of context usage that replaces a session.">
+        <Row label="Context limit" description="Percent of context usage that replaces a session. Default 30.">
           <Field
             type="number"
             min={1}
@@ -168,7 +168,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
             label="Context limit percent"
           />
         </Row>
-        <Row label="Stall minutes" description="Silence for this long steers the orchestrator to check on the worker.">
+        <Row label="Stall minutes" description="Silence for this long steers the orchestrator to check on the worker. Default 45 minutes.">
           <Field
             type="number"
             min={1}
@@ -180,7 +180,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         </Row>
         <Row
           label="Auto-merge"
-          description="Merge approved, green PRs automatically; otherwise recommend the merge."
+          description="Merge approved, green PRs automatically; otherwise recommend the merge. Default off."
         >
           <Switch checked={autoMerge} onChange={setAutoMerge} label="Auto-merge" />
         </Row>
