@@ -13,9 +13,10 @@
 #     cannot run without it, so onboarding does not complete until it is
 #     set and verified.
 #
-# Results are written to ~/.pideck/onboarding.json (record), and the model +
-# review account to ~/.pideck/settings.json (read by the daemon), both
-# remembered across restarts.
+# Results are written to ~/.pideck/onboarding.json (record), and the review
+# account + per-persona model to ~/.pideck/settings.json in the shared
+# GlobalSettingsSchema shape (packages/shared/src/settings.ts; read by the
+# daemon), both remembered across restarts.
 #
 # Usage:
 #   install/onboard.sh [--dry-run] [--noninteractive] [--skip-pi] [--skip-gh]
@@ -320,25 +321,37 @@ _write_results() {
   run mkdir -p "$PD_HOME/state"
   env_set "$PD_HOME/env" PIDECK_MODEL "${PD_MODEL:-}"
   if [ "$PD_DRY_RUN" = "1" ]; then
-    printf "[dry-run] write %s/settings.json (model + review account, chmod 600)\n" "$PD_HOME"
+    printf "[dry-run] write %s/settings.json (review account + model per persona, chmod 600)\n" "$PD_HOME"
     printf "[dry-run] write %s/onboarding.json and state/onboard-complete\n" "$PD_HOME"
     return 0
   fi
   # The daemon's settings file only exists once the required review account
-  # is verified — an incomplete onboarding must not look configured.
+  # is verified — an incomplete onboarding must not look configured. The
+  # shape is the shared GlobalSettingsSchema (packages/shared/src/settings.ts):
+  # install/test/fixtures/settings.json is the byte-identical example both
+  # the shell test and the daemon test read.
   if [ "${REVIEW_STATUS:-none}" = "ready" ]; then
+    if [ -n "${PD_MODEL:-}" ]; then
+      _model_value="\"$(json_str "$PD_MODEL")\""
+    else
+      _model_value=null
+    fi
     {
       printf '{\n'
-      printf '  "updatedAt": "%s",\n' "$(iso_now)"
-      printf '  "model": "%s",\n' "$(json_str "${PD_MODEL:-}")"
-      printf '  "review": {\n'
-      printf '    "username": "%s",\n' "$(json_str "${REVIEW_USER:-}")"
-      printf '    "token": "%s"\n' "$(json_str "${REVIEW_TOKEN:-}")"
+      printf '  "reviewAccount": {\n'
+      printf '    "username": "%s",\n' "$(json_str "$REVIEW_USER")"
+      printf '    "token": "%s"\n' "$(json_str "$REVIEW_TOKEN")"
+      printf '  },\n'
+      printf '  "modelByPersona": {\n'
+      printf '    "global": %s,\n' "$_model_value"
+      printf '    "orchestrator": %s,\n' "$_model_value"
+      printf '    "worker": %s,\n' "$_model_value"
+      printf '    "reviewer": %s\n' "$_model_value"
       printf '  }\n'
       printf '}\n'
     } > "$PD_HOME/settings.json"
     chmod 600 "$PD_HOME/settings.json"
-    ok "wrote $PD_HOME/settings.json (model + review account; read by the daemon)"
+    ok "wrote $PD_HOME/settings.json (review account + model per persona; read by the daemon)"
   fi
   {
     printf '{\n'

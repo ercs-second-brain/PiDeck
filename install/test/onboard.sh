@@ -4,8 +4,10 @@
 # (bootstrap copies lib/*.sh + onboard.sh side by side into ~/.pideck/lib/),
 # the required review account (noninteractive runs fail without it, succeed
 # with PD_REVIEW_USER/PD_REVIEW_TOKEN, and a rejected token fails), and the
-# settings.json contract the daemon reads (model + review username + token,
-# owner-only permissions). No network, no real pi/gh/auth side effects.
+# settings.json contract the daemon reads — the shared GlobalSettingsSchema
+# shape, byte-identical to test/fixtures/settings.json (the same fixture the
+# daemon test loads), owner-only permissions. No network, no real pi/gh/auth
+# side effects.
 set -u
 
 # shellcheck disable=SC1091 # shared test harness, sourced on purpose
@@ -71,11 +73,18 @@ check_eq 'review credentials verified: exits 0' '0' "$rc"
 check_grep 'review account verified in output' 'review account verified: reviewer' "$out"
 check_grep 'token rejection path not taken' 'review account verified' "$out"
 
+# The settings contract the daemon reads: the shared GlobalSettingsSchema
+# shape (reviewAccount + modelByPersona), byte-identical to the fixture the
+# daemon test loads — the two sides cannot drift.
+FIXTURE="$INSTALL_DIR/test/fixtures/settings.json"
 if [ -f "$PD_HOME/settings.json" ]; then
-  check_eq 'settings record the review username' 'reviewer' \
-    "$(sed -n 's/.*"username": "\([^"]*\)".*/\1/p' "$PD_HOME/settings.json")"
-  check_eq 'settings record the review token' 'ghp_good' \
-    "$(sed -n 's/.*"token": "\([^"]*\)".*/\1/p' "$PD_HOME/settings.json")"
+  written=$(cat "$PD_HOME/settings.json")
+  check_grep 'settings record reviewAccount.username' '"username": "reviewer"' "$written"
+  check_grep 'settings record reviewAccount.token' '"token": "ghp_good"' "$written"
+  check_grep 'settings record modelByPersona.worker' '"worker":' "$written"
+  check_no_grep 'settings have no legacy review key' '"review":' "$written"
+  check_no_grep 'settings have no legacy model key' '"model":' "$written"
+  check_eq 'settings match the shared fixture exactly' "$(cat "$FIXTURE")" "$written"
   # Portable owner-only check: ls -l perms field is -rw------- on GNU and BSD.
   # shellcheck disable=SC2012 # ls is the portable way to read perms here
   check_eq 'settings are owner-only' '-rw-------' \

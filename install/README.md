@@ -85,7 +85,10 @@ stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
    `PD_REVIEW_USER` + `PD_REVIEW_TOKEN`.
 
 Results: `~/.pideck/onboarding.json` (record) and `~/.pideck/settings.json`
-(model + review username + review token, chmod 600 — read by the daemon).
+(review account + model per persona, chmod 600 — read by the daemon). The
+settings shape is the shared `GlobalSettingsSchema` in
+`packages/shared/src/settings.ts`; `install/test/fixtures/settings.json` is
+the example fixture both the install shell test and the daemon test read.
 Re-run any time with `pideck onboard`.
 
 ## CLI
@@ -124,7 +127,7 @@ service unit files) and restarts the service. Up to date → no-op.
 | --- | --- |
 | `env` | sourceable env (`PD_HOME/SRC/NODE/WEB_PORT`, `PIDECK_MODEL`) for the service + CLI |
 | `config.json` | install metadata (paths, port, os, ref) |
-| `settings.json` | model + review account (username + token), read by the daemon, chmod 600 |
+| `settings.json` | review account + model per persona, read by the daemon, chmod 600 (shape: `packages/shared/src/settings.ts`) |
 | `onboarding.json` | pi + gh + review onboarding record |
 | `state/onboard-complete` | marker: onboarding finished with a verified review account |
 | `src/` | monorepo clone (built artifacts the service runs) |
@@ -148,7 +151,8 @@ plain-shell tests in `test/` via `test/run-all.sh` (no bats dependency):
 - `test/bootstrap-dry-run.sh` — dry-run on a BARE box (node/gh/pi/pnpm
   absent from PATH): every step printed, exit 0
 - `test/onboard.sh` — review-account requirement, verification, settings
-  contract
+  contract (the written file must match `test/fixtures/settings.json`, the
+  same fixture the daemon test loads)
 
 No daemons, no network, no systemd.
 

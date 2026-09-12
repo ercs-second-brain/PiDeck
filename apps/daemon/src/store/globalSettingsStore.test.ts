@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,6 +17,29 @@ function tempDir(): string {
 }
 
 describe("GlobalSettingsStore", () => {
+  // Written by install/onboard.sh; the install shell test asserts onboard.sh
+  // produces exactly this file, so both sides of the settings contract share
+  // one fixture and cannot drift.
+  const onboardingFixture = join(
+    import.meta.dirname,
+    "../../../../install/test/fixtures/settings.json",
+  );
+
+  it("reads the onboarding fixture the shell test pins onboard.sh to", () => {
+    const stateDir = tempDir();
+    copyFileSync(onboardingFixture, join(stateDir, "settings.json"));
+    const store = new GlobalSettingsStore(stateDir);
+
+    expect(store.read().reviewAccount).toEqual({ username: "reviewer", tokenSet: true });
+    expect(store.reviewToken()).toEqual({ username: "reviewer", token: "ghp_good" });
+    expect(store.read().modelByPersona).toEqual({
+      global: null,
+      orchestrator: null,
+      worker: null,
+      reviewer: null,
+    });
+  });
+
   it("starts with the shared-contract defaults", () => {
     const store = new GlobalSettingsStore(tempDir());
     expect(store.read()).toEqual({

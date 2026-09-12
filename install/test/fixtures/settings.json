@@ -1,0 +1,12 @@
+{
+  "reviewAccount": {
+    "username": "reviewer",
+    "token": "ghp_good"
+  },
+  "modelByPersona": {
+    "global": null,
+    "orchestrator": null,
+    "worker": null,
+    "reviewer": null
+  }
+}
