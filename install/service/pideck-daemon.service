@@ -1,0 +1,31 @@
+# PiDeck daemon — systemd user unit template.
+# Placeholders (@PD_…@) are substituted by install/lib/service.sh at install
+# time. Installed to ~/.config/systemd/user/pideck-daemon.service.
+# WantedBy=default.target starts the daemon at login (with linger: at boot);
+# Restart=on-failure brings it back after a crash.
+
+[Unit]
+Description=PiDeck daemon + webapp
+Documentation=https://github.com/ercs-second-brain/PiDeck
+# Never enter a permanent failed state after repeated crashes — keep
+# restarting (the default start-rate limit would give up after 5 tries).
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Only the daemon's main process is killed on stop/restart: the unit's cgroup
+# also holds the tmux servers (and the agent sessions inside them) that the
+# daemon spawned — the default KillMode=control-group would kill every user
+# session on each daemon restart or crash.
+KillMode=process
+WorkingDirectory=@PD_SRC@
+ExecStart=@PD_HOME@/bin/pideck-daemon
+Environment=PATH=@PD_SERVE_PATH@
+Environment=PD_HOME=@PD_HOME@
+Environment=PD_WEB_PORT=@PD_PORT@
+Environment=PD_SRC=@PD_SRC@
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

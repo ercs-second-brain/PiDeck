@@ -20,3 +20,17 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update -y && sudo apt-get install -y shellcheck
+      - name: Shell lint (install/)
+        run: |
+          shellcheck install/bootstrap.sh install/onboard.sh install/uninstall.sh \
+            install/bin/pideck install/bin/pideck-daemon \
+            install/lib/*.sh install/test/*.sh
+      - name: Shell tests (install/)
+        run: sh install/test/run-all.sh
