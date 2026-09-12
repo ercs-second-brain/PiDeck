@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { statePaths } from "./stateDir.js";
 import { z } from "zod";
 import {
   ProjectCreateSchema,
@@ -78,8 +79,9 @@ export class ProjectStore {
   private settingsStore: GlobalSettingsStore | null = null;
 
   constructor(stateDir: string, private run: CommandRunner = runCommand, reviewAccess?: ReviewAccessCheck) {
-    this.file = new JsonFile(join(stateDir, "projects.json"), ProjectsFileSchema, { projects: [] });
-    this.projectRoot = join(stateDir, "projects");
+    const paths = statePaths(stateDir);
+    this.file = new JsonFile(paths.projectsFile, ProjectsFileSchema, { projects: [] });
+    this.projectRoot = paths.projectsDir;
     this.stateDir = stateDir;
     this.reviewAccess = reviewAccess;
     this.file.load();

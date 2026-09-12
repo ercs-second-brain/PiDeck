@@ -27,6 +27,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
+import { statePaths } from "../store/stateDir.js";
 import { SessionSchema, type Persona, type Session } from "@pideck/shared";
 import { Tmux } from "./tmux.js";
 import type { SessionRegistry } from "./registry.js";
@@ -79,7 +80,7 @@ export function defaultGitRunner(): GitRunner {
 }
 
 function sessionDir(stateDir: string, sessionId: string): string {
-  return join(stateDir, "sessions", sessionId);
+  return join(statePaths(stateDir).sessionsDir, sessionId);
 }
 
 /** The branch a session clone starts from: `origin/HEAD` or the clone's HEAD. */
@@ -176,13 +177,13 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
     await setupReviewerCheckout(git, cwd, options.prNumber);
   }
 
-  const promptFile = join(deps.stateDir, "system-prompts", `${id}.md`);
+  const promptFile = join(statePaths(deps.stateDir).systemPromptsDir, `${id}.md`);
   mkdirSync(dirname(promptFile), { recursive: true });
   writeFileSync(promptFile, options.systemPrompt, "utf8");
 
   // Pin pi's session storage to a path we own: the context probe reads the
   // JSONL from here without reconstructing pi's internal cwd-slug layout.
-  const piSessionDir = join(deps.stateDir, "pi-sessions", id);
+  const piSessionDir = join(statePaths(deps.stateDir).piSessionsDir, id);
   mkdirSync(piSessionDir, { recursive: true });
 
   const command = [
@@ -235,14 +236,14 @@ export interface ArchiveDeps {
 export async function archiveSession(deps: ArchiveDeps, session: Session): Promise<Session> {
   if (await deps.tmux.isAlive(session.tmuxSession)) {
     const log = await deps.tmux.capturePane(session.tmuxSession);
-    const logFile = join(deps.stateDir, "logs", `${session.id}.log`);
+    const logFile = join(statePaths(deps.stateDir).logsDir, `${session.id}.log`);
     mkdirSync(dirname(logFile), { recursive: true });
     writeFileSync(logFile, `${log}\n`, "utf8");
     await deps.tmux.kill(session.tmuxSession);
   }
   rmSync(sessionDir(deps.stateDir, session.id), { recursive: true, force: true });
-  rmSync(join(deps.stateDir, "system-prompts", `${session.id}.md`), { force: true });
-  rmSync(join(deps.stateDir, "pi-sessions", session.id), { recursive: true, force: true });
+  rmSync(join(statePaths(deps.stateDir).systemPromptsDir, `${session.id}.md`), { force: true });
+  rmSync(join(statePaths(deps.stateDir).piSessionsDir, session.id), { recursive: true, force: true });
   return deps.registry.archive(session.id);
 }
 
@@ -289,7 +290,7 @@ export async function reconcileWithTmux(
     orphanTmuxSessions.push(name);
     if (options.stateDir === undefined) continue;
     const log = await tmux.capturePane(name);
-    const logFile = join(options.stateDir, "logs", `${name}.log`);
+    const logFile = join(statePaths(options.stateDir).logsDir, `${name}.log`);
     mkdirSync(dirname(logFile), { recursive: true });
     writeFileSync(logFile, `${log}\n`, "utf8");
     await tmux.kill(name);

@@ -33,6 +33,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { statePaths } from "../store/stateDir.js";
 import type { Session } from "@pideck/shared";
 
 export interface ContextProbeOptions {
@@ -167,7 +168,7 @@ function lookupContextWindow(agentDir: string, model: { provider: string; modelI
  */
 export function contextPercent(session: Session, options: ContextProbeOptions): number | null {
   const agentDir = resolveAgentDir(options.agentDir);
-  const file = newestSessionFile(join(options.stateDir, "pi-sessions", session.id));
+  const file = newestSessionFile(join(statePaths(options.stateDir).piSessionsDir, session.id));
   if (file === null) return null;
   const info = scanSessionFile(file);
   if (info === null || info.trailingCompaction) return null;

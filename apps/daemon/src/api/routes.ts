@@ -12,6 +12,7 @@ import {
   type SessionSend,
 } from "@pideck/shared";
 import { existsSync, readFileSync } from "node:fs";
+import { statePaths } from "../store/stateDir.js";
 import { join } from "node:path";
 import { loadShippedPrompt } from "../prompts/shipped.js";
 import { archiveSession } from "../sessions/spawn.js";
@@ -95,7 +96,7 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
 
     sessionLog: ({ params }) => {
       const session = sessionOr404(deps, params.id!);
-      const file = join(deps.stateDir, "logs", `${session.id}.log`);
+      const file = join(statePaths(deps.stateDir).logsDir, `${session.id}.log`);
       if (!existsSync(file)) throw new ApiError(404, "no archived log for this session");
       return { log: readFileSync(file, "utf8") };
     },

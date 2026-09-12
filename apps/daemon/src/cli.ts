@@ -6,6 +6,7 @@
 
 import { pathToFileURL } from "node:url";
 import {
+  DEFAULT_PORT,
   errorMessage,
   type Project,
   type SessionTrace,
@@ -140,7 +141,7 @@ async function dispatch(argv: string[], io: CliIo): Promise<number> {
 }
 
 export function daemonUrl(env: NodeJS.ProcessEnv = process.env): string {
-  return env.PD_DAEMON_URL ?? `http://127.0.0.1:${env.PD_WEB_PORT ?? 8321}`;
+  return env.PD_DAEMON_URL ?? `http://127.0.0.1:${env.PD_WEB_PORT ?? DEFAULT_PORT}`;
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {

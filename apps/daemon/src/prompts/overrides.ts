@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { statePaths } from "../store/stateDir.js";
 import type { Persona } from "@pideck/shared";
 
 type PromptStore = Partial<Record<Persona, string>>;
@@ -8,7 +9,7 @@ export class PromptOverrides {
   readonly #file: string;
 
   constructor(stateDir: string) {
-    this.#file = join(stateDir, "prompts.json");
+    this.#file = statePaths(stateDir).promptsFile;
   }
 
   get(persona: Persona): string | null {

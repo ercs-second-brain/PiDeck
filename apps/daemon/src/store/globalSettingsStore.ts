@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { statePaths } from "./stateDir.js";
+
 import {
   GlobalSettingsSchema,
   type GlobalSettings,
@@ -21,7 +22,7 @@ export class GlobalSettingsStore {
   private file: JsonFile<GlobalSettings>;
 
   constructor(stateDir: string) {
-    this.file = new JsonFile(join(stateDir, "settings.json"), GlobalSettingsSchema, emptySettings);
+    this.file = new JsonFile(statePaths(stateDir).settingsFile, GlobalSettingsSchema, emptySettings);
     this.file.load();
   }
 

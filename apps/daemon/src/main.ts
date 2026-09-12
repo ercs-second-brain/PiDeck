@@ -8,6 +8,7 @@
  */
 
 import { createRequire } from "node:module";
+import { DEFAULT_PORT } from "@pideck/shared";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PromptOverrides } from "./prompts/overrides.js";
@@ -97,7 +98,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
 
   const daemon = await serve(deps, {
     host: env.PD_WEB_HOST ?? "0.0.0.0",
-    port: env.PD_WEB_PORT === undefined ? 8321 : Number(env.PD_WEB_PORT),
+    port: env.PD_WEB_PORT === undefined ? DEFAULT_PORT : Number(env.PD_WEB_PORT),
     webDistDir: options.webDistDir === undefined ? defaultWebDistDir() : options.webDistDir,
   });
   void reconciler.tick();

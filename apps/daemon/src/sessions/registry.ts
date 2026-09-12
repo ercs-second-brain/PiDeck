@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { join } from "node:path";
+import { statePaths } from "../store/stateDir.js";
 import { SessionSchema, type Persona, type Session } from "@pideck/shared";
 import { JsonFile } from "../store/jsonFile.js";
 
@@ -36,7 +36,7 @@ export class SessionRegistry {
   readonly #file: JsonFile<Session[]>;
 
   constructor(stateDir: string) {
-    this.#file = new JsonFile(join(stateDir, "sessions.json"), z.array(SessionSchema), []);
+    this.#file = new JsonFile(statePaths(stateDir).sessionsFile, z.array(SessionSchema), []);
   }
 
   /** All records. A missing file is an empty registry; a corrupt one throws. */
