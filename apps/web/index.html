@@ -3,10 +3,38 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0c0d10" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PiDeck" />
+    <link rel="icon" href="/icons/icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>PiDeck</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script type="module">
+      // PWA bootstrap (docs/pwa.md): registers the app-shell service worker
+      // and keeps the shell's height on the visual viewport, so on phones the
+      // on-screen keyboard shrinks the shell instead of scrolling the page.
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js");
+      }
+      const mobile = matchMedia("(max-width: 899px)");
+      const viewport = visualViewport;
+      const setShellHeight = () => {
+        const root = document.documentElement;
+        if (mobile.matches && viewport) {
+          root.style.setProperty("--shell-height", `${viewport.height}px`);
+        } else {
+          root.style.removeProperty("--shell-height");
+        }
+      };
+      setShellHeight();
+      viewport?.addEventListener("resize", setShellHeight);
+      mobile.addEventListener("change", setShellHeight);
+    </script>
   </body>
 </html>
