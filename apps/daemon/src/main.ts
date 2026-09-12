@@ -1,8 +1,10 @@
 /**
  * Daemon entrypoint: builds the stores, reconciles the session registry with
  * tmux at startup, and serves the REST API, the shared WebSocket and the
- * built web app. Shutting down closes the HTTP surface only — tmux panes and
- * the registry survive, and the next start reconciles them.
+ * built web app. The reconciler loop runs alongside: every poll reads GitHub
+ * and closes the gap between desired and actual state. Shutting down stops
+ * the reconciler and closes the HTTP surface only — tmux panes and the
+ * registry survive, and the next start reconciles them.
  */
 
 import { createRequire } from "node:module";
@@ -12,9 +14,11 @@ import { PromptOverrides } from "./prompts/overrides.js";
 import { ghPrimaryProbe, ghReviewProbe, piProbe } from "./api/probes.js";
 import { serve, type DaemonServer } from "./api/server.js";
 import type { DaemonDeps } from "./api/deps.js";
-import { reconcileWithTmux } from "./sessions/spawn.js";
+import { GhClient } from "./github/client.js";
+import { reconcileWithTmux, defaultGitRunner } from "./sessions/spawn.js";
 import { SessionRegistry } from "./sessions/registry.js";
 import { Tmux } from "./sessions/tmux.js";
+import { startReconciler } from "./reconciler/index.js";
 import { GlobalSettingsStore } from "./store/globalSettingsStore.js";
 import { ProjectStore } from "./store/projectStore.js";
 import { resolveStateDir } from "./store/stateDir.js";
@@ -57,15 +61,37 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
     console.log(`[daemon] session ${session.id} (${session.persona}) has no tmux pane`);
   }
 
-  // Reconciler startup goes here once that phase lands: startReconciler(deps).
-  // Until then the registry only changes through the API below.
+  // The reconciler: every poll reads GitHub, derives desired state, and
+  // closes the gap in the registry and tmux. A restart is just the first
+  // poll, so the first tick runs as soon as the HTTP surface is up.
+  const reconciler = startReconciler({
+    gh: (repo) => new GhClient({ repo }),
+    projects,
+    settings,
+    registry,
+    tmux,
+    prompts,
+    stateDir,
+    intervalMs: deps.pollIntervalSeconds * 1000,
+    git: defaultGitRunner(),
+    notifyChange: () => deps.notifyChange?.(),
+  });
+  deps.reconcilerFacts = (projectId) => reconciler.factsFor(projectId);
+
   const daemon = await serve(deps, {
     host: env.PD_WEB_HOST ?? "0.0.0.0",
     port: env.PD_WEB_PORT === undefined ? 8321 : Number(env.PD_WEB_PORT),
     webDistDir: options.webDistDir === undefined ? defaultWebDistDir() : options.webDistDir,
   });
+  void reconciler.tick();
   console.log(`[daemon] listening on http://${daemon.host}:${daemon.port}`);
-  return daemon;
+  return {
+    ...daemon,
+    async close() {
+      reconciler.stop();
+      await daemon.close();
+    },
+  };
 }
 
 export async function main(): Promise<void> {

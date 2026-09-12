@@ -21,5 +21,6 @@ export function makeView(overrides: Partial<SessionView["session"]> = {}): Sessi
     state: "done",
     status: "archived",
     parentSessionId: null,
+    title: null,
   };
 }

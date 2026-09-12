@@ -27,7 +27,7 @@ import {
   orchestratorAction,
   type Action,
 } from "./desired.js";
-import { ProjectReader } from "./read.js";
+import { ProjectReader, type ProjectFacts } from "./read.js";
 
 export { deriveState, type SessionStateFacts } from "./state.js";
 export { ProjectReader, type ProjectFacts } from "./read.js";
@@ -35,6 +35,7 @@ export {
   deriveActions,
   deriveGlobalAction,
   orchestratorAction,
+  prForWorker,
   type Action,
   type DeriveInput,
 } from "./desired.js";
@@ -75,6 +76,8 @@ export interface ReconcilerDeps {
 export interface ReconcilerHandle {
   stop(): void;
   tick(): Promise<void>;
+  /** The last successful GitHub read pass for a project; null before the first. */
+  factsFor(projectId: string): ProjectFacts | null;
 }
 
 const DEFAULT_INTERVAL_MS = 30_000;
@@ -102,6 +105,7 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
   };
   let timer: ReturnType<typeof setInterval> | null = null;
   let queue: Promise<void> = Promise.resolve();
+  const factsByProject = new Map<string, ProjectFacts>();
 
   function readerFor(project: Project): ProjectReader {
     let reader = readers.get(project.id);
@@ -160,6 +164,7 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     for (const project of deps.projects.list()) {
       try {
         const facts = await readerFor(project).read();
+        factsByProject.set(project.id, facts);
         const live = registry.list({ projectId: project.id, archived: false });
         const settings = deps.projects.settings(project.id);
         const context = new Map(
@@ -229,6 +234,10 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
       timer = null;
     },
     tick,
+    /** The last successful GitHub read pass for a project, for live views. */
+    factsFor(projectId: string): ProjectFacts | null {
+      return factsByProject.get(projectId) ?? null;
+    },
   };
 }
 

@@ -102,13 +102,16 @@ describe("session view", () => {
       state: "fixing",
       status: "PR #7, attempt 2",
       parentSessionId: null,
+      title: "Add rate limiting",
     });
     expect(view.state).toBe("fixing");
+    expect(view.title).toBe("Add rate limiting");
     const reviewer = SessionViewSchema.parse({
       session: { ...base, persona: "reviewer", prNumber: 7 },
       state: "in_review",
       status: "re-review",
       parentSessionId: "s1",
+      title: null,
     });
     expect(reviewer.parentSessionId).toBe("s1");
     expect(() =>
@@ -117,6 +120,7 @@ describe("session view", () => {
         state: "cooking",
         status: "",
         parentSessionId: null,
+        title: null,
       }),
     ).toThrow();
   });
@@ -127,6 +131,7 @@ describe("session view", () => {
       state: null,
       status: "listening",
       parentSessionId: null,
+      title: null,
     });
     expect(view.state).toBeNull();
   });
@@ -278,6 +283,7 @@ describe("ws events", () => {
     state: "working",
     status: "implementing",
     parentSessionId: null,
+    title: "Add rate limiting",
   };
 
   it("carries the daemon-wide session view list", () => {

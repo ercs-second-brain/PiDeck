@@ -17,7 +17,7 @@ import { loadShippedPrompt } from "../prompts/shipped.js";
 import { archiveSession } from "../sessions/spawn.js";
 import type { DaemonDeps } from "./deps.js";
 import { ApiError, type ApiHandlers } from "./router.js";
-import { sessionView } from "./views.js";
+import { sessionViews } from "./views.js";
 
 /**
  * Handlers for every REST endpoint in the shared map. Bodies arrive already
@@ -53,10 +53,10 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     projectSettingsPut: ({ params, body }) =>
       notFound(() => deps.projects.updateSettings(params.id!, body as Partial<ProjectSettings>)),
 
-    sessionList: () => deps.registry.list().map(sessionView),
+    sessionList: () => sessionViews(deps.registry.list(), deps),
     projectSessionList: ({ params }) => {
       notFound(() => deps.projects.get(params.id!));
-      return deps.registry.list({ projectId: params.id! }).map(sessionView);
+      return sessionViews(deps.registry.list({ projectId: params.id! }), deps);
     },
 
     sessionSend: async ({ params, body }) => {

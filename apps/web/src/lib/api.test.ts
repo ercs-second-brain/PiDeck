@@ -116,6 +116,7 @@ describe("watchSessions", () => {
           state: "working",
           status: "on it",
           parentSessionId: null,
+          title: "Add rate limiting",
         },
       ],
     });

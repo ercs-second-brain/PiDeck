@@ -9,7 +9,7 @@ import { SessionRegistry } from "../sessions/registry.js";
 import { Tmux, TmuxError, type TmuxRunner } from "../sessions/tmux.js";
 import { PromptOverrides } from "../prompts/overrides.js";
 import { ciRollup, type GhComment, type GhPr, type GhReview } from "../github/schemas.js";
-import { startReconciler, type GhClientLike, type ReconcilerDeps } from "./index.js";
+import { startReconciler, type GhClientLike, type ProjectFacts, type ReconcilerDeps } from "./index.js";
 
 const project = ProjectSchema.parse({
   id: "my-api",
@@ -128,7 +128,7 @@ describe("startReconciler", () => {
   let ghStates: Map<string, FakeGhState>;
   let logs: string[];
   let deps: ReconcilerDeps;
-  let handle: { stop(): void; tick(): Promise<void> } | null = null;
+  let handle: { stop(): void; tick(): Promise<void>; factsFor(projectId: string): ProjectFacts | null } | null = null;
 
   beforeEach(() => {
     stateDir = mkdtempSync(join(tmpdir(), "pideck-reconciler-"));
@@ -202,6 +202,16 @@ describe("startReconciler", () => {
     expect(registry.list({ projectId: "my-api", persona: "worker" })).toHaveLength(1);
     expect(registry.list({ projectId: "my-web" })).toHaveLength(0);
     expect(logs.some((l) => l.includes("project My Web: gh is down"))).toBe(true);
+  });
+
+  it("serves the last read pass to live views", async () => {
+    ghStates.set("my-api", { issues: [rawIssue()], prs: [], comments: [] });
+    handle = startReconciler(deps);
+
+    expect(handle.factsFor("my-api")).toBeNull();
+    await handle.tick();
+    expect(handle.factsFor("my-api")?.issues.map((issue) => issue.number)).toEqual([1]);
+    expect(handle.factsFor("my-web")?.issues).toEqual([]);
   });
 
   it("stops the interval loop", async () => {
