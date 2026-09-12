@@ -24,6 +24,7 @@ const session = {
   lastDeliveredIssueCommentId: null,
   lastDeliveredPrCommentId: null,
   lastDeliveredReviewId: null,
+  lastNotifiedConflictSha: null,
   fixAttempts: 0,
   lastActivityAt: null,
 } as const;

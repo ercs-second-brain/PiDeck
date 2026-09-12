@@ -32,6 +32,7 @@ import {
   ciRed,
   ciRedExhausted,
   issueComment,
+  prConflict,
   reReview,
   reviewChanges,
   stalled,
@@ -267,6 +268,13 @@ function deriveWorkerDeliveries(
   // as activity; with a null watermark the head is just "a PR exists".
   const pushed = pr !== null && pr.headSha !== worker.lastPromptedHeadSha;
   const attributedPush = pushed && worker.lastPromptedHeadSha !== null;
+  // A PR that conflicts with main never runs CI and never gets reviewed, so
+  // without this delivery the worker would sit idle until the stall bound.
+  // Watermarked per head: a new push that still conflicts re-notifies.
+  if (pr !== null && pr.mergeable === "CONFLICTING" && worker.lastNotifiedConflictSha !== pr.headSha) {
+    deliveries.push({ target: worker, text: prConflict({ prNumber: pr.number }) });
+    patch.lastNotifiedConflictSha = pr.headSha;
+  }
   if (pr !== null && pr.ciStatus === "failed" && pushed) {
     if (worker.fixAttempts >= settings.maxFixAttempts) {
       deliveries.push({

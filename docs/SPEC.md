@@ -166,6 +166,7 @@ watermark costs at most one duplicate prompt.
 |---|---|---|
 | spawn | worker | issue number, title, URL, branch name, "open a PR with `Closes #n`" |
 | CI red on a new head | worker | failing check names, attempt k of N |
+| PR conflicts with main | worker | rebase, resolve, push (once per head) |
 | new review requesting changes / new PR comments | worker | pointer to the review / comments |
 | new issue comment from someone other than the worker | worker (wakes idle) | pointer to the comment |
 | spawn | reviewer | PR number, repo, "file exactly one review" |

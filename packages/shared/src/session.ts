@@ -16,6 +16,8 @@ export const SessionSchema = z.object({
   lastDeliveredIssueCommentId: z.number().int().nullable().default(null),
   lastDeliveredPrCommentId: z.number().int().nullable().default(null),
   lastDeliveredReviewId: z.number().int().nullable().default(null),
+  /** Head of the PR whose conflicts the worker was last told to resolve. */
+  lastNotifiedConflictSha: z.string().nullable().default(null),
   fixAttempts: z.number().int().default(0),
   lastActivityAt: z.string().nullable().default(null),
 });

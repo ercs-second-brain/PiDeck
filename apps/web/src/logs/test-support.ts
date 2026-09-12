@@ -14,6 +14,7 @@ export function makeView(overrides: Partial<SessionView["session"]> = {}): Sessi
       lastDeliveredIssueCommentId: null,
       lastDeliveredPrCommentId: null,
       lastDeliveredReviewId: null,
+      lastNotifiedConflictSha: null,
       fixAttempts: 0,
       lastActivityAt: null,
       ...overrides,

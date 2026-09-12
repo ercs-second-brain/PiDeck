@@ -52,10 +52,11 @@ function projectSettings(deps: DaemonDeps, projectId: string | null): ProjectSet
 function workerPr(session: Session, facts: ProjectFacts | null): {
   ciStatus: CiStatus;
   reviewDecision: string | null;
+  mergeable: string;
 } | null {
   if (session.persona !== "worker" || facts === null) return null;
   const pr = prForWorker(facts, session);
-  return pr === null ? null : { ciStatus: pr.ciStatus, reviewDecision: pr.reviewDecision };
+  return pr === null ? null : { ciStatus: pr.ciStatus, reviewDecision: pr.reviewDecision, mergeable: pr.mergeable };
 }
 
 /** A reviewer lives under the live worker whose PR it reviews. */
