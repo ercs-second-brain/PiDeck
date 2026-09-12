@@ -72,13 +72,20 @@ describe("buildBriefing", () => {
     expect(line).toContain("reviewer PR #21 (s-rev)");
   });
 
-  it("omits empty groups", () => {
+  it("states empty groups explicitly so a quiet repo reads as quiet", () => {
     const line = buildBriefing({ project, issues: [], prs: [], sessions: [] });
-    expect(line).not.toContain("assigned:");
-    expect(line).not.toContain("blocked:");
-    expect(line).not.toContain("unassigned:");
-    expect(line).not.toContain("PRs:");
-    expect(line).not.toContain("live:");
+    expect(line).toContain("no open issues");
+    expect(line).toContain("no open PRs");
+    expect(line).toContain("no live sessions");
     expect(line).toContain("project memory: docs/ on main");
+  });
+
+  it("still omits the empty assigned/blocked/unassigned subgroups when issues exist", () => {
+    const line = buildBriefing({ project, issues: [issue({})], prs: [], sessions: [] });
+    expect(line).toBe(
+      "Briefing for My API (acme/my-api, branch main): " +
+        "unassigned: #1 Do a thing; no open PRs; no live sessions; " +
+        "project memory: docs/ on main.",
+    );
   });
 });

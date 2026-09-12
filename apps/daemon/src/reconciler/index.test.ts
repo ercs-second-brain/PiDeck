@@ -99,7 +99,10 @@ function fakeTmux() {
     }
     return { stdout: "", stderr: "" };
   };
-  return { tmux: new Tmux({ runner, enterDelayMs: 0 }), calls };
+  return {
+    tmux: new Tmux({ runner, enterDelayMs: 0, verifyDelayMs: 0, waitPollMs: 5, waitQuietMs: 0 }),
+    calls,
+  };
 }
 
 /** Reassembles the lines delivered into panes. */
@@ -221,7 +224,7 @@ describe("startReconciler", () => {
       deps = { ...deps, intervalMs: 10 };
       handle = startReconciler(deps);
 
-      await vi.advanceTimersByTimeAsync(45);
+      await vi.advanceTimersByTimeAsync(300);
       const ticksBefore = logs.filter((l) => l.startsWith("reconciler:")).length;
       expect(ticksBefore).toBeGreaterThanOrEqual(4);
 
