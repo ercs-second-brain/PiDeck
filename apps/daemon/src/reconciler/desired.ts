@@ -380,7 +380,8 @@ export function isAssigned(issue: IssueFacts, primaryLogin: string | null): bool
   return primaryLogin === null ? issue.assignees.length > 0 : issue.assignees.includes(primaryLogin);
 }
 
-function prForWorker(facts: { prs: PrFacts[] }, worker: Session): PrFacts | null {
+/** The PR attached to a worker: its own, else the one on its issue branch. */
+export function prForWorker(facts: { prs: PrFacts[] }, worker: Session): PrFacts | null {
   if (worker.prNumber !== undefined) {
     const byNumber = facts.prs.find((pr) => pr.number === worker.prNumber);
     if (byNumber !== undefined) return byNumber;

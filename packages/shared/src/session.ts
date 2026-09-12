@@ -27,6 +27,8 @@ export const SessionViewSchema = z.object({
   state: WorkerStateSchema.nullable(),
   status: z.string(),
   parentSessionId: z.string().nullable(),
+  /** The issue (or the issue behind the reviewer's PR) title, when known. */
+  title: z.string().nullable(),
 });
 
 export type SessionView = z.infer<typeof SessionViewSchema>;

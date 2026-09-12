@@ -124,13 +124,73 @@ describe("REST contract", () => {
     const all = await call(base, "GET", "/api/sessions");
     const views: SessionView[] = validate(restEndpoints["sessionList"].response, all.body);
     expect(views).toHaveLength(2);
-    expect(views.map((v) => v.state)).toEqual([null, null]);
-    expect(views.find((v) => v.session.id === worker.id)?.status).toBe("working");
-    expect(views.find((v) => v.session.id === orchestrator.id)?.status).toBe("");
+    expect(views.map((v) => v.state)).toEqual(["working", null]);
+    expect(views.find((v) => v.session.id === worker.id)?.status).toBe("working on #7");
+    expect(views.find((v) => v.session.id === orchestrator.id)?.status).toBe("orchestrator");
 
     const perProject = await call(base, "GET", `/api/projects/${project.id}/sessions`);
     expect(validate(restEndpoints["projectSessionList"].response, perProject.body)).toHaveLength(2);
     expect((await call(base, "GET", "/api/projects/nope/sessions")).status).toBe(404);
+  });
+
+  it("derives worker state, title and reviewer parent from the reconciler's facts", async () => {
+    const { base, deps } = await startDaemon();
+    const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
+    const worker = sessionRecord({
+      persona: "worker",
+      projectId: project.id,
+      issueNumber: 7,
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+    });
+    const reviewer = sessionRecord({ persona: "reviewer", projectId: project.id, prNumber: 11 });
+    deps.registry.add(worker);
+    deps.registry.add(reviewer);
+    deps.reconcilerFacts = (projectId) =>
+      projectId === project.id
+        ? {
+            issues: [
+              {
+                number: 7,
+                title: "Add rate limiting",
+                url: `https://github.com/acme/widget/issues/7`,
+                assignees: ["acme"],
+                openBlockers: 0,
+                comments: [],
+              },
+            ],
+            prs: [
+              {
+                number: 11,
+                headBranch: "pideck/issue-7",
+                headSha: "sha-1",
+                mergeable: "MERGEABLE",
+                reviewDecision: "APPROVED",
+                ciStatus: "ok",
+                failingChecks: [],
+                green: true,
+                issueNumber: 7,
+                reviews: [],
+                reviewComments: [],
+                prComments: [],
+              },
+            ],
+            primaryLogin: "acme",
+          }
+        : null;
+
+    const views: SessionView[] = validate(
+      restEndpoints["sessionList"].response,
+      (await call(base, "GET", "/api/sessions")).body,
+    );
+    const workerView = views.find((v) => v.session.id === worker.id)!;
+    const reviewerView = views.find((v) => v.session.id === reviewer.id)!;
+    expect(workerView.state).toBe("ready");
+    expect(workerView.status).toBe("approved and green, PR #11");
+    expect(workerView.title).toBe("Add rate limiting");
+    expect(reviewerView.state).toBe("in_review");
+    expect(reviewerView.parentSessionId).toBe(worker.id);
+    expect(reviewerView.title).toBe("Add rate limiting");
   });
 
   it("sends a line into the pane and rejects unknown or archived sessions", async () => {

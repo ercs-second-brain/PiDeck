@@ -25,6 +25,7 @@ function view(overrides: {
   archivedAt?: string;
   parentSessionId?: string | null;
   status?: string;
+  title?: string | null;
   state?: SessionView["state"];
   spawnedAt?: string;
 }): SessionView {
@@ -50,6 +51,7 @@ function view(overrides: {
     state: overrides.state ?? null,
     status: overrides.status ?? "",
     parentSessionId: overrides.parentSessionId ?? null,
+    title: overrides.title ?? null,
   };
 }
 
@@ -134,10 +136,11 @@ describe("buildTree", () => {
 });
 
 describe("sessionRow / rowText", () => {
-  it("renders workers as a blue issue number plus the one-line status", () => {
-    const row = sessionRow(view({ id: "w", issueNumber: 42, status: "Add rate limiting" }));
+  it("renders workers as a blue issue number plus the issue title, falling back to status", () => {
+    const row = sessionRow(view({ id: "w", issueNumber: 42, title: "Add rate limiting", status: "working on #42" }));
     expect(row).toEqual({ num: "#42", glyph: null, label: "Add rate limiting" });
-    expect(rowText(view({ id: "w", issueNumber: 42, status: "Add rate limiting" }))).toBe("#42 Add rate limiting");
+    expect(rowText(view({ id: "w", issueNumber: 42, title: "Add rate limiting" }))).toBe("#42 Add rate limiting");
+    expect(sessionRow(view({ id: "w2", issueNumber: 43, status: "working on #43" })).label).toBe("working on #43");
   });
 
   it("marks reviewers with the ↳ glyph and falls back to 'Reviewer'", () => {
@@ -147,6 +150,9 @@ describe("sessionRow / rowText", () => {
       label: "Reviewer",
     });
     expect(sessionRow(view({ id: "r2", persona: "reviewer", status: "reviewing" })).label).toBe("reviewing");
+    expect(sessionRow(view({ id: "r3", persona: "reviewer", title: "Add rate limiting" })).label).toBe(
+      "Add rate limiting",
+    );
   });
 
   it("labels the global agent and the orchestrator", () => {

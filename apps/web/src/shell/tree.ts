@@ -103,10 +103,10 @@ export function sessionRow(view: SessionView): RowText {
       return {
         num: view.session.issueNumber !== undefined ? `#${view.session.issueNumber}` : null,
         glyph: null,
-        label: view.status,
+        label: view.title ?? view.status,
       };
     case "reviewer":
-      return { num: null, glyph: "↳", label: view.status === "" ? "Reviewer" : view.status };
+      return { num: null, glyph: "↳", label: view.title ?? (view.status === "" ? "Reviewer" : view.status) };
   }
 }
 

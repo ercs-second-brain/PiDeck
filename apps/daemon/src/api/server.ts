@@ -40,7 +40,7 @@ export async function serve(deps: DaemonDeps, options: ServeOptions = {}): Promi
     tmux: deps.tmux,
   });
   const hub = new SessionsHub({
-    snapshot: () => sessionViews(deps.registry.all()),
+    snapshot: () => sessionViews(deps.registry.all(), deps),
     debounceMs: options.debounceMs ?? 100,
   });
   deps.notifyChange = () => hub.broadcastSoon();

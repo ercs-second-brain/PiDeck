@@ -4,6 +4,7 @@ import type { SessionRegistry } from "../sessions/registry.js";
 import type { PromptOverrides } from "../prompts/overrides.js";
 import type { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import type { ProjectStore } from "../store/projectStore.js";
+import type { ProjectFacts } from "../reconciler/index.js";
 
 /**
  * Everything the API layer needs, injected so an in-memory daemon can be
@@ -22,6 +23,8 @@ export interface DaemonDeps {
   ghPrimary: () => Promise<Probe>;
   ghReview: () => Promise<Probe>;
   pi: () => Promise<PiProbe>;
+  /** The reconciler's last GitHub read pass for a project; null before the first. */
+  reconcilerFacts?: (projectId: string) => ProjectFacts | null;
   /** Called after an API mutation changes the session registry. */
   notifyChange?: () => void;
 }
