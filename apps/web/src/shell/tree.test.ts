@@ -26,6 +26,7 @@ function view(overrides: {
   parentSessionId?: string | null;
   status?: string;
   title?: string | null;
+  label?: string;
   state?: SessionView["state"];
   spawnedAt?: string;
   reviewAccess?: string | null;
@@ -41,6 +42,7 @@ function view(overrides: {
       tmuxSession: `tmux-${id}`,
       spawnedAt: overrides.spawnedAt ?? "2026-01-01T00:00:00Z",
       model: null,
+      label: overrides.label,
       archivedAt: overrides.archivedAt,
       lastPromptedHeadSha: null,
       lastDeliveredIssueCommentId: null,
@@ -172,6 +174,18 @@ describe("sessionRow / rowText", () => {
     expect(sessionRow(view({ id: "r2", persona: "reviewer", status: "reviewing" })).label).toBe("reviewing");
     expect(sessionRow(view({ id: "r3", persona: "reviewer", title: "Add rate limiting" })).label).toBe(
       "Add rate limiting",
+    );
+  });
+
+  it("prefers a user-given label over the issue number and title", () => {
+    expect(sessionRow(view({ id: "w", issueNumber: 42, title: "Add rate limiting", label: "Rate limiting" }))).toEqual({
+      num: null,
+      glyph: null,
+      label: "Rate limiting",
+    });
+    expect(rowText(view({ id: "w", issueNumber: 42, title: "Add rate limiting", label: "Rate limiting" }))).toBe("Rate limiting");
+    expect(sessionRow(view({ id: "r", persona: "reviewer", title: "Add rate limiting", label: "Second round" })).label).toBe(
+      "Second round",
     );
   });
 

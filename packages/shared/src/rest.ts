@@ -36,6 +36,9 @@ export type SessionSend = z.infer<typeof SessionSendSchema>;
 export const SessionLogSchema = z.object({ log: z.string() });
 export type SessionLog = z.infer<typeof SessionLogSchema>;
 
+export const SessionLabelSchema = z.object({ label: z.string().min(1) });
+export type SessionLabel = z.infer<typeof SessionLabelSchema>;
+
 export const PromptSchema = z.object({
   persona: PersonaSchema,
   prompt: z.string(),
@@ -104,6 +107,12 @@ export const restEndpoints = {
     path: "/api/sessions/:id/send",
     request: SessionSendSchema,
     response: OkSchema,
+  },
+  sessionLabel: {
+    method: "PATCH",
+    path: "/api/sessions/:id",
+    request: SessionLabelSchema,
+    response: SessionViewSchema,
   },
   sessionTerminate: { method: "POST", path: "/api/sessions/:id/terminate", response: OkSchema },
   sessionLog: { method: "GET", path: "/api/sessions/:id/log", response: SessionLogSchema },

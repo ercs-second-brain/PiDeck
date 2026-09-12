@@ -243,6 +243,20 @@ describe("REST contract", () => {
     ).toBe(409);
   });
 
+  it("renames a session and rejects unknown or empty labels", async () => {
+    const { base, deps } = await startDaemon();
+    const worker = sessionRecord();
+    deps.registry.add(worker);
+
+    const res = await call(base, "PATCH", `/api/sessions/${worker.id}`, { label: "Rate limiting" });
+    const view = validate(restEndpoints["sessionLabel"].response, res.body);
+    expect(view.session.label).toBe("Rate limiting");
+    expect(deps.registry.get(worker.id)?.label).toBe("Rate limiting");
+
+    expect((await call(base, "PATCH", "/api/sessions/nope", { label: "x" })).status).toBe(404);
+    expect((await call(base, "PATCH", `/api/sessions/${worker.id}`, { label: "" })).status).toBe(400);
+  });
+
   it("terminates a session: archives, kills the pane, writes the log", async () => {
     const { base, deps, tmux } = await startDaemon();
     const worker = sessionRecord();

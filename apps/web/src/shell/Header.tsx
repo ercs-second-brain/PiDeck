@@ -4,8 +4,7 @@ import { UpdateBanner } from "../update/UpdateBanner";
 
 /**
  * The 44px app header: sidebar toggle (desktop) or back (mobile detail
- * views) plus the current context on the left; "+" (onboarding) and the
- * settings gear on the right.
+ * views) plus the current context on the left; settings gear on the right.
  */
 export function Header({ context, throttledUntil, detail, collapsed, onToggle, onNavigate }: {
   context: string | null;
@@ -45,9 +44,6 @@ export function Header({ context, throttledUntil, detail, collapsed, onToggle, o
           </span>
         )}
         <UpdateBanner />
-        <button type="button" className="header__icon" aria-label="Add project" onClick={() => onNavigate("/onboarding")}>
-          +
-        </button>
         <button type="button" className="header__icon" aria-label="Settings" onClick={() => onNavigate("/settings")}>
           ⚙
         </button>

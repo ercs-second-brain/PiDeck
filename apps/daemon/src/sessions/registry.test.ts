@@ -80,6 +80,15 @@ describe("SessionRegistry", () => {
     expect(registry.get(session.id)).toEqual(updated);
   });
 
+  it("updates a label", () => {
+    const registry = new SessionRegistry(stateDir);
+    const session = record();
+    registry.add(session);
+    const updated = registry.update(session.id, { label: "Rate limiting" });
+    expect(updated.label).toBe("Rate limiting");
+    expect(registry.get(session.id)?.label).toBe("Rate limiting");
+  });
+
   it("update on an unknown session throws", () => {
     expect(() => new SessionRegistry(stateDir).update("nope", {})).toThrow("unknown session");
   });

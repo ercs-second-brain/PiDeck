@@ -11,6 +11,8 @@ export const SessionSchema = z.object({
   tmuxSession: z.string(),
   spawnedAt: z.string(),
   model: z.string().nullable(),
+  /** Optional user-given row name; shown instead of `#N title` in the sidebar. */
+  label: z.string().optional(),
   archivedAt: z.string().optional(),
   lastPromptedHeadSha: z.string().nullable().default(null),
   lastDeliveredIssueCommentId: z.number().int().nullable().default(null),

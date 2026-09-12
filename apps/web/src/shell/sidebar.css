@@ -123,8 +123,30 @@
 }
 
 .sidebar__add {
+  flex: none;
   margin-top: auto;
   color: var(--text-dim);
+}
+
+.sidebar__add:hover {
+  color: var(--text);
+}
+
+.srow__rename {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding-right: 10px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-md);
+}
+
+.srow__rename:focus-visible {
+  outline-offset: 0;
 }
 
 .srow-menu-overlay {
@@ -167,6 +189,10 @@
 
 @media (pointer: coarse) {
   .srow {
+    height: 44px;
+  }
+
+  .srow__rename {
     height: 44px;
   }
 
