@@ -37,10 +37,7 @@ export interface DaemonServer {
 export async function serve(deps: DaemonDeps, options: ServeOptions = {}): Promise<DaemonServer> {
   const bridge = new TerminalBridge({
     sessions: deps.registry,
-    tmux: {
-      run: (args) => deps.tmux.run(args),
-      hasSession: (name) => deps.tmux.isAlive(name),
-    },
+    tmux: deps.tmux,
   });
   const hub = new SessionsHub({
     snapshot: () => sessionViews(deps.registry.all()),

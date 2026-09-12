@@ -18,7 +18,7 @@
 
 import { WsClientMessageSchema, type Session } from "@pideck/shared";
 import { PaneStream } from "./pane-stream.js";
-import { TmuxCli, type Tmux } from "./tmux.js";
+import { Tmux } from "../sessions/tmux.js";
 
 /** WebSocket close codes (4xxx = application-defined). */
 export const CLOSE_UNKNOWN_SESSION = 4004;
@@ -100,7 +100,7 @@ export class TerminalBridge {
     this.options = {
       ...DEFAULTS,
       ...options,
-      tmux: options.tmux ?? new TmuxCli(),
+      tmux: options.tmux ?? new Tmux(),
       log: options.log ?? ((line) => console.log(line)),
     };
   }
