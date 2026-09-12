@@ -39,9 +39,11 @@ export type GhComment = {
   createdAt: string;
 };
 
+// Check runs carry name/status/conclusion; status contexts carry context/state.
 const GhCheckSchema = z.object({
-  name: z.string().nullable(),
-  status: z.string(),
+  name: z.string().nullable().optional(),
+  context: z.string().nullable().optional(),
+  status: z.string().nullable().optional(),
   conclusion: z.string().nullable().optional(),
   state: z.string().nullable().optional(),
 });
@@ -94,13 +96,21 @@ export const GhCommentIdSchema = z.object({ id: z.number().int() });
 
 const PENDING_CONTEXT_STATES = new Set(["PENDING", "EXPECTED"]);
 
+// gh reports a running check run with conclusion "" (or null): done-ness comes
+// from status/state, never from conclusion.
 function checkDone(check: GhCheck): boolean {
-  if (check.conclusion !== undefined && check.conclusion !== null) return true;
-  return check.state !== undefined && check.state !== null && !PENDING_CONTEXT_STATES.has(check.state);
+  if (check.state !== undefined && check.state !== null) return !PENDING_CONTEXT_STATES.has(check.state);
+  return check.status === "COMPLETED";
 }
 
+// Skipped and neutral check runs count as passing, as they do on GitHub.
 function checkOk(check: GhCheck): boolean {
-  return check.conclusion === "SUCCESS" || check.state === "SUCCESS";
+  return check.conclusion === "SUCCESS" || check.conclusion === "SKIPPED" || check.conclusion === "NEUTRAL"
+    || check.state === "SUCCESS";
+}
+
+function checkName(check: GhCheck): string {
+  return check.name ?? check.context ?? "unknown check";
 }
 
 export function ciRollup(checks: GhCheck[]): { ciStatus: CiStatus; failingChecks: string[] } {
@@ -108,7 +118,7 @@ export function ciRollup(checks: GhCheck[]): { ciStatus: CiStatus; failingChecks
   // GitHub can briefly report no checks. Callers guarding on "green" must confirm the
   // head SHA is stable across polls, or that the rollup is non-empty for repos with
   // workflows, before treating the PR as green.
-  const failing = checks.filter((c) => checkDone(c) && !checkOk(c)).map((c) => c.name ?? "unknown check");
+  const failing = checks.filter((c) => checkDone(c) && !checkOk(c)).map(checkName);
   const pending = checks.some((c) => !checkDone(c));
   if (failing.length > 0) return { ciStatus: "failed", failingChecks: failing };
   return { ciStatus: pending ? "pending" : "ok", failingChecks: [] };

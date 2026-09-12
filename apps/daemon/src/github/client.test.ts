@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GhClient, type GhExec, type GhExecResult } from "./client.js";
 import { GhError, GhRateLimited } from "./error.js";
+import { statusCheckRollup as capturedPrs } from "./fixtures/statusCheckRollup.js";
 
 type Call = { args: string[]; env: NodeJS.ProcessEnv };
 
@@ -32,28 +33,16 @@ const ISSUE_COMMENTS_JSON = JSON.stringify([
   { id: 11, user: null, body: "out of order", created_at: "2026-01-01T00:02:00Z" },
 ]);
 
-const PR_LIST_JSON = JSON.stringify([
-  {
-    number: 537,
-    headRefName: "pideck/issue-517",
-    headRefOid: "abc123",
+const PR_LIST_JSON = JSON.stringify(
+  capturedPrs.map(({ statusCheckRollup }, i) => ({
+    number: [335951, 47375, 47350, 47346][i],
+    headRefName: `pideck/issue-${i + 1}`,
+    headRefOid: `sha${i}`,
     mergeable: "MERGEABLE",
     reviewDecision: "",
-    statusCheckRollup: [
-      { name: "ci", status: "COMPLETED", conclusion: "SUCCESS", workflowName: "CI" },
-      { name: "lint", status: "COMPLETED", conclusion: "FAILURE", workflowName: "CI" },
-      { name: "build", status: "IN_PROGRESS", conclusion: null },
-    ],
-  },
-  {
-    number: 540,
-    headRefName: "pideck/issue-520",
-    headRefOid: "def456",
-    mergeable: "CONFLICTING",
-    reviewDecision: "CHANGES_REQUESTED",
-    statusCheckRollup: [],
-  },
-]);
+    statusCheckRollup,
+  })),
+);
 
 const REVIEWS_JSON = JSON.stringify([
   {
@@ -183,24 +172,44 @@ describe("GhClient", () => {
   it("openPrs maps head, mergeable, reviewDecision and CI rollup", async () => {
     const { client } = fakeExec(() => ok(PR_LIST_JSON));
     const prs = await client.openPrs();
-    expect(prs[0]).toEqual({
-      number: 537,
-      headBranch: "pideck/issue-517",
-      headSha: "abc123",
-      mergeable: "MERGEABLE",
-      reviewDecision: null,
-      ciStatus: "failed",
-      failingChecks: ["lint"],
-    });
-    expect(prs[1]).toEqual({
-      number: 540,
-      headBranch: "pideck/issue-520",
-      headSha: "def456",
-      mergeable: "CONFLICTING",
-      reviewDecision: "CHANGES_REQUESTED",
-      ciStatus: "ok",
-      failingChecks: [],
-    });
+    expect(prs).toEqual([
+      {
+        number: 335951,
+        headBranch: "pideck/issue-1",
+        headSha: "sha0",
+        mergeable: "MERGEABLE",
+        reviewDecision: null,
+        ciStatus: "failed",
+        failingChecks: ["VS Code Merge Check", "⭐️ VS Code"],
+      },
+      {
+        number: 47375,
+        headBranch: "pideck/issue-2",
+        headSha: "sha1",
+        mergeable: "MERGEABLE",
+        reviewDecision: null,
+        ciStatus: "ok",
+        failingChecks: [],
+      },
+      {
+        number: 47350,
+        headBranch: "pideck/issue-3",
+        headSha: "sha2",
+        mergeable: "MERGEABLE",
+        reviewDecision: null,
+        ciStatus: "pending",
+        failingChecks: [],
+      },
+      {
+        number: 47346,
+        headBranch: "pideck/issue-4",
+        headSha: "sha3",
+        mergeable: "MERGEABLE",
+        reviewDecision: null,
+        ciStatus: "failed",
+        failingChecks: ["Envoy/Checks", "Envoy/Prechecks"],
+      },
+    ]);
   });
 
   it("prReviews maps id, author, state, submittedAt and body, across pages", async () => {
