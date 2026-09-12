@@ -52,7 +52,7 @@ const REVIEW_TOKEN = "tok-gallery-review-not-a-secret";
 
 /** A tmux stand-in: sessions are directories under TMUX_FAKE_STATE; panes
  *  always look settled, so the daemon's readiness wait returns immediately. */
-function fakeTmuxScript(stateDir) {
+function fakeTmuxScript() {
   return `#!/bin/sh
 STATE="\${TMUX_FAKE_STATE:?TMUX_FAKE_STATE is not set}"
 cmd="$1"; shift
@@ -101,12 +101,12 @@ esac
 `;
 }
 
-function installFakeBins(temp, ghStatePath, tmuxStateDir) {
+function installFakeBins(temp) {
   const bin = join(temp, "bin");
   mkdirSync(bin, { recursive: true });
   copyFileSync(FAKE_GH, join(bin, "gh"));
   chmodSync(join(bin, "gh"), 0o755);
-  writeFileSync(join(bin, "tmux"), fakeTmuxScript(tmuxStateDir), "utf8");
+  writeFileSync(join(bin, "tmux"), fakeTmuxScript(), "utf8");
   chmodSync(join(bin, "tmux"), 0o755);
   // The shim the updater spawns when the pill is clicked; a no-op keeps the
   // daemon alive so the "Updating…" pill state can be captured.
@@ -948,7 +948,7 @@ async function main() {
 
   const ghStatePath = join(temp, "fake-gh-state.json");
   writeFileSync(ghStatePath, JSON.stringify(fakeGhState(), null, 2));
-  installFakeBins(temp, ghStatePath, tmuxStateDir);
+  installFakeBins(temp);
 
   const daemonEnv = {
     ...process.env,
