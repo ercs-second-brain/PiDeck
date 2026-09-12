@@ -93,15 +93,14 @@ export interface CreateOptions {
 const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
- * Wraps a pane command so the pane process starts with the canonical env and
- * outlives the payload: `sh -c 'export ...; "$@"; code=$?; printf ...; exec
- * "$SHELL" -l' sh <command...>`. The payload travels as separate argv
- * entries, so commands containing spaces or quotes survive verbatim; only
- * the env values are embedded in the script. When the payload exits (pi
- * ending on its own, or failing to boot), the pane prints
- * `[pideck] pi exited <code>` and drops into a login shell, so the pane and
- * its scrollback stay readable instead of dying with the agent. Returns the
- * command unchanged when there is nothing to inject.
+ * Wraps a pane command so the pane process starts with the canonical env:
+ * `sh -c 'export ...; exec "$@"' sh <command...>`. The payload travels as
+ * separate argv entries, so commands containing spaces or quotes survive
+ * verbatim; only the env values are embedded in the script. The payload is
+ * exec'd, so tmux's `pane_current_command` is the payload itself for the
+ * pane's whole life; a payload that exits is caught by `remain-on-exit`
+ * (set in {@link Tmux.create}) instead of an exit-shell heuristic. Returns
+ * the command unchanged when there is nothing to inject.
  */
 function commandWithEnv(
   command: string[] | undefined,
@@ -117,9 +116,7 @@ function commandWithEnv(
   }
   const script = [
     ...(assignments === "" ? [] : [`${assignments};`]),
-    '"$@"; code=$?;',
-    `printf '\\n[pideck] pi exited %s\\n' "$code";`,
-    `exec "\${SHELL:-/bin/sh}" -l`,
+    'exec "$@"',
   ].join(" ");
   return ["sh", "-c", script, "sh", ...command];
 }
@@ -231,6 +228,10 @@ export class Tmux {
     // client attaches first, and the daemon — not any single client — owns
     // the size.
     await this.run(["set-option", "-t", name, "window-size", "manual"]);
+    // The wrapper execs the payload, so a payload that exits would take the
+    // pane with it; remain-on-exit keeps the pane (and its scrollback)
+    // instead, flagged by #{pane_dead} for the reconciler.
+    await this.run(["set-option", "-w", "-t", name, "remain-on-exit", "on"]);
   }
 
   /** Whether the tmux session exists. */
@@ -343,24 +344,19 @@ export class Tmux {
   }
 
   /**
-   * Basename of the active pane's current command (e.g. `node` while pi
-   * runs, `zsh` once the exit-wrapper shell took over), or null when it
-   * cannot be read. This is how a "pi exited, shell alive" pane is told
-   * apart from a live one.
+   * Whether the pane's payload has exited while the pane persists
+   * (`remain-on-exit`): tmux flags such a pane with `#{pane_dead}`. This is
+   * how a "pi exited" pane is told apart from a live one — the wrapper
+   * execs the payload, so `pane_current_command` is the payload itself
+   * while it runs and no longer a usable signal. A pane that is gone
+   * entirely reads as not dead; `isAlive` covers that case.
    */
-  async paneCurrentCommand(name: string): Promise<string | null> {
+  async paneDead(name: string): Promise<boolean> {
     try {
-      const { stdout } = await this.run([
-        "display-message",
-        "-p",
-        "-t",
-        name,
-        "#{pane_current_command}",
-      ]);
-      const command = stdout.trim();
-      return command === "" ? null : command;
+      const { stdout } = await this.run(["display-message", "-p", "-t", name, "#{pane_dead}"]);
+      return stdout.trim() === "1";
     } catch {
-      return null;
+      return false;
     }
   }
 

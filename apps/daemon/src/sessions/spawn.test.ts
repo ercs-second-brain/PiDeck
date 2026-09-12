@@ -16,8 +16,8 @@ interface FakeTmuxState {
   alive: Set<string>;
   created: { args: string[] }[];
   killed: string[];
-  /** Basename of each pane's current command; defaults to `node` (pi running). */
-  paneCommands?: Map<string, string>;
+  /** Sessions whose payload exited under remain-on-exit (pane persists). */
+  paneDead?: Set<string>;
   /** When set, `new-session` fails like a tmux error. */
   failCreate?: boolean;
 }
@@ -42,7 +42,7 @@ function fakeTmux(state: FakeTmuxState): Tmux {
     }
     if (cmd === "capture-pane") return { stdout: "pane log\nlast line", stderr: "" };
     if (cmd === "display-message") {
-      return { stdout: `${state.paneCommands?.get(rest[2]!) ?? "node"}\n`, stderr: "" };
+      return { stdout: state.paneDead?.has(rest[2]!) ? "1\n" : "0\n", stderr: "" };
     }
     if (cmd === "list-sessions") return { stdout: [...state.alive].join("\n"), stderr: "" };
     return { stdout: "", stderr: "" };
@@ -441,7 +441,7 @@ describe("reconcileWithTmux", () => {
     expect(registry.get("gone")?.archivedAt).toBeUndefined();
   });
 
-  it("reports a pane whose pi exited and only the wrapper's shell remains as dead", async () => {
+  it("reports a pane whose payload exited under remain-on-exit (#{pane_dead} = 1) as dead", async () => {
     const registry = new SessionRegistry(stateDir);
     const running = SessionSchema.parse({
       id: "running",
@@ -466,13 +466,33 @@ describe("reconcileWithTmux", () => {
       alive: new Set(["pideck-running", "pideck-exited"]),
       created: [],
       killed: [],
-      paneCommands: new Map([
-        ["pideck-running", "node"],
-        ["pideck-exited", "zsh"],
-      ]),
+      paneDead: new Set(["pideck-exited"]),
     });
     const result = await reconcileWithTmux(registry, tmux);
     expect(result.dead.map((s) => s.id)).toEqual(["exited"]);
+  });
+
+  it("keeps a live pane whose current command reports a shell — pi runs as its child", async () => {
+    const registry = new SessionRegistry(stateDir);
+    const running = SessionSchema.parse({
+      id: "running",
+      persona: "worker",
+      projectId: "proj",
+      tmuxSession: "pideck-running",
+      spawnedAt: new Date().toISOString(),
+      model: null,
+    });
+    registry.add(running);
+
+    // The env wrapper makes tmux report `sh` for the pane while the payload
+    // runs; pane_dead = 0 is the only deadness signal that matters.
+    const tmux = fakeTmux({
+      alive: new Set(["pideck-running"]),
+      created: [],
+      killed: [],
+    });
+    const result = await reconcileWithTmux(registry, tmux);
+    expect(result.dead).toEqual([]);
   });
 
   it("archives pideck-* panes with no registry record: capture to logs, then kill", async () => {

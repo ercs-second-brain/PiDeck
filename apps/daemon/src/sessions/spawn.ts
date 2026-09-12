@@ -247,19 +247,16 @@ export async function archiveSession(deps: ArchiveDeps, session: Session): Promi
   return deps.registry.archive(session.id);
 }
 
-/** Shell basenames the pi exit wrapper leaves behind when pi is gone. */
-const SHELL_COMMANDS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh"]);
-
 /**
  * Reconciles the registry with live tmux state. Every non-archived record
- * whose tmux session is gone is reported dead, and so is one whose pane is
- * alive only because the exit wrapper's shell took over — pi exited on its
- * own, the pane is readable, and the session is dead for work (its captured
- * log is preserved by the archive that follows). Records are NOT archived
- * here — the reconciler decides replacement (fresh session for the same
- * issue/PR). The shared `Session` contract carries no dead flag, so deadness
- * is reported to the caller instead of persisted; consumers can re-derive it
- * from tmux at any time.
+ * whose tmux session is gone is reported dead, and so is one whose pane
+ * persists only because of `remain-on-exit` — the payload (pi) exited, the
+ * pane is readable one last time, and the session is dead for work (its
+ * captured log is preserved by the archive that follows). Records are NOT
+ * archived here — the reconciler decides replacement (fresh session for the
+ * same issue/PR). The shared `Session` contract carries no dead flag, so
+ * deadness is reported to the caller instead of persisted; consumers can
+ * re-derive it from tmux at any time.
  *
  * `pideck-*` tmux sessions with no registry record — left behind by a crash
  * mid-spawn or a lost registry write — are archived too: their pane is
@@ -278,10 +275,9 @@ export async function reconcileWithTmux(
       dead.push(session);
       continue;
     }
-    // A pane that runs the wrapper's shell is a pi that exited; the session
-    // is dead for work even though tmux still shows it alive.
-    const command = await tmux.paneCurrentCommand(session.tmuxSession);
-    if (command !== null && SHELL_COMMANDS.has(command)) dead.push(session);
+    // A pane kept alive by remain-on-exit is a payload that exited; the
+    // session is dead for work even though tmux still lists it.
+    if (await tmux.paneDead(session.tmuxSession)) dead.push(session);
   }
   const orphanTmuxSessions: string[] = [];
   const registered = new Set(registry.all().map((session) => session.tmuxSession));
