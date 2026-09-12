@@ -130,6 +130,14 @@ export class FakeTmux extends Tmux {
         pane.rows = Number(this.flagValue(args, "-y"));
         return "";
       }
+      case "set-option":
+        return "";
+      case "display-message": {
+        const target = this.flagValue(args, "-t").replace(/:$/, "");
+        const pane = this.sessions.get(target);
+        if (!pane) this.fail(`can't find window ${target}`, args);
+        return `${pane.cols} ${pane.rows}`;
+      }
       case "capture-pane": {
         const target = this.flagValue(args, "-t");
         return this.captures.get(target) ?? "";

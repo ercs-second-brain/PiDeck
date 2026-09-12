@@ -109,6 +109,35 @@ describe("terminal bridge", () => {
     await vi.waitFor(() => expect(socket.received()).toBe("startup banner\r\n"));
   });
 
+  it("replays a fresh capture of the resized screen when the pane size differs", async () => {
+    const { tmux, bridge, open } = setup();
+    // The pane has been running unattached at 80×24; the buffer holds raw
+    // bytes drawn for that geometry.
+    tmux.setCapturePane(TMUX_SESSION, "stale 80x24 screen\r\n");
+    const first = open();
+    attach(first);
+    await expectClients(bridge, 1);
+    await vi.waitFor(() => expect(first.received()).toBe("stale 80x24 screen\r\n"));
+    first.close();
+
+    tmux.paneOutput(TMUX_SESSION, "more 80x24 output\r\n");
+    await settle();
+    // The client attaches at a size the pane has never rendered for; the
+    // canned capture now reflects the screen after the resize + redraw.
+    tmux.setCapturePane(TMUX_SESSION, "fresh 200x50 screen\r\n");
+
+    const second = open();
+    attach(second, 200, 50);
+    await vi.waitFor(() => expect(second.received()).toBe("fresh 200x50 screen\r\n"));
+
+    // The stale bytes were replaced in the replay buffer: a later
+    // same-size reconnect replays the resized screen, not the old bytes.
+    second.close();
+    const third = open();
+    attach(third, 200, 50);
+    await vi.waitFor(() => expect(third.received()).toBe("fresh 200x50 screen\r\n"));
+  });
+
   it("resizes the tmux window before the replay is captured on attach", async () => {
     const { tmux, open } = setup();
     tmux.setCapturePane(TMUX_SESSION, "startup banner\r\n");

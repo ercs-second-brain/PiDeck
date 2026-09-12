@@ -27,7 +27,7 @@ function fakeTmux(state: FakeTmuxState): Tmux {
     }
     if (cmd === "new-session") {
       state.created.push({ args });
-      state.alive.add(args[3]!);
+      state.alive.add(args[7]!);
       return { stdout: "", stderr: "" };
     }
     if (cmd === "kill-session") {
@@ -104,9 +104,13 @@ describe("spawnPiSession", () => {
     ]);
 
     const create = tmuxState.created[0]!.args;
-    expect(create.slice(0, 8)).toEqual([
+    expect(create.slice(0, 12)).toEqual([
       "new-session",
       "-d",
+      "-x",
+      "200",
+      "-y",
+      "50",
       "-s",
       `pideck-${session.id}`,
       "-n",
@@ -115,10 +119,10 @@ describe("spawnPiSession", () => {
       join(stateDir, "worktrees", session.id),
     ]);
     // env wrapper: ["sh", "-c", script, "sh", ...command] follows the new-session args
-    const script = create[10]!;
+    const script = create[14]!;
     expect(script).toContain("PD_SESSION_ID");
     expect(script).toContain("GH_TOKEN='t'");
-    expect(create.slice(12)).toEqual([
+    expect(create.slice(16)).toEqual([
       "pi",
       "--session-dir",
       join(stateDir, "pi-sessions", session.id),
@@ -128,7 +132,7 @@ describe("spawnPiSession", () => {
       "anthropic/claude",
     ]);
 
-    const promptFile = create[16]!;
+    const promptFile = create[20]!;
     expect(readFileSync(promptFile, "utf8")).toBe("You are a worker.");
     expect(existsSync(join(stateDir, "pi-sessions", session.id))).toBe(true);
 
@@ -259,8 +263,8 @@ describe("spawnPiSession", () => {
     });
     expect(gitState.calls).toEqual([]);
     const create = tmuxState.created[0]!.args;
-    expect(create[7]).toBe(cloneDir);
-    expect(create.slice(12)).toEqual([
+    expect(create[11]).toBe(cloneDir);
+    expect(create.slice(16)).toEqual([
       "pi",
       "--session-dir",
       join(stateDir, "pi-sessions", session.id),
