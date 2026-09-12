@@ -34,17 +34,7 @@ import {
 import { ProjectReader, type ProjectFacts } from "./read.js";
 
 export { deriveState, type SessionStateFacts } from "./state.js";
-export { ProjectReader, type ProjectFacts } from "./read.js";
-export {
-  deriveActions,
-  deriveGlobalAction,
-  orchestratorAction,
-  prForWorker,
-  type Action,
-  type DeriveInput,
-} from "./desired.js";
-export { applyActions, type ApplyDeps, type PromptSource } from "./apply.js";
-export { Trace, compactFacts, traceFile } from "./trace.js";
+export { type ProjectFacts } from "./read.js";
 
 /** The slice of the GitHub client the reconciler reads through. */
 export interface GhClientLike {

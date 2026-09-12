@@ -25,7 +25,7 @@
  * so an unattached pane never renders at tmux's 80×24 default either.
  *
  * The bridge is transport-agnostic: sockets implement {@link TerminalSocket}
- * and the `ws` adapter lives in `ws-server.ts`, keeping the protocol logic
+ * and the `ws` adapter lives in `api/ws.ts`, keeping the protocol logic
  * unit-testable against fakes.
  */
 
@@ -50,7 +50,7 @@ export interface TerminalSocket {
  * slice of the shared `Session` contract, so the daemon's session registry
  * satisfies it directly.
  */
-export interface TerminalSessions {
+interface TerminalSessions {
   get(sessionId: string): Pick<Session, "id" | "tmuxSession"> | undefined;
 }
 

@@ -4,7 +4,6 @@ import {
   type GlobalSettings,
   type GlobalSettingsPut,
   type GlobalSettingsRead,
-  type Persona,
   type ReviewAccount,
   type ReviewAccountPut,
 } from "@pideck/shared";
@@ -49,12 +48,6 @@ export class GlobalSettingsStore {
     if (patch.modelByPersona !== undefined) {
       settings.modelByPersona = { ...settings.modelByPersona, ...patch.modelByPersona };
     }
-    this.file.write(settings);
-  }
-
-  setModel(persona: Persona, model: string | null): void {
-    const settings = this.file.load();
-    settings.modelByPersona = { ...settings.modelByPersona, [persona]: model };
     this.file.write(settings);
   }
 }

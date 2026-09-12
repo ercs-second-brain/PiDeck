@@ -93,7 +93,7 @@ describe("REST contract", () => {
     expect(piCalls).toBe(1);
   });
 
-  it("creates, lists, gets, patches and deletes projects", async () => {
+  it("creates, lists, gets and deletes projects", async () => {
     const { base } = await startDaemon();
     const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
     expect(project.owner).toBe("acme");
@@ -104,9 +104,6 @@ describe("REST contract", () => {
 
     const got = await call(base, "GET", `/api/projects/${project.id}`);
     expect(validate(restEndpoints["projectGet"].response, got.body).id).toBe(project.id);
-
-    const patched = await call(base, "PATCH", `/api/projects/${project.id}`, { name: "Renamed" });
-    expect(validate(restEndpoints["projectUpdate"].response, patched.body).name).toBe("Renamed");
 
     const deleted = await call(base, "DELETE", `/api/projects/${project.id}`);
     expect(validate(restEndpoints["projectDelete"].response, deleted.body)).toEqual({ ok: true });

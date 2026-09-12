@@ -15,7 +15,6 @@ export const GhBlockerSchema = z.object({
   number: z.number().int(),
   state: z.enum(["open", "closed"]),
 });
-export type GhBlocker = z.infer<typeof GhBlockerSchema>;
 
 export type GhIssue = {
   number: number;
@@ -40,13 +39,13 @@ export type GhComment = {
   createdAt: string;
 };
 
-export const GhCheckSchema = z.object({
+const GhCheckSchema = z.object({
   name: z.string().nullable(),
   status: z.string(),
   conclusion: z.string().nullable().optional(),
   state: z.string().nullable().optional(),
 });
-export type GhCheck = z.infer<typeof GhCheckSchema>;
+type GhCheck = z.infer<typeof GhCheckSchema>;
 
 export type CiStatus = "ok" | "pending" | "failed";
 
@@ -61,7 +60,6 @@ export const GhPrSchema = z.object({
     .transform((v) => (v === "" ? null : v)),
   statusCheckRollup: z.array(GhCheckSchema),
 });
-export type GhPrRaw = z.infer<typeof GhPrSchema>;
 
 export type GhPr = {
   number: number;

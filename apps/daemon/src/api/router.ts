@@ -12,12 +12,12 @@ export class ApiError extends Error {
   }
 }
 
-export interface ApiContext {
+interface ApiContext {
   params: Record<string, string>;
   body: unknown;
 }
 
-export type ApiHandler = (ctx: ApiContext) => unknown | Promise<unknown>;
+type ApiHandler = (ctx: ApiContext) => unknown | Promise<unknown>;
 
 /**
  * One handler per shared endpoint. A missing handler answers 501 — that is

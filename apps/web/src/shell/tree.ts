@@ -11,7 +11,7 @@
 import type { Project, SessionView } from "@pideck/shared";
 
 /** One live worker with the reviewers nested under it. */
-export interface WorkerNode {
+interface WorkerNode {
   view: SessionView;
   reviewers: SessionView[];
 }

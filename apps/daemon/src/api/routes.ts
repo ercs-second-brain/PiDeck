@@ -5,7 +5,6 @@ import {
   type Project,
   type ProjectCreate,
   type ProjectSettings,
-  type ProjectUpdate,
   type Prompt,
   type PromptPut,
   type Session,
@@ -57,8 +56,6 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     projectCreate: ({ body }) => deps.projects.add(body as ProjectCreate),
 
     projectGet: ({ params }) => projectOr404(deps, params.id!),
-    projectUpdate: ({ params, body }) =>
-      notFound(() => deps.projects.update(params.id!, body as ProjectUpdate)),
     projectDelete: ({ params }) => {
       notFound(() => deps.projects.remove(params.id!));
       return { ok: true };

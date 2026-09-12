@@ -78,7 +78,7 @@ export function defaultGitRunner(): GitRunner {
     });
 }
 
-export function sessionDir(stateDir: string, sessionId: string): string {
+function sessionDir(stateDir: string, sessionId: string): string {
   return join(stateDir, "sessions", sessionId);
 }
 

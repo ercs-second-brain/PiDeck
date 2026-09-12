@@ -77,7 +77,7 @@ export interface DeriveInput {
 }
 
 /** A worker blocker comment announces itself, so routing needs no author. */
-export function isBlockerComment(comment: GhComment): boolean {
+function isBlockerComment(comment: GhComment): boolean {
   return comment.body.trimStart().startsWith("BLOCKED:");
 }
 

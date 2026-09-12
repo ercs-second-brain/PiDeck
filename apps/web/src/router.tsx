@@ -13,7 +13,7 @@ export type Route =
   | { name: "settings" }
   | { name: "projectSettings"; id: string };
 
-export function parsePath(pathname: string): Route {
+function parsePath(pathname: string): Route {
   const parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (parts[0] === "sessions" && typeof parts[1] === "string") return { name: "session", id: parts[1] };
   if (parts[0] === "onboarding") return { name: "onboarding" };

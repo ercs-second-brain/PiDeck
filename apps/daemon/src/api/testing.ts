@@ -75,7 +75,7 @@ export function tempStateDir(prefix = "pideck-api-"): string {
  * different upstream SHA, `git remote` a repo URL — so a check reports an
  * update as available.
  */
-export const fakeUpdateRunner: CommandRunner = (cmd, args) => {
+const fakeUpdateRunner: CommandRunner = (cmd, args) => {
   if (cmd === "git" && args[0] === "rev-parse") return { stdout: "aaaaaaaaaaa\n" };
   if (cmd === "git" && args[0] === "remote") {
     return { stdout: "https://github.com/acme/widget.git\n" };

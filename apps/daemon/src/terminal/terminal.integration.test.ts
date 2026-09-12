@@ -10,8 +10,9 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
+import { mountWs, SessionsHub, WS_PATH } from "../api/ws.js";
+import { TerminalBridge } from "./bridge.js";
 import { Tmux } from "../sessions/tmux.js";
-import { attachTerminalBridge, TERMINAL_WS_PATH } from "./ws-server.js";
 
 const enabled = process.env.PIDECK_TERMINAL_IT === "1";
 
@@ -20,28 +21,26 @@ describe.skipIf(!enabled)("terminal bridge integration", () => {
   const tmuxSession = `pideck-it-${process.pid}`;
   const sessions = new Map([["s1", { id: "s1", tmuxSession }]]);
   let baseUrl = "";
-  let closeBridge: (() => Promise<void>) | undefined;
+  let closeWs: (() => void) | undefined;
 
   beforeAll(async () => {
     await tmux.run(["new-session", "-d", "-s", tmuxSession]);
     const server: Server = createServer(() => {});
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const handle = attachTerminalBridge(server, {
+    const bridge = new TerminalBridge({
       sessions: { get: (id) => sessions.get(id) },
       tmux,
       log: () => {},
     });
-    closeBridge = async () => {
-      await handle.close();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    };
+    const hub = new SessionsHub({ snapshot: () => [] });
+    closeWs = mountWs(server, bridge, hub);
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("no port");
-    baseUrl = `ws://127.0.0.1:${address.port}${TERMINAL_WS_PATH}`;
+    baseUrl = `ws://127.0.0.1:${address.port}${WS_PATH}`;
   });
 
   afterAll(async () => {
-    await closeBridge?.();
+    closeWs?.();
     // The daemon shutdown path must stop the pipe-pane the stream opened.
     const pipe = await pipeActive().catch(() => "1");
     expect(pipe).toBe("0");

@@ -105,9 +105,11 @@ describe("GlobalSettingsStore", () => {
       worker: "m1",
       reviewer: null,
     });
-    store.setModel("reviewer", "m2");
-    expect(store.read().modelByPersona.reviewer).toBe("m2");
-    expect(store.read().modelByPersona.worker).toBe("m1");
+    store.put({
+      modelByPersona: { global: null, orchestrator: null, worker: "m2", reviewer: null },
+    });
+    expect(store.read().modelByPersona.reviewer).toBeNull();
+    expect(store.read().modelByPersona.worker).toBe("m2");
   });
 
   it("persists across instances", () => {

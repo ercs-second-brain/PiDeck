@@ -1,12 +1,9 @@
 import type { ProjectSettings, Session, SessionView } from "@pideck/shared";
 import type { CiStatus } from "../github/schemas.js";
-import {
-  compactFacts,
-  deriveState,
-  prForWorker,
-  type ProjectFacts,
-  type SessionStateFacts,
-} from "../reconciler/index.js";
+import { prForWorker } from "../reconciler/desired.js";
+import type { ProjectFacts } from "../reconciler/read.js";
+import { deriveState, type SessionStateFacts } from "../reconciler/state.js";
+import { compactFacts } from "../reconciler/trace.js";
 import type { DaemonDeps } from "./deps.js";
 
 /**
@@ -21,7 +18,7 @@ export function sessionViews(sessions: Session[], deps: DaemonDeps): SessionView
   return sessions.map((session) => sessionView(session, sessions, deps));
 }
 
-export function sessionView(session: Session, all: Session[], deps: DaemonDeps): SessionView {
+function sessionView(session: Session, all: Session[], deps: DaemonDeps): SessionView {
   const facts = session.projectId === null ? null : (deps.reconcilerFacts?.(session.projectId) ?? null);
   const settings = projectSettings(deps, session.projectId);
   const stateFacts: SessionStateFacts = {
