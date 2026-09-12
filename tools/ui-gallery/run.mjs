@@ -629,14 +629,18 @@ function buildShots(sessionId) {
       name: "onboarding-review",
       design: DESIGN.onboarding,
       viewport: "desktop",
-      state: "step 3: review account verified",
+      state: "step 3: review account signed in via the device flow, PAT fallback shown",
       route: "/onboarding",
       async run(page) {
         await page.getByRole("button", { name: "Next" }).click();
+        // The daemon's device flow completes instantly against the fake gh;
+        // open the PAT fallback so the shot shows both paths.
+        await page.getByText("logged in as").waitFor();
+        await page.getByText("Use a personal access token instead").click();
         await page.getByLabel("Username").fill("acme-review");
         await page.getByLabel("Personal access token").fill(REVIEW_TOKEN);
         await page.getByRole("button", { name: "Verify" }).click();
-        await page.getByText("Verified as").waitFor();
+        await page.getByText("verified as").waitFor();
       },
     },
     {

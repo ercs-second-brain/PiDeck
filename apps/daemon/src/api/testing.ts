@@ -6,6 +6,7 @@ import { PromptOverrides } from "../prompts/overrides.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { Trace } from "../reconciler/trace.js";
 import { FakeTmux } from "../sessions/testing/fakeTmux.js";
+import { ReviewLoginFlow } from "./onboarding.js";
 import { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import { ProjectStore, type CommandRunner } from "../store/projectStore.js";
 import type { DaemonDeps } from "./deps.js";
@@ -44,13 +45,14 @@ const fakeUpdateRunner: CommandRunner = (cmd, args) => {
 
 export function makeDeps(stateDir: string, tmux: FakeTmux): DaemonDeps & { updateSpawns: string[][] } {
   const registry = new SessionRegistry(stateDir);
+  const settings = new GlobalSettingsStore(stateDir);
   const updateSpawns: string[][] = [];
   const deps: DaemonDeps = {
     version: "0.0.0-test",
     stateDir,
     pollIntervalSeconds: 30,
     projects: new ProjectStore(stateDir, fakeCommandRunner),
-    settings: new GlobalSettingsStore(stateDir),
+    settings,
     registry,
     tmux,
     prompts: new PromptOverrides(stateDir),
@@ -77,6 +79,7 @@ export function makeDeps(stateDir: string, tmux: FakeTmux): DaemonDeps & { updat
           defaultModel: "a/b",
         }),
       ),
+    reviewLogin: new ReviewLoginFlow(stateDir, settings),
   };
   return Object.assign(deps, { updateSpawns });
 }

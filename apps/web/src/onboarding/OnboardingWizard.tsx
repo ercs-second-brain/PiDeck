@@ -1,9 +1,10 @@
 /**
  * The first-run onboarding wizard (docs/DESIGN.md §5 Onboarding): a four-step
  * chip stepper — pi · GitHub · Review account · Repo. The first two steps are
- * read-only probes with re-check; the third captures the reviewer's second
- * GitHub account (the token is saved by the daemon and never rendered again);
- * the fourth registers the project by cloning a URL or creating a new repo.
+ * read-only probes with re-check; the third signs the reviewer's second GitHub
+ * account in via gh's device flow (the token is stored by the daemon and never
+ * rendered again), with a PAT form as a collapsed fallback; the fourth
+ * registers the project by cloning a URL or creating a new repo.
  * Re-entering later with every prerequisite already satisfied jumps straight
  * to the repo step to add another project.
  */
@@ -17,6 +18,8 @@ import {
   type Project,
   type ProjectCreate,
   type ReviewAccountPut,
+  type ReviewLoginStart,
+  type ReviewLoginStatus,
 } from "@pideck/shared";
 import { api } from "../lib/api";
 import { Badge } from "../ui/Badge";
@@ -38,7 +41,17 @@ const STEPS: readonly { id: StepId; label: string }[] = [
 
 const dim: CSSProperties = { color: "var(--text-dim)" };
 const red: CSSProperties = { color: "var(--red)", fontSize: 13 };
-const row: CSSProperties = { display: "flex", gap: 8, marginTop: 12 };
+const row: CSSProperties = { display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" };
+const codeStyle: CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 22,
+  letterSpacing: 2,
+  padding: "4px 10px",
+  background: "var(--bg-hover)",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+};
+const link: CSSProperties = { color: "var(--blue)" };
 
 /** Module-level so the probe steps' mount effect sees stable callbacks. */
 function runPiProbe(): Promise<PiProbe> {
@@ -99,14 +112,101 @@ function ProbeStep<T extends Probe>({
   );
 }
 
+type DeviceFlowState = "starting" | "pending" | "done" | "failed";
+
+/**
+ * The review-account step. The primary path is gh's device-code login: the
+ * daemon launches `gh auth login --web` under its own gh config dir and this
+ * panel shows the one-time code + URL with a live status. A PAT form stays as
+ * a collapsed fallback; either path stores the account and enables Next.
+ */
 function ReviewStep({ onVerified }: { onVerified: () => void }) {
+  const [login, setLogin] = useState<ReviewLoginStart | null>(null);
+  const [flow, setFlow] = useState<DeviceFlowState>("starting");
+  const [flowDetail, setFlowDetail] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [verifiedAs, setVerifiedAs] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [tokenSet, setTokenSet] = useState(false);
-  const [verified, setVerified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; token?: string }>({});
   const [error, setError] = useState<string | null>(null);
+
+  const startFlow = useCallback(async (): Promise<void> => {
+    setFlow("starting");
+    setFlowDetail(null);
+    try {
+      setLogin(await api("reviewLoginStart"));
+      setFlow("pending");
+    } catch (caught) {
+      setFlow("failed");
+      setFlowDetail(errorMessage(caught));
+    }
+  }, []);
+
+  const markDone = useCallback(async (): Promise<void> => {
+    try {
+      const probe = await api("probeGhReview");
+      if (probe.ok) {
+        setVerified(true);
+        setVerifiedAs(probe.detail);
+        setFlow("done");
+      } else {
+        setFlow("failed");
+        setFlowDetail(probe.detail);
+      }
+    } catch (caught) {
+      setFlow("failed");
+      setFlowDetail(errorMessage(caught));
+    }
+  }, []);
+
+  // The device flow is the primary path: start it as soon as the step mounts
+  // (idempotent on the daemon while a flow is already running).
+  useEffect(() => {
+    void startFlow();
+  }, [startFlow]);
+
+  useEffect(() => {
+    if (flow !== "pending") return;
+    let cancelled = false;
+    const poll = async (): Promise<void> => {
+      try {
+        const status: ReviewLoginStatus = await api("reviewLoginStatus");
+        if (cancelled) return;
+        setFlowDetail(status.detail);
+        if (status.status === "done") {
+          setFlow("done");
+          await markDone();
+        } else if (status.status === "failed") {
+          setFlow("failed");
+        }
+      } catch {
+        /* transient; keep polling */
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [flow, markDone]);
+
+  function copyCode(): void {
+    if (!login) return;
+    void navigator.clipboard
+      ?.writeText(login.code)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        /* clipboard unavailable; the code is selectable as-is */
+      });
+  }
 
   async function verify(): Promise<void> {
     const usernameError = username.trim() ? undefined : "Username is required";
@@ -126,6 +226,7 @@ function ReviewStep({ onVerified }: { onVerified: () => void }) {
       const probe = await api("probeGhReview");
       if (probe.ok) {
         setVerified(true);
+        setVerifiedAs(`verified as ${username.trim()}`);
       } else {
         setError(probe.detail);
       }
@@ -139,24 +240,55 @@ function ReviewStep({ onVerified }: { onVerified: () => void }) {
   return (
     <Section
       title="Review account"
-      description="Reviewers file real GitHub reviews from a second account. Its token is stored by the daemon and never shown again."
+      description="Reviewers file real GitHub reviews from a second account. Sign in with GitHub's device flow — PiDeck stores only the resulting token, never your password."
     >
-      <Field label="Username" value={username} onChange={setUsername} error={fieldErrors.username} disabled={busy} />
-      <Field
-        label="Personal access token"
-        type="password"
-        value={token}
-        onChange={setToken}
-        placeholder={tokenSet ? "Saved — leave blank to keep it" : "Token with repo scope"}
-        error={fieldErrors.token}
-        disabled={busy}
-      />
-      {verified ? <Badge tone="green">✓ Verified as {username.trim()}</Badge> : null}
-      {error ? <p style={red}>{error}</p> : null}
       <div style={row}>
-        <Button variant="primary" disabled={busy} onClick={() => void verify()}>
-          {verified ? "Re-verify" : "Verify"}
+        <span>One-time code</span>
+        {login ? <span style={codeStyle}>{login.code}</span> : null}
+        <Button variant="ghost" disabled={!login} onClick={copyCode}>
+          {copied ? "Copied" : "Copy code"}
         </Button>
+      </div>
+      {login ? (
+        <p style={dim}>
+          Open <a href={login.url} style={link}>{login.url}</a>, enter the code, and finish signed in as the reviewer
+          account.
+        </p>
+      ) : null}
+      {flow === "pending" ? <p style={dim}>Waiting for you to finish the sign-in…</p> : null}
+      {flow === "failed" ? (
+        <>
+          <p style={red}>{flowDetail ?? "Device sign-in failed"}</p>
+          <div style={row}>
+            <Button onClick={() => void startFlow()}>Sign in as the reviewer</Button>
+          </div>
+        </>
+      ) : null}
+      {verified ? <Badge tone="green">✓ {verifiedAs ?? "review account signed in"}</Badge> : null}
+      <details style={{ marginTop: 12 }}>
+        <summary style={{ ...dim, cursor: "pointer" }}>Use a personal access token instead</summary>
+        <p style={{ ...dim, marginTop: 8 }}>
+          Create a PAT for the reviewer account (github.com/settings/tokens); its token is stored by the daemon and
+          never shown again.
+        </p>
+        <Field label="Username" value={username} onChange={setUsername} error={fieldErrors.username} disabled={busy} />
+        <Field
+          label="Personal access token"
+          type="password"
+          value={token}
+          onChange={setToken}
+          placeholder={tokenSet ? "Saved — leave blank to keep it" : "Token with repo scope"}
+          error={fieldErrors.token}
+          disabled={busy}
+        />
+        {error ? <p style={red}>{error}</p> : null}
+        <div style={row}>
+          <Button variant="primary" disabled={busy} onClick={() => void verify()}>
+            Verify
+          </Button>
+        </div>
+      </details>
+      <div style={row}>
         <Button variant="primary" disabled={!verified} onClick={onVerified}>
           Next
         </Button>

@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PromptOverrides } from "./prompts/overrides.js";
 import { ghPrimaryProbe, ghReviewProbe, piProbe } from "./api/probes.js";
+import { ReviewLoginFlow } from "./api/onboarding.js";
 import { serve, type DaemonServer } from "./api/server.js";
 import type { DaemonDeps } from "./api/deps.js";
 import { createUpdater } from "./api/update.js";
@@ -60,6 +61,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
     ghPrimary: () => ghPrimaryProbe(),
     ghReview: () => ghReviewProbe(settings.reviewToken()?.token ?? null),
     pi: async () => piProbe(),
+    reviewLogin: new ReviewLoginFlow(stateDir, settings),
     updates: createUpdater({
       srcDir: env.PD_SRC?.trim() || defaultSrcDir(),
       configJson: join(stateDir, "config.json"),
