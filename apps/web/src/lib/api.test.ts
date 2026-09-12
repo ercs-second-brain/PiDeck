@@ -3,13 +3,14 @@
 /**
  * Tests for the typed REST/WS client: `api()` speaks the shared endpoint
  * table (path params, JSON body, schema-validated response, ApiError on
- * failure) and `watchSessions()` dispatches `sessions.changed` over one /ws
- * socket and reconnects after an unexpected close.
+ * failure) and `watchServer()` dispatches `sessions.changed` and
+ * `projects.changed` over one /ws socket and reconnects after an unexpected
+ * close.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeWebSocket } from "../test-support/websocket";
-import { api, ApiError, watchSessions, type WebSocketFactory } from "./api";
+import { api, ApiError, watchServer, type WebSocketFactory } from "./api";
 
 const Impl = FakeWebSocket as unknown as WebSocketFactory;
 
@@ -56,11 +57,25 @@ describe("api", () => {
   });
 });
 
-describe("watchSessions", () => {
-  it("opens /ws on the same origin and dispatches sessions.changed", () => {
-    const received: number[][] = [];
-    const stop = watchSessions(
-      (views) => received.push(views.map((view) => view.session.issueNumber ?? -1)),
+const PROJECT = {
+  id: "p1",
+  name: "my-api",
+  repoUrl: "https://github.com/acme/my-api",
+  owner: "acme",
+  repo: "my-api",
+  defaultBranch: "main",
+  path: "/repos/my-api",
+};
+
+describe("watchServer", () => {
+  it("opens /ws on the same origin and dispatches both message kinds", () => {
+    const receivedSessions: number[][] = [];
+    const receivedProjects: string[][] = [];
+    const stop = watchServer(
+      {
+        onSessions: (views) => receivedSessions.push(views.map((view) => view.session.issueNumber ?? -1)),
+        onProjects: (projects) => receivedProjects.push(projects.map((project) => project.name)),
+      },
       "ws://daemon/ws",
       Impl,
     );
@@ -94,17 +109,20 @@ describe("watchSessions", () => {
         },
       ],
     });
-    // terminal.data frames and junk are ignored; sessions.changed dispatched.
+    ws?.serverSends({ type: "projects.changed", projects: [PROJECT] });
+    // terminal.data frames and junk are ignored; both snapshots are dispatched.
     ws?.serverSends({ type: "terminal.data", sessionId: "s1", data: "hi" });
     ws?.serverSends("not json");
-    expect(received).toEqual([[42]]);
+    ws?.serverSends({ type: "projects.changed" });
+    expect(receivedSessions).toEqual([[42]]);
+    expect(receivedProjects).toEqual([["my-api"]]);
     stop();
   });
 
   it("reconnects with backoff after an unexpected close and unsubscribes cleanly", () => {
     vi.useFakeTimers();
     try {
-      const stop = watchSessions(() => {}, "ws://daemon/ws", Impl);
+      const stop = watchServer({ onSessions: () => {}, onProjects: () => {} }, "ws://daemon/ws", Impl);
       const first = FakeWebSocket.instances[0];
       first?.onopen?.();
       first?.drop();

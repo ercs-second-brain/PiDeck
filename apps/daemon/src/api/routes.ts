@@ -55,17 +55,27 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     },
 
     projectList: () => deps.projects.list(),
-    projectCreate: ({ body }) => deps.projects.add(body as ProjectCreate),
+    projectCreate: ({ body }) => {
+      const project = deps.projects.add(body as ProjectCreate);
+      deps.notifyChange?.();
+      return project;
+    },
 
     projectGet: ({ params }) => projectOr404(deps, params.id!),
     projectDelete: ({ params }) => {
       notFound(() => deps.projects.remove(params.id!));
+      deps.notifyChange?.();
       return { ok: true };
     },
 
     projectSettingsGet: ({ params }) => notFound(() => deps.projects.settings(params.id!)),
-    projectSettingsPut: ({ params, body }) =>
-      notFound(() => deps.projects.updateSettings(params.id!, body as Partial<ProjectSettings>)),
+    projectSettingsPut: ({ params, body }) => {
+      const settings = notFound(() =>
+        deps.projects.updateSettings(params.id!, body as Partial<ProjectSettings>),
+      );
+      deps.notifyChange?.();
+      return settings;
+    },
 
     sessionList: () => sessionViews(deps.registry.list(), deps),
     projectSessionList: ({ params }) => {

@@ -9,7 +9,7 @@ import { ProjectCreateSchema, ProjectSettingsSchema } from "./project.js";
 import { SessionSchema, SessionViewSchema } from "./session.js";
 import { WorkerStates, WorkerStateSchema } from "./state.js";
 import { PiProbeSchema, restEndpoints } from "./rest.js";
-import { SessionsChangedSchema, WsClientMessageSchema, WsServerMessageSchema } from "./ws.js";
+import { ProjectsChangedSchema, SessionsChangedSchema, WsClientMessageSchema, WsServerMessageSchema } from "./ws.js";
 
 describe("persona", () => {
   it("accepts the four personas and nothing else", () => {
@@ -295,6 +295,26 @@ describe("ws events", () => {
     expect("projectId" in event).toBe(false);
   });
 
+  it("carries the daemon-wide project list", () => {
+    const event = ProjectsChangedSchema.parse({
+      type: "projects.changed",
+      projects: [
+        {
+          id: "p1",
+          name: "my-api",
+          repoUrl: "https://github.com/acme/my-api",
+          owner: "acme",
+          repo: "my-api",
+          defaultBranch: "main",
+          path: "/repos/my-api",
+        },
+      ],
+    });
+    expect(event.projects).toHaveLength(1);
+    expect(event.projects[0]!.name).toBe("my-api");
+    expect(() => ProjectsChangedSchema.parse({ type: "projects.changed" })).toThrow();
+  });
+
   it("covers the terminal stream protocol in both directions", () => {
     expect(
       WsClientMessageSchema.parse({ type: "terminal.attach", sessionId: "s1" }).type,
@@ -313,6 +333,9 @@ describe("ws events", () => {
     expect(
       WsServerMessageSchema.parse({ type: "sessions.changed", sessions: [] }).type,
     ).toBe("sessions.changed");
+    expect(
+      WsServerMessageSchema.parse({ type: "projects.changed", projects: [] }).type,
+    ).toBe("projects.changed");
     expect(() => WsClientMessageSchema.parse({ type: "terminal.attach" })).toThrow();
     expect(() =>
       WsServerMessageSchema.parse({ type: "terminal.detach", sessionId: "s1" }),

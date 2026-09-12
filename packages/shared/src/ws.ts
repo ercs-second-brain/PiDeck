@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProjectSchema } from "./project.js";
 import { SessionViewSchema } from "./session.js";
 
 export const SessionsChangedSchema = z.object({
@@ -6,6 +7,12 @@ export const SessionsChangedSchema = z.object({
   sessions: z.array(SessionViewSchema),
 });
 export type SessionsChanged = z.infer<typeof SessionsChangedSchema>;
+
+export const ProjectsChangedSchema = z.object({
+  type: z.literal("projects.changed"),
+  projects: z.array(ProjectSchema),
+});
+export type ProjectsChanged = z.infer<typeof ProjectsChangedSchema>;
 
 export const TerminalAttachSchema = z.object({
   type: z.literal("terminal.attach"),
@@ -46,6 +53,7 @@ export type WsClientMessage = z.infer<typeof WsClientMessageSchema>;
 
 export const WsServerMessageSchema = z.discriminatedUnion("type", [
   SessionsChangedSchema,
+  ProjectsChangedSchema,
   TerminalDataSchema,
 ]);
 export type WsServerMessage = z.infer<typeof WsServerMessageSchema>;

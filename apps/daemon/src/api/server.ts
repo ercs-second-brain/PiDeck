@@ -32,8 +32,8 @@ export interface DaemonServer {
 /**
  * Assembles the daemon's HTTP surface: the REST router, static web app
  * serving, and one WebSocket at /ws shared by the terminal bridge and the
- * sessions hub. The hub's snapshot poll broadcasts registry changes from any
- * source, so callers never need to instrument the registry.
+ * change hub. The hub's snapshot poll broadcasts registry and project changes
+ * from any source, so callers never need to instrument the stores.
  */
 export async function serve(deps: DaemonDeps, options: ServeOptions = {}): Promise<DaemonServer> {
   const bridge = new TerminalBridge({
@@ -42,6 +42,7 @@ export async function serve(deps: DaemonDeps, options: ServeOptions = {}): Promi
   });
   const hub = new SessionsHub({
     snapshot: () => sessionViews(deps.registry.all(), deps),
+    projectSnapshot: () => deps.projects.list(),
     debounceMs: options.debounceMs ?? 100,
   });
   deps.notifyChange = () => hub.broadcastSoon();

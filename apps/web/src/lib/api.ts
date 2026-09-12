@@ -2,15 +2,16 @@
  * Typed client for the daemon's REST and WebSocket API. Shapes come from
  * `@pideck/shared` and are never restated here: `api()` speaks the shared
  * `restEndpoints` table (path params substituted, request bodies and
- * responses schema-validated), `watchSessions()` owns the single /ws socket
- * for the app shell and dispatches `sessions.changed`. Terminal panes open
- * their own connection (see src/terminal/connection.ts).
+ * responses schema-validated), `watchServer()` owns the single /ws socket
+ * for the app shell and dispatches `sessions.changed` and `projects.changed`.
+ * Terminal panes open their own connection (see src/terminal/connection.ts).
  */
 
 import { z } from "zod";
 import {
   restEndpoints,
   WsServerMessageSchema,
+  type Project,
   type RestEndpointName,
   type SessionView,
 } from "@pideck/shared";
@@ -65,17 +66,24 @@ function wsUrl(): string {
 }
 
 export type SessionsHandler = (sessions: SessionView[]) => void;
+export type ProjectsHandler = (projects: Project[]) => void;
+
+export interface ServerWatchHandlers {
+  onSessions: SessionsHandler;
+  onProjects: ProjectsHandler;
+}
 
 export type WebSocketFactory = new (url: string) => WebSocket;
 
 /**
- * Subscribes the shell to `sessions.changed`: opens /ws, hands every new
- * snapshot to `onSessions` (the daemon sends the current one on connect),
- * ignores other server messages, and reconnects with jittered backoff after
- * an unexpected close. Returns the unsubscribe function.
+ * Subscribes the shell to the daemon's push channel: opens /ws, hands every
+ * `sessions.changed` / `projects.changed` snapshot to its handler (the daemon
+ * sends both current snapshots on connect), ignores other server messages,
+ * and reconnects with jittered backoff after an unexpected close. Returns
+ * the unsubscribe function.
  */
-export function watchSessions(
-  onSessions: SessionsHandler,
+export function watchServer(
+  handlers: ServerWatchHandlers,
   url: string = wsUrl(),
   WebSocketImpl: WebSocketFactory = WebSocket,
 ): () => void {
@@ -99,8 +107,9 @@ export function watchSessions(
         return;
       }
       const message = WsServerMessageSchema.safeParse(json);
-      if (!message.success || message.data.type !== "sessions.changed") return;
-      onSessions(message.data.sessions);
+      if (!message.success) return;
+      if (message.data.type === "sessions.changed") handlers.onSessions(message.data.sessions);
+      if (message.data.type === "projects.changed") handlers.onProjects(message.data.projects);
     };
     socket.onclose = () => {
       if (closed || ws !== socket) return;
