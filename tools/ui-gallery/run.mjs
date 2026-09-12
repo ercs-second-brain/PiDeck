@@ -842,8 +842,6 @@ const DESKTOP_ORDER = [
   "mobile-home",
   "mobile-session",
   "mobile-back",
-  "update-pill-available",
-  "update-pill-updating",
 ];
 
 function routesForAssertions() {
