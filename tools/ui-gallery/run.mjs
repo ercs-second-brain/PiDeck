@@ -711,6 +711,12 @@ function buildShots(sessionId) {
       route: "/",
       async run(page) {
         await page.goto("/");
+        // the sidebar-collapsed shot left the toggle collapsed (remembered);
+        // bring it back before shooting sidebar-dependent states
+        if ((await page.locator(".shell--collapsed").count()) > 0) {
+          await page.locator(".header__toggle").click();
+          await page.locator(".shell:not(.shell--collapsed)").waitFor();
+        }
         await page.getByText("#47").waitFor();
         await page.locator('[aria-label="Actions for my-api"]').click();
         await page.locator(".srow-menu").waitFor();
