@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -294,6 +294,40 @@ describe("REST contract", () => {
     expect(trace.transcriptPath?.endsWith("pi.jsonl")).toBe(true);
 
     expect((await call(base, "GET", "/api/sessions/nope/trace")).status).toBe(404);
+  });
+
+  it("serves a session's parsed pi transcript and 404s unknown sessions", async () => {
+    const { base, deps } = await startDaemon();
+    const worker = sessionRecord();
+    deps.registry.add(worker);
+    const dir = join(deps.stateDir, "pi-sessions", worker.id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl"),
+      readFileSync(join(import.meta.dirname, "..", "sessions", "fixtures", "pi-transcript.jsonl"), "utf8"),
+      "utf8",
+    );
+
+    const res = await call(base, "GET", `/api/sessions/${worker.id}/transcript`);
+    expect(res.status).toBe(200);
+    const transcript = validate(restEndpoints["sessionTranscript"].response, res.body);
+    expect(transcript.entries.map((e) => e.role)).toEqual(["user", "tool", "assistant"]);
+    expect(transcript.entries[0]).toMatchObject({ at: "2026-01-01T00:00:01.000Z", text: "Run the shell command 'echo hi' and then stop." });
+    expect(transcript.entries[1]).toMatchObject({ role: "tool", text: 'bash({"command":"echo hi"})' });
+
+    // An archived session keeps serving its transcript.
+    deps.registry.archive(worker.id);
+    expect((await call(base, "GET", `/api/sessions/${worker.id}/transcript`)).status).toBe(200);
+    // No transcript file: empty entries, not an error.
+    const fresh = sessionRecord();
+    deps.registry.add(fresh);
+    const empty = validate(
+      restEndpoints["sessionTranscript"].response,
+      (await call(base, "GET", `/api/sessions/${fresh.id}/transcript`)).body,
+    );
+    expect(empty.entries).toEqual([]);
+
+    expect((await call(base, "GET", "/api/sessions/nope/transcript")).status).toBe(404);
   });
 
   it("masks the review token in global settings", async () => {

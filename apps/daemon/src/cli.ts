@@ -10,6 +10,7 @@ import {
   errorMessage,
   type Project,
   type SessionTrace,
+  type SessionTranscript,
   type SessionView,
   type Status,
   type TraceEntry,
@@ -29,7 +30,8 @@ const USAGE = `usage:
   pideck sessions [--project <id>] [--json]
   pideck workers --project <id> [--json]
   pideck send --session <id> --message <text>
-  pideck trace <session-id> [--follow]`;
+  pideck trace <session-id> [--follow]
+  pideck transcript <session-id>`;
 
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
   try {
@@ -132,6 +134,24 @@ async function dispatch(argv: string[], io: CliIo): Promise<number> {
       }
       for (const line of trace.entries.map(traceLine)) io.stdout(line);
       if (flag(args, "--follow")) await followTrace(io, id, trace.entries.length);
+      return 0;
+    }
+
+    case "transcript": {
+      const id = rest[0];
+      if (!id) return usageError(io, "transcript needs a session id");
+      const transcript = await request<SessionTranscript>(
+        io,
+        "GET",
+        `/api/sessions/${enc(id)}/transcript`,
+      );
+      if (asJson) {
+        io.stdout(JSON.stringify(transcript, null, 2));
+        return 0;
+      }
+      for (const entry of transcript.entries) {
+        io.stdout(`${entry.at ?? "-"}  ${entry.role}  ${entry.text}`);
+      }
       return 0;
     }
 

@@ -60,18 +60,17 @@
   flex: none;
   margin-left: auto;
   min-width: 0;
+  padding: 8px 0;
+  border: none;
   overflow: hidden;
+  background: none;
   color: var(--blue, #5b9cff);
+  font: inherit;
   font-family: var(--font-mono, ui-monospace, Menlo, monospace);
   font-size: 11px;
   white-space: nowrap;
   text-overflow: ellipsis;
-  text-decoration: none;
-}
-
-.trace__transcript:hover,
-.trace__transcript:focus-visible {
-  text-decoration: underline;
+  cursor: pointer;
 }
 
 .trace__list {
@@ -105,6 +104,22 @@
   color: var(--text-dim, #8b93a0);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* Transcript entries wrap instead of ellipsising — they are read, not scanned. */
+.trace__summary--wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.trace__transcript-view {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: var(--sp-2, 8px) var(--sp-4, 16px);
+  border-top: 1px solid var(--border, #262a33);
 }
 
 .trace__summary--button {

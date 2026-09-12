@@ -16,6 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { statePaths } from "../store/stateDir.js";
 import { join } from "node:path";
 import { loadShippedPrompt } from "../prompts/shipped.js";
+import { readTranscript } from "../sessions/transcript.js";
 import { archiveSession } from "../sessions/spawn.js";
 import type { DaemonDeps } from "./deps.js";
 import { ApiError, type ApiHandlers } from "./router.js";
@@ -124,6 +125,9 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
         transcriptPath: deps.trace.transcriptPath(session.id),
       };
     },
+
+    sessionTranscript: ({ params }) =>
+      readTranscript(deps.stateDir, sessionOr404(deps, params.id!).id),
 
     globalSettingsGet: () => deps.settings.read(),
     globalSettingsPut: ({ body }) => {
