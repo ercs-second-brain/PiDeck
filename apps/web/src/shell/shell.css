@@ -40,8 +40,26 @@
 }
 
 @media (max-width: 899px) {
+  /* One fixed-height shell: the page itself never scrolls. The height rides
+     --shell-height (the visual viewport, set by index.html) so the on-screen
+     keyboard shrinks the shell instead of pushing it off screen — the key row
+     and composer above it stay reachable. */
+  html,
+  body {
+    overflow: hidden;
+  }
+
+  .shell {
+    height: var(--shell-height, 100dvh);
+  }
+
   .sidebar {
     width: 100%;
+    padding-bottom: calc(var(--sp-2) + env(safe-area-inset-bottom));
+  }
+
+  .shell__main {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .shell--detail .sidebar {
