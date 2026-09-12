@@ -17,7 +17,10 @@ function fakeRunner(handler?: (args: string[]) => CommandResult): {
     if (handler) return handler(args);
     return { stdout: "", stderr: "" };
   };
-  return { tmux: new Tmux({ runner, enterDelayMs: 0 }), calls };
+  return {
+    tmux: new Tmux({ runner, enterDelayMs: 0, verifyDelayMs: 0 }),
+    calls,
+  };
 }
 
 const err = (exitCode: number, stderr = ""): CommandResult & { failed: true } => {
@@ -77,17 +80,55 @@ describe("Tmux", () => {
     expect(calls[0]).toEqual(["has-session", "-t", "gone"]);
   });
 
-  it("sendLine types the text in hex chunks then presses Enter", async () => {
+  it("sendLine types the text in hex chunks, presses Enter, then verifies submission", async () => {
     const { tmux, calls } = fakeRunner();
     await tmux.sendLine("s1", "hello");
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
     expect(calls[0]![0]).toBe("send-keys");
     expect(calls[0]!.slice(1, 3)).toEqual(["-t", "s1"]);
     expect(calls[1]).toEqual(["send-keys", "-t", "s1", "Enter"]);
+    expect(calls[2]).toEqual(["capture-pane", "-p", "-J", "-t", "s1"]);
     const hex = calls[0]!.slice(3);
     expect(hex[0]).toBe("-H");
     const bytes = hex.slice(1).map((h) => parseInt(h, 16));
     expect(Buffer.from(bytes).toString()).toBe("hello");
+  });
+
+  it("sendLine resends Enter while the draft is still in the input area, at most three times", async () => {
+    const logs: string[] = [];
+    const calls: string[][] = [];
+    // The draft stays on screen for the first two checks, then submits.
+    let captures = 0;
+    const runner: TmuxRunner = async (args) => {
+      calls.push(args);
+      if (args[0] === "capture-pane") {
+        captures++;
+        return captures <= 2
+          ? { stdout: "...\nWorker session for issue #1", stderr: "" }
+          : { stdout: "...\n(something else)", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    };
+    const tmux = new Tmux({ runner, enterDelayMs: 0, verifyDelayMs: 0, log: (l) => logs.push(l) });
+    await tmux.sendLine("s1", "Worker session for issue #1");
+    const enters = calls.filter((c) => c.at(-1) === "Enter");
+    expect(enters).toHaveLength(3);
+    expect(logs).toHaveLength(2);
+    expect(logs[0]).toContain("resending Enter (attempt 2 of 3)");
+  });
+
+  it("sendLine never presses Enter more than three times even if the draft never submits", async () => {
+    const calls: string[][] = [];
+    const runner: TmuxRunner = async (args) => {
+      calls.push(args);
+      if (args[0] === "capture-pane") {
+        return { stdout: "Worker session for issue #1", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    };
+    const tmux = new Tmux({ runner, enterDelayMs: 0, verifyDelayMs: 0 });
+    await tmux.sendLine("s1", "Worker session for issue #1");
+    expect(calls.filter((c) => c.at(-1) === "Enter")).toHaveLength(3);
   });
 
   it("sendLine strips a trailing newline and chunks long payloads", async () => {
@@ -97,7 +138,9 @@ describe("Tmux", () => {
     expect(chunkCalls.length).toBeGreaterThanOrEqual(3);
     const allBytes = chunkCalls.flatMap((c) => c.slice(4).map((h) => parseInt(h, 16)));
     expect(Buffer.from(allBytes).toString()).toBe("x".repeat(9000));
-    expect(calls.at(-1)).toEqual(["send-keys", "-t", "s1", "Enter"]);
+    const enters = calls.filter((c) => c.at(-1) === "Enter");
+    expect(enters).toHaveLength(1);
+    expect(calls.indexOf(enters[0]!)).toBeGreaterThan(calls.indexOf(chunkCalls.at(-1)!));
   });
 
   it("sendLine serializes concurrent sends per target", async () => {

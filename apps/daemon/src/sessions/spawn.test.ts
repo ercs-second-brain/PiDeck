@@ -38,7 +38,7 @@ function fakeTmux(state: FakeTmuxState): Tmux {
     if (cmd === "capture-pane") return { stdout: "pane log\nlast line", stderr: "" };
     return { stdout: "", stderr: "" };
   };
-  return new Tmux({ runner, enterDelayMs: 0 });
+  return new Tmux({ runner, enterDelayMs: 0, waitPollMs: 5, waitQuietMs: 0 });
 }
 
 interface FakeGitState {
@@ -157,6 +157,65 @@ describe("spawnPiSession", () => {
       ["show-ref", "--verify", "--quiet", "refs/heads/pideck/issue-42"],
       ["worktree", "add", expect.any(String), "pideck/issue-42"],
     ]);
+  });
+
+  it("waits for the pane to settle before returning the session", async () => {
+    let reads = 0;
+    // The TUI redraws for the first three reads, then settles.
+    const runner: TmuxRunner = async (args) => {
+      if (args[0] === "capture-pane") {
+        reads++;
+        return { stdout: reads <= 3 ? `screen ${reads}` : "screen 3", stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    };
+    const tmux = new Tmux({ runner, enterDelayMs: 0, waitPollMs: 5, waitQuietMs: 0 });
+    const deps = {
+      tmux,
+      registry: new SessionRegistry(stateDir),
+      stateDir,
+      git: fakeGit({ calls: [], branches: new Set() }),
+    };
+    await spawnPiSession(deps, {
+      persona: "orchestrator",
+      projectId: "proj",
+      cwd: cloneDir,
+      systemPrompt: "x",
+      model: null,
+    });
+    // Settled only after two consecutive equal reads: at least 4 reads.
+    expect(reads).toBeGreaterThanOrEqual(4);
+  });
+
+  it("proceeds anyway when the pane never settles", async () => {
+    const runner: TmuxRunner = async (args) => {
+      if (args[0] === "capture-pane") {
+        return { stdout: `screen ${Math.random()}`, stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    };
+    const tmux = new Tmux({
+      runner,
+      enterDelayMs: 0,
+      waitPollMs: 5,
+      waitQuietMs: 0,
+      waitTimeoutMs: 40,
+      log: () => {},
+    });
+    const deps = {
+      tmux,
+      registry: new SessionRegistry(stateDir),
+      stateDir,
+      git: fakeGit({ calls: [], branches: new Set() }),
+    };
+    const session = await spawnPiSession(deps, {
+      persona: "orchestrator",
+      projectId: "proj",
+      cwd: cloneDir,
+      systemPrompt: "x",
+      model: null,
+    });
+    expect(deps.registry.get(session.id)).toEqual(session);
   });
 
   it("spawns a reviewer in a detached worktree of the PR head", async () => {

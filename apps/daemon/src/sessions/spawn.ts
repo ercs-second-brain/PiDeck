@@ -178,6 +178,9 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
     command,
     env: { ...options.env, PD_SESSION_ID: id },
   });
+  // A pane that is still booting swallows the first typed line; deliver only
+  // once pi's chrome has settled. Bounded — see Tmux.waitReady.
+  await deps.tmux.waitReady(tmuxSession);
 
   const session = SessionSchema.parse({
     id,

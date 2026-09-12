@@ -128,18 +128,36 @@ const SEND_CHUNK_BYTES = 4096;
  */
 const SEND_ENTER_DELAY_MS = 300;
 
+const SEND_VERIFY_DELAY_MS = 500;
+
+/** Maximum Enter presses per sendLine, including the first and any resends. */
+const MAX_SUBMIT_ATTEMPTS = 3;
+
+const DEFAULT_WAIT = { pollMs: 250, quietMs: 1_000, timeoutMs: 30_000 };
+
 export interface TmuxOptions {
   runner?: TmuxRunner;
   /** Private tmux server socket (tests run isolated with `-L <socket>`). */
   socketName?: string;
   /** Settle delay before the submitting Enter, in ms. */
   enterDelayMs?: number;
+  /** Delay between an Enter and the draft check that may resend it, in ms. */
+  verifyDelayMs?: number;
+  /** Readiness-poll defaults, overridable per {@link waitReady} call. */
+  waitPollMs?: number;
+  waitQuietMs?: number;
+  waitTimeoutMs?: number;
+  /** One-line diagnostics for lost-Enter resends and readiness timeouts. */
+  log?: (line: string) => void;
 }
 
 export class Tmux {
   private readonly runner: TmuxRunner;
   private readonly socketName: string | undefined;
   private readonly enterDelayMs: number;
+  private readonly verifyDelayMs: number;
+  private readonly waitDefaults: { pollMs: number; quietMs: number; timeoutMs: number };
+  private readonly log: (line: string) => void;
   /** Per-target serialization so concurrent sends never interleave. */
   private readonly sendQueues = new Map<string, Promise<void>>();
 
@@ -147,6 +165,13 @@ export class Tmux {
     this.runner = options.runner ?? defaultTmuxRunner();
     this.socketName = options.socketName;
     this.enterDelayMs = options.enterDelayMs ?? SEND_ENTER_DELAY_MS;
+    this.verifyDelayMs = options.verifyDelayMs ?? SEND_VERIFY_DELAY_MS;
+    this.waitDefaults = {
+      pollMs: options.waitPollMs ?? DEFAULT_WAIT.pollMs,
+      quietMs: options.waitQuietMs ?? DEFAULT_WAIT.quietMs,
+      timeoutMs: options.waitTimeoutMs ?? DEFAULT_WAIT.timeoutMs,
+    };
+    this.log = options.log ?? (() => {});
   }
 
   /** Whether a `tmux` binary is available at all. */
@@ -223,6 +248,12 @@ export class Tmux {
    * buffer). Trailing newlines are stripped: the explicit Enter below is
    * the submission. Enter is its own invocation, sent after a short settle
    * delay so a large burst cannot absorb it.
+   *
+   * Submission is verified: after the Enter the visible screen is re-read,
+   * and if the tail of the message is still sitting in the target's input
+   * area, Enter is sent again — at most {@link MAX_SUBMIT_ATTEMPTS} presses,
+   * every resend logged. This catches the race right after a spawn, where
+   * the pane can swallow the first Enter before the TUI is listening.
    */
   async sendLine(name: string, text: string): Promise<void> {
     await this.enqueue(name, () => this.performSendLine(name, text));
@@ -250,7 +281,33 @@ export class Tmux {
     if (this.enterDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, this.enterDelayMs));
     }
-    await this.run(["send-keys", "-t", name, "Enter"]);
+    for (let attempt = 1; attempt <= MAX_SUBMIT_ATTEMPTS; attempt++) {
+      await this.run(["send-keys", "-t", name, "Enter"]);
+      if (attempt === MAX_SUBMIT_ATTEMPTS) break;
+      await new Promise((resolve) => setTimeout(resolve, this.verifyDelayMs));
+      if (!(await this.draftStillPending(name, payload))) return;
+      this.log(
+        `tmux ${name}: draft still in the input area — resending Enter ` +
+          `(attempt ${attempt + 1} of ${MAX_SUBMIT_ATTEMPTS})`,
+      );
+    }
+  }
+
+  /**
+   * Whether the tail of a just-typed message is still sitting in the pane's
+   * input area. After a successful submission the draft is gone; the text
+   * may appear higher up in the transcript, but not in the bottom rows.
+   */
+  private async draftStillPending(name: string, payload: string): Promise<boolean> {
+    let screen: string;
+    try {
+      screen = await this.screen(name);
+    } catch {
+      return false;
+    }
+    const tail = payload.slice(-80);
+    const bottom = screen.split("\n").slice(-5).join("\n");
+    return bottom.includes(tail);
   }
 
   /** Kills a tmux session. Throws `TmuxError` if it does not exist. */
@@ -278,6 +335,54 @@ export class Tmux {
       "-",
     ]);
     return stdout.replace(/\n+$/, "");
+  }
+
+  /**
+   * Captures just the visible screen of the session's active window — the
+   * pane read used to detect a draft that was typed but never submitted.
+   */
+  private async screen(name: string): Promise<string> {
+    const { stdout } = await this.run(["capture-pane", "-p", "-J", "-t", name]);
+    return stdout.replace(/\n+$/, "");
+  }
+
+  /**
+   * Waits until a freshly created pane has settled: its screen is unchanged
+   * across consecutive reads for `quietMs`. A TUI (pi, a shell) that is
+   * still booting keeps redrawing; once the chrome is drawn the screen is
+   * static and typed input reaches the input widget. Bounded: resolves
+   * `false` after `timeoutMs` so a slow start cannot wedge a spawn — the
+   * submitting-Enter check in {@link sendLine} catches the lost text anyway.
+   * Resolves `false` immediately when the pane dies.
+   */
+  async waitReady(
+    name: string,
+    options: { pollMs?: number; quietMs?: number; timeoutMs?: number } = {},
+  ): Promise<boolean> {
+    const pollMs = options.pollMs ?? this.waitDefaults.pollMs;
+    const quietMs = options.quietMs ?? this.waitDefaults.quietMs;
+    const deadline = Date.now() + (options.timeoutMs ?? this.waitDefaults.timeoutMs);
+    let previous: string | null = null;
+    let unchangedSince: number | null = null;
+    while (Date.now() < deadline) {
+      let screen: string;
+      try {
+        screen = await this.screen(name);
+      } catch {
+        return false;
+      }
+      const now = Date.now();
+      if (screen === previous) {
+        unchangedSince ??= now;
+        if (now - unchangedSince >= quietMs) return true;
+      } else {
+        unchangedSince = now;
+        previous = screen;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+    this.log(`tmux ${name}: pane never settled within the readiness window`);
+    return false;
   }
 }
 

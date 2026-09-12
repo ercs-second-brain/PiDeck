@@ -42,14 +42,21 @@ export function buildBriefing(data: BriefingData): string {
         : "";
     return `${session.persona}${work} (${session.id})`;
   });
-  const groups = [
-    group("assigned", assigned),
-    group("blocked", blocked),
-    group("unassigned", unassigned),
-    group("PRs", prs),
-    group("live", sessions),
-    `project memory: docs/ on ${data.project.defaultBranch}`,
-  ].filter((part) => part !== null);
+  const groups: string[] = [];
+  if (data.issues.length === 0) {
+    groups.push("no open issues");
+  } else {
+    for (const part of [
+      group("assigned", assigned),
+      group("blocked", blocked),
+      group("unassigned", unassigned),
+    ]) {
+      if (part !== null) groups.push(part);
+    }
+  }
+  groups.push(prs.length ? `PRs: ${prs.join(", ")}` : "no open PRs");
+  groups.push(sessions.length ? `live: ${sessions.join(", ")}` : "no live sessions");
+  groups.push(`project memory: docs/ on ${data.project.defaultBranch}`);
   const { name, owner, repo, defaultBranch } = data.project;
   return `Briefing for ${name} (${owner}/${repo}, branch ${defaultBranch}): ${groups.join("; ")}.`;
 }
