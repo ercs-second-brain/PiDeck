@@ -39,10 +39,10 @@ function errorMessage(error: unknown): string {
 
 /** Module-level so the probe steps' mount effect sees stable callbacks. */
 function runPiProbe(): Promise<PiProbe> {
-  return api.probePi();
+  return api("probePi");
 }
 function runGhPrimaryProbe(): Promise<Probe> {
-  return api.probeGhPrimary();
+  return api("probeGhPrimary");
 }
 
 function ProbeStep<T extends Probe>({
@@ -120,10 +120,10 @@ function ReviewStep({ onVerified }: { onVerified: () => void }) {
         ? { username: username.trim(), token: token.trim() }
         : { username: username.trim() };
       const put: GlobalSettingsPut = { reviewAccount: account };
-      await api.putGlobalSettings(put);
+      await api("globalSettingsPut", undefined, put);
       setTokenSet(true);
       setToken("");
-      const probe = await api.probeGhReview();
+      const probe = await api("probeGhReview");
       if (probe.ok) {
         setVerified(true);
       } else {
@@ -154,7 +154,7 @@ function ReviewStep({ onVerified }: { onVerified: () => void }) {
       {verified ? <Badge tone="green">✓ Verified as {username.trim()}</Badge> : null}
       {error ? <p style={red}>{error}</p> : null}
       <div style={row}>
-        <Button variant="primary" busy={busy} onClick={() => void verify()}>
+        <Button variant="primary" disabled={busy} onClick={() => void verify()}>
           {verified ? "Re-verify" : "Verify"}
         </Button>
         <Button variant="primary" disabled={!verified} onClick={onVerified}>
@@ -189,7 +189,7 @@ function RepoStep({ onCreated }: { onCreated: (project: Project) => void }) {
         mode === "clone"
           ? { mode: "clone", repoUrl: repoUrl.trim() }
           : { mode: "create", name: name.trim(), private: isPrivate };
-      onCreated(await api.createProject(body));
+      onCreated(await api("projectCreate", undefined, body));
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -221,13 +221,13 @@ function RepoStep({ onCreated }: { onCreated: (project: Project) => void }) {
         />
       ) : (
         <>
-          <Field label="Repository name" value={name} onChange={setName} error={fieldErrors.name} disabled={busy} />
-          <Switch label="Private repository" checked={isPrivate} onChange={setPrivate} disabled={busy} />
+          <Field label="Repository name" value={name} onChange={setName} error={fieldErrors.name} />
+          <Switch label="Private repository" checked={isPrivate} onChange={setPrivate} />
         </>
       )}
       {error ? <p style={red}>{error}</p> : null}
       <div style={row}>
-        <Button variant="primary" busy={busy} onClick={() => void submit()}>
+        <Button variant="primary" disabled={busy} onClick={() => void submit()}>
           Add project
         </Button>
       </div>
@@ -244,7 +244,7 @@ export function OnboardingWizard({ onDone }: { onDone: (project: Project) => voi
     let cancelled = false;
     void (async () => {
       try {
-        const [status, settings] = await Promise.all([api.status(), api.getGlobalSettings()]);
+        const [status, settings] = await Promise.all([api("status"), api("globalSettingsGet")]);
         if (status.piReady && status.ghReady && settings.reviewAccount?.tokenSet) {
           setCompleted(new Set<StepId>(["pi", "github", "review"]));
           setStep("repo");
@@ -270,13 +270,11 @@ export function OnboardingWizard({ onDone }: { onDone: (project: Project) => voi
     <Page title="Set up PiDeck">
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
         {STEPS.map((entry) => (
-          <Badge
-            key={entry.id}
-            tone={completed.has(entry.id) ? "green" : entry.id === step ? "accent" : "dim"}
-            aria-current={entry.id === step ? "step" : undefined}
-          >
-            {completed.has(entry.id) ? `✓ ${entry.label}` : entry.label}
-          </Badge>
+          <span key={entry.id} aria-current={entry.id === step ? "step" : undefined}>
+            <Badge tone={completed.has(entry.id) ? "green" : entry.id === step ? "blue" : "dim"}>
+              {completed.has(entry.id) ? `✓ ${entry.label}` : entry.label}
+            </Badge>
+          </span>
         ))}
       </div>
       {entered && step === "pi" && (

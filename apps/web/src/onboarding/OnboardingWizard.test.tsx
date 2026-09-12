@@ -10,21 +10,11 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GlobalSettingsRead, PiProbe, Probe, Project, Status } from "@pideck/shared";
+import type { GlobalSettingsRead, PiProbe, Probe, Project, RestEndpointName, Status } from "@pideck/shared";
 import { api } from "./api";
 import { OnboardingWizard } from "./OnboardingWizard";
 
-vi.mock("./api", () => ({
-  api: {
-    status: vi.fn(),
-    probePi: vi.fn(),
-    probeGhPrimary: vi.fn(),
-    probeGhReview: vi.fn(),
-    getGlobalSettings: vi.fn(),
-    putGlobalSettings: vi.fn(),
-    createProject: vi.fn(),
-  },
-}));
+vi.mock("./api", () => ({ api: vi.fn() }));
 
 const piOk: PiProbe = { ok: true, detail: "", providers: ["anthropic", "github-copilot"], models: ["claude", "gpt"], defaultModel: "claude" };
 const piFail: PiProbe = { ok: false, detail: "pi is not authenticated — run `pi auth` in a terminal", providers: [], models: [], defaultModel: null };
@@ -59,6 +49,9 @@ const project: Project = {
   defaultBranch: "main",
   path: "/repos/my-api",
 };
+
+/** Endpoint → resolved value; an Error entry makes the call reject. */
+const responses: Partial<Record<RestEndpointName, unknown>> = {};
 
 function setInput(element: Element, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -120,13 +113,20 @@ async function reachRepoStep(container: HTMLElement): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks();
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  vi.mocked(api.status).mockResolvedValue(statusFresh);
-  vi.mocked(api.getGlobalSettings).mockResolvedValue(settingsNone);
-  vi.mocked(api.probePi).mockResolvedValue(piOk);
-  vi.mocked(api.probeGhPrimary).mockResolvedValue(ghOk);
-  vi.mocked(api.probeGhReview).mockResolvedValue(reviewOk);
-  vi.mocked(api.putGlobalSettings).mockResolvedValue(settingsSet);
-  vi.mocked(api.createProject).mockResolvedValue(project);
+  Object.assign(responses, {
+    status: statusFresh,
+    globalSettingsGet: settingsNone,
+    probePi: piOk,
+    probeGhPrimary: ghOk,
+    probeGhReview: reviewOk,
+    globalSettingsPut: settingsSet,
+    projectCreate: project,
+  });
+  vi.mocked(api).mockImplementation(((name: RestEndpointName) => {
+    const value = responses[name];
+    if (value instanceof Error) return Promise.reject(value);
+    return Promise.resolve(value);
+  }) as never);
 });
 
 afterEach(() => {
@@ -155,30 +155,31 @@ describe("OnboardingWizard", () => {
     expect(buttonByText(container, "Next").disabled).toBe(false);
     await click(container, "Next");
     expect(container.textContent).toContain("GitHub CLI");
-    expect(api.probeGhPrimary).toHaveBeenCalledTimes(1);
+    expect(api).toHaveBeenCalledWith("probeGhPrimary");
   });
 
   it("shows the probe's hand-off instructions and blocks Next when pi is not ready, until Re-check passes", async () => {
-    vi.mocked(api.probePi).mockResolvedValue(piFail);
+    responses.probePi = piFail;
     const container = await mountWizard();
     expect(container.textContent).toContain("run `pi auth` in a terminal");
     expect(buttonByText(container, "Next").disabled).toBe(true);
 
-    vi.mocked(api.probePi).mockResolvedValue(piOk);
+    responses.probePi = piOk;
     await click(container, "Re-check");
-    expect(api.probePi).toHaveBeenCalledTimes(2);
+    const piCalls = vi.mocked(api).mock.calls.filter(([name]) => name === "probePi");
+    expect(piCalls).toHaveLength(2);
     expect(buttonByText(container, "Next").disabled).toBe(false);
   });
 
   it("surfaces a failed probe call as an inline error", async () => {
-    vi.mocked(api.probePi).mockRejectedValue(new Error("daemon unreachable"));
+    responses.probePi = new Error("daemon unreachable");
     const container = await mountWizard();
     expect(container.textContent).toContain("daemon unreachable");
     expect(buttonByText(container, "Next").disabled).toBe(true);
   });
 
   it("shows the hand-off instructions and blocks Next when the gh probe fails", async () => {
-    vi.mocked(api.probeGhPrimary).mockResolvedValue(ghFail);
+    responses.probeGhPrimary = ghFail;
     const container = await mountWizard();
     await click(container, "Next");
     expect(container.textContent).toContain("run `gh auth login`");
@@ -190,7 +191,7 @@ describe("OnboardingWizard", () => {
     await click(container, "Next");
     await click(container, "Next");
     await click(container, "Verify");
-    expect(api.putGlobalSettings).not.toHaveBeenCalled();
+    expect(api).not.toHaveBeenCalledWith("globalSettingsPut", undefined, expect.anything());
     expect(container.textContent).toContain("Username is required");
     expect(container.textContent).toContain("A personal access token is required");
   });
@@ -202,17 +203,17 @@ describe("OnboardingWizard", () => {
     await typeInto(container, "Username", "reviewer-bot");
     await typeInto(container, "Personal access token", "ghp_secret");
     await click(container, "Verify");
-    expect(vi.mocked(api.putGlobalSettings).mock.calls[0]?.[0]).toEqual({
+    expect(api).toHaveBeenCalledWith("globalSettingsPut", undefined, {
       reviewAccount: { username: "reviewer-bot", token: "ghp_secret" },
     });
-    expect(api.probeGhReview).toHaveBeenCalledTimes(1);
+    expect(api).toHaveBeenCalledWith("probeGhReview");
     expect(buttonByText(container, "Next").disabled).toBe(false);
     expect(inputByLabel(container, "Personal access token").value).toBe("");
     expect(document.body.textContent).not.toContain("ghp_secret");
   });
 
   it("keeps Next disabled and shows the probe detail when review verification fails", async () => {
-    vi.mocked(api.probeGhReview).mockResolvedValue(reviewFail);
+    responses.probeGhReview = reviewFail;
     const container = await mountWizard();
     await click(container, "Next");
     await click(container, "Next");
@@ -231,7 +232,10 @@ describe("OnboardingWizard", () => {
     await reachRepoStep(container);
     await typeInto(container, "Repository URL", "https://github.com/owner/my-api");
     await click(container, "Add project");
-    expect(api.createProject).toHaveBeenCalledWith({ mode: "clone", repoUrl: "https://github.com/owner/my-api" });
+    expect(api).toHaveBeenCalledWith("projectCreate", undefined, {
+      mode: "clone",
+      repoUrl: "https://github.com/owner/my-api",
+    });
     expect(onDone).toHaveBeenCalledWith(project);
   });
 
@@ -245,21 +249,29 @@ describe("OnboardingWizard", () => {
 
     await typeInto(container, "Repository name", "my-web");
     await click(container, "Add project");
-    expect(api.createProject).toHaveBeenLastCalledWith({ mode: "create", name: "my-web", private: true });
+    expect(api).toHaveBeenLastCalledWith("projectCreate", undefined, {
+      mode: "create",
+      name: "my-web",
+      private: true,
+    });
 
     await act(async () => {
       inputByLabel(container, "Private repository").click();
     });
     await click(container, "Add project");
-    expect(api.createProject).toHaveBeenLastCalledWith({ mode: "create", name: "my-web", private: false });
+    expect(api).toHaveBeenLastCalledWith("projectCreate", undefined, {
+      mode: "create",
+      name: "my-web",
+      private: false,
+    });
   });
 
   it("skips completed steps when re-entered to add another project", async () => {
-    vi.mocked(api.status).mockResolvedValue({ ...statusFresh, piReady: true, ghReady: true });
-    vi.mocked(api.getGlobalSettings).mockResolvedValue(settingsSet);
+    responses.status = { ...statusFresh, piReady: true, ghReady: true };
+    responses.globalSettingsGet = settingsSet;
     const container = await mountWizard();
-    expect(api.probePi).not.toHaveBeenCalled();
-    expect(api.probeGhPrimary).not.toHaveBeenCalled();
+    expect(api).not.toHaveBeenCalledWith("probePi");
+    expect(api).not.toHaveBeenCalledWith("probeGhPrimary");
     expect(container.querySelector('[aria-current="step"]')?.textContent).toBe("Repo");
     expect(container.textContent).toContain("Project repository");
   });

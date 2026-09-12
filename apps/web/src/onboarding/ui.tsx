@@ -1,19 +1,31 @@
 /**
  * Placeholder primitives standing in for the shared set in `src/ui/` while
- * that lands in parallel. Names and props follow docs/DESIGN.md §4; markup is
- * deliberately minimal and unstyled (inline tokens only), and this file is
- * deleted once the real primitives exist — only the import lines change.
+ * that lands in parallel. Names and props mirror the locked table in
+ * docs/DESIGN.md §4; markup is deliberately minimal (inline tokens only), and
+ * this file is deleted once the real primitives exist — only the import lines
+ * change.
  */
 
-import type { ChangeEvent, HTMLAttributes, ReactNode } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 
 const dim = { color: "var(--text-dim)" };
 const errorText = { color: "var(--red)" };
 
-export function Page({ title, children }: { title: string; children: ReactNode }) {
+export type BadgeTone = "blue" | "amber" | "purple" | "green" | "red" | "dim";
+
+export function Page({
+  title,
+  subnav,
+  children,
+}: {
+  title: string;
+  subnav?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <main style={{ maxWidth: 640, padding: 24, boxSizing: "border-box" }}>
       <h1 style={{ fontSize: 22, margin: 0 }}>{title}</h1>
+      {subnav}
       {children}
     </main>
   );
@@ -22,46 +34,64 @@ export function Page({ title, children }: { title: string; children: ReactNode }
 export function Section({
   title,
   description,
+  footer,
   children,
 }: {
-  title: string;
+  title?: string;
   description?: string;
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section style={{ marginTop: 24 }}>
-      <h2 style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, margin: 0 }}>
-        {title}
-      </h2>
+      {title ? (
+        <h2 style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, margin: 0 }}>{title}</h2>
+      ) : null}
       {description ? <p style={{ ...dim, fontSize: 13 }}>{description}</p> : null}
       {children}
+      {footer}
     </section>
   );
 }
 
 export function Field({
   label,
-  type = "text",
   value,
   onChange,
+  type = "text",
+  options,
   placeholder,
-  error,
   disabled,
+  min,
+  max,
+  step,
+  error,
 }: {
-  label: string;
-  type?: "text" | "password";
+  label?: string;
   value: string;
   onChange: (value: string) => void;
+  type?: "text" | "password" | "number" | "select";
+  options?: { value: string; label: string }[];
   placeholder?: string;
-  error?: string | null;
   disabled?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  error?: string | null;
 }) {
-  function handle(event: ChangeEvent<HTMLInputElement>) {
+  function handle(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     onChange(event.target.value);
   }
-  return (
-    <label style={{ display: "block", marginTop: 12 }}>
-      <span style={{ ...dim, fontSize: 12, display: "block", marginBottom: 4 }}>{label}</span>
+  const control =
+    type === "select" ? (
+      <select value={value} aria-label={label} disabled={disabled} onChange={handle} style={controlStyle}>
+        {(options ?? []).map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ) : (
       <input
         type={type}
         value={value}
@@ -69,33 +99,41 @@ export function Field({
         placeholder={placeholder}
         aria-label={label}
         disabled={disabled}
-        style={{
-          display: "block",
-          width: "100%",
-          boxSizing: "border-box",
-          height: 36,
-          background: "var(--bg-hover)",
-          color: "var(--text)",
-          border: "1px solid var(--border)",
-          borderRadius: 6,
-          padding: "0 10px",
-        }}
+        min={min}
+        max={max}
+        step={step}
+        style={controlStyle}
       />
+    );
+  return (
+    <label style={{ display: "block", marginTop: 12 }}>
+      {label ? <span style={{ ...dim, fontSize: 12, display: "block", marginBottom: 4 }}>{label}</span> : null}
+      {control}
       {error ? <span style={{ ...errorText, fontSize: 12 }}>{error}</span> : null}
     </label>
   );
 }
 
+const controlStyle = {
+  display: "block",
+  width: "100%",
+  boxSizing: "border-box",
+  height: 36,
+  background: "var(--bg-hover)",
+  color: "var(--text)",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  padding: "0 10px",
+} as const;
+
 export function Switch({
-  label,
   checked,
   onChange,
-  disabled,
+  label,
 }: {
-  label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
-  disabled?: boolean;
+  label: string;
 }) {
   return (
     <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
@@ -103,7 +141,6 @@ export function Switch({
         type="checkbox"
         role="switch"
         checked={checked}
-        disabled={disabled}
         aria-label={label}
         onChange={(event) => onChange(event.target.checked)}
       />
@@ -114,22 +151,22 @@ export function Switch({
 
 export function Button({
   variant = "default",
-  busy = false,
+  type = "button",
   disabled = false,
   onClick,
   children,
 }: {
   variant?: "default" | "primary" | "danger" | "ghost";
-  busy?: boolean;
+  type?: "button" | "submit";
   disabled?: boolean;
-  onClick: () => void;
+  onClick?: () => void;
   children: ReactNode;
 }) {
   return (
     <button
-      type="button"
+      type={type}
       data-variant={variant}
-      disabled={disabled || busy}
+      disabled={disabled}
       onClick={onClick}
       style={{
         height: 36,
@@ -138,7 +175,7 @@ export function Button({
         border: "1px solid var(--border)",
         background: variant === "primary" ? "var(--accent)" : "transparent",
         color: variant === "primary" ? "#0c0d10" : "var(--text)",
-        cursor: disabled || busy ? "default" : "pointer",
+        cursor: disabled ? "default" : "pointer",
       }}
     >
       {children}
@@ -146,24 +183,17 @@ export function Button({
   );
 }
 
-export function Badge({
-  tone = "dim",
-  children,
-  ...rest
-}: { tone?: "dim" | "accent" | "green" | "red"; children: ReactNode } & HTMLAttributes<HTMLSpanElement>) {
-  const color =
-    tone === "green" ? "var(--green)" : tone === "red" ? "var(--red)" : tone === "accent" ? "var(--accent)" : "var(--text-dim)";
+export function Badge({ tone = "blue", children }: { tone?: BadgeTone; children: ReactNode }) {
   return (
     <span
-      {...rest}
       style={{
         display: "inline-block",
         fontSize: 11,
         lineHeight: "22px",
         padding: "0 10px",
         borderRadius: 999,
-        border: `1px solid ${color}`,
-        color,
+        border: `1px solid var(--${tone === "dim" ? "text-dim" : tone})`,
+        color: `var(--${tone === "dim" ? "text-dim" : tone})`,
       }}
     >
       {children}

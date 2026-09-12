@@ -1,54 +1,44 @@
 /**
  * Stand-in for the web shell's typed client (`src/lib/api.ts`): the same
- * call surface, typed against the rest endpoints in `@pideck/shared`, so the
- * onboarding wizard imports one module and the swap to the real client is a
- * single-file change. Responses are parsed with the shared schemas, so a
- * daemon that drifts from the contracts fails loudly here.
+ * `api(name, params?, body?)` surface, typed against the rest endpoints in
+ * `@pideck/shared`, so the onboarding wizard imports one module and the swap
+ * to the real client is a single import change. Responses are parsed with the
+ * shared schemas, so a daemon that drifts from the contracts fails loudly
+ * here.
  */
 
-import {
-  GlobalSettingsReadSchema,
-  PiProbeSchema,
-  ProbeSchema,
-  ProjectSchema,
-  StatusSchema,
-  restEndpoints,
-  type GlobalSettingsPut,
-  type GlobalSettingsRead,
-  type PiProbe,
-  type Probe,
-  type Project,
-  type ProjectCreate,
-  type RestEndpointName,
-  type Status,
-} from "@pideck/shared";
+import { restEndpoints, type RestEndpointName } from "@pideck/shared";
 
-async function call<T>(
-  name: RestEndpointName,
-  parse: (data: unknown) => T,
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+type EndpointOf<Name extends RestEndpointName> = (typeof restEndpoints)[Name];
+type Parsed<T> = T extends { parse: (data: never) => infer Out } ? Out : never;
+type Response<Name extends RestEndpointName> = Parsed<EndpointOf<Name>["response"]>;
+
+export async function api<Name extends RestEndpointName>(
+  name: Name,
+  params?: Record<string, string>,
   body?: unknown,
-): Promise<T> {
+): Promise<Response<Name>> {
   const endpoint = restEndpoints[name];
-  const response = await fetch(endpoint.path, {
+  const path = Object.entries(params ?? {}).reduce(
+    (acc, [key, value]) => acc.replace(`:${key}`, encodeURIComponent(value)),
+    endpoint.path,
+  );
+  const response = await fetch(path, {
     method: endpoint.method,
     headers: body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`${endpoint.method} ${endpoint.path} failed (${response.status})`);
+    throw new ApiError(response.status, `${endpoint.method} ${path} failed (${response.status})`);
   }
-  return parse(await response.json());
+  const data = (endpoint.response as { parse: (data: unknown) => unknown }).parse(await response.json());
+  return data as Response<Name>;
 }
-
-export const api = {
-  status: (): Promise<Status> => call("status", (data) => StatusSchema.parse(data)),
-  probePi: (): Promise<PiProbe> => call("probePi", (data) => PiProbeSchema.parse(data)),
-  probeGhPrimary: (): Promise<Probe> => call("probeGhPrimary", (data) => ProbeSchema.parse(data)),
-  probeGhReview: (): Promise<Probe> => call("probeGhReview", (data) => ProbeSchema.parse(data)),
-  getGlobalSettings: (): Promise<GlobalSettingsRead> =>
-    call("globalSettingsGet", (data) => GlobalSettingsReadSchema.parse(data)),
-  putGlobalSettings: (body: GlobalSettingsPut): Promise<GlobalSettingsRead> =>
-    call("globalSettingsPut", (data) => GlobalSettingsReadSchema.parse(data), body),
-  createProject: (body: ProjectCreate): Promise<Project> =>
-    call("projectCreate", (data) => ProjectSchema.parse(data), body),
-};
