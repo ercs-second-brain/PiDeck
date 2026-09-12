@@ -291,10 +291,19 @@ describe("REST contract", () => {
     expect(review.ok).toBe(false);
   });
 
-  it("answers not-yet-implemented endpoints with 501 and unknown routes with 404", async () => {
-    const { base } = await startDaemon();
-    expect((await call(base, "GET", "/api/update")).status).toBe(501);
-    expect((await call(base, "POST", "/api/update/apply")).status).toBe(501);
+  it("checks and applies updates, and answers unknown routes with 404", async () => {
+    const { base, deps } = await startDaemon();
+    const check = validate(restEndpoints["updateCheck"].response, (await call(base, "GET", "/api/update")).body);
+    expect(check).toEqual({ updateAvailable: true, latestVersion: "bbbbbbb" });
+
+    const applied = await call(base, "POST", "/api/update/apply");
+    expect(validate(restEndpoints["updateApply"].response, applied.body)).toEqual({ ok: true });
+    expect(deps.updateSpawns.at(-1)?.slice(1)).toEqual(["update"]);
+
+    // A live worker gates the apply behind a 409.
+    deps.registry.add(sessionRecord({ persona: "worker" }));
+    expect((await call(base, "POST", "/api/update/apply")).status).toBe(409);
+
     expect((await call(base, "GET", "/api/nope")).status).toBe(404);
     expect((await call(base, "DELETE", "/api/status")).status).toBe(404);
   });

@@ -1,4 +1,5 @@
 import "./header.css";
+import { UpdateBanner } from "../update/UpdateBanner";
 
 /**
  * The 44px app header: sidebar toggle (desktop) or back (mobile detail
@@ -36,6 +37,7 @@ export function Header({ context, detail, collapsed, onToggle, onNavigate }: {
         )}
       </div>
       <div className="header__actions">
+        <UpdateBanner />
         <button type="button" className="header__icon" aria-label="Add project" onClick={() => onNavigate("/onboarding")}>
           +
         </button>

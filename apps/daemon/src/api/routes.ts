@@ -23,7 +23,6 @@ import { sessionViews } from "./views.js";
  * Handlers for every REST endpoint in the shared map. Bodies arrive already
  * validated against the endpoint's request schema, and the router re-checks
  * every response against the response schema — handlers only shape data.
- * `updateCheck`/`updateApply` have no handler yet, so they answer 501.
  */
 export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
   return {
@@ -113,6 +112,9 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     probePi: () => deps.pi(),
     probeGhPrimary: () => deps.ghPrimary(),
     probeGhReview: () => deps.ghReview(),
+
+    updateCheck: () => deps.updates.check(),
+    updateApply: () => deps.updates.apply(),
   };
 }
 

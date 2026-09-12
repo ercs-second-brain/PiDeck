@@ -14,6 +14,7 @@ import { PromptOverrides } from "./prompts/overrides.js";
 import { ghPrimaryProbe, ghReviewProbe, piProbe } from "./api/probes.js";
 import { serve, type DaemonServer } from "./api/server.js";
 import type { DaemonDeps } from "./api/deps.js";
+import { createUpdater } from "./api/update.js";
 import { GhClient } from "./github/client.js";
 import { reconcileWithTmux, defaultGitRunner } from "./sessions/spawn.js";
 import { SessionRegistry } from "./sessions/registry.js";
@@ -52,6 +53,11 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
     ghPrimary: () => ghPrimaryProbe(),
     ghReview: () => ghReviewProbe(settings.reviewToken()?.token ?? null),
     pi: async () => piProbe(),
+    updates: createUpdater({
+      srcDir: env.PD_SRC?.trim() || defaultSrcDir(),
+      configJson: join(stateDir, "config.json"),
+      registry,
+    }),
   };
 
   // A restart is the first reconciliation: report sessions whose tmux pane
@@ -114,4 +120,9 @@ function pollIntervalSeconds(env: NodeJS.ProcessEnv): number {
 /** The built web app sits next to the daemon package in the monorepo. */
 function defaultWebDistDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist");
+}
+
+/** The monorepo root — the checkout a dev-run daemon updates from. */
+function defaultSrcDir(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 }
