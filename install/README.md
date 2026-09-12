@@ -137,7 +137,7 @@ service unit files) and restarts the service. Up to date → no-op.
 
 `pnpm build` in this package runs `shellcheck` over all scripts (skipped
 with a note when shellcheck isn't installed; CI runners have it) and the
-plain-shell tests in `test/` (no bats dependency):
+plain-shell tests in `test/` via `test/run-all.sh` (no bats dependency):
 
 - `test/shim-routing.sh` — shim verb routing, daemon-CLI forwarding with
   args + exit codes, missing-build error path (stub daemon CLI, fake node)
@@ -155,8 +155,9 @@ No daemons, no network, no systemd.
 ## Tested matrix
 
 - **Tested (Linux x64):** `shellcheck` clean on all scripts; all five test
-  suites green; shim forwarding against a stub daemon CLI; `--dry-run`
-  bootstrap with no toolchain on PATH (bare box).
+  suites green (via `test/run-all.sh`, also a CI job); shim forwarding
+  against a stub daemon CLI; `--dry-run` bootstrap with no toolchain on
+  PATH (bare box).
 - **Reviewed, untested (needs hardware):** the macOS paths — launchd
   bootstrap, `ipconfig getifaddr`, Xcode CLT install dialog, `plutil` lint.
   The OS-specific paths are kept in clearly separated functions
