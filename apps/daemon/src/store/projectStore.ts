@@ -110,6 +110,15 @@ export class ProjectStore {
     return settings;
   }
 
+  /** Updates editable project fields (name, defaultBranch, path). */
+  update(id: string, patch: Partial<Pick<Project, "name" | "defaultBranch" | "path">>): Project {
+    const records = this.file.load().projects;
+    const record = this.find(records, id);
+    record.project = ProjectSchema.parse({ ...record.project, ...patch });
+    this.file.write({ projects: records });
+    return record.project;
+  }
+
   remove(id: string): void {
     const records = this.file.load().projects;
     this.find(records, id);
