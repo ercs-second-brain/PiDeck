@@ -45,3 +45,9 @@ runs the whole suite, including the in-process loop test (`apps/daemon/src/e2e/`
 that boots the real reconciler against the fake gh (`tools/fake-gh/`) and walks
 the loop end to end without GitHub or real agents. `pnpm lint`, `pnpm build`,
 and `pnpm typecheck` must pass too — see `AGENTS.md`.
+
+`pnpm ui-gallery` boots the real daemon against the fake gh and a fake tmux,
+drives headless Playwright through every route at desktop and mobile widths,
+and writes a labelled screenshot grid to `runs/ui/<timestamp>/` — read it
+against `docs/DESIGN.md` before opening any web PR
+(see `tools/ui-gallery/README.md`; not part of CI).
