@@ -9,6 +9,12 @@ Rules for every agent working in this repo. Read `docs/SPEC.md` for the spec of 
 - No settings without a stated user who needs them.
 - GitHub is the source of truth; PiDeck persists only what GitHub cannot tell it.
 
+## Working in this repo
+
+Never `git stash` — AO worktrees share one `.git`, so the stash stack is shared and a pop can
+swap work between sessions. Commit WIP to your own session branch instead (amend/squash before
+opening the PR).
+
 ## Checks
 
 Node >= 22; pnpm is pinned via `packageManager` in the root `package.json`.

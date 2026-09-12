@@ -16,12 +16,45 @@ The loop:
 5. Approved + green → the orchestrator does an alignment check.
 6. Merge (auto or on your say-so) closes the issue and unblocks dependents.
 
-The repo is being rebuilt from the spec; the v1 implementation was removed
-entirely (no migration, no backwards compatibility).
+## Quick start
 
-Docs:
+macOS or Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ercs-second-brain/PiDeck/main/install/bootstrap.sh | sh
+```
+
+The bootstrap installs user-level dependencies (git, Node 22, pnpm, gh, pi),
+builds the daemon and webapp, registers a persistent service, and runs guided
+onboarding. `pideck addr` prints the webapp URL.
+
+## Docs
 
 - [docs/SPEC.md](docs/SPEC.md) — the spec of record
 - [docs/DECISIONS.md](docs/DECISIONS.md) — why each spec decision was made
 - [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) — the PiDeck-vs-pi line
 - [docs/DESIGN.md](docs/DESIGN.md) — web UI design: tokens, terminal config, layout, primitives
+
+## Testing
+
+```sh
+pnpm test
+```
+
+runs the whole suite, including the in-process loop test (`apps/daemon/src/e2e/`)
+that boots the real reconciler against the fake gh (`tools/fake-gh/`) and walks
+the loop end to end without GitHub or real agents. `pnpm lint`, `pnpm build`,
+and `pnpm typecheck` must pass too — see `AGENTS.md`.
+
+`pnpm e2e` runs the live loop once against real GitHub: it builds, pushes
+`tools/e2e/fixture/` to a private throwaway repo, registers it in a throwaway
+daemon, and asserts the scenario on GitHub facts and `/api/sessions` before
+deleting the repo (unless `--keep`; other legs: `--scenario blocked|restart`).
+It needs the primary `gh` auth and the review account's PAT in
+`PD_E2E_REVIEW_TOKEN`, so like the gallery it is a pre-merge check, not CI.
+
+`pnpm ui-gallery` boots the real daemon against the fake gh and a fake tmux,
+drives headless Playwright through every route at desktop and mobile widths,
+and writes a labelled screenshot grid to `runs/ui/<timestamp>/` — read it
+against `docs/DESIGN.md` before opening any web PR
+(see `tools/ui-gallery/README.md`; not part of CI).

@@ -66,6 +66,7 @@ stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
 | `PD_GH_VERSION` | gh tarball pin (default `2.63.2`) |
 | `PD_PI_PACKAGE` | pi npm package (default `@earendil-works/pi-coding-agent`) |
 | `PD_REVIEW_USER` / `PD_REVIEW_TOKEN` | review account for noninteractive onboarding |
+| `PD_TMUX_SOCKET` | daemon runtime: tmux server name — set it to give a test daemon a private tmux server (default: tmux's default server) |
 
 ## Guided onboarding
 

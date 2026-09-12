@@ -10,7 +10,10 @@ resettable to default in the web UI.
 
 ## Placeholders
 
-The daemon substitutes these when rendering a prompt:
+The daemon substitutes these when rendering a prompt. The canonical token list is
+`Placeholders` in `apps/daemon/src/prompts/render.ts`; a test
+(`apps/daemon/src/prompts/render.test.ts`) verifies that this table matches it token
+for token:
 
 | Token | Value |
 |---|---|

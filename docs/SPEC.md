@@ -174,8 +174,12 @@ tick; and the `/api/status` probes (`pi`, `gh`) are cached for 30 s.
 
 `persona`, `projectId`, `issueNumber`, `prNumber`, `tmuxSession`, `spawnedAt`, `model`, and
 delivery watermarks keyed on GitHub ids: `lastPromptedHeadSha`, `lastDeliveredIssueCommentId`,
-`lastDeliveredPrCommentId`, `lastDeliveredReviewId`, `fixAttempts`, `lastActivityAt`. Losing a
-watermark costs at most one duplicate prompt.
+`lastDeliveredPrCommentId`, `lastDeliveredReviewId`, `lastNotifiedConflictSha`, `fixAttempts`,
+`lastActivityAt`. Losing a watermark costs at most one duplicate prompt.
+
+Everything in this section is a pure derivation over GitHub state, exercised end to end against
+the fake gh (§10); the session trace (§10) replays one session's deliveries and watermarks to
+answer "why was I prompted".
 
 ### Deliveries into panes (single line, then Enter)
 
@@ -195,7 +199,12 @@ watermark costs at most one duplicate prompt.
 
 Steering messages to the orchestrator queue for pi's next turn; they never interrupt.
 The fix-attempt bound is a safety net: on exhaustion the *worker* is told to comment its status on
-the issue and go idle — the orchestrator judges continue / stop / retry.
+the issue and go idle — the orchestrator judges continue / stop / retry. The "fix attempts
+exhausted → orchestrator" row is satisfied through that comment: the daemon delivers the
+exhaustion prompt to the worker, and the worker's `BLOCKED:` comment routes to the orchestrator.
+
+The daemon and web UI serve on one port bound to `0.0.0.0` without authentication, by design:
+the audience is the owner's own machine, LAN, and phone — authentication is a §1 non-goal.
 
 ### Settings
 
@@ -265,7 +274,8 @@ The loop is exercised without GitHub, real agents, or the network:
   with a fake tmux and walks §2 end to end in seconds.
 - **Scenario runner** — scripts a whole §2 story (multi-issue, red CI, change
   requests, merge) as a sequence of state mutations, for reproducing bugs
-  locally against a live daemon.
+  locally against a live daemon; run as `pnpm e2e` (`tools/e2e/`,
+  `--scenario blocked|restart`) — needs real GitHub, not the fake gh.
 - **Session trace** — replays one session's deliveries, watermarks, and pane
   log from the state dir, to answer "why was I prompted".
 - **UI gallery** — renders every web primitive and screen state on one page.
