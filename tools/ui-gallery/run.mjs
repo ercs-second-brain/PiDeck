@@ -500,11 +500,11 @@ function buildShots(sessionId) {
       name: "home-empty-mobile",
       design: DESIGN.empty,
       viewport: "mobile",
-      state: "no projects yet",
+      state: "no projects yet — the sidebar is the home screen",
       route: "/",
       async run(page) {
         await page.goto("/");
-        await page.getByText("No projects yet.").waitFor();
+        await page.getByText("+ Add project").waitFor();
       },
     },
     {
