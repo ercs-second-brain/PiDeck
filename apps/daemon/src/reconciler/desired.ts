@@ -234,6 +234,10 @@ function deriveWorkerDeliveries(
   // comments (the orchestrator's failed-alignment notes land here) are
   // always delivered; review-thread replies authored by the worker itself
   // are its push-back to the reviewer, not something to wake it for.
+  // Worker and orchestrator share the primary login, so authorship cannot
+  // separate their top-level PR comments — that is why the worker's channel
+  // is review-thread replies (distinct ids) and top-level PR comments stay
+  // the orchestrator's; the worker prompt spells this out.
   const newPrComments =
     pr === null ? [] : pr.prComments.filter((c) => c.id > (worker.lastDeliveredPrCommentId ?? 0));
   const newThreadComments =

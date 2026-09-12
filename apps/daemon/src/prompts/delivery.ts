@@ -82,7 +82,7 @@ export function prConflict(input: PrConflictInput): string {
 export function reviewChanges(input: ReviewChangesInput): string {
   return singleLine(
     `New review activity on PR #${input.prNumber} — read the review and comments on GitHub, ` +
-      `reply in the threads, and push fixes.`,
+      `reply in the review threads (…/comments/<id>/replies), not with a top-level comment, and push fixes.`,
   );
 }
 
