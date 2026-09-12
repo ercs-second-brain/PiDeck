@@ -43,6 +43,15 @@ export type SessionLog = z.infer<typeof SessionLogSchema>;
 export const SessionLabelSchema = z.object({ label: z.string().min(1) });
 export type SessionLabel = z.infer<typeof SessionLabelSchema>;
 
+export const SessionContextSchema = z.object({
+  repo: z.string(),
+  defaultBranch: z.string(),
+  issueNumber: z.number().int().nullable(),
+  prNumber: z.number().int().nullable(),
+  branch: z.string().nullable(),
+});
+export type SessionContext = z.infer<typeof SessionContextSchema>;
+
 export const PromptSchema = z.object({
   persona: PersonaSchema,
   prompt: z.string(),
@@ -139,6 +148,11 @@ export const restEndpoints = {
     method: "GET",
     path: "/api/sessions/:id/transcript",
     response: SessionTranscriptSchema,
+  },
+  sessionContext: {
+    method: "GET",
+    path: "/api/sessions/:id/context",
+    response: SessionContextSchema,
   },
 
   globalSettingsGet: {

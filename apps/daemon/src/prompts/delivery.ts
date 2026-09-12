@@ -55,7 +55,7 @@ function singleLine(text: string): string {
 export function spawnWorker(issue: SpawnWorkerInput): string {
   return singleLine(
     `Worker session for issue #${issue.number} "${issue.title}" — work on branch ${issue.branch}, ` +
-      `open one PR with "Closes #${issue.number}" in the body. ${issue.url}`,
+      `open the PR with pideck pr open (it adds "Closes #${issue.number}"). ${issue.url}`,
   );
 }
 
@@ -69,7 +69,7 @@ export function ciRed(input: CiRedInput): string {
 export function ciRedExhausted(input: CiRedInput): string {
   return singleLine(
     `CI failed: ${input.failingChecks.join(", ")} — fix attempts exhausted after ${input.maxAttempts}. ` +
-      `Comment your status on the issue starting with BLOCKED: and go idle.`,
+      `Post your status on the issue with pideck blocked and go idle.`,
   );
 }
 
@@ -81,8 +81,8 @@ export function prConflict(input: PrConflictInput): string {
 
 export function reviewChanges(input: ReviewChangesInput): string {
   return singleLine(
-    `New review activity on PR #${input.prNumber} — read the review and comments on GitHub, ` +
-      `reply in the threads, and push fixes.`,
+    `New review activity on PR #${input.prNumber} — read the review on GitHub, reply in the threads ` +
+      `with pideck reply, and push fixes.`,
   );
 }
 
@@ -93,13 +93,13 @@ export function issueComment(input: IssueCommentInput): string {
 export function spawnReviewer(input: SpawnReviewerInput): string {
   return singleLine(
     `Reviewer session for PR #${input.prNumber} in ${input.repo} — read the diff and the linked issue, ` +
-      `then file exactly one review: approve or request changes.`,
+      `then file exactly one review with pideck review: approve or request changes.`,
   );
 }
 
 export function reReview(input: ReReviewInput): string {
   return singleLine(
-    `New head on PR #${input.prNumber} — re-review and file your next single review.`,
+    `New head on PR #${input.prNumber} — re-review and file your next single review with pideck review.`,
   );
 }
 

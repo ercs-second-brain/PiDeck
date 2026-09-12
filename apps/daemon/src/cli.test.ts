@@ -8,6 +8,7 @@ import { FakeTmux } from "./sessions/testing/fakeTmux.js";
 import { runCli, type CliIo } from "./cli.js";
 import { PI_TRANSCRIPT_JSONL } from "./sessions/testFixture.js";
 import type { Trace } from "./reconciler/trace.js";
+import type { VerbGh } from "./verbs.js";
 
 let daemons: DaemonServer[] = [];
 let dirs: string[] = [];
@@ -40,15 +41,51 @@ async function startCliDaemon() {
   return { daemon, deps, tmux, base: `http://127.0.0.1:${daemon.port}`, project };
 }
 
-function cliFor(base: string): { io: CliIo; stdout: string[]; stderr: string[] } {
+function cliFor(
+  base: string,
+  opts: { env?: Record<string, string>; gh?: VerbGh; git?: (args: string[]) => Promise<string> } = {},
+): { io: CliIo; stdout: string[]; stderr: string[] } {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const io: CliIo = {
     url: base,
     stdout: (line) => stdout.push(line),
     stderr: (line) => stderr.push(line),
+    ...(opts.env !== undefined ? { env: opts.env } : {}),
+    ...(opts.gh !== undefined ? { gh: opts.gh } : {}),
+    ...(opts.git !== undefined ? { git: opts.git } : {}),
   };
   return { io, stdout, stderr };
+}
+
+type GhHandler = [
+  match: (args: string[], input: string | undefined) => boolean,
+  run: (args: string[], input: string | undefined) => string,
+];
+
+/** The REST path of a `gh api` invocation (after any --method). */
+function apiPath(args: string[]): string | undefined {
+  if (args[0] !== "api") return undefined;
+  const methodIndex = args.indexOf("--method");
+  return methodIndex === -1 ? args[1] : args[methodIndex + 2];
+}
+
+/** A gh runner for the verbs: first matching handler wins; misses throw. */
+function fakeGh(handlers: GhHandler[]): {
+  gh: VerbGh;
+  calls: string[][];
+  inputs: (string | undefined)[];
+} {
+  const calls: string[][] = [];
+  const inputs: (string | undefined)[] = [];
+  const gh: VerbGh = async (args, input) => {
+    calls.push(args);
+    inputs.push(input);
+    const hit = handlers.find(([match]) => match(args, input));
+    if (hit === undefined) throw new Error(`unexpected gh call: ${args.join(" ")}`);
+    return hit[1](args, input);
+  };
+  return { gh, calls, inputs };
 }
 
 /** Waits for the hub's first state-derivation write for a session. */
@@ -207,5 +244,209 @@ describe("cli", () => {
     const { io, stderr } = cliFor(base);
     expect(await runCli(["frobnicate"], io)).toBe(2);
     expect(stderr.join("\n")).toContain("usage:");
+  });
+});
+
+describe("session verbs", () => {
+  it("errors when PD_SESSION_ID is unset", async () => {
+    const { base } = await startCliDaemon();
+    const { io, stderr } = cliFor(base);
+    expect(await runCli(["pr", "open"], io)).toBe(1);
+    expect(stderr.join("\n")).toContain("PD_SESSION_ID is unset");
+  });
+
+  it("errors on an unknown session", async () => {
+    const { base } = await startCliDaemon();
+    const { io, stderr } = cliFor(base, { env: { PD_SESSION_ID: "ghost" } });
+    expect(await runCli(["blocked", "--body", "stuck"], io)).toBe(1);
+    expect(stderr.join("\n")).toContain("unknown session: ghost");
+  });
+
+  it("pr open pushes, appends Closes, and prints the PR URL", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5 });
+    deps.registry.add(worker);
+    const { gh, calls } = fakeGh([
+      [(args) => args[1] === "list", () => "[]"],
+      [(args) => apiPath(args)?.endsWith("/issues/5") === true, () => JSON.stringify({ title: "Add rate limiting" })],
+      [(args) => args[1] === "create", () => "https://github.com/acme/widget/pull/12\n"],
+    ]);
+    const gitCalls: string[][] = [];
+    const { io, stdout } = cliFor(base, {
+      env: { PD_SESSION_ID: worker.id },
+      gh,
+      git: async (args) => {
+        gitCalls.push(args);
+        return "";
+      },
+    });
+    expect(await runCli(["pr", "open", "--body", "Rate limits."], io)).toBe(0);
+    expect(stdout).toEqual(["https://github.com/acme/widget/pull/12"]);
+    expect(gitCalls).toEqual([["push", "-u", "origin", "pideck/issue-5"]]);
+    const create = calls.find((args) => args[1] === "create")!;
+    expect(create).toEqual([
+      "pr", "create", "--repo", "acme/widget", "--base", "main", "--head", "pideck/issue-5",
+      "--title", "Add rate limiting", "--body", "Rate limits.\n\nCloses #5",
+    ]);
+  });
+
+  it("pr open is a no-op with the URL when the branch already has a PR", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5 });
+    deps.registry.add(worker);
+    const { gh, calls } = fakeGh([
+      [(args) => args[1] === "list", () => JSON.stringify([{ number: 12, url: "https://github.com/acme/widget/pull/12" }])],
+    ]);
+    const { io, stdout } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(await runCli(["pr", "open"], io)).toBe(0);
+    expect(stdout).toEqual(["https://github.com/acme/widget/pull/12"]);
+    expect(calls.some((args) => args[1] === "create")).toBe(false);
+  });
+
+  it("pr open keeps a body that already closes the issue", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5 });
+    deps.registry.add(worker);
+    const { gh, calls } = fakeGh([
+      [(args) => args[1] === "list", () => "[]"],
+      [(args) => apiPath(args)?.endsWith("/issues/5") === true, () => JSON.stringify({ title: "Add rate limiting" })],
+      [(args) => args[1] === "create", () => "https://github.com/acme/widget/pull/12\n"],
+    ]);
+    const { io } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(await runCli(["pr", "open", "--title", "t", "--body", "Fixes #5 already"], io)).toBe(0);
+    const create = calls.find((args) => args[1] === "create")!;
+    expect(create.at(-1)).toBe("Fixes #5 already");
+  });
+
+  it("review files one review whose inline comments ride on the same call", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5, prNumber: 8 });
+    deps.registry.add(worker);
+    const { gh, calls, inputs } = fakeGh([
+      [(args) => apiPath(args)?.endsWith("/reviews") === true, () => JSON.stringify({ id: 3 })],
+    ]);
+    const { io, stdout } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(
+      await runCli(
+        ["review", "approve", "--body", "overall", "--file", "src/a.ts", "--line", "12", "--body", "fix this"],
+        io,
+      ),
+    ).toBe(0);
+    expect(stdout).toEqual(["https://github.com/acme/widget/pull/8"]);
+    expect(JSON.parse(inputs[0]!)).toEqual({
+      event: "APPROVE",
+      body: "overall",
+      comments: [{ path: "src/a.ts", line: 12, body: "fix this" }],
+    });
+    expect(calls[0]!.join(" ")).toContain("repos/acme/widget/pulls/8/reviews");
+  });
+
+  it("reply posts to the thread's replies endpoint and prints the discussion URL", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5, prNumber: 8 });
+    deps.registry.add(worker);
+    const { gh, calls } = fakeGh([
+      [() => true, () => JSON.stringify({ id: 77 })],
+    ]);
+    const { io, stdout } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(await runCli(["reply", "42", "--body", "addressed in 3f2c"], io)).toBe(0);
+    expect(stdout).toEqual(["https://github.com/acme/widget/pull/8#discussion_r77"]);
+    expect(calls[0]!.join(" ")).toContain("repos/acme/widget/pulls/8/comments/42/replies");
+    expect(calls[0]).toContain("-f");
+    expect(calls[0]).toContain("body=addressed in 3f2c");
+  });
+
+  it("blocked posts BLOCKED: on the issue and reminds to end the turn", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5 });
+    deps.registry.add(worker);
+    const { gh, calls } = fakeGh([
+      [() => true, () => JSON.stringify({ id: 9 })],
+    ]);
+    const { io, stdout } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(await runCli(["blocked", "--body", "no decision on X"], io)).toBe(0);
+    expect(stdout).toEqual([
+      "https://github.com/acme/widget/issues/5#issuecomment-9",
+      "Your blocker is on GitHub — end the turn now; the orchestrator wakes you on reply.",
+    ]);
+    expect(calls[0]!.join(" ")).toContain("repos/acme/widget/issues/5/comments");
+    expect(calls[0]).toContain("body=BLOCKED: no decision on X");
+  });
+
+  it("followup appends a bullet under ## Follow-ups, creating the section when missing", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5, prNumber: 8 });
+    deps.registry.add(worker);
+    let body = "Summary text.";
+    const { gh } = fakeGh([
+      [
+        (args) => args.includes("--method") && args.includes("PATCH"),
+        (args) => {
+          body = args.find((arg) => arg.startsWith("body="))!.slice(5);
+          return "";
+        },
+      ],
+      [(args) => args[0] === "api" && !args.includes("--method"), () => JSON.stringify({ body })],
+    ]);
+    const { io, stdout } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(await runCli(["followup", "--body", "extract the limiter"], io)).toBe(0);
+    expect(stdout).toEqual(["https://github.com/acme/widget/pull/8"]);
+    expect(body).toBe("Summary text.\n\n## Follow-ups\n\n- extract the limiter");
+
+    // A second followup lands inside the existing section, before the next heading.
+    body = "Summary.\n\n## Follow-ups\n\n- first\n\n## Notes\n\nsome text";
+    expect(await runCli(["followup", "--body", "second"], io)).toBe(0);
+    expect(body).toBe("Summary.\n\n## Follow-ups\n\n- first\n- second\n\n## Notes\n\nsome text");
+  });
+
+  it("threads lists review threads and resolve resolves one", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5, prNumber: 8 });
+    deps.registry.add(worker);
+    const threadsResponse = {
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              nodes: [
+                { id: "PRRT_1", isResolved: false, path: "src/a.ts", line: 12, comments: { nodes: [{ body: "fix this" }] } },
+                { id: "PRRT_2", isResolved: true, path: "src/b.ts", line: null, comments: { nodes: [{ body: "done" }] } },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const { gh, calls } = fakeGh([
+      [
+        (args) => args[1] === "graphql" && args.some((arg) => arg.startsWith("query=mutation")),
+        () => JSON.stringify({ data: { resolveReviewThread: { thread: { isResolved: true } } } }),
+      ],
+      [(args) => args[1] === "graphql", () => JSON.stringify(threadsResponse)],
+    ]);
+    const { io, stdout } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(await runCli(["threads"], io)).toBe(0);
+    expect(stdout).toEqual([
+      "PRRT_1  src/a.ts:12  open  fix this",
+      "PRRT_2  src/b.ts:?  resolved  done",
+    ]);
+    expect(calls[0]!.join(" ")).toContain("reviewThreads");
+
+    const { io: resolveIo, stdout: resolveOut } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(await runCli(["resolve", "PRRT_1"], resolveIo)).toBe(0);
+    expect(resolveOut[0]).toContain("thread PRRT_1 resolved");
+    expect(calls.at(-1)!.join(" ")).toContain("resolveReviewThread");
+  });
+
+  it("resolve fails when gh does not confirm the resolution", async () => {
+    const { base, deps, project } = await startCliDaemon();
+    const worker = sessionRecord({ projectId: project.id, issueNumber: 5, prNumber: 8 });
+    deps.registry.add(worker);
+    const { gh } = fakeGh([
+      [(args) => args[1] === "graphql", () => JSON.stringify({ data: { resolveReviewThread: { thread: { isResolved: false } } } })],
+    ]);
+    const { io, stderr } = cliFor(base, { env: { PD_SESSION_ID: worker.id }, gh, git: async () => "" });
+    expect(await runCli(["resolve", "PRRT_404"], io)).toBe(1);
+    expect(stderr.join("\n")).toContain("did not confirm");
   });
 });

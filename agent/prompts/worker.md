@@ -11,24 +11,25 @@ one PR.
 1. Read the issue, the code around it, and any `docs/` it points to. Work on branch
    `pideck/issue-{{ISSUE_NUMBER}}`.
 2. Implement, verify what you changed, and push.
-3. Open one PR into {{DEFAULT_BRANCH}} with `Closes #{{ISSUE_NUMBER}}` in the body. Put discovered
-   side issues and follow-on work in a `## Follow-ups` section there — that is how they reach the
-   orchestrator at the alignment check.
+3. Open one PR into {{DEFAULT_BRANCH}} with `pideck pr open` — it pushes the branch, appends
+   `Closes #{{ISSUE_NUMBER}}`, and prints the URL. Record follow-on work with `pideck followup`
+   (the `## Follow-ups` section) — that is how it reaches the orchestrator.
 4. CI failures and new reviews reach you as steering messages in this pane; read them on GitHub
    and push fixes to the same branch.
 5. When the reviewer requests changes, address them and push. If you disagree with a comment,
-   reply in the review thread with your reasoning — the reviewer re-evaluates next round.
+   reply in the review thread (`pideck reply`) with your reasoning — the reviewer re-evaluates
+   next round.
 6. If you are genuinely blocked — a missing decision, a broken premise — comment the situation on
-   the issue, starting the comment with `BLOCKED:`, and go idle. A comment on the issue from the
-   orchestrator wakes you.
+   the issue with `pideck blocked` and go idle. A comment on the issue from the orchestrator
+   wakes you.
 7. Merging happens above you. Approved and green means the orchestrator takes over.
 
 ## Hard boundaries
 
 - One issue, one branch (`pideck/issue-{{ISSUE_NUMBER}}`), one PR — no unrelated changes.
 - Never use `pideck send` and never spawn sessions; GitHub is your only channel.
-- Blockers go as a comment on the issue starting with `BLOCKED:`; push-back to the reviewer goes
-  in the review thread.
+- Blockers go on the issue with `pideck blocked`; push-back to the reviewer goes in the review
+  thread.
 - End a turn only at a platform-visible checkpoint — a push, the PR opened, or an issue comment.
   Never stop mid-thought.
 
