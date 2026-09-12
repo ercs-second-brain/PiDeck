@@ -23,6 +23,7 @@ import type { Tmux } from "../sessions/tmux.js";
 import type { PromptOverrides } from "../prompts/overrides.js";
 import { loadShippedPrompt, renderPrompt } from "../prompts/index.js";
 import { applyActions, type ApplyDeps, type PromptSource, type Tally } from "./apply.js";
+import { Trace } from "./trace.js";
 import {
   deriveActions,
   deriveGlobalAction,
@@ -42,6 +43,7 @@ export {
   type DeriveInput,
 } from "./desired.js";
 export { applyActions, type ApplyDeps, type PromptSource } from "./apply.js";
+export { Trace, compactFacts, traceFile } from "./trace.js";
 
 /** The slice of the GitHub client the reconciler reads through. */
 export interface GhClientLike {
@@ -76,6 +78,8 @@ export interface ReconcilerDeps {
   /** Poll interval in milliseconds (default 30 s). */
   intervalMs?: number;
   git?: GitRunner;
+  /** The per-session trace writer; one instance is shared with the API layer. */
+  trace: Trace;
   /** Called after the registry changes, so live views refresh immediately. */
   notifyChange?: () => void;
   log?: (line: string) => void;
@@ -101,6 +105,7 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     stateDir: deps.stateDir,
     prompts,
     git: deps.git,
+    trace: deps.trace,
     notifyChange: deps.notifyChange,
     markNotified: (projectId, prNumber, headSha) => {
       notifiedHeadsFor(projectId ?? "").set(prNumber, headSha);

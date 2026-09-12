@@ -310,6 +310,8 @@ describe("archiveSession", () => {
     writeFileSync(join(worktree, "file.txt"), "x");
     writeFileSync(join(stateDir, "system-prompts", "s1.md"), "p");
     writeFileSync(join(stateDir, "pi-sessions", "s1", "session.jsonl"), "{}\n");
+    mkdirSync(join(stateDir, "traces"), { recursive: true });
+    writeFileSync(join(stateDir, "traces", "s1.jsonl"), "{\"at\":\"x\"}\n");
 
     const archived = await archiveSession(deps, session);
 
@@ -318,6 +320,9 @@ describe("archiveSession", () => {
     expect(existsSync(worktree)).toBe(false);
     expect(existsSync(join(stateDir, "system-prompts", "s1.md"))).toBe(false);
     expect(existsSync(join(stateDir, "pi-sessions", "s1"))).toBe(false);
+    // The trace outlives archive, sitting next to the captured pane log.
+    expect(existsSync(join(stateDir, "traces", "s1.jsonl"))).toBe(true);
+    expect(readFileSync(join(stateDir, "traces", "s1.jsonl"), "utf8")).toBe("{\"at\":\"x\"}\n");
     expect(archived.archivedAt).toEqual(expect.any(String));
     expect(registry.get("s1")?.archivedAt).toEqual(archived.archivedAt);
   });

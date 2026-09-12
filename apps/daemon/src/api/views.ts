@@ -1,6 +1,7 @@
 import type { ProjectSettings, Session, SessionView } from "@pideck/shared";
 import type { CiStatus } from "../github/schemas.js";
 import {
+  compactFacts,
   deriveState,
   prForWorker,
   type ProjectFacts,
@@ -31,6 +32,9 @@ export function sessionView(session: Session, all: Session[], deps: DaemonDeps):
     fixAttemptsExhausted: settings !== null && session.fixAttempts >= settings.maxFixAttempts,
   };
   const { state, status } = deriveState(session, stateFacts);
+  // The trace's state-derivation write site: state and facts entries land
+  // here, deduped by the Trace until something actually changed.
+  deps.trace.recordDerived(session.id, state, status, compactFacts(session, facts));
   return {
     session,
     state,

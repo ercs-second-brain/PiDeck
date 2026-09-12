@@ -10,6 +10,7 @@ import { Tmux, TmuxError, type TmuxRunner } from "../sessions/tmux.js";
 import { PromptOverrides } from "../prompts/overrides.js";
 import { ciRollup, type GhComment, type GhPr, type GhReview } from "../github/schemas.js";
 import { startReconciler, type GhClientLike, type ProjectFacts, type ReconcilerDeps } from "./index.js";
+import { Trace } from "./trace.js";
 
 const project = ProjectSchema.parse({
   id: "my-api",
@@ -172,6 +173,7 @@ describe("startReconciler", () => {
       stateDir,
       intervalMs: 3_600_000,
       git: async () => "",
+      trace: new Trace(stateDir),
       log: (line) => logs.push(line),
     };
   });
