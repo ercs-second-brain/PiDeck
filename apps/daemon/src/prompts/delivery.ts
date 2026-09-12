@@ -15,6 +15,10 @@ export interface ReviewChangesInput {
   prNumber: number;
 }
 
+export interface PrConflictInput {
+  prNumber: number;
+}
+
 export interface IssueCommentInput {
   issueNumber: number;
   commentUrl: string;
@@ -66,6 +70,12 @@ export function ciRedExhausted(input: CiRedInput): string {
   return singleLine(
     `CI failed: ${input.failingChecks.join(", ")} — fix attempts exhausted after ${input.maxAttempts}. ` +
       `Comment your status on the issue starting with BLOCKED: and go idle.`,
+  );
+}
+
+export function prConflict(input: PrConflictInput): string {
+  return singleLine(
+    `PR #${input.prNumber} conflicts with main — rebase the branch onto main, resolve the conflicts, and push.`,
   );
 }
 

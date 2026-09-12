@@ -10,7 +10,7 @@ import type { CiStatus } from "../github/schemas.js";
 
 export interface SessionStateFacts {
   /** The PR attached to this session, when one exists. */
-  pr: { ciStatus: CiStatus; reviewDecision: string | null } | null;
+  pr: { ciStatus: CiStatus; reviewDecision: string | null; mergeable: string } | null;
   /** The session's issue has open `blocked by` links. */
   issueBlocked: boolean;
   /** CI fix attempts are used up and the worker was told to go idle. */
@@ -46,6 +46,9 @@ export function deriveState(
         return { state: "working", status: `working${issue}` };
       }
       const label = `PR #${session.prNumber ?? "?"}`;
+      if (facts.pr.mergeable === "CONFLICTING") {
+        return { state: "fixing", status: `conflicts with main on ${label}` };
+      }
       if (facts.pr.ciStatus === "failed") {
         return { state: "fixing", status: `fixing CI on ${label}` };
       }

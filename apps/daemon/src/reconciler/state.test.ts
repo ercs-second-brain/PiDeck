@@ -36,7 +36,7 @@ describe("deriveState — the eight worker states", () => {
   it("a worker with pending CI is ci", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "pending", reviewDecision: null } },
+      { ...facts, pr: { ciStatus: "pending", reviewDecision: null, mergeable: "MERGEABLE" } },
     );
     expect(view.state).toBe("ci");
     expect(view.status).toBe("CI running for PR #21");
@@ -45,16 +45,25 @@ describe("deriveState — the eight worker states", () => {
   it("a worker with failing CI is fixing", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "failed", reviewDecision: null } },
+      { ...facts, pr: { ciStatus: "failed", reviewDecision: null, mergeable: "MERGEABLE" } },
     );
     expect(view.state).toBe("fixing");
     expect(view.status).toBe("fixing CI on PR #21");
   });
 
+  it("a worker whose PR conflicts with main is fixing, not awaiting review", () => {
+    const view = deriveState(
+      session("worker", { issueNumber: 12, prNumber: 21 }),
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: null, mergeable: "CONFLICTING" } },
+    );
+    expect(view.state).toBe("fixing");
+    expect(view.status).toBe("conflicts with main on PR #21");
+  });
+
   it("a worker awaiting a review decision is in_review", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "ok", reviewDecision: "REVIEW_REQUESTED" } },
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: "REVIEW_REQUESTED", mergeable: "MERGEABLE" } },
     );
     expect(view.state).toBe("in_review");
     expect(view.status).toBe("awaiting review on PR #21");
@@ -63,7 +72,7 @@ describe("deriveState — the eight worker states", () => {
   it("requested changes are addressing", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED" } },
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE" } },
     );
     expect(view.state).toBe("addressing");
     expect(view.status).toBe("addressing review on PR #21");
@@ -72,7 +81,7 @@ describe("deriveState — the eight worker states", () => {
   it("approved and green is ready", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "ok", reviewDecision: "APPROVED" } },
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: "APPROVED", mergeable: "MERGEABLE" } },
     );
     expect(view.state).toBe("ready");
     expect(view.status).toBe("approved and green, PR #21");
