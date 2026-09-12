@@ -5,6 +5,7 @@ import type { PromptOverrides } from "../prompts/overrides.js";
 import type { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import type { ProjectStore } from "../store/projectStore.js";
 import type { ProjectFacts } from "../reconciler/index.js";
+import type { Updater } from "./update.js";
 
 /**
  * Everything the API layer needs, injected so an in-memory daemon can be
@@ -20,6 +21,7 @@ export interface DaemonDeps {
   registry: SessionRegistry;
   tmux: Tmux;
   prompts: PromptOverrides;
+  updates: Updater;
   ghPrimary: () => Promise<Probe>;
   ghReview: () => Promise<Probe>;
   pi: () => Promise<PiProbe>;
