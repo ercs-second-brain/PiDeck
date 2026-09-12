@@ -55,6 +55,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - name: Fake gh repo state
         run: |
           cat > "$FAKE_GH_STATE" <<'EOF'
