@@ -32,3 +32,17 @@ assertions running alongside. It boots the real daemon against the fake `gh`
 and a fake tmux with a seeded state, in about a minute; see
 `tools/ui-gallery/README.md`. Anything the gallery or the assertions surface
 becomes its own issue — the tool documents, it does not fix.
+
+## Live check
+
+After any prompt, reconciler, or session change, also run the loop once against real GitHub:
+
+    pnpm e2e           # happy path; --scenario blocked|restart for the other legs; --keep keeps the repo
+
+Needs the primary `gh` auth and the review account's PAT in `PD_E2E_REVIEW_TOKEN` (never
+printed). It builds, pushes `tools/e2e/fixture/` to a private throwaway repo `pideck-e2e-<ts>`,
+registers it in a throwaway daemon, asserts the scenario on GitHub facts and `/api/sessions`,
+collects every transcript into `runs/<ts>/`, and deletes the throwaway repo unless `--keep`.
+Needs real GitHub and
+real models — it is not part of CI; it is the pre-merge check for prompt/reconciler/session work.
+

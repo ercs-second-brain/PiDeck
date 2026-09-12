@@ -41,7 +41,10 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
   const settings = new GlobalSettingsStore(stateDir);
   const registry = new SessionRegistry(stateDir);
   const prompts = new PromptOverrides(stateDir);
-  const tmux = new Tmux();
+  // A private tmux socket keeps this daemon's panes off the default server,
+  // so a second daemon (a test run next to a live install) never reaps the
+  // other's panes as orphans.
+  const tmux = new Tmux({ socketName: env.PD_TMUX_SOCKET?.trim() || undefined });
   const trace = new Trace(stateDir);
 
   const deps: DaemonDeps = {

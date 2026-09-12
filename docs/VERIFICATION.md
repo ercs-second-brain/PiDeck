@@ -6,6 +6,8 @@ through the daemon API (`localhost:8321/api/...`), the daemon log, and `tmux
 capture-pane` — never by typing into panes and never by polling GitHub in
 shell loops. Times are UTC from the machine running the daemon.
 
+Reproduce the §2 loop with `pnpm e2e` — the same assertions automated (see AGENTS.md).
+
 ## Setup
 
 - Daemon built from `origin/main` (+ PR #558 merged locally at start; #558,
