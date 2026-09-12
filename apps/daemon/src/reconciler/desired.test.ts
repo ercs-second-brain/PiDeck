@@ -170,7 +170,7 @@ describe("deriveActions — the SPEC §4 table", () => {
     const spawn = spawns[0]!;
     if (spawn.kind !== "spawn-reviewer") throw new Error("expected spawn-reviewer");
     expect(spawn.pr.number).toBe(11);
-    expect(spawn.initial).toEqual({ lastPromptedHeadSha: "sha-1" });
+    expect(spawn.initial).toEqual({ lastPromptedHeadSha: "sha-1", lastDeliveredReviewId: null });
   });
 
   it("no reviewer when CI is not green or the PR conflicts", () => {
@@ -311,7 +311,10 @@ describe("deriveActions — worker deliveries", () => {
     const delivers = actions.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
     expect(delivers[0]!.text).toContain("PR #11");
-    expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredReviewId: 5 });
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastDeliveredReviewId: 5,
+      lastAddressedHeadSha: "sha-1",
+    });
   });
 
   it("new PR review comments deliver reviewChanges and advance the comment watermark", () => {
@@ -393,7 +396,11 @@ describe("deriveActions — worker deliveries", () => {
     );
     const delivers = actions.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
-    expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredPrCommentId: 8, lastDeliveredReviewId: 5 });
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastDeliveredPrCommentId: 8,
+      lastDeliveredReviewId: 5,
+      lastAddressedHeadSha: "sha-1",
+    });
   });
 
   it("a new issue comment without the marker wakes the worker, whoever wrote it", () => {
@@ -518,6 +525,151 @@ describe("deriveActions — worker deliveries", () => {
   });
 });
 
+describe("deriveActions — the baton hand-off", () => {
+  it("a reviewer round starts only while the worker is quiet: no spawn while it addresses review", () => {
+    const worker = session("worker", {
+      issueNumber: 1,
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastAddressedHeadSha: "sha-1",
+    });
+    const addressing = facts({
+      issues: [issue()],
+      prs: [pr({ reviewDecision: "CHANGES_REQUESTED" })],
+    });
+    expect(derive(addressing, [worker]).filter((a) => a.kind === "spawn-reviewer")).toHaveLength(0);
+
+    // A push answers the prompt: a fresh reviewer may take the new head.
+    const pushed = facts({
+      issues: [issue()],
+      prs: [pr({ headSha: "sha-2", reviewDecision: "CHANGES_REQUESTED" })],
+    });
+    const spawns = derive(pushed, [worker]).filter((a) => a.kind === "spawn-reviewer");
+    expect(spawns).toHaveLength(1);
+    expect((spawns[0] as { initial: unknown }).initial).toEqual({
+      lastPromptedHeadSha: "sha-2",
+      lastDeliveredReviewId: null,
+    });
+  });
+
+  it("a reviewer replacement does not re-review the head the worker is addressing", () => {
+    const worker = session("worker", {
+      issueNumber: 1,
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastAddressedHeadSha: "sha-1",
+    });
+    const actions = derive(
+      facts({ issues: [issue()], prs: [pr({ reviewDecision: "CHANGES_REQUESTED" })] }),
+      [worker],
+    );
+    expect(actions.filter((a) => a.kind === "spawn-reviewer")).toHaveLength(0);
+  });
+
+  it("a re-review waits for the worker to be quiet (double-push)", () => {
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const redeliveries = (headSha: string, green: boolean) =>
+      derive(facts({ issues: [issue()], prs: [pr({ headSha, green, ciStatus: green ? "ok" : "pending" })] }), [
+        reviewer,
+      ]).filter((a) => a.kind === "deliver" && a.target.id === reviewer.id);
+
+    // First push: CI pending, head not quiet — no round.
+    expect(redeliveries("sha-2", false)).toHaveLength(0);
+    // Second push before the first was reviewed: the head still is not quiet.
+    expect(redeliveries("sha-3", false)).toHaveLength(0);
+    // The head is stable and green: the reviewer is re-armed once.
+    const reReviews = redeliveries("sha-3", true) as Extract<
+      ReturnType<typeof derive>[number],
+      { kind: "deliver" }
+    >[];
+    expect(reReviews).toHaveLength(1);
+    expect(reReviews[0]!.watermark?.patch).toEqual({
+      lastPromptedHeadSha: "sha-3",
+      lastDeliveredReviewId: null,
+    });
+  });
+
+  it("inline comments by the review account during its round do not steer the worker", () => {
+    const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const comment = { id: 8, author: "acme-review", body: "off by one", createdAt: "2025-06-01T10:00:00Z" };
+    const inFlight = facts({
+      issues: [issue()],
+      prs: [pr({ green: false, ciStatus: "pending", reviewComments: [comment] })],
+    });
+    const actions = derive(inFlight, [worker, reviewer]);
+    expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
+    // But the comments are consumed: the submission that ends the round
+    // points the worker at the whole review.
+    const marks = actions.filter((a) => a.kind === "watermarks");
+    expect(marks[0]!.patch).toEqual({ lastDeliveredPrCommentId: 8 });
+  });
+
+  it("the review submission ends the round and steers the worker once", () => {
+    const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const comment = { id: 8, author: "acme-review", body: "off by one", createdAt: "2025-06-01T10:00:00Z" };
+    const review = { id: 9, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null };
+    const actions = derive(
+      facts({
+        issues: [issue()],
+        prs: [pr({ green: false, ciStatus: "pending", reviews: [review], reviewComments: [comment] })],
+      }),
+      [worker, reviewer],
+    );
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(worker.id);
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastDeliveredPrCommentId: 8,
+      lastDeliveredReviewId: 9,
+      lastAddressedHeadSha: "sha-1",
+    });
+  });
+
+  it("a human comment during a reviewer round is delivered immediately", () => {
+    const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const comment = { id: 10, author: "acme-user", body: "this one matters", createdAt: "2025-06-01T10:00:00Z" };
+    const actions = derive(
+      facts({ issues: [issue()], prs: [pr({ green: false, ciStatus: "pending", reviewComments: [comment] })] }),
+      [worker, reviewer],
+    );
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(worker.id);
+    expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredPrCommentId: 10 });
+  });
+
+  it("CI red during a reviewer round prompts nobody; a push re-arms through the quiet rule", () => {
+    // The round is in flight and CI has gone red on the reviewed head. The
+    // worker's watermark is unset, so without the baton this would read as a
+    // push — the gate is what keeps the worker quiet.
+    const worker = session("worker", { issueNumber: 1, prNumber: 11 });
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const redDuringRound = facts({
+      issues: [issue()],
+      prs: [pr({ green: false, ciStatus: "failed", failingChecks: ["build"] })],
+    });
+    const actions = derive(redDuringRound, [worker, reviewer]);
+    expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
+
+    // A push ends the round: CI red on the new head reaches the worker.
+    const pushed = session("worker", {
+      issueNumber: 1,
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-2",
+      fixAttempts: 1,
+    });
+    const redOnNewHead = facts({
+      issues: [issue()],
+      prs: [pr({ headSha: "sha-3", green: false, ciStatus: "failed", failingChecks: ["build"] })],
+    });
+    const next = derive(redOnNewHead, [pushed, reviewer]);
+    expect(next.filter((a) => a.kind === "deliver" && a.target.id === pushed.id)).toHaveLength(1);
+  });
+});
+
 describe("deriveActions — reviewer deliveries and orchestrator notices", () => {
   it("a new head since the reviewer's last review triggers re-review", () => {
     const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "old" });
@@ -526,7 +678,10 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
     expect(delivers).toHaveLength(1);
     expect(delivers[0]!.target.id).toBe(reviewer.id);
     expect(delivers[0]!.text).toContain("re-review");
-    expect(delivers[0]!.watermark?.patch).toEqual({ lastPromptedHeadSha: "sha-2" });
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastPromptedHeadSha: "sha-2",
+      lastDeliveredReviewId: null,
+    });
   });
 
   it("approvedGreen reaches the orchestrator once per head", () => {

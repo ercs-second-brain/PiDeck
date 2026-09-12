@@ -91,6 +91,43 @@ describe("Trace", () => {
     expect(recorded[1]).toEqual({ ...facts, ci: "pending" });
   });
 
+  it("records a baton entry on every PR hand-off, with the head SHA", () => {
+    const trace = new Trace(stateDir);
+    trace.recordDerived("s1", "working", "working on #7", null, {
+      holder: "reviewer",
+      prNumber: 11,
+      headSha: "sha-1",
+    });
+    // Same baton, again: deduped.
+    trace.recordDerived("s1", "working", "working on #7", null, {
+      holder: "reviewer",
+      prNumber: 11,
+      headSha: "sha-1",
+    });
+    // The submission hands the baton back to the worker.
+    trace.recordDerived("s1", "addressing", "addressing review on PR #11", null, {
+      holder: "worker",
+      prNumber: 11,
+      headSha: "sha-1",
+    });
+    // The push re-arms the reviewer on the new head.
+    trace.recordDerived("s1", "in_review", "awaiting review on PR #11", null, {
+      holder: "reviewer",
+      prNumber: 11,
+      headSha: "sha-2",
+    });
+
+    const batons = trace
+      .read("s1")
+      .filter((entry) => entry.kind === "baton")
+      .map((entry) => ({ detail: entry.detail, facts: entry.facts }));
+    expect(batons).toEqual([
+      { detail: "baton: worker → reviewer", facts: { prNumber: 11, headSha: "sha-1" } },
+      { detail: "baton: reviewer → worker", facts: { prNumber: 11, headSha: "sha-1" } },
+      { detail: "baton: worker → reviewer", facts: { prNumber: 11, headSha: "sha-2" } },
+    ]);
+  });
+
   it("never writes a line larger than 1 KB, truncating the text instead", () => {
     const trace = new Trace(stateDir);
     trace.append("s1", {

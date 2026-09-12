@@ -3,8 +3,8 @@
  * `<stateDir>/traces/<sessionId>.jsonl` — the deliveries the daemon sent,
  * the state transitions it derived, and the compact GitHub facts behind
  * each tick. Deliveries, spawns, and archives are written from the apply
- * path after the action executed; state and facts entries are written from
- * state derivation, only when something actually changed. Each line is
+ * path after the action executed; state, facts, and baton entries are
+ * written from state derivation, only when something actually changed. Each line is
  * clamped to 1 KB, so a tick can never write more than that. The file sits
  * next to the captured pane log and outlives archive — nothing here or in
  * the archive path ever removes it.
@@ -78,14 +78,15 @@ export function compactFacts(session: Session, facts: ProjectFacts | null): Trac
 }
 
 /**
- * Writes and reads session traces. Deduplication of state and facts entries
- * is in-memory: a restart re-records the current state and facts once, the
- * same way a restart can cost one duplicate prompt.
+ * Writes and reads session traces. Deduplication of state, facts, and baton
+ * entries is in-memory: a restart re-records the current state, facts, and
+ * baton once, the same way a restart can cost one duplicate prompt.
  */
 export class Trace {
   readonly #stateDir: string;
   #lastState = new Map<string, { state: WorkerState | null; status: string }>();
   #lastFacts = new Map<string, string>();
+  #lastBaton = new Map<string, { holder: "worker" | "reviewer"; headSha: string }>();
 
   constructor(stateDir: string) {
     this.#stateDir = stateDir;
@@ -100,14 +101,16 @@ export class Trace {
 
   /**
    * State-derivation hook: writes a `state` entry when the derived state or
-   * status changed, and a `facts` entry when the GitHub facts behind the
-   * session changed. Called on every derived view; both are deduped here.
+   * status changed, a `facts` entry when the GitHub facts behind the session
+   * changed, and a `baton` entry on every PR hand-off. Called on every
+   * derived view; all three are deduped here.
    */
   recordDerived(
     sessionId: string,
     state: WorkerState | null,
     status: string,
     facts: TraceFacts | null,
+    baton: { holder: "worker" | "reviewer"; prNumber: number; headSha: string } | null = null,
   ): void {
     const previous = this.#lastState.get(sessionId);
     if (previous === undefined || previous.state !== state || previous.status !== status) {
@@ -125,6 +128,18 @@ export class Trace {
       if (this.#lastFacts.get(sessionId) !== key) {
         this.#lastFacts.set(sessionId, key);
         this.append(sessionId, { at: new Date().toISOString(), kind: "facts", facts });
+      }
+    }
+    if (baton !== null) {
+      const last = this.#lastBaton.get(sessionId);
+      if (last === undefined || last.holder !== baton.holder || last.headSha !== baton.headSha) {
+        this.#lastBaton.set(sessionId, { holder: baton.holder, headSha: baton.headSha });
+        this.append(sessionId, {
+          at: new Date().toISOString(),
+          kind: "baton",
+          detail: baton.holder === "reviewer" ? "baton: worker → reviewer" : "baton: reviewer → worker",
+          facts: { prNumber: baton.prNumber, headSha: baton.headSha },
+        });
       }
     }
   }
