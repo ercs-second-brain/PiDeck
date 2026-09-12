@@ -146,7 +146,7 @@ describe("<GlobalSettings />", () => {
   });
 
   it("shows the read-only daemon facts and the update check on General", async () => {
-    mocked.checkForUpdateNow.mockResolvedValue({ updateAvailable: true, latestVersion: "1.3.0" });
+    mocked.checkForUpdateNow.mockResolvedValue({ state: "updateAvailable", latestVersion: "1.3.0" });
     const { container } = mount(<GlobalSettings />);
     await flush();
     expect(container.textContent).toContain("30s");
@@ -162,7 +162,7 @@ describe("<GlobalSettings />", () => {
   });
 
   it("labels a finished check as Checked, not Saved", async () => {
-    mocked.checkForUpdateNow.mockResolvedValue({ updateAvailable: false, latestVersion: null });
+    mocked.checkForUpdateNow.mockResolvedValue({ state: "upToDate", latestVersion: null });
     const { container } = mount(<GlobalSettings />);
     await flush();
     await act(async () => {
@@ -176,7 +176,7 @@ describe("<GlobalSettings />", () => {
 
   it("offers an inline update after a check and applies it through the shared path", async () => {
     mocked.checkForUpdateNow.mockResolvedValue({
-      updateAvailable: true,
+      state: "updateAvailable",
       latestVersion: "abc1234 · 2 h old",
     });
     const { container } = mount(<GlobalSettings />);
@@ -198,7 +198,7 @@ describe("<GlobalSettings />", () => {
   });
 
   it("disables the inline update while agents are live", async () => {
-    mocked.checkForUpdateNow.mockResolvedValue({ updateAvailable: true, latestVersion: "abc1234" });
+    mocked.checkForUpdateNow.mockResolvedValue({ state: "updateAvailable", latestVersion: "abc1234" });
     apiResponses.sessionList = [makeView({ persona: "worker" })];
     const { container } = mount(<GlobalSettings />);
     await flush();
@@ -208,6 +208,29 @@ describe("<GlobalSettings />", () => {
     await flush();
     expect(buttonByText(container, "Update now").disabled).toBe(true);
     expect(container.textContent).toContain("agents are live");
+  });
+
+  it("offers an inline restart when the checkout is current but the daemon is older", async () => {
+    mocked.checkForUpdateNow.mockResolvedValue({
+      state: "restartNeeded",
+      latestVersion: "abc1234 · 2 h old",
+    });
+    const { container } = mount(<GlobalSettings />);
+    await flush();
+    await act(async () => {
+      buttonByText(container, "Check for updates").click();
+    });
+    await flush();
+    expect(container.textContent).toContain("Restart needed");
+    expect(container.textContent).not.toContain("Up to date");
+    const restartNow = buttonByText(container, "Restart now");
+    expect(restartNow.disabled).toBe(false);
+    await act(async () => {
+      restartNow.click();
+    });
+    await flush();
+    expect(api).toHaveBeenCalledWith("updateApply");
+    expect(container.textContent).toContain("restarting the service…");
   });
 
   it("replaces the review account with a new token and never displays the token", async () => {

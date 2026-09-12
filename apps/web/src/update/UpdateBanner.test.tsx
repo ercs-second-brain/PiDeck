@@ -27,8 +27,9 @@ const statusOld: Status = {
 };
 const statusNew: Status = { ...statusOld, version: "0.2.0" };
 
-const updateAvailable = { updateAvailable: true, latestVersion: "abc1234" };
-const noUpdate = { updateAvailable: false, latestVersion: null };
+const updateAvailable = { state: "updateAvailable", latestVersion: "abc1234" };
+const restartNeeded = { state: "restartNeeded", latestVersion: "abc1234" };
+const noUpdate = { state: "upToDate", latestVersion: "abc1234" };
 
 /** Endpoint → resolved value; an Error entry makes the call reject. */
 const responses: Partial<Record<RestEndpointName, unknown>> = {};
@@ -101,7 +102,7 @@ afterEach(() => {
 });
 
 describe("UpdateBanner", () => {
-  it("renders nothing while no update is available", async () => {
+  it("renders nothing while the daemon is up to date", async () => {
     responses.updateCheck = noUpdate;
     const container = await mountBanner();
     expect(container.querySelector("button.update__pill")).toBeNull();
@@ -141,6 +142,19 @@ describe("UpdateBanner", () => {
     responses.status = statusNew;
     await advance(2_000);
     expect(reload).toHaveBeenCalled();
+  });
+
+  it("offers a restart when the checkout is current but the daemon is older", async () => {
+    responses.updateCheck = restartNeeded;
+    responses.updateCheckNow = restartNeeded;
+    const container = await mountBanner();
+    const button = pill(container);
+    expect(button.textContent).toBe("Restart");
+    expect(button.disabled).toBe(false);
+
+    await click(container, "Restart");
+    expect(api).toHaveBeenCalledWith("updateApply");
+    expect(container.textContent).toContain("restarting the service…");
   });
 
   it("shows the recovery hint and a reload path when the daemon stays down", async () => {

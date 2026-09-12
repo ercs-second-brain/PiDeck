@@ -93,6 +93,7 @@ async function startApi(): Promise<string> {
   if (daemon === null) {
     const deps: DaemonDeps = {
       version: "0.0.0-test",
+      buildSha: "main",
       stateDir,
       pollIntervalSeconds: 30,
       projects,

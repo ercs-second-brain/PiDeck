@@ -1,17 +1,23 @@
 /**
- * Self-update: compares the installed checkout's HEAD with the upstream ref
- * (via `gh`) and applies an update by spawning the installed shim's
- * `pideck update`, which fetches, rebuilds and restarts the service. Passive
- * checks are cached for about an hour so the web banner never hammers the
- * network; an explicit check (the settings button, the banner's periodic
- * re-check) bypasses the cache. The reported version is the upstream short
- * SHA plus the ref's age, enough to decide whether the update matters.
+ * Self-update: answers "is the service current?" for the running daemon, not
+ * just the checkout. The running build identity — the checkout's HEAD read
+ * once when the daemon started — is passed in on every call; a check
+ * compares it and the checkout's current HEAD against the upstream ref (via
+ * `gh`): "upToDate" when the daemon already runs the ref, "restartNeeded"
+ * when only the daemon is behind, "updateAvailable" when the checkout is
+ * behind too. Applying keeps the workers/reviewers gate, then spawns the
+ * installed shim's `pideck update` (fetch, rebuild, restart) — or, when only
+ * the daemon is stale, a plain `pideck service restart`. Passive checks are
+ * cached for about an hour so the web banner never hammers the network; an
+ * explicit check (the settings button, the banner's periodic re-check)
+ * bypasses the cache. The reported version is the upstream short SHA plus
+ * the ref's age, enough to decide whether the update matters.
  */
 
 import { spawn as nodeSpawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { UpdateCheckSchema, type UpdateCheck } from "@pideck/shared";
+import { UpdateCheckSchema, type UpdateCheck, type UpdateState } from "@pideck/shared";
 import type { SessionRegistry } from "../sessions/registry.js";
 import { parseRepoUrl, runCommand, type CommandRunner } from "../store/projectStore.js";
 import { ApiError } from "./router.js";
@@ -41,8 +47,9 @@ interface RepoConfig {
 }
 
 export interface Updater {
-  check(force?: boolean): UpdateCheck;
-  apply(): { ok: true };
+  /** The running daemon's source commit, captured once at startup. */
+  check(runningSha: string, force?: boolean): UpdateCheck;
+  apply(runningSha: string): { ok: true };
 }
 
 /** Reads repoUrl/repoRef from the install's config.json, if present. */
@@ -119,23 +126,29 @@ export function createUpdater(config: UpdaterConfig): Updater {
     return { sha, committedAt: committedAt === "" ? null : committedAt };
   }
 
-  function check(force = false): UpdateCheck {
+  function check(runningSha: string, force = false): UpdateCheck {
     const at = now();
     if (!force && cache !== null && at - cache.at < CACHE_TTL_MS) return cache.check;
-    const localSha = localHeadSha();
+    const checkoutSha = localHeadSha();
     const { sha: remoteSha, committedAt } = upstreamCommit(repoConfig());
-    if (localSha === "" || remoteSha === "") {
+    if (checkoutSha === "" || remoteSha === "") {
       throw new Error("could not compare the checkout with the upstream ref");
     }
+    const state: UpdateState =
+      runningSha === remoteSha
+        ? "upToDate"
+        : checkoutSha === remoteSha
+          ? "restartNeeded"
+          : "updateAvailable";
     const parsed = UpdateCheckSchema.parse({
-      updateAvailable: localSha !== remoteSha,
+      state,
       latestVersion: describeVersion(remoteSha, committedAt, at),
     });
     cache = { at, check: parsed };
     return parsed;
   }
 
-  function apply(): { ok: true } {
+  function apply(runningSha: string): { ok: true } {
     const live = [
       ...config.registry.list({ persona: "worker", archived: false }),
       ...config.registry.list({ persona: "reviewer", archived: false }),
@@ -143,8 +156,11 @@ export function createUpdater(config: UpdaterConfig): Updater {
     if (live.length > 0) {
       throw new ApiError(409, "workers or reviewers are live — wait for them to finish, then update");
     }
+    // A checkout that already matches the upstream ref only needs the
+    // service restarted; anything else goes through the full update path.
+    const restart = check(runningSha).state === "restartNeeded";
     const shim = process.env.PD_HOME ? join(process.env.PD_HOME, "bin", "pideck") : "pideck";
-    spawnUpdate(shim, ["update"]);
+    spawnUpdate(shim, restart ? ["service", "restart"] : ["update"]);
     return { ok: true };
   }
 

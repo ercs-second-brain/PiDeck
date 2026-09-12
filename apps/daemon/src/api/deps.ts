@@ -16,6 +16,8 @@ import type { Updater } from "./update.js";
  */
 export interface DaemonDeps {
   version: string;
+  /** The running daemon's source commit, captured once at startup. */
+  buildSha: string;
   stateDir: string;
   pollIntervalSeconds: number;
   projects: ProjectStore;

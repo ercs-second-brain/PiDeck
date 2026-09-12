@@ -72,11 +72,18 @@ export const PiProbeSchema = ProbeSchema.extend({
 });
 export type PiProbe = z.infer<typeof PiProbeSchema>;
 
+/**
+ * Answers for the service, not the checkout: "upToDate" when the running
+ * daemon already runs the upstream ref, "restartNeeded" when the checkout is
+ * current but the daemon was started from an older build, "updateAvailable"
+ * when the checkout itself is behind.
+ */
 export const UpdateCheckSchema = z.object({
-  updateAvailable: z.boolean(),
+  state: z.enum(["upToDate", "updateAvailable", "restartNeeded"]),
   latestVersion: z.string().nullable(),
 });
 export type UpdateCheck = z.infer<typeof UpdateCheckSchema>;
+export type UpdateState = UpdateCheck["state"];
 
 /** The one-time code and URL gh's device flow shows for the review account. */
 export const ReviewLoginStartSchema = z.object({ code: z.string(), url: z.string() });

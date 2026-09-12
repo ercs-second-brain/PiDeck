@@ -24,9 +24,13 @@ interface Harness {
   calls: string[][];
   spawns: string[][];
   setClock: (ms: number) => void;
+  setRunningSha: (sha: string) => void;
   setLocalSha: (sha: string) => void;
   setRemoteSha: (sha: string) => void;
   setRemoteDate: (iso: string) => void;
+  /** The updater call with the harness's running build SHA. */
+  check: (force?: boolean) => ReturnType<ReturnType<typeof createUpdater>["check"]>;
+  apply: () => ReturnType<ReturnType<typeof createUpdater>["apply"]>;
 }
 
 function makeHarness(options: { configJson?: string } = {}): Harness {
@@ -34,6 +38,7 @@ function makeHarness(options: { configJson?: string } = {}): Harness {
   dirs.push(stateDir);
   const calls: string[][] = [];
   const spawns: string[][] = [];
+  let runningSha = LOCAL_SHA;
   let localSha = LOCAL_SHA;
   let remoteSha = REMOTE_SHA;
   let remoteDate = REMOTE_DATE;
@@ -64,6 +69,9 @@ function makeHarness(options: { configJson?: string } = {}): Harness {
     setClock: (ms) => {
       clock = ms;
     },
+    setRunningSha: (sha) => {
+      runningSha = sha;
+    },
     setLocalSha: (sha) => {
       localSha = sha;
     },
@@ -73,13 +81,15 @@ function makeHarness(options: { configJson?: string } = {}): Harness {
     setRemoteDate: (iso) => {
       remoteDate = iso;
     },
+    check: (force) => updater.check(runningSha, force),
+    apply: () => updater.apply(runningSha),
   };
 }
 
 describe("update check", () => {
   it("reports an update when the checkout is behind the upstream ref", () => {
     const h = makeHarness();
-    expect(h.updater.check()).toEqual({ updateAvailable: true, latestVersion: "bbbbbbb · 2 h old" });
+    expect(h.check()).toEqual({ state: "updateAvailable", latestVersion: "bbbbbbb · 2 h old" });
     expect(h.calls).toContainEqual([
       "gh",
       "api",
@@ -89,16 +99,22 @@ describe("update check", () => {
     ]);
   });
 
-  it("reports up to date when HEAD matches the upstream ref", () => {
+  it("reports up to date when the running daemon already runs the upstream ref", () => {
+    const h = makeHarness();
+    h.setRunningSha(REMOTE_SHA);
+    expect(h.check()).toEqual({ state: "upToDate", latestVersion: "bbbbbbb · 2 h old" });
+  });
+
+  it("reports restart needed when the checkout is current but the daemon is older", () => {
     const h = makeHarness();
     h.setLocalSha(REMOTE_SHA);
-    expect(h.updater.check()).toEqual({ updateAvailable: false, latestVersion: "bbbbbbb · 2 h old" });
+    expect(h.check()).toEqual({ state: "restartNeeded", latestVersion: "bbbbbbb · 2 h old" });
   });
 
   it("falls back to the bare short SHA when the ref date is unusable", () => {
     const h = makeHarness();
     h.setRemoteDate("");
-    expect(h.updater.check()).toEqual({ updateAvailable: true, latestVersion: "bbbbbbb" });
+    expect(h.check()).toEqual({ state: "updateAvailable", latestVersion: "bbbbbbb" });
   });
 
   it("takes repoUrl and repoRef from the install's config.json when present", () => {
@@ -109,7 +125,7 @@ describe("update check", () => {
       JSON.stringify({ repoUrl: "git@github.com:acme/fork.git", repoRef: "release" }),
     );
     const h = makeHarness({ configJson: join(dir, "config.json") });
-    h.updater.check();
+    h.check();
     expect(h.calls).toContainEqual([
       "gh",
       "api",
@@ -122,61 +138,88 @@ describe("update check", () => {
 
   it("caches a successful check for about an hour", () => {
     const h = makeHarness();
-    h.updater.check();
+    h.check();
     const afterFirst = h.calls.length;
 
     h.setClock(30 * 60 * 1000);
-    h.updater.check();
+    h.check();
     expect(h.calls).toHaveLength(afterFirst);
 
     h.setClock(61 * 60 * 1000);
-    h.updater.check();
+    h.check();
     expect(h.calls.length).toBeGreaterThan(afterFirst);
   });
 
   it("does not serve a stale check after the upstream moved", () => {
     const h = makeHarness();
-    expect(h.updater.check()).toEqual({ updateAvailable: true, latestVersion: "bbbbbbb · 2 h old" });
+    expect(h.check()).toEqual({ state: "updateAvailable", latestVersion: "bbbbbbb · 2 h old" });
     h.setLocalSha(REMOTE_SHA);
     h.setClock(61 * 60 * 1000);
-    expect(h.updater.check()).toEqual({ updateAvailable: false, latestVersion: "bbbbbbb · 3 h old" });
+    expect(h.check()).toEqual({ state: "restartNeeded", latestVersion: "bbbbbbb · 3 h old" });
   });
 
   it("an explicit check bypasses the cache and refreshes it", () => {
     const h = makeHarness();
-    h.updater.check();
+    h.check();
     const afterFirst = h.calls.length;
 
     h.setRemoteSha("c".repeat(40));
-    expect(h.updater.check(true)).toEqual({ updateAvailable: true, latestVersion: "ccccccc · 2 h old" });
+    expect(h.check(true)).toEqual({ state: "updateAvailable", latestVersion: "ccccccc · 2 h old" });
     expect(h.calls.length).toBeGreaterThan(afterFirst);
 
     // The refreshed result is served to passive callers within the TTL.
     const afterFresh = h.calls.length;
-    expect(h.updater.check()).toEqual({ updateAvailable: true, latestVersion: "ccccccc · 2 h old" });
+    expect(h.check()).toEqual({ state: "updateAvailable", latestVersion: "ccccccc · 2 h old" });
     expect(h.calls).toHaveLength(afterFresh);
   });
 });
 
 describe("update apply gate", () => {
-  it("refuses while a worker or reviewer session is live", () => {
+  /** Builds an updater whose check works: checkout at LOCAL_SHA, upstream
+   *  at REMOTE_SHA, overridable before each apply. */
+  function gateHarness(): {
+    updater: ReturnType<typeof createUpdater>;
+    registry: SessionRegistry;
+    spawns: string[][];
+    setLocalSha: (sha: string) => void;
+  } {
     const stateDir = tempStateDir();
     dirs.push(stateDir);
     const registry = new SessionRegistry(stateDir);
     const spawns: string[][] = [];
+    let localSha = LOCAL_SHA;
     const updater = createUpdater({
       srcDir: stateDir,
       registry,
-      run: () => ({ stdout: "" }),
+      run: (cmd, args) => {
+        if (cmd === "git" && args[0] === "rev-parse") return { stdout: `${localSha}\n` };
+        if (cmd === "git" && args[0] === "remote") {
+          return { stdout: "https://github.com/acme/widget.git\n" };
+        }
+        if (cmd === "gh") return { stdout: `${REMOTE_SHA} ${REMOTE_DATE}\n` };
+        return { stdout: "" };
+      },
       spawn: (cmd, args) => {
         spawns.push([cmd, ...args]);
       },
     });
+    return {
+      updater,
+      registry,
+      spawns,
+      setLocalSha: (sha) => {
+        localSha = sha;
+      },
+    };
+  }
+
+  it("refuses while a worker or reviewer session is live", () => {
+    const { updater, registry, spawns } = gateHarness();
 
     registry.add(sessionRecord({ persona: "worker" }));
-    expect(() => updater.apply()).toThrowError(ApiError);
+    expect(() => updater.apply(LOCAL_SHA)).toThrowError(ApiError);
     try {
-      updater.apply();
+      updater.apply(LOCAL_SHA);
     } catch (err) {
       expect((err as ApiError).status).toBe(409);
     }
@@ -186,11 +229,24 @@ describe("update apply gate", () => {
     registry.archive(worker.id);
     const reviewer = sessionRecord({ persona: "reviewer" });
     registry.add(reviewer);
-    expect(() => updater.apply()).toThrowError(ApiError);
+    expect(() => updater.apply(LOCAL_SHA)).toThrowError(ApiError);
 
     registry.archive(reviewer.id);
     registry.add(sessionRecord({ persona: "orchestrator" }));
-    expect(updater.apply()).toEqual({ ok: true });
+    expect(updater.apply(LOCAL_SHA)).toEqual({ ok: true });
     expect(spawns).toHaveLength(1);
+  });
+
+  it("applies a checkout update through the shim's update verb", () => {
+    const { updater, spawns } = gateHarness();
+    updater.apply(LOCAL_SHA);
+    expect(spawns.at(-1)?.slice(1)).toEqual(["update"]);
+  });
+
+  it("restarts the service when only the running daemon is stale", () => {
+    const { updater, spawns, setLocalSha } = gateHarness();
+    setLocalSha(REMOTE_SHA);
+    updater.apply(LOCAL_SHA);
+    expect(spawns.at(-1)?.slice(1)).toEqual(["service", "restart"]);
   });
 });
