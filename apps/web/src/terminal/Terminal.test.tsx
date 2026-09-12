@@ -34,6 +34,7 @@ class FakeTerminal {
   written = "";
   resets = 0;
   scrolledToBottom = 0;
+  focused = 0;
   buffer = { active: { viewportY: 0, baseY: 24 } };
   dataHandlers: FakeHandler[] = [];
   scrollHandlers: FakeHandler[] = [];
@@ -67,7 +68,9 @@ class FakeTerminal {
     this.buffer.active.viewportY = this.buffer.active.baseY;
     this.scrollHandlers.forEach((handler) => handler(0));
   }
-  focus() {}
+  focus() {
+    this.focused += 1;
+  }
   dispose() {
     this.disposed = true;
   }
@@ -368,6 +371,28 @@ describe("<Terminal />", () => {
       pill?.click();
     });
     expect(term.scrolledToBottom).toBe(1);
+    // Keyboard focus returns to the terminal after the jump.
+    expect(term.focused).toBe(1);
+    expect(host.container.querySelector(".terminal-jump")).toBeNull();
+  });
+
+  it("jumps on keyboard activation of the pill (detail-0 click)", () => {
+    host = mount("s1");
+    connect();
+    const term = mountedTerminal();
+    act(() => {
+      term.buffer.active.viewportY = 10;
+      term.fireScroll();
+    });
+    const pill = host.container.querySelector<HTMLButtonElement>(".terminal-jump");
+    expect(pill).not.toBeNull();
+    // Browsers dispatch a click with detail 0 when Enter/Space activates a
+    // focused button.
+    act(() => {
+      pill?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 }));
+    });
+    expect(term.scrolledToBottom).toBe(1);
+    expect(term.focused).toBe(1);
     expect(host.container.querySelector(".terminal-jump")).toBeNull();
   });
 

@@ -50,9 +50,12 @@
   pointer-events: none;
 }
 
-/* Jump-to-bottom pill: appears while the user is reading history. */
+/* Jump-to-bottom pill: appears while the user is reading history. Stacks
+   above xterm's canvas render layers (text 0, selection 1, link 2, cursor 3),
+   which otherwise paint over the pill and swallow its clicks. */
 .terminal-jump {
   position: absolute;
+  z-index: 4;
   right: 12px;
   bottom: 12px;
   width: 36px;
