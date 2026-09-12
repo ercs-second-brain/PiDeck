@@ -19,7 +19,13 @@ import {
   type ReviewAccountPut,
 } from "@pideck/shared";
 import { api } from "../lib/api";
-import { Badge, Button, Field, Page, Row, Section, Switch } from "../ui";
+import { Badge } from "../ui/Badge";
+import { Button } from "../ui/Button";
+import { Field } from "../ui/Field";
+import { Page } from "../ui/Page";
+import { Row } from "../ui/Row";
+import { Section } from "../ui/Section";
+import { Switch } from "../ui/Switch";
 
 type StepId = "pi" | "github" | "review" | "repo";
 

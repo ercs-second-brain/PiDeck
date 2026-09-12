@@ -12,7 +12,7 @@ import {
 } from "@pideck/shared";
 import { serve, type DaemonServer } from "./server.js";
 import { makeDeps, sessionRecord } from "./testing.js";
-import { FakeTmux } from "../sessions/testing/fake-tmux.js";
+import { FakeTmux } from "../sessions/testing/fakeTmux.js";
 
 let daemons: DaemonServer[] = [];
 let dirs: string[] = [];

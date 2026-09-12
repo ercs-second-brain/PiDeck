@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { serve, type DaemonServer } from "./api/server.js";
 import { makeDeps, sessionRecord } from "./api/testing.js";
-import { FakeTmux } from "./sessions/testing/fake-tmux.js";
+import { FakeTmux } from "./sessions/testing/fakeTmux.js";
 import { runCli, type CliIo } from "./cli.js";
 import type { Trace } from "./reconciler/trace.js";
 

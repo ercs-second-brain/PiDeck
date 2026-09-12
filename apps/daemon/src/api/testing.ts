@@ -5,7 +5,7 @@ import { PiProbeSchema, ProbeSchema, SessionSchema, type Session } from "@pideck
 import { PromptOverrides } from "../prompts/overrides.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { Trace } from "../reconciler/trace.js";
-import { FakeTmux } from "../sessions/testing/fake-tmux.js";
+import { FakeTmux } from "../sessions/testing/fakeTmux.js";
 import { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import { ProjectStore, type CommandRunner } from "../store/projectStore.js";
 import type { DaemonDeps } from "./deps.js";
