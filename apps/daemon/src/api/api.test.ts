@@ -6,6 +6,7 @@ import WebSocket from "ws";
 import { z } from "zod";
 import {
   restEndpoints,
+  ProjectsChangedSchema,
   SessionsChangedSchema,
   type Project,
   type SessionView,
@@ -386,27 +387,64 @@ describe("WebSocket", () => {
     });
   }
 
-  it("sends sessions.changed on the same socket the terminal bridge uses", async () => {
+  it("sends sessions.changed and projects.changed on the same socket the terminal bridge uses", async () => {
     const { base, deps } = await startDaemon();
     const { ws, messages } = connect(base);
     await opened(ws);
 
-    // A fresh client gets the current snapshot immediately.
-    await vi.waitUntil(() => messages.length > 0);
-    const initial = SessionsChangedSchema.parse(messages[0]);
-    expect(initial.sessions).toHaveLength(0);
+    // A fresh client gets both current snapshots immediately.
+    await vi.waitUntil(() => messages.length > 1);
+    const initialSessions = SessionsChangedSchema.parse(messages[0]);
+    expect(initialSessions.sessions).toHaveLength(0);
+    const initialProjects = ProjectsChangedSchema.parse(messages[1]);
+    expect(initialProjects.projects).toHaveLength(0);
 
     // A registry change made outside the API is picked up by the snapshot poll.
     const worker = sessionRecord();
     deps.registry.add(worker);
-    await vi.waitUntil(() => messages.length > 1);
-    const changed = SessionsChangedSchema.parse(messages.at(-1));
-    expect(changed.sessions.map((v) => v.session.id)).toContain(worker.id);
+    await vi.waitUntil(() =>
+      messages.some((m) => {
+        const parsed = SessionsChangedSchema.safeParse(m);
+        return parsed.success && parsed.data.sessions.some((v) => v.session.id === worker.id);
+      }),
+    );
 
     // The terminal bridge shares the socket: an unknown attach is closed by it.
     ws.send(JSON.stringify({ type: "terminal.attach", sessionId: "missing" }));
     await vi.waitUntil(() => ws.readyState === WebSocket.CLOSED);
-    expect(messages.every((m) => m.type === "sessions.changed")).toBe(true);
+    expect(
+      messages.every((m) => m.type === "sessions.changed" || m.type === "projects.changed"),
+    ).toBe(true);
+  });
+
+  it("broadcasts projects.changed when a project is added or removed", async () => {
+    const { base, deps } = await startDaemon();
+    const { ws, messages } = connect(base);
+    await opened(ws);
+    await vi.waitUntil(() => messages.length > 1);
+
+    // A project change made outside the API is caught by the snapshot poll.
+    await deps.projects.add({ mode: "clone", repoUrl: join(tmpdir(), "pideck-src", "acme", "widget") });
+    await vi.waitUntil(() =>
+      messages.some((m) => {
+        const parsed = ProjectsChangedSchema.safeParse(m);
+        return parsed.success && parsed.data.projects.length > 0;
+      }),
+    );
+    const added = ProjectsChangedSchema.parse(
+      messages.filter((m) => m.type === "projects.changed").at(-1),
+    );
+    expect(added.projects).toHaveLength(1);
+    expect(added.projects[0]!.owner).toBe("acme");
+
+    // An API mutation also broadcasts through the debounced hub.
+    await call(base, "DELETE", `/api/projects/${added.projects[0]!.id}`);
+    await vi.waitUntil(() => {
+      const last = ProjectsChangedSchema.safeParse(
+        messages.filter((m) => m.type === "projects.changed").at(-1),
+      );
+      return last.success && last.data.projects.length === 0;
+    });
   });
 
   it("broadcasts after an API mutation", async () => {

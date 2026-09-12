@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Project, SessionView, Status } from "@pideck/shared";
-import { api, watchSessions } from "./lib/api";
+import { api, watchServer } from "./lib/api";
 import { SessionPane } from "./logs/SessionPane";
 import { navigate, useRoute } from "./router";
 import { OnboardingWizard } from "./onboarding/OnboardingWizard";
@@ -36,7 +36,7 @@ export function App() {
 
   useEffect(() => {
     void load();
-    return watchSessions((views) => setSessions(views));
+    return watchServer({ onSessions: setSessions, onProjects: setProjects });
   }, [load]);
 
   // The header pill shows GitHub throttling; the daemon caches the probes,

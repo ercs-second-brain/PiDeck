@@ -1,7 +1,7 @@
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { SessionView } from "@pideck/shared";
+import type { Project, SessionView } from "@pideck/shared";
 import { TerminalBridge, type TerminalSocket } from "../terminal/bridge.js";
 
 /** Path of the daemon's single WebSocket endpoint. */
@@ -10,34 +10,41 @@ export const WS_PATH = "/ws";
 export interface SessionsHubOptions {
   /** The current SessionView snapshot, re-evaluated on every broadcast. */
   snapshot: () => SessionView[];
+  /** The current Project list, re-evaluated on every broadcast. */
+  projectSnapshot: () => Project[];
   /** Coalescing window for bursts of change notifications (ms). */
   debounceMs?: number;
 }
 
 /**
- * Broadcasts `sessions.changed` to every client on /ws. A new client gets the
- * current snapshot immediately; afterwards changes are found two ways: an API
- * mutation calls `broadcastSoon` (debounced), and a poll of the snapshot
- * catches changes made outside the API — by the reconciler, for instance.
+ * Broadcasts `sessions.changed` and `projects.changed` to every client on
+ * /ws. A new client gets both current snapshots immediately; afterwards
+ * changes are found two ways: an API mutation calls `broadcastSoon`
+ * (debounced), and a poll of the snapshots catches changes made outside the
+ * API — by the reconciler, for instance.
  */
 export class SessionsHub {
   readonly #clients = new Set<WebSocket>();
   readonly #snapshot: () => SessionView[];
+  readonly #projectSnapshot: () => Project[];
   readonly #debounceMs: number;
   #broadcastTimer: NodeJS.Timeout | undefined;
   #pollTimer: NodeJS.Timeout | undefined;
-  #lastJson: string | null = null;
+  #lastSessionsJson: string | null = null;
+  #lastProjectsJson: string | null = null;
 
   constructor(options: SessionsHubOptions) {
     this.#snapshot = options.snapshot;
+    this.#projectSnapshot = options.projectSnapshot;
     this.#debounceMs = options.debounceMs ?? 100;
   }
 
-  /** Registers a client and hands it the current snapshot right away. */
+  /** Registers a client and hands it both current snapshots right away. */
   add(ws: WebSocket): void {
     this.#clients.add(ws);
     ws.on("close", () => this.#clients.delete(ws));
-    this.#sendTo(ws);
+    this.#sendTo(ws, "sessions.changed", { sessions: this.#snapshot() });
+    this.#sendTo(ws, "projects.changed", { projects: this.#projectSnapshot() });
   }
 
   /** Schedules one debounced broadcast of the current snapshot. */
@@ -51,15 +58,26 @@ export class SessionsHub {
 
   broadcastNow(): void {
     const sessions = this.#snapshot();
-    for (const ws of this.#clients) this.#sendTo(ws, sessions);
+    const projects = this.#projectSnapshot();
+    this.#lastSessionsJson = JSON.stringify(sessions);
+    this.#lastProjectsJson = JSON.stringify(projects);
+    for (const ws of this.#clients) {
+      this.#sendTo(ws, "sessions.changed", { sessions });
+      this.#sendTo(ws, "projects.changed", { projects });
+    }
   }
 
   /** Detects snapshot changes made outside the API and broadcasts them. */
   startPolling(intervalMs: number): void {
     this.#pollTimer = setInterval(() => {
-      const json = JSON.stringify(this.#snapshot());
-      if (json !== this.#lastJson) {
-        this.#lastJson = json;
+      const sessionsJson = JSON.stringify(this.#snapshot());
+      const projectsJson = JSON.stringify(this.#projectSnapshot());
+      if (
+        sessionsJson !== this.#lastSessionsJson ||
+        projectsJson !== this.#lastProjectsJson
+      ) {
+        this.#lastSessionsJson = sessionsJson;
+        this.#lastProjectsJson = projectsJson;
         this.broadcastSoon();
       }
     }, intervalMs);
@@ -75,11 +93,9 @@ export class SessionsHub {
     this.#clients.clear();
   }
 
-  #sendTo(ws: WebSocket, sessions?: SessionView[]): void {
+  #sendTo(ws: WebSocket, type: "sessions.changed" | "projects.changed", body: object): void {
     if (ws.readyState !== ws.OPEN) return;
-    ws.send(
-      JSON.stringify({ type: "sessions.changed", sessions: sessions ?? this.#snapshot() }),
-    );
+    ws.send(JSON.stringify({ type, ...body }));
   }
 }
 
@@ -91,7 +107,7 @@ export interface WsMountOptions {
 /**
  * Mounts the daemon's single WebSocket at {@link WS_PATH}: every accepted
  * socket is handed to both the terminal bridge (which parses only the
- * terminal.* messages and ignores anything else) and the sessions hub (which
+ * terminal.* messages and ignores anything else) and the change hub (which
  * only sends). Neither side can corrupt the other.
  */
 export function mountWs(

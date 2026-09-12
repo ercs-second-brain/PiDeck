@@ -33,7 +33,7 @@ describe.skipIf(!enabled)("terminal bridge integration", () => {
       tmux,
       log: () => {},
     });
-    const hub = new SessionsHub({ snapshot: () => [] });
+    const hub = new SessionsHub({ snapshot: () => [], projectSnapshot: () => [] });
     closeWs = mountWs(server, bridge, hub);
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("no port");
