@@ -144,7 +144,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
           label="Auto-merge"
           description="Merge approved, green PRs automatically; otherwise recommend the merge."
         >
-          <Switch checked={autoMerge} onChange={setAutoMerge} />
+          <Switch checked={autoMerge} onChange={setAutoMerge} label="Auto-merge" />
         </Row>
       </Section>
       <Section
@@ -162,7 +162,13 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
             </Button>
           </>
         }
-      />
+      >
+        <Row label="Repo" description="Unaffected on GitHub.">
+          <span style={{ color: "var(--text-dim)", overflowWrap: "anywhere" }}>
+            {project ? `${project.owner}/${project.repo}` : "…"}
+          </span>
+        </Row>
+      </Section>
       <Dialog
         open={confirmDelete}
         title={`Delete project ${name}?`}
