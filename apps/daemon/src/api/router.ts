@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import { z } from "zod";
-import { restEndpoints, type RestEndpoint, type RestEndpointName } from "@pideck/shared";
+import { errorMessage, restEndpoints, type RestEndpoint, type RestEndpointName } from "@pideck/shared";
 
 /** An error with a meaning status code for the HTTP response. */
 export class ApiError extends Error {
@@ -81,7 +81,7 @@ export async function routeRequest(
         body: { error: `response violates the endpoint contract: ${z.prettifyError(err)}` },
       };
     }
-    return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } };
+    return { status: 500, body: { error: errorMessage(err) } };
   }
 }
 

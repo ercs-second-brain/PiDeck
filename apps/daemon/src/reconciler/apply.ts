@@ -10,7 +10,7 @@
 
 import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Project, ProjectSettings, Session } from "@pideck/shared";
+import { errorMessage, type Project, type ProjectSettings, type Session } from "@pideck/shared";
 import type { Persona } from "@pideck/shared";
 import type { SessionPatch, SessionRegistry } from "../sessions/registry.js";
 import { archiveSession, spawnPiSession, type GitRunner, type SpawnPiOptions } from "../sessions/spawn.js";
@@ -254,6 +254,3 @@ function update(deps: ApplyDeps, sessionId: string, patch: SessionPatch): void {
   deps.notifyChange?.();
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}

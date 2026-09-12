@@ -1,5 +1,6 @@
 import {
   PersonaSchema,
+  errorMessage,
   type GlobalSettingsPut,
   type Persona,
   type Project,
@@ -77,7 +78,7 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
       try {
         await deps.tmux.sendLine(session.tmuxSession, (body as SessionSend).text);
       } catch (err) {
-        throw new ApiError(409, `tmux session is gone: ${errMessage(err)}`);
+        throw new ApiError(409, `tmux session is gone: ${errorMessage(err)}`);
       }
       return { ok: true };
     },
@@ -169,10 +170,6 @@ function notFound<T>(fn: () => T): T {
     }
     throw err;
   }
-}
-
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 const PROBE_CACHE_MS = 30_000;

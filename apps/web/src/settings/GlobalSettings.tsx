@@ -12,6 +12,7 @@ import {
   Personas,
   type GlobalSettingsPut,
   type GlobalSettingsRead,
+  errorMessage,
   type Persona,
   type PiProbe,
   type Status,
@@ -59,7 +60,7 @@ export function GlobalSettings() {
         setProbe(probe);
       })
       .catch((err: unknown) => {
-        if (alive) setLoadError(err instanceof Error ? err.message : String(err));
+        if (alive) setLoadError(errorMessage(err));
       });
     return () => {
       alive = false;

@@ -9,6 +9,8 @@
  * next poll and gates the reviewer leg until access exists.
  */
 
+import { errorMessage } from "@pideck/shared";
+
 export interface ReviewAccessGh {
   /** True when this client's account can read the repo. */
   hasReadAccess(): Promise<boolean>;
@@ -37,7 +39,7 @@ export async function ensureReviewAccess(input: ReviewAccessInput): Promise<Revi
     await primary.inviteCollaborator(reviewLogin);
     await review.acceptInvitations();
   } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err);
+    const cause = errorMessage(err);
     return {
       ok: false,
       detail: `review account has no access to ${repo} — invite failed: ${cause}`,

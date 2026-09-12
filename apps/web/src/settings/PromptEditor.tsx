@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Personas, type Persona, type Prompt } from "@pideck/shared";
+import { errorMessage, Personas, type Persona, type Prompt } from "@pideck/shared";
 import { Section } from "../ui/Section";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
@@ -36,7 +36,7 @@ export function PromptEditor() {
         setDraft(loaded.prompt);
       })
       .catch((err: unknown) => {
-        if (alive) setLoadError(err instanceof Error ? err.message : String(err));
+        if (alive) setLoadError(errorMessage(err));
       });
     return () => {
       alive = false;

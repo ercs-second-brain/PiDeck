@@ -5,7 +5,15 @@
  */
 
 import { pathToFileURL } from "node:url";
-import type { Project, SessionTrace, SessionView, Status, TraceEntry, TraceFacts } from "@pideck/shared";
+import {
+  errorMessage,
+  type Project,
+  type SessionTrace,
+  type SessionView,
+  type Status,
+  type TraceEntry,
+  type TraceFacts,
+} from "@pideck/shared";
 
 export interface CliIo {
   url: string;
@@ -26,7 +34,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   try {
     return await dispatch(argv, io);
   } catch (err) {
-    io.stderr(`pideck: ${err instanceof Error ? err.message : String(err)}`);
+    io.stderr(`pideck: ${errorMessage(err)}`);
     return 1;
   }
 }
@@ -144,7 +152,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   try {
     return await runCli(argv, io);
   } catch (err) {
-    io.stderr(`pideck: ${err instanceof Error ? err.message : String(err)}`);
+    io.stderr(`pideck: ${errorMessage(err)}`);
     return 1;
   }
 }

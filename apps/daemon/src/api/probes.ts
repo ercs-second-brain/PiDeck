@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { PiProbeSchema, ProbeSchema, type PiProbe, type Probe } from "@pideck/shared";
+import { PiProbeSchema, ProbeSchema, errorMessage, type PiProbe, type Probe } from "@pideck/shared";
 import { GhClient } from "../github/client.js";
 
 /**
@@ -64,6 +64,6 @@ function readJson(path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch (err) {
-    throw new Error(`${path}: not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`${path}: not valid JSON: ${errorMessage(err)}`);
   }
 }

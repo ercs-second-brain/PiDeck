@@ -8,7 +8,7 @@
  * just the first poll.
  */
 
-import type { Project } from "@pideck/shared";
+import { errorMessage, type Project } from "@pideck/shared";
 import { GhClient } from "../github/client.js";
 import { GhRateLimited } from "../github/error.js";
 import type { GhComment, GhIssue, GhPr, GhReview } from "../github/schemas.js";
@@ -149,10 +149,6 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     } catch {
       return null;
     }
-  }
-
-  function errorMessage(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
   }
 
   async function runTick(): Promise<void> {
