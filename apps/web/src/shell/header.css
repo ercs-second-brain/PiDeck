@@ -23,6 +23,16 @@
   gap: 2px;
 }
 
+.header__pill {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
 .header__icon {
   width: 32px;
   height: 32px;

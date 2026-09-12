@@ -28,6 +28,8 @@ export interface DaemonDeps {
   pi: () => Promise<PiProbe>;
   /** The reconciler's last GitHub read pass for a project; null before the first. */
   reconcilerFacts?: (projectId: string) => ProjectFacts | null;
+  /** The reconciler's GitHub throttle/error state, for Status. */
+  githubStatus?: () => { throttledUntil: string | null; lastError: string | null };
   /** The per-session trace, shared with the reconciler's apply path. */
   trace: Trace;
   /** Called after an API mutation changes the session registry. */

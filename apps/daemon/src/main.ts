@@ -87,6 +87,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
     notifyChange: () => deps.notifyChange?.(),
   });
   deps.reconcilerFacts = (projectId) => reconciler.factsFor(projectId);
+  deps.githubStatus = () => reconciler.githubStatus();
 
   const daemon = await serve(deps, {
     host: env.PD_WEB_HOST ?? "0.0.0.0",

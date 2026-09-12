@@ -25,15 +25,31 @@ import { sessionViews } from "./views.js";
  * every response against the response schema — handlers only shape data.
  */
 export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
+  // /api/status probes shell out (pi, gh); the header and `pideck status` poll
+  // it, so each probe result is cached for a short window.
+  const probeCache = new Map<string, { at: number; value: Promise<unknown> }>();
+  const cachedProbe = <T>(key: string, probe: () => Promise<T>): Promise<T> => {
+    const hit = probeCache.get(key);
+    const now = Date.now();
+    if (hit !== undefined && now - hit.at < PROBE_CACHE_MS) return hit.value as Promise<T>;
+    const value = probe().catch((err) => {
+      probeCache.delete(key);
+      throw err;
+    });
+    probeCache.set(key, { at: now, value });
+    return value;
+  };
+
   return {
     status: async () => {
-      const [pi, gh] = await Promise.all([deps.pi(), deps.ghPrimary()]);
+      const [pi, gh] = await Promise.all([cachedProbe("pi", deps.pi), cachedProbe("gh", deps.ghPrimary)]);
       return {
         version: deps.version,
         stateDir: deps.stateDir,
         pollIntervalSeconds: deps.pollIntervalSeconds,
         piReady: pi.ok,
         ghReady: gh.ok,
+        github: deps.githubStatus?.() ?? { throttledUntil: null, lastError: null },
       };
     },
 
@@ -175,3 +191,5 @@ function notFound<T>(fn: () => T): T {
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+const PROBE_CACHE_MS = 30_000;

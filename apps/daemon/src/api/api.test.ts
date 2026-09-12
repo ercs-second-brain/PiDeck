@@ -77,6 +77,20 @@ describe("REST contract", () => {
     expect(status.piReady).toBe(true);
     expect(status.ghReady).toBe(true);
     expect(status.pollIntervalSeconds).toBe(30);
+    expect(status.github).toEqual({ throttledUntil: null, lastError: null });
+  });
+
+  it("caches the status probes for 30 s", async () => {
+    const { base, deps } = await startDaemon();
+    const basePi = deps.pi;
+    let piCalls = 0;
+    deps.pi = () => {
+      piCalls++;
+      return basePi();
+    };
+    await call(base, "GET", "/api/status");
+    await call(base, "GET", "/api/status");
+    expect(piCalls).toBe(1);
   });
 
   it("creates, lists, gets, patches and deletes projects", async () => {

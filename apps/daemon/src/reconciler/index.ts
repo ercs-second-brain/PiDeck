@@ -10,6 +10,7 @@
 
 import type { Project } from "@pideck/shared";
 import { GhClient } from "../github/client.js";
+import { GhRateLimited } from "../github/error.js";
 import type { GhComment, GhIssue, GhPr, GhReview } from "../github/schemas.js";
 import { ensureReviewAccess, type ReviewAccessGh } from "../github/reviewAccess.js";
 import type { Probe } from "@pideck/shared";
@@ -89,9 +90,21 @@ export interface ReconcilerHandle {
   tick(): Promise<void>;
   /** The last successful GitHub read pass for a project; null before the first. */
   factsFor(projectId: string): ProjectFacts | null;
+  /** GitHub throttling/error state for Status. */
+  githubStatus(): { throttledUntil: string | null; lastError: string | null };
 }
 
 const DEFAULT_INTERVAL_MS = 30_000;
+/** Per-project retry ladder for failed ticks, indexed by consecutive failures. */
+const BACKOFF_LADDER_MS = [30_000, 60_000, 120_000, 300_000];
+
+interface TickBackoff {
+  failures: number;
+  /** Earliest wall-clock time (ms) the project's next tick may run. */
+  nextAttemptAt: number;
+  /** Known GitHub rate-limit reset (ms); the project waits until it passes. */
+  throttledUntil: number | null;
+}
 
 export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
   const log = deps.log ?? ((line: string) => console.log(line));
@@ -118,11 +131,13 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
   let timer: ReturnType<typeof setInterval> | null = null;
   let queue: Promise<void> = Promise.resolve();
   const factsByProject = new Map<string, ProjectFacts>();
+  const backoffByProject = new Map<string, TickBackoff>();
+  let lastGithubError: string | null = null;
 
   function readerFor(project: Project): ProjectReader {
     let reader = readers.get(project.id);
     if (reader === undefined) {
-      reader = new ProjectReader(deps.gh(`${project.owner}/${project.repo}`));
+      reader = new ProjectReader(deps.gh(`${project.owner}/${project.repo}`), log);
       readers.set(project.id, reader);
     }
     return reader;
@@ -162,6 +177,21 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
       log("reconciler: no review account — the review leg is off");
     }
 
+    // Memory keyed on sessions and projects that no longer exist cannot come
+    // back — drop it so the maps stay bounded. The global session keeps its
+    // approved heads under "".
+    const liveIds = new Set(registry.list({ archived: false }).map((s) => s.id));
+    for (const id of [...stallNotices.keys()]) {
+      if (!liveIds.has(id)) stallNotices.delete(id);
+    }
+    const projectIds = new Set([...deps.projects.list().map((p) => p.id), ""]);
+    for (const id of [...notifiedHeadsByProject.keys()]) {
+      if (!projectIds.has(id)) notifiedHeadsByProject.delete(id);
+    }
+    for (const id of [...backoffByProject.keys()]) {
+      if (!projectIds.has(id)) backoffByProject.delete(id);
+    }
+
     try {
       const globalAction = deriveGlobalAction(registry.list({ archived: false }));
       await applyActions(
@@ -175,7 +205,15 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
       log(`reconciler: global session failed: ${errorMessage(err)}`);
     }
 
+    let sawProjectError = false;
     for (const project of deps.projects.list()) {
+      const backoff = backoffByProject.get(project.id) ?? {
+        failures: 0,
+        nextAttemptAt: 0,
+        throttledUntil: null,
+      };
+      backoffByProject.set(project.id, backoff);
+      if (backoff.nextAttemptAt > Date.now() || (backoff.throttledUntil ?? 0) > Date.now()) continue;
       try {
         const repo = `${project.owner}/${project.repo}`;
         const access = await ensureReviewAccess({
@@ -215,11 +253,23 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
           }),
         );
         await applyActions(applyDeps, { project, settings, reviewToken }, actions, tally);
+        backoff.failures = 0;
+        backoff.nextAttemptAt = 0;
+        backoff.throttledUntil = null;
       } catch (err) {
+        sawProjectError = true;
+        backoff.failures++;
+        const delay = BACKOFF_LADDER_MS[Math.min(backoff.failures, BACKOFF_LADDER_MS.length) - 1];
+        backoff.nextAttemptAt = Date.now() + (delay ?? BACKOFF_LADDER_MS[BACKOFF_LADDER_MS.length - 1]!);
+        if (err instanceof GhRateLimited) {
+          backoff.throttledUntil = err.resetAt?.getTime() ?? backoff.nextAttemptAt;
+        }
+        lastGithubError = errorMessage(err);
         tally.errors++;
         log(`reconciler: project ${project.name}: ${errorMessage(err)}`);
       }
     }
+    if (!sawProjectError) lastGithubError = null;
 
     try {
       const { dead } = await reconcileWithTmux(registry, deps.tmux);
@@ -262,6 +312,20 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     /** The last successful GitHub read pass for a project, for live views. */
     factsFor(projectId: string): ProjectFacts | null {
       return factsByProject.get(projectId) ?? null;
+    },
+    /** The furthest known throttle reset across projects, plus the last error. */
+    githubStatus(): { throttledUntil: string | null; lastError: string | null } {
+      const now = Date.now();
+      let throttledUntil: number | null = null;
+      for (const state of backoffByProject.values()) {
+        if (state.throttledUntil !== null && state.throttledUntil > now) {
+          throttledUntil = Math.max(throttledUntil ?? 0, state.throttledUntil);
+        }
+      }
+      return {
+        throttledUntil: throttledUntil === null ? null : new Date(throttledUntil).toISOString(),
+        lastError: lastGithubError,
+      };
     },
   };
 }

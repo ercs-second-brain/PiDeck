@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import type { Probe } from "@pideck/shared";
 import { ProbeSchema } from "@pideck/shared";
 import { z, type ZodType } from "zod";
-import { GhError } from "./error.js";
+import { GhError, GhRateLimited, rateLimitError } from "./error.js";
 import {
   ciRollup,
   commentsSince,
@@ -61,7 +61,9 @@ export class GhClient {
 
   private async run(args: string[]): Promise<string> {
     const result = await this.exec(args, this.env());
-    if (result.exitCode !== 0) throw new GhError(args.join(" "), result.stderr, result.exitCode);
+    if (result.exitCode !== 0) {
+      throw rateLimitError(result.stderr) ?? new GhError(args.join(" "), result.stderr, result.exitCode);
+    }
     return result.stdout;
   }
 
@@ -199,7 +201,9 @@ export class GhClient {
     try {
       await this.run(["api", `repos/${this.repo}`]);
       return true;
-    } catch {
+    } catch (err) {
+      // A rate limit is not an access answer; let the caller slow down instead.
+      if (err instanceof GhRateLimited) throw err;
       return false;
     }
   }

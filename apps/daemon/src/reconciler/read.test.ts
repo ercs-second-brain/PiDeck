@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ProbeSchema } from "@pideck/shared";
 import { ciRollup, type GhPr } from "../github/schemas.js";
+import { GhError, GhRateLimited } from "../github/error.js";
 import { ProjectReader, parseIssueBranch, type GhRead } from "./read.js";
 
 function fakeGh(overrides: Partial<GhRead> = {}): GhRead & { calls: string[] } {
@@ -125,6 +126,48 @@ describe("ProjectReader", () => {
     });
     const read = await new ProjectReader(gh).read();
     expect(read.issues[0]!.openBlockers).toBe(1);
+  });
+
+  it("a blockedBy 404 degrades to no blockers known and the tick survives", async () => {
+    const logs: string[] = [];
+    const gh = fakeGh({
+      openIssues: async () => [issue()],
+      blockedBy: async () => {
+        throw new GhError("api repos/o/r/issues/1/dependencies/blocked_by", "gh: HTTP 404: Not Found\n", 1);
+      },
+    });
+    const read = await new ProjectReader(gh, (line) => logs.push(line)).read();
+    expect(read.issues[0]!.openBlockers).toBe(0);
+    expect(gh.calls).toContain("issueComments:1");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain("blockedBy #1 unavailable");
+  });
+
+  it("a blockedBy 403 keeps the last known blocker count", async () => {
+    let fail = false;
+    const gh = fakeGh({
+      openIssues: async () => [issue()],
+      blockedBy: async () => {
+        if (fail) throw new GhError("api repos/o/r/issues/1", "gh: HTTP 403: Forbidden\n", 1);
+        return [{ number: 3, state: "open" }];
+      },
+    });
+    const reader = new ProjectReader(gh);
+    expect((await reader.read()).issues[0]!.openBlockers).toBe(1);
+
+    fail = true;
+    const degraded = await reader.read();
+    expect(degraded.issues[0]!.openBlockers).toBe(1);
+  });
+
+  it("a rate-limited blockedBy fails the read instead of unblocking", async () => {
+    const gh = fakeGh({
+      openIssues: async () => [issue()],
+      blockedBy: async () => {
+        throw new GhRateLimited(null, "gh: You have exceeded a secondary rate limit\n");
+      },
+    });
+    await expect(new ProjectReader(gh).read()).rejects.toBeInstanceOf(GhRateLimited);
   });
 
   it("guards green against the empty-rollup race: the head must be seen twice", async () => {

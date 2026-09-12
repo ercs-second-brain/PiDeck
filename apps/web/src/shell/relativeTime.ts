@@ -11,3 +11,10 @@ export function relativeTime(iso: string | null, now: number = Date.now()): stri
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
 }
+
+/** Local wall-clock hh:mm for an ISO timestamp. */
+export function clock(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+}

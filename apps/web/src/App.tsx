@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Project, SessionView } from "@pideck/shared";
+import type { Project, SessionView, Status } from "@pideck/shared";
 import { api, watchSessions } from "./lib/api";
 import { SessionPane } from "./logs/SessionPane";
 import { navigate, useRoute } from "./router";
@@ -18,6 +18,7 @@ export function App() {
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -37,6 +38,17 @@ export function App() {
     void load();
     return watchSessions((views) => setSessions(views));
   }, [load]);
+
+  // The header pill shows GitHub throttling; the daemon caches the probes,
+  // so this can poll at the same cadence.
+  useEffect(() => {
+    const refresh = () => {
+      void api("status").then(setStatus).catch(() => {});
+    };
+    refresh();
+    const id = setInterval(refresh, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const onChanged = useCallback(() => {
     void load();
@@ -106,6 +118,7 @@ export function App() {
       <Shell
         route={route}
         context={context}
+        throttledUntil={status?.github.throttledUntil ?? null}
         projects={projects}
         sessions={sessions}
         selectedId={route.name === "session" ? route.id : null}
