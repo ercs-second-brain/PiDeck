@@ -62,6 +62,13 @@ export function ciRed(input: CiRedInput): string {
   );
 }
 
+export function ciRedExhausted(input: CiRedInput): string {
+  return singleLine(
+    `CI failed: ${input.failingChecks.join(", ")} — fix attempts exhausted after ${input.maxAttempts}. ` +
+      `Comment your status on the issue and go idle.`,
+  );
+}
+
 export function reviewChanges(input: ReviewChangesInput): string {
   return singleLine(
     `New review activity on PR #${input.prNumber} — read the review and comments on GitHub, ` +

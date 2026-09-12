@@ -3,6 +3,7 @@ import {
   approvedGreen,
   blocker,
   ciRed,
+  ciRedExhausted,
   issueComment,
   reReview,
   reviewChanges,
@@ -39,6 +40,15 @@ describe("delivery templates", () => {
     );
     expect(line).toContain("CI failed: lint, test");
     expect(line).toContain("fix attempt 2 of 5");
+  });
+
+  it("ciRedExhausted tells the worker to comment its status and go idle", () => {
+    const line = expectOneLine(() =>
+      ciRedExhausted({ failingChecks: ["test"], attempt: 5, maxAttempts: 5 }),
+    );
+    expect(line).toContain("CI failed: test");
+    expect(line).toContain("exhausted after 5");
+    expect(line).toContain("comment your status on the issue and go idle");
   });
 
   it("reviewChanges points at the PR", () => {
