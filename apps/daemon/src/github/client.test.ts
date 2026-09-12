@@ -209,7 +209,7 @@ describe("GhClient", () => {
     }));
     const err = await client.openIssues().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(GhRateLimited);
-    expect((err as GhRateLimited).resetAt?.toISOString()).toBe("2025-06-01T10:05:00Z");
+    expect((err as GhRateLimited).resetAt?.getTime()).toBe(Date.parse("2025-06-01T10:05:00Z"));
   });
 
   it("throws GhRateLimited without a reset time on a secondary rate limit", async () => {

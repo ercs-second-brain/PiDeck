@@ -29,8 +29,9 @@ const RESET_AT = /try again at (\S+)/i;
 
 /**
  * Recognises a GitHub rate limit in gh's stderr — HTTP 403 with the rate-limit
- * message or `X-RateLimit-Remaining: 0`, the secondary-rate-limit wording, or
- * HTTP 429 — and returns the typed error, or null for any other failure.
+ * message or `X-RateLimit-Remaining: 0`, the secondary-rate-limit wording, a
+ * "rate limit exceeded" message, or HTTP 429 — and returns the typed error,
+ * or null for any other failure.
  */
 export function rateLimitError(stderr: string): GhRateLimited | null {
   const lowered = stderr.toLowerCase();
@@ -42,8 +43,9 @@ export function rateLimitError(stderr: string): GhRateLimited | null {
     (lowered.includes("http 403") && lowered.includes("rate limit"));
   if (!limited) return null;
   const match = RESET_AT.exec(stderr);
-  const resetAt = match === null ? null : new Date(match[1]!);
-  return new GhRateLimited(resetAt !== null && !Number.isNaN(resetAt.getTime()) ? resetAt : null, stderr);
+  if (match === null) return new GhRateLimited(null, stderr);
+  const resetAt = new Date(match[1]!.replace(/[.,;:)]+$/, ""));
+  return new GhRateLimited(Number.isNaN(resetAt.getTime()) ? null : resetAt, stderr);
 }
 
 function firstLine(stderr: string): string {
