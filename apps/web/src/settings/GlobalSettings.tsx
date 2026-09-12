@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import {
   Personas,
+  PERSONA_LABELS,
   type GlobalSettingsPut,
   type GlobalSettingsRead,
   errorMessage,
@@ -24,7 +25,7 @@ import { Row } from "../ui/Row";
 import { Field } from "../ui/Field";
 import { Button } from "../ui/Button";
 import { PromptEditor } from "./PromptEditor";
-import { PERSONA_LABELS, PERSONA_MODEL_DESCRIPTIONS } from "./personas";
+import { PERSONA_MODEL_DESCRIPTIONS } from "./personas";
 import {
   checkForUpdate,
   loadGlobalSettings,

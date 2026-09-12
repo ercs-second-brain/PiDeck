@@ -9,6 +9,7 @@
  */
 
 import type { Probe } from "@pideck/shared";
+import { isAssigned } from "./desired.js";
 import type { GhClient } from "../github/client.js";
 import { GhError } from "../github/error.js";
 import type { CiStatus, GhComment, GhReview } from "../github/schemas.js";
@@ -84,11 +85,7 @@ export class ProjectReader {
 
     const issues: IssueFacts[] = await Promise.all(
       rawIssues.map(async (issue) => {
-        const assigned =
-          primaryLogin === null
-            ? issue.assignees.length > 0
-            : issue.assignees.includes(primaryLogin);
-        if (!assigned) {
+        if (!isAssigned(issue, primaryLogin)) {
           return { ...issue, openBlockers: 0, comments: [] };
         }
         const [blockers, comments] = await Promise.all([

@@ -387,7 +387,7 @@ export function deriveGlobalAction(allLive: Session[]): Action | null {
   return allLive.some((s) => s.persona === "global") ? null : { kind: "spawn-global" };
 }
 
-export function isAssigned(issue: IssueFacts, primaryLogin: string | null): boolean {
+export function isAssigned(issue: Pick<IssueFacts, "assignees">, primaryLogin: string | null): boolean {
   return primaryLogin === null ? issue.assignees.length > 0 : issue.assignees.includes(primaryLogin);
 }
 

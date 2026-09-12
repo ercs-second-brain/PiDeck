@@ -1,17 +1,8 @@
-export const Placeholders = [
-  "PROJECT_ID",
-  "PROJECT_NAME",
-  "REPO",
-  "DEFAULT_BRANCH",
-  "PROJECT_PATH",
-  "ISSUE_NUMBER",
-  "PR_NUMBER",
-  "SESSION_ID",
-  "AUTO_MERGE",
-  "ORCHESTRATOR_SESSION_ID",
-] as const;
+import { PromptPlaceholders } from "@pideck/shared";
 
-export type Placeholder = (typeof Placeholders)[number];
+export type Placeholder = (typeof PromptPlaceholders)[number]["token"];
+
+export const Placeholders: readonly Placeholder[] = PromptPlaceholders.map((p) => p.token);
 
 export type PromptVars = Partial<Record<Placeholder, string>>;
 

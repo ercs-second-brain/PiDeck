@@ -16,6 +16,7 @@
  * are swapped for a fresh `capture-pane` of the resized screen.
  */
 
+import { shellQuote } from "../shell.js";
 import {
   closeSync,
   ftruncateSync,
@@ -322,9 +323,4 @@ export class PaneStream {
     this.ring.push(data);
     this.broadcast(data);
   }
-}
-
-/** Quotes a path for use inside the pipe-pane shell command. */
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
 }

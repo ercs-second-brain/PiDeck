@@ -1,15 +1,10 @@
 /**
  * The prompt placeholders the daemon substitutes when rendering a persona
- * prompt — the same table as agent/README.md. Shown beside the prompt editor
- * so an override can use them correctly.
+ * prompt — the single source for the daemon's renderer, the web settings
+ * copy, and the agent/README.md table (checked by a test).
  */
 
-export interface PromptPlaceholder {
-  token: string;
-  description: string;
-}
-
-export const PromptPlaceholders: readonly PromptPlaceholder[] = [
+export const PromptPlaceholders = [
   { token: "PROJECT_ID", description: "Project id (slug)" },
   { token: "PROJECT_NAME", description: "Project display name" },
   { token: "REPO", description: "owner/repo on GitHub" },
@@ -20,4 +15,6 @@ export const PromptPlaceholders: readonly PromptPlaceholder[] = [
   { token: "SESSION_ID", description: "This session's id" },
   { token: "AUTO_MERGE", description: "true or false — the project's merge mode" },
   { token: "ORCHESTRATOR_SESSION_ID", description: "The project orchestrator's session id" },
-];
+] as const;
+
+export type PromptPlaceholder = (typeof PromptPlaceholders)[number];

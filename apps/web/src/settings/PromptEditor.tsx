@@ -7,13 +7,18 @@
  */
 
 import { useEffect, useState } from "react";
-import { errorMessage, Personas, type Persona, type Prompt } from "@pideck/shared";
+import {
+  errorMessage,
+  Personas,
+  PERSONA_LABELS,
+  type Persona,
+  type Prompt,
+} from "@pideck/shared";
 import { Section } from "../ui/Section";
 import { Button } from "../ui/Button";
 import { Badge } from "../ui/Badge";
 import { Dialog } from "../ui/Dialog";
-import { PERSONA_LABELS } from "./personas";
-import { PromptPlaceholders } from "./placeholders";
+import { PromptPlaceholders } from "@pideck/shared";
 import { loadPrompt, resetPrompt, savePrompt } from "./client";
 import { actionLabel, useAction } from "./use-action";
 
