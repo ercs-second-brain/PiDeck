@@ -17,8 +17,8 @@ import type {
   ProjectCreate,
   ReviewAccountPut,
 } from "@pideck/shared";
-import { api } from "./api";
-import { Badge, Button, Field, Page, Section, Switch } from "./ui";
+import { api } from "../lib/api";
+import { Badge, Button, Field, Page, Row, Section, Switch } from "../ui";
 
 type StepId = "pi" | "github" | "review" | "repo";
 
@@ -102,15 +102,12 @@ function ReviewStep({ onVerified }: { onVerified: () => void }) {
   const [tokenSet, setTokenSet] = useState(false);
   const [verified, setVerified] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<{ username: string | null; token: string | null }>({
-    username: null,
-    token: null,
-  });
+  const [fieldErrors, setFieldErrors] = useState<{ username?: string; token?: string }>({});
   const [error, setError] = useState<string | null>(null);
 
   async function verify(): Promise<void> {
-    const usernameError = username.trim() ? null : "Username is required";
-    const tokenError = token.trim() || tokenSet ? null : "A personal access token is required";
+    const usernameError = username.trim() ? undefined : "Username is required";
+    const tokenError = token.trim() || tokenSet ? undefined : "A personal access token is required";
     setFieldErrors({ username: usernameError, token: tokenError });
     if (usernameError || tokenError) return;
     setBusy(true);
@@ -171,15 +168,12 @@ function RepoStep({ onCreated }: { onCreated: (project: Project) => void }) {
   const [name, setName] = useState("");
   const [isPrivate, setPrivate] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<{ repoUrl: string | null; name: string | null }>({
-    repoUrl: null,
-    name: null,
-  });
+  const [fieldErrors, setFieldErrors] = useState<{ repoUrl?: string; name?: string }>({});
   const [error, setError] = useState<string | null>(null);
 
   async function submit(): Promise<void> {
-    const repoUrlError = mode === "clone" && !repoUrl.trim() ? "Repository URL is required" : null;
-    const nameError = mode === "create" && !name.trim() ? "Repository name is required" : null;
+    const repoUrlError = mode === "clone" && !repoUrl.trim() ? "Repository URL is required" : undefined;
+    const nameError = mode === "create" && !name.trim() ? "Repository name is required" : undefined;
     setFieldErrors({ repoUrl: repoUrlError, name: nameError });
     if (repoUrlError || nameError) return;
     setBusy(true);
@@ -222,7 +216,9 @@ function RepoStep({ onCreated }: { onCreated: (project: Project) => void }) {
       ) : (
         <>
           <Field label="Repository name" value={name} onChange={setName} error={fieldErrors.name} />
-          <Switch label="Private repository" checked={isPrivate} onChange={setPrivate} />
+          <Row label="Private repository">
+            <Switch label="Private repository" checked={isPrivate} onChange={setPrivate} />
+          </Row>
         </>
       )}
       {error ? <p style={red}>{error}</p> : null}

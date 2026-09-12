@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Project, SessionView } from "@pideck/shared";
 import { api, watchSessions } from "./lib/api";
 import { navigate, useRoute } from "./router";
+import { OnboardingWizard } from "./onboarding/OnboardingWizard";
 import { Shell } from "./shell/Shell";
 import { rowText } from "./shell/tree";
 import { Terminal } from "./terminal/Terminal";
@@ -100,7 +101,7 @@ export function App() {
       case "session":
         return <Terminal sessionId={route.id} />;
       case "onboarding":
-        return <Placeholder title="Onboarding" />;
+        return <OnboardingWizard onDone={() => navigate("/")} />;
       case "settings":
         return <GlobalSettings />;
       case "projectSettings":

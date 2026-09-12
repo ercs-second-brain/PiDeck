@@ -11,10 +11,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GlobalSettingsRead, PiProbe, Probe, Project, RestEndpointName, Status } from "@pideck/shared";
-import { api } from "./api";
+import { api } from "../lib/api";
 import { OnboardingWizard } from "./OnboardingWizard";
 
-vi.mock("./api", () => ({ api: vi.fn() }));
+vi.mock("../lib/api", () => ({ api: vi.fn() }));
 
 const piOk: PiProbe = { ok: true, detail: "", providers: ["anthropic", "github-copilot"], models: ["claude", "gpt"], defaultModel: "claude" };
 const piFail: PiProbe = { ok: false, detail: "pi is not authenticated — run `pi auth` in a terminal", providers: [], models: [], defaultModel: null };
