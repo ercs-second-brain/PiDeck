@@ -5,55 +5,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeWebSocket } from "../test-support/websocket";
 import { TerminalConnection, type WebSocketConstructor } from "./connection";
-
-type FakeFrame = Record<string, unknown>;
-
-class FakeWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static instances: FakeWebSocket[] = [];
-  static reset() {
-    FakeWebSocket.instances = [];
-  }
-  url: string;
-  readyState = 0;
-  sent: string[] = [];
-  onopen: (() => void) | null = null;
-  onmessage: ((event: { data: unknown }) => void) | null = null;
-  onclose: ((event: { code: number; reason: string }) => void) | null = null;
-  constructor(url: string) {
-    this.url = url;
-    FakeWebSocket.instances.push(this);
-  }
-  send(data: string) {
-    this.sent.push(data);
-  }
-  close() {
-    this.readyState = 3;
-    this.onclose?.({ code: 1000, reason: "" });
-  }
-  /** Test helper: the handshake completes. */
-  open() {
-    this.readyState = 1;
-    this.onopen?.();
-  }
-  /** Test helper: the daemon sends a frame (or arbitrary noise). */
-  serverSends(frame: FakeFrame | string) {
-    this.onmessage?.({ data: typeof frame === "string" ? frame : JSON.stringify(frame) });
-  }
-  /** Test helper: the connection drops unexpectedly. */
-  drop() {
-    this.readyState = 3;
-    this.onclose?.({ code: 1006, reason: "" });
-  }
-  get lastFrame(): FakeFrame {
-    const raw = this.sent[this.sent.length - 1];
-    return JSON.parse(raw ?? "{}") as FakeFrame;
-  }
-}
 
 const Impl = FakeWebSocket as unknown as WebSocketConstructor;
 

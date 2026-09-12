@@ -11,7 +11,8 @@ import {
   type SessionView,
 } from "@pideck/shared";
 import { serve, type DaemonServer } from "./server.js";
-import { makeDeps, FakeTmux, sessionRecord } from "./testing.js";
+import { makeDeps, sessionRecord } from "./testing.js";
+import { FakeTmux } from "../sessions/testing/fake-tmux.js";
 
 let daemons: DaemonServer[] = [];
 let dirs: string[] = [];
@@ -226,7 +227,7 @@ describe("REST contract", () => {
     const { base, deps, tmux } = await startDaemon();
     const worker = sessionRecord();
     deps.registry.add(worker);
-    tmux.alive.add(worker.tmuxSession);
+    tmux.createSession(worker.tmuxSession);
 
     const sent = await call(base, "POST", `/api/sessions/${worker.id}/send`, { text: "hello" });
     expect(validate(restEndpoints["sessionSend"].response, sent.body)).toEqual({ ok: true });
@@ -246,7 +247,7 @@ describe("REST contract", () => {
     const { base, deps, tmux } = await startDaemon();
     const worker = sessionRecord();
     deps.registry.add(worker);
-    tmux.alive.add(worker.tmuxSession);
+    tmux.createSession(worker.tmuxSession);
 
     const res = await call(base, "POST", `/api/sessions/${worker.id}/terminate`);
     expect(validate(restEndpoints["sessionTerminate"].response, res.body)).toEqual({ ok: true });

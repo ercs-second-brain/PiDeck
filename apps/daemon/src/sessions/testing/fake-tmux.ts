@@ -10,6 +10,10 @@
  * - `resize-window -t <target>: -x -y` records the pane size.
  * - `capture-pane -p -e -N -t <target> -S -<n>` returns the canned text set
  *   with {@link FakeTmux.setCapturePane}.
+ *
+ * The high-level daemon API (create/isAlive/sendLine/kill/capturePane) is
+ * overridden on top of the command simulation so API-level tests can drive
+ * and assert it directly (`sent`, `killed`).
  */
 
 import { appendFileSync } from "node:fs";
@@ -24,6 +28,10 @@ export class FakeTmux extends Tmux {
   readonly sessions = new Map<string, FakeTmuxPane>();
   /** Every invocation, in order. */
   readonly invocations: string[][] = [];
+  /** Lines delivered via the high-level `sendLine`, in order. */
+  readonly sent: { session: string; text: string }[] = [];
+  /** Sessions killed through the high-level `kill`, in order. */
+  readonly killed: string[] = [];
   private readonly pipes = new Map<string, string>();
   private readonly inputs = new Map<string, Buffer[]>();
   private readonly captures = new Map<string, string>();
@@ -47,6 +55,30 @@ export class FakeTmux extends Tmux {
 
   override isAlive(name: string): Promise<boolean> {
     return Promise.resolve(this.sessions.has(name));
+  }
+
+  override listSessions(): Promise<string[]> {
+    return Promise.resolve([...this.sessions.keys()]);
+  }
+
+  override create(name: string): Promise<void> {
+    this.createSession(name);
+    return Promise.resolve();
+  }
+
+  override sendLine(session: string, text: string): Promise<void> {
+    this.sent.push({ session, text });
+    return Promise.resolve();
+  }
+
+  override kill(name: string): Promise<void> {
+    this.killed.push(name);
+    this.killSession(name);
+    return Promise.resolve();
+  }
+
+  override capturePane(name: string): Promise<string> {
+    return Promise.resolve(this.captures.get(name) ?? "pane scrollback");
   }
 
   createSession(name: string, pane: FakeTmuxPane = { cols: 80, rows: 24 }): void {

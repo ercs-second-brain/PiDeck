@@ -8,34 +8,8 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FakeWebSocket } from "../test-support/websocket";
 import { api, ApiError, watchSessions, type WebSocketFactory } from "./api";
-
-class FakeWebSocket {
-  static instances: FakeWebSocket[] = [];
-  static reset() {
-    FakeWebSocket.instances = [];
-  }
-
-  url: string;
-  onopen: (() => void) | null = null;
-  onmessage: ((event: { data: unknown }) => void) | null = null;
-  onclose: (() => void) | null = null;
-  closed = false;
-
-  constructor(url: string) {
-    this.url = url;
-    FakeWebSocket.instances.push(this);
-  }
-
-  close() {
-    this.closed = true;
-    this.onclose?.();
-  }
-
-  emit(message: unknown) {
-    this.onmessage?.({ data: typeof message === "string" ? message : JSON.stringify(message) });
-  }
-}
 
 const Impl = FakeWebSocket as unknown as WebSocketFactory;
 
@@ -93,7 +67,7 @@ describe("watchSessions", () => {
     const ws = FakeWebSocket.instances[0];
     expect(ws?.url).toBe("ws://daemon/ws");
     ws?.onopen?.();
-    ws?.emit({
+    ws?.serverSends({
       type: "sessions.changed",
       sessions: [
         {
@@ -121,8 +95,8 @@ describe("watchSessions", () => {
       ],
     });
     // terminal.data frames and junk are ignored; sessions.changed dispatched.
-    ws?.emit({ type: "terminal.data", sessionId: "s1", data: "hi" });
-    ws?.emit("not json");
+    ws?.serverSends({ type: "terminal.data", sessionId: "s1", data: "hi" });
+    ws?.serverSends("not json");
     expect(received).toEqual([[42]]);
     stop();
   });
@@ -133,12 +107,12 @@ describe("watchSessions", () => {
       const stop = watchSessions(() => {}, "ws://daemon/ws", Impl);
       const first = FakeWebSocket.instances[0];
       first?.onopen?.();
-      first?.onclose?.();
+      first?.drop();
       vi.advanceTimersByTime(1500);
       expect(FakeWebSocket.instances.length).toBeGreaterThan(1);
       stop();
       const before = FakeWebSocket.instances.length;
-      FakeWebSocket.instances[before - 1]?.onclose?.();
+      FakeWebSocket.instances[before - 1]?.drop();
       vi.advanceTimersByTime(30_000);
       expect(FakeWebSocket.instances.length).toBe(before);
     } finally {

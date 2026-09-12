@@ -9,6 +9,7 @@
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeWebSocket } from "../test-support/websocket";
 import { makeView } from "./test-support";
 
 vi.mock("../lib/api", () => ({
@@ -52,19 +53,6 @@ class FakeWebglAddon {
 }
 class FakeCanvasAddon {}
 class FakeUnicode11Addon {}
-
-class FakeWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  readyState = 0;
-  constructor(public url: string) {}
-  send() {}
-  close() {
-    this.readyState = 3;
-  }
-}
 
 const { SessionPane } = await import("./SessionPane");
 
