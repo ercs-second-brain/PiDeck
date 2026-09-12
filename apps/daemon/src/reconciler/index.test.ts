@@ -36,6 +36,12 @@ interface FakeGhState {
   prs: GhPr[];
   comments: GhComment[];
   throwOnRead?: boolean;
+  /** Logins the primary account invited as collaborators. */
+  invites?: string[];
+  /** Whether the review account can read the repo. */
+  reviewCanRead?: boolean;
+  /** Whether accepting the invitation fails. */
+  failAccept?: boolean;
 }
 
 function rawIssue(overrides: Record<string, unknown> = {}) {
@@ -86,6 +92,9 @@ function fakeGh(state: FakeGhState): GhClientLike {
     prReviews: async (): Promise<GhReview[]> => [],
     prReviewComments: async () => [],
     authStatus: async () => ProbeSchema.parse({ ok: true, detail: "logged in as acme-worker" }),
+    inviteCollaborator: async (login) => {
+      state.invites?.push(login);
+    },
   };
 }
 
@@ -239,6 +248,55 @@ describe("startReconciler", () => {
     handle = startReconciler(deps);
     await handle.tick();
     expect(logs.filter((l) => l.includes("the review leg is off"))).toHaveLength(1);
+  });
+
+  it("invites the review account and accepts the invitation automatically", async () => {
+    settings.put({ reviewAccount: { username: "acme-review", token: "tok" } });
+    ghStates.set("my-api", { issues: [rawIssue()], prs: [mappedPr()], comments: [], invites: [] });
+    const state = ghStates.get("my-api")!;
+    deps = {
+      ...deps,
+      ghReview: () => ({
+        hasReadAccess: async () => state.reviewCanRead === true,
+        acceptInvitations: async () => {
+          if (state.failAccept) throw new Error("accept failed");
+          state.reviewCanRead = true;
+          return 1;
+        },
+      }),
+    };
+    handle = startReconciler(deps);
+
+    // First tick fixes access; the second sees the PR head again (green) and
+    // spawns the reviewer.
+    await handle.tick();
+    await handle.tick();
+
+    expect(state.invites).toEqual(["acme-review"]);
+    expect(registry.list({ persona: "reviewer", projectId: "my-api" })).toHaveLength(1);
+    expect(handle!.factsFor("my-api")?.reviewAccess).toBeUndefined();
+  });
+
+  it("no reviewer and one log line per tick while access cannot be fixed", async () => {
+    settings.put({ reviewAccount: { username: "acme-review", token: "tok" } });
+    ghStates.set("my-api", { issues: [rawIssue()], prs: [mappedPr()], comments: [], failAccept: true });
+    deps = {
+      ...deps,
+      ghReview: () => ({
+        hasReadAccess: async () => false,
+        acceptInvitations: async () => {
+          throw new Error("no invitation");
+        },
+      }),
+    };
+    handle = startReconciler(deps);
+
+    await handle.tick();
+    await handle.tick();
+
+    expect(logs.filter((l) => l.includes("review account has no access to acme/my-api"))).toHaveLength(2);
+    expect(registry.list({ persona: "reviewer" })).toHaveLength(0);
+    expect(handle!.factsFor("my-api")?.reviewAccess).toContain("review account has no access to acme/my-api");
   });
 
   it("wiping the registry watermarks costs at most one duplicate delivery", async () => {

@@ -206,6 +206,13 @@ describe("deriveActions — the SPEC §4 table", () => {
     expect(actions.filter((a) => a.kind === "spawn-reviewer")).toHaveLength(0);
   });
 
+  it("no reviewer while the review account cannot read the repo", () => {
+    const actions = derive(
+      facts({ prs: [pr()], reviewAccess: "review account has no access to acme/my-api" }),
+    );
+    expect(actions.filter((a) => a.kind === "spawn-reviewer")).toHaveLength(0);
+  });
+
   it("merged or closed PR → the reviewer is archived", () => {
     const reviewer = session("reviewer", { prNumber: 99 });
     const actions = derive(facts(), [reviewer]);

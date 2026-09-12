@@ -194,6 +194,35 @@ export class GhClient {
     await this.run(["pr", "merge", String(prNumber), "--repo", this.repo, "--squash", "--delete-branch"]);
   }
 
+  /** True when this client's account can read the repo (exit 0 on the repo endpoint). */
+  async hasReadAccess(): Promise<boolean> {
+    try {
+      await this.run(["api", `repos/${this.repo}`]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Invites `login` as a collaborator with push, run as the primary account. */
+  async inviteCollaborator(login: string): Promise<void> {
+    await this.run([
+      "api", "--method", "PUT", `repos/${this.repo}/collaborators/${login}`, "-f", "permission=push",
+    ]);
+  }
+
+  /** Accepts this account's pending repository invitations; returns how many. */
+  async acceptInvitations(): Promise<number> {
+    const raw = await this.runJson(
+      z.array(z.object({ id: z.number() })),
+      ["api", "/user/repository_invitations"],
+    );
+    for (const invitation of raw) {
+      await this.run(["api", "--method", "PATCH", `/user/repository_invitations/${invitation.id}`]);
+    }
+    return raw.length;
+  }
+
   async requestReview(prNumber: number, login: string): Promise<void> {
     await this.run(["pr", "edit", String(prNumber), "--repo", this.repo, "--add-reviewer", login]);
   }

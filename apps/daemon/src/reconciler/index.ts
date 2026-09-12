@@ -9,7 +9,9 @@
  */
 
 import type { Project } from "@pideck/shared";
+import { GhClient } from "../github/client.js";
 import type { GhComment, GhIssue, GhPr, GhReview } from "../github/schemas.js";
+import { ensureReviewAccess, type ReviewAccessGh } from "../github/reviewAccess.js";
 import type { Probe } from "@pideck/shared";
 import type { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import type { ProjectStore } from "../store/projectStore.js";
@@ -50,6 +52,8 @@ export interface GhClientLike {
   prReviews(prNumber: number): Promise<GhReview[]>;
   prReviewComments(prNumber: number, sinceId?: number): Promise<GhComment[]>;
   authStatus(): Promise<Probe>;
+  /** Invites a collaborator with push, run as the primary account. */
+  inviteCollaborator(login: string): Promise<void>;
 }
 
 /**
@@ -58,8 +62,11 @@ export interface GhClientLike {
  * GitHub client factory.
  */
 export interface ReconcilerDeps {
-  /** Builds the GitHub client for one `owner/repo`. */
+  /** Builds the GitHub client for one `owner/repo` (the primary account). */
   gh: (repo: string) => GhClientLike;
+  /** Builds the review-account client for one `owner/repo`; defaults to a
+   * real client carrying the configured review token. */
+  ghReview?: (repo: string) => Pick<ReviewAccessGh, "hasReadAccess" | "acceptInvitations">;
   projects: ProjectStore;
   settings: GlobalSettingsStore;
   registry: SessionRegistry;
@@ -144,6 +151,8 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     const registry = deps.registry;
     const reviewToken = deps.settings.reviewToken();
     const reviewLogin = reviewToken?.username ?? null;
+    const reviewGhFor =
+      deps.ghReview ?? ((repo: string) => new GhClient({ repo, token: reviewToken?.token }));
     if (reviewToken === null) {
       log("reconciler: no review account — the review leg is off");
     }
@@ -163,8 +172,19 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
 
     for (const project of deps.projects.list()) {
       try {
+        const repo = `${project.owner}/${project.repo}`;
+        const access = await ensureReviewAccess({
+          primary: deps.gh(repo),
+          review: reviewGhFor(repo),
+          reviewLogin,
+          repo,
+        });
+        if (!access.ok) {
+          log(`reconciler: ${access.detail} — no reviewer will run`);
+        }
         const facts = await readerFor(project).read();
-        factsByProject.set(project.id, facts);
+        const projectFacts = access.ok ? facts : { ...facts, reviewAccess: access.detail };
+        factsByProject.set(project.id, projectFacts);
         const live = registry.list({ projectId: project.id, archived: false });
         const settings = deps.projects.settings(project.id);
         const context = new Map(
@@ -173,7 +193,7 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
         const deriveInput = {
           project,
           settings,
-          facts,
+          facts: projectFacts,
           live,
           context,
           reviewLogin,

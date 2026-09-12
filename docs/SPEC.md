@@ -148,6 +148,11 @@ state (session registry + tmux) is closed.
 Workers and reviewers are **replaced** (fresh session, same issue/PR) when their pane dies, the
 user deletes them, or their context usage exceeds the configured percentage.
 
+The daemon guarantees the review account can read every registered repo: on registration and on
+every poll it checks access as the review account, invites it with `push` as a collaborator (as
+the primary account) and accepts the pending invitation; while access is missing, `Status`/project
+view shows "review account has no access to <repo>" and no reviewer is spawned.
+
 ### Per-session memory (persisted in the session registry)
 
 `persona`, `projectId`, `issueNumber`, `prNumber`, `tmuxSession`, `spawnedAt`, `model`, and

@@ -141,7 +141,10 @@ export function deriveActions(input: DeriveInput): Action[] {
   for (const pr of facts.prs) {
     const reviewer = input.live.find((s) => s.persona === "reviewer" && s.prNumber === pr.number);
     const reviewable = pr.green && pr.reviewDecision !== "APPROVED" && pr.mergeable !== "CONFLICTING";
-    if (reviewable && reviewer === undefined && input.reviewLogin !== null) {
+    // A review account with no read access would 404 on every call — no
+    // reviewer until the daemon's access check turns the leg back on.
+    const reviewLegOn = input.reviewLogin !== null && input.facts.reviewAccess === undefined;
+    if (reviewable && reviewer === undefined && reviewLegOn) {
       actions.push({
         kind: "spawn-reviewer",
         pr,
