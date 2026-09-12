@@ -83,11 +83,8 @@ function fakeExec(responses: (call: Call, index: number) => GhExecResult): { cli
 }
 
 describe("GhClient", () => {
-  it("openIssues maps assignees, labels and blocked-by state", async () => {
-    const { client, calls } = fakeExec((call) => {
-      if (call.args.includes("issue")) return ok(ISSUE_LIST_JSON);
-      return ok(BLOCKED_BY_JSON);
-    });
+  it("openIssues maps assignees and labels", async () => {
+    const { client, calls } = fakeExec(() => ok(ISSUE_LIST_JSON));
     const issues = await client.openIssues();
     expect(issues).toEqual([
       {
@@ -96,10 +93,6 @@ describe("GhClient", () => {
         url: "https://github.com/o/r/issues/517",
         assignees: ["worker-bot"],
         labels: ["phase-1"],
-        blockedBy: [
-          { number: 514, state: "closed" },
-          { number: 516, state: "open" },
-        ],
       },
       {
         number: 520,
@@ -107,13 +100,18 @@ describe("GhClient", () => {
         url: "https://github.com/o/r/issues/520",
         assignees: [],
         labels: [],
-        blockedBy: [
-          { number: 514, state: "closed" },
-          { number: 516, state: "open" },
-        ],
       },
     ]);
-    expect(calls[1]?.args).toEqual(["api", "repos/o/r/issues/517/dependencies/blocked_by"]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("blockedBy fetches blocker number and state for one issue", async () => {
+    const { client, calls } = fakeExec(() => ok(BLOCKED_BY_JSON));
+    expect(await client.blockedBy(517)).toEqual([
+      { number: 514, state: "closed" },
+      { number: 516, state: "open" },
+    ]);
+    expect(calls[0]?.args).toEqual(["api", "repos/o/r/issues/517/dependencies/blocked_by"]);
   });
 
   it("issueComments returns comments after the watermark, ascending by id", async () => {
@@ -234,12 +232,12 @@ describe("GhClient", () => {
     ]);
   });
 
-  it("addPrComment posts via the API and returns the comment id", async () => {
+  it("addPrComment posts a plain comment via the issue endpoint and returns its id", async () => {
     const { client, calls } = fakeExec(() => ok(JSON.stringify({ id: 77 })));
     const id = await client.addPrComment(537, "pushed fixes");
     expect(id).toBe(77);
     expect(calls[0]?.args).toEqual([
-      "api", "--method", "POST", "repos/o/r/pulls/537/comments", "-f", "body=pushed fixes",
+      "api", "--method", "POST", "repos/o/r/issues/537/comments", "-f", "body=pushed fixes",
     ]);
   });
 

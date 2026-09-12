@@ -86,19 +86,13 @@ export class GhClient {
       ["issue", "list", "--repo", this.repo, "--state", "open", "--limit", LIST_LIMIT,
         "--json", "number,title,url,assignees,labels"],
     );
-    const issues: GhIssue[] = [];
-    for (const issue of raw) {
-      const blockedBy = await this.blockedBy(issue.number);
-      issues.push({
-        number: issue.number,
-        title: issue.title,
-        url: issue.url,
-        assignees: issue.assignees.map((u) => u.login),
-        labels: issue.labels.map((l) => l.name),
-        blockedBy,
-      });
-    }
-    return issues;
+    return raw.map((issue) => ({
+      number: issue.number,
+      title: issue.title,
+      url: issue.url,
+      assignees: issue.assignees.map((u) => u.login),
+      labels: issue.labels.map((l) => l.name),
+    }));
   }
 
   async blockedBy(issueNumber: number): Promise<{ number: number; state: "open" | "closed" }[]> {
@@ -191,7 +185,7 @@ export class GhClient {
   async addPrComment(prNumber: number, body: string): Promise<number> {
     const raw = await this.runJson(
       GhCommentIdSchema,
-      ["api", "--method", "POST", `repos/${this.repo}/pulls/${prNumber}/comments`, "-f", `body=${body}`],
+      ["api", "--method", "POST", `repos/${this.repo}/issues/${prNumber}/comments`, "-f", `body=${body}`],
     );
     return raw.id;
   }

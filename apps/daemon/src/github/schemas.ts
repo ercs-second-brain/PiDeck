@@ -23,7 +23,6 @@ export type GhIssue = {
   url: string;
   assignees: string[];
   labels: string[];
-  blockedBy: GhBlocker[];
 };
 
 
@@ -107,6 +106,10 @@ function checkOk(check: GhCheck): boolean {
 }
 
 export function ciRollup(checks: GhCheck[]): { ciStatus: CiStatus; failingChecks: string[] } {
+  // An empty rollup maps to "ok": correct for repos with no CI, but right after a push
+  // GitHub can briefly report no checks. Callers guarding on "green" must confirm the
+  // head SHA is stable across polls, or that the rollup is non-empty for repos with
+  // workflows, before treating the PR as green.
   const failing = checks.filter((c) => checkDone(c) && !checkOk(c)).map((c) => c.name ?? "unknown check");
   const pending = checks.some((c) => !checkDone(c));
   if (failing.length > 0) return { ciStatus: "failed", failingChecks: failing };

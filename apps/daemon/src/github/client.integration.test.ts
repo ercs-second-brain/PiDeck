@@ -20,7 +20,7 @@ d("GhClient integration (opt-in: PIDECK_GH_INTEGRATION=1)", () => {
   );
 
   it(
-    "lists open issues with assignees, labels and blocked-by state",
+    "lists open issues with assignees and labels",
     async () => {
       const issues = await client.openIssues();
       expect(Array.isArray(issues)).toBe(true);
@@ -29,12 +29,21 @@ d("GhClient integration (opt-in: PIDECK_GH_INTEGRATION=1)", () => {
         expect(typeof issue.title).toBe("string");
         expect(Array.isArray(issue.assignees)).toBe(true);
         expect(Array.isArray(issue.labels)).toBe(true);
-        for (const blocker of issue.blockedBy) {
-          expect(["open", "closed"]).toContain(blocker.state);
-        }
       }
     },
     120_000,
+  );
+
+  it(
+    "reads blocked-by state for a known issue with relations",
+    async () => {
+      const blockers = await client.blockedBy(517);
+      for (const blocker of blockers) {
+        expect(blocker.number).toBeGreaterThan(0);
+        expect(["open", "closed"]).toContain(blocker.state);
+      }
+    },
+    60_000,
   );
 
   it(
