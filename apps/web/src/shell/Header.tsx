@@ -1,4 +1,5 @@
 import "./header.css";
+import { clock } from "./relativeTime";
 import { UpdateBanner } from "../update/UpdateBanner";
 
 /**
@@ -6,8 +7,9 @@ import { UpdateBanner } from "../update/UpdateBanner";
  * views) plus the current context on the left; "+" (onboarding) and the
  * settings gear on the right.
  */
-export function Header({ context, detail, collapsed, onToggle, onNavigate }: {
+export function Header({ context, throttledUntil, detail, collapsed, onToggle, onNavigate }: {
   context: string | null;
+  throttledUntil: string | null;
   detail: boolean;
   collapsed: boolean;
   onToggle: () => void;
@@ -37,6 +39,11 @@ export function Header({ context, detail, collapsed, onToggle, onNavigate }: {
         )}
       </div>
       <div className="header__actions">
+        {throttledUntil !== null && (
+          <span className="header__pill" title="GitHub rate limit — the reconciler is backing off">
+            GitHub throttled until {clock(throttledUntil)}
+          </span>
+        )}
         <UpdateBanner />
         <button type="button" className="header__icon" aria-label="Add project" onClick={() => onNavigate("/onboarding")}>
           +

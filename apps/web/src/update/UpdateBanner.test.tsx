@@ -23,6 +23,7 @@ const statusOld: Status = {
   pollIntervalSeconds: 30,
   piReady: true,
   ghReady: true,
+  github: { throttledUntil: null, lastError: null },
 };
 const statusNew: Status = { ...statusOld, version: "0.2.0" };
 

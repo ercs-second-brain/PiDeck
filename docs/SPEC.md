@@ -153,6 +153,19 @@ every poll it checks access as the review account, invites it with `push` as a c
 the primary account) and accepts the pending invitation; while access is missing, `Status`/project
 view shows "review account has no access to <repo>" and no reviewer is spawned.
 
+### Failure and throttling
+
+GitHub failure is expected, not exceptional. `gh` responses that signal a rate limit — HTTP 403
+with the rate-limit message or `X-RateLimit-Remaining: 0`, the secondary-rate-limit wording, or
+HTTP 429 — throw a typed `GhRateLimited { resetAt }`. The reconciler keeps per-project backoff
+state: a failed tick retries on a 30 s → 1 m → 2 m → 5 m ladder (reset by the first success), a
+rate-limited project waits until `resetAt`, and other projects are never affected. While a
+throttle is active, `Status.github.throttledUntil` says so — the header shows a quiet
+"GitHub throttled until hh:mm" pill and `pideck status` prints it — and the last per-project
+tick error is surfaced as `Status.github.lastError`. A `blockedBy` 404/403 degrades to the last
+known blocker count for that issue with one log line, instead of failing the whole project
+tick; and the `/api/status` probes (`pi`, `gh`) are cached for 30 s.
+
 ### Per-session memory (persisted in the session registry)
 
 `persona`, `projectId`, `issueNumber`, `prNumber`, `tmuxSession`, `spawnedAt`, `model`, and

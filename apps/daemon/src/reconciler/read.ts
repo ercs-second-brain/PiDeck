@@ -10,6 +10,7 @@
 
 import type { Probe } from "@pideck/shared";
 import type { GhClient } from "../github/client.js";
+import { GhError } from "../github/error.js";
 import type { CiStatus, GhComment, GhReview } from "../github/schemas.js";
 
 /** The slice of GhClient the reconciler reads through. */
@@ -68,10 +69,13 @@ export function parseIssueBranch(branch: string): number | null {
 export class ProjectReader {
   readonly #gh: GhRead;
   readonly #heads = new Map<number, string>();
+  readonly #openBlockers = new Map<number, number>();
+  readonly #log: ((line: string) => void) | null;
   #login: Promise<string | null> | null = null;
 
-  constructor(gh: GhRead) {
+  constructor(gh: GhRead, log?: (line: string) => void) {
     this.#gh = gh;
+    this.#log = log ?? null;
   }
 
   async read(): Promise<ProjectFacts> {
@@ -88,12 +92,12 @@ export class ProjectReader {
           return { ...issue, openBlockers: 0, comments: [] };
         }
         const [blockers, comments] = await Promise.all([
-          this.#gh.blockedBy(issue.number),
+          this.#blockers(issue.number),
           this.#gh.issueComments(issue.number),
         ]);
         return {
           ...issue,
-          openBlockers: blockers.filter((b) => b.state === "open").length,
+          openBlockers: blockers,
           comments,
         };
       }),
@@ -128,5 +132,25 @@ export class ProjectReader {
       .then((probe) => probe.detail.match(LOGIN_DETAIL)?.[1] ?? null)
       .catch(() => null);
     return this.#login;
+  }
+
+  /**
+   * The per-issue dependencies endpoint answers 404/403 for some issues; that
+   * is not a repo-wide failure, so it degrades to the last known blocker count
+   * (never to zero — an unknown blocker count must not unblock a worker).
+   */
+  async #blockers(issueNumber: number): Promise<number> {
+    try {
+      const blockers = await this.#gh.blockedBy(issueNumber);
+      const open = blockers.filter((b) => b.state === "open").length;
+      this.#openBlockers.set(issueNumber, open);
+      return open;
+    } catch (err) {
+      if (!(err instanceof GhError) || !/HTTP 40[34]/.test(err.message)) throw err;
+      this.#log?.(
+        `reconciler: blockedBy #${issueNumber} unavailable (${err.message}) — keeping the last known blockers`,
+      );
+      return this.#openBlockers.get(issueNumber) ?? 0;
+    }
   }
 }

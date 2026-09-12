@@ -52,6 +52,11 @@ async function dispatch(argv: string[], io: CliIo): Promise<number> {
         `poll: every ${s.pollIntervalSeconds}s`,
         `pi: ${s.piReady ? "ready" : "not ready"}`,
         `gh: ${s.ghReady ? "ready" : "not ready"}`,
+        ...(s.github.throttledUntil !== null
+          ? [`github: throttled until ${clock(s.github.throttledUntil)}`]
+          : []),
+        ...(s.github.lastError !== null ? [`github: last error: ${s.github.lastError}`] : []),
+        ...(s.github.throttledUntil === null && s.github.lastError === null ? ["github: ok"] : []),
       ]);
       return 0;
     }
@@ -239,6 +244,13 @@ async function followTrace(io: CliIo, id: string, seen: number): Promise<never> 
 function flag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+/** Local wall-clock hh:mm for an ISO timestamp. */
+function clock(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
 }
 
 function enc(value: string): string {

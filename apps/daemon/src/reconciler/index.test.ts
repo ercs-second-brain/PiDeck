@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectSchema, ProjectSettingsSchema, ProbeSchema } from "@pideck/shared";
+import { fakeCommandRunner } from "../api/testing.js";
 import { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import { ProjectStore } from "../store/projectStore.js";
 import { SessionRegistry } from "../sessions/registry.js";
@@ -11,6 +12,7 @@ import { PromptOverrides } from "../prompts/overrides.js";
 import { ciRollup, type GhComment, type GhPr, type GhReview } from "../github/schemas.js";
 import { startReconciler, type GhClientLike, type ProjectFacts, type ReconcilerDeps } from "./index.js";
 import { Trace } from "./trace.js";
+import { GhRateLimited } from "../github/error.js";
 
 const project = ProjectSchema.parse({
   id: "my-api",
@@ -37,6 +39,8 @@ interface FakeGhState {
   prs: GhPr[];
   comments: GhComment[];
   throwOnRead?: boolean;
+  /** OpenIssues answers with a rate limit that resets in one minute. */
+  rateLimited?: boolean;
   /** Logins the primary account invited as collaborators. */
   invites?: string[];
   /** Whether the review account can read the repo. */
@@ -81,6 +85,9 @@ function mappedPr(overrides: Record<string, unknown> = {}): GhPr {
 function fakeGh(state: FakeGhState): GhClientLike {
   return {
     openIssues: async () => {
+      if (state.rateLimited) {
+        throw new GhRateLimited(new Date(Date.now() + 60_000), "gh: API rate limit exceeded\n");
+      }
       if (state.throwOnRead) throw new Error("gh is down");
       return state.issues;
     },
@@ -141,7 +148,12 @@ describe("startReconciler", () => {
   let ghStates: Map<string, FakeGhState>;
   let logs: string[];
   let deps: ReconcilerDeps;
-  let handle: { stop(): void; tick(): Promise<void>; factsFor(projectId: string): ProjectFacts | null } | null = null;
+  let handle: {
+  stop(): void;
+  tick(): Promise<void>;
+  factsFor(projectId: string): ProjectFacts | null;
+  githubStatus(): { throttledUntil: string | null; lastError: string | null };
+} | null = null;
 
   beforeEach(() => {
     stateDir = mkdtempSync(join(tmpdir(), "pideck-reconciler-"));
@@ -351,6 +363,117 @@ describe("startReconciler", () => {
     lines = sentLines(tmuxCalls);
     expect(lines.filter((l) => l.includes("CI failed"))).toHaveLength(0);
     expect(lines.filter((l) => l.includes("New comment"))).toHaveLength(0);
+  });
+
+  it("backs off a failing project on the retry ladder and never blocks the others", async () => {
+    vi.useFakeTimers();
+    try {
+      ghStates.set("my-api", { issues: [rawIssue()], prs: [], comments: [] });
+      ghStates.set("my-web", { issues: [], prs: [], comments: [], throwOnRead: true });
+      deps = { ...deps, intervalMs: 500 };
+      handle = startReconciler(deps);
+
+      await vi.advanceTimersByTimeAsync(600);
+      expect(errorsOnMyWeb()).toBe(1);
+      expect(registry.list({ projectId: "my-api", persona: "worker" })).toHaveLength(1);
+
+      // Still inside the 30 s window: skipped, not re-failed.
+      await vi.advanceTimersByTimeAsync(28_000);
+      expect(errorsOnMyWeb()).toBe(errorsOnMyWeb());
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(errorsOnMyWeb()).toBe(2);
+
+      // Second failure → 1 m, third → 2 m.
+      await vi.advanceTimersByTimeAsync(58_000);
+      expect(errorsOnMyWeb()).toBe(2);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(errorsOnMyWeb()).toBe(3);
+      await vi.advanceTimersByTimeAsync(118_000);
+      expect(errorsOnMyWeb()).toBe(3);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(errorsOnMyWeb()).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    function errorsOnMyWeb(): number {
+      return logs.filter((l) => l.includes("project My Web: gh is down")).length;
+    }
+  });
+
+  it("a rate-limited project waits until resetAt and recovers on success", async () => {
+    vi.useFakeTimers();
+    try {
+      ghStates.set("my-api", { issues: [], prs: [], comments: [], rateLimited: true });
+      ghStates.set("my-web", { issues: [rawIssue()], prs: [], comments: [] });
+      deps = { ...deps, intervalMs: 500 };
+      handle = startReconciler(deps);
+
+      await vi.advanceTimersByTimeAsync(600);
+      expect(handle.githubStatus().lastError).toContain("rate limited");
+      const throttledUntil = handle.githubStatus().throttledUntil;
+      expect(throttledUntil).not.toBeNull();
+      expect(registry.list({ projectId: "my-web", persona: "worker" })).toHaveLength(1);
+      expect(registry.list({ projectId: "my-api", persona: "worker" })).toHaveLength(0);
+
+      // Past the 30 s ladder mark but before the reset: still waiting.
+      await vi.advanceTimersByTimeAsync(30_000);
+      const attempts = logs.filter((l) => l.includes("project My API")).length;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(logs.filter((l) => l.includes("project My API"))).toHaveLength(attempts);
+      expect(handle.githubStatus().throttledUntil).toBe(throttledUntil);
+
+      // The limit lifts; the next attempt succeeds and clears the status.
+      Object.assign(ghStates.get("my-api")!, { rateLimited: undefined, issues: [rawIssue()] });
+      await vi.advanceTimersByTimeAsync(30_500);
+      expect(registry.list({ projectId: "my-api", persona: "worker" })).toHaveLength(1);
+      expect(handle.githubStatus()).toEqual({ throttledUntil: null, lastError: null });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("prunes notified heads with their project, so a re-added project re-notifies", async () => {
+    settings.put({ reviewAccount: { username: "acme-review", token: "tok" } });
+    ghStates.set("my-api", {
+      issues: [rawIssue()],
+      prs: [mappedPr({ reviewDecision: "APPROVED" })],
+      comments: [],
+      invites: [],
+    });
+    // The store clones into its own slug, so the test project is registered
+    // through the store (not the seed file) to control its id.
+    const store = new ProjectStore(stateDir, fakeCommandRunner, async () => undefined);
+    store.remove("my-api");
+    store.remove("my-web");
+    const added = await store.add({ mode: "clone", repoUrl: "https://github.com/acme/my-api" });
+    expect(added.id).toBe("acme-my-api");
+    deps = {
+      ...deps,
+      ghReview: () => ({ hasReadAccess: async () => true, acceptInvitations: async () => 0 }),
+      projects: store,
+    };
+    handle = startReconciler(deps);
+
+    await handle.tick();
+    await handle.tick();
+    const approvalsBefore = sentLines(tmuxCalls).filter((l) => l.includes("approved and green"));
+    expect(approvalsBefore).toHaveLength(1);
+
+    deps.projects.remove("acme-my-api");
+    await handle.tick();
+    const readded = await deps.projects.add({
+      mode: "clone",
+      repoUrl: "https://github.com/acme/my-api",
+    });
+    expect(readded.id).toBe("acme-my-api");
+
+    await handle.tick();
+    await handle.tick();
+    // The notified-head memory went away with the project, so the notice may
+    // repeat once — and no more.
+    const approvals = sentLines(tmuxCalls).filter((l) => l.includes("approved and green"));
+    expect(approvals).toHaveLength(2);
   });
 });
 

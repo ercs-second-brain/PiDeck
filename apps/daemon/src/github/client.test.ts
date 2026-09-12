@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GhClient, type GhExec, type GhExecResult } from "./client.js";
-import { GhError } from "./error.js";
+import { GhError, GhRateLimited } from "./error.js";
 
 type Call = { args: string[]; env: NodeJS.ProcessEnv };
 
@@ -201,6 +201,53 @@ describe("GhClient", () => {
     expect(ghErr.exitCode).toBe(1);
   });
 
+  it("throws GhRateLimited with the parsed reset time on a primary rate limit", async () => {
+    const { client } = fakeExec(() => ({
+      stdout: "",
+      stderr: "gh: API rate limit exceeded for user 'o'. Please try again at 2025-06-01T10:05:00Z. [rate reset in 4m59s]\n",
+      exitCode: 1,
+    }));
+    const err = await client.openIssues().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GhRateLimited);
+    expect((err as GhRateLimited).resetAt?.getTime()).toBe(Date.parse("2025-06-01T10:05:00Z"));
+  });
+
+  it("throws GhRateLimited without a reset time on a secondary rate limit", async () => {
+    const { client } = fakeExec(() => ({
+      stdout: "",
+      stderr: "gh: You have exceeded a secondary rate limit and have been temporarily blocked. Please wait a couple of minutes before you try again.\n",
+      exitCode: 1,
+    }));
+    const err = await client.issueComments(1).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GhRateLimited);
+    expect((err as GhRateLimited).resetAt).toBeNull();
+  });
+
+  it("throws GhRateLimited on HTTP 429 and on X-RateLimit-Remaining: 0", async () => {
+    const tooMany = fakeExec(() => ({ stdout: "", stderr: "gh: HTTP 429: Too Many Requests\n", exitCode: 1 }));
+    const err = await tooMany.client.openIssues().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GhRateLimited);
+
+    const headerLimit = fakeExec(() => ({
+      stdout: "",
+      stderr: "gh: HTTP 403: Forbidden\nX-RateLimit-Remaining: 0\n",
+      exitCode: 1,
+    }));
+    const err2 = await headerLimit.client.openPrs().catch((e: unknown) => e);
+    expect(err2).toBeInstanceOf(GhRateLimited);
+  });
+
+  it("a plain 403 is a GhError, not a rate limit", async () => {
+    const { client } = fakeExec(() => ({
+      stdout: "",
+      stderr: "gh: HTTP 403: Resource not accessible by personal access token\n",
+      exitCode: 1,
+    }));
+    const err = await client.openIssues().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GhError);
+    expect(err).not.toBeInstanceOf(GhRateLimited);
+  });
+
   it("throws GhError when stdout is not JSON", async () => {
     const { client } = fakeExec(() => ok("nope"));
     const err = await client.issueComments(1).catch((e: unknown) => e);
@@ -279,6 +326,15 @@ describe("GhClient", () => {
   it("hasReadAccess is false on a nonzero exit", async () => {
     const { client } = fakeExec(() => ({ stdout: "", stderr: "gh: Not Found", exitCode: 1 }));
     expect(await client.hasReadAccess()).toBe(false);
+  });
+
+  it("hasReadAccess rethrows a rate limit instead of answering access", async () => {
+    const { client } = fakeExec(() => ({
+      stdout: "",
+      stderr: "gh: HTTP 429: Too Many Requests\n",
+      exitCode: 1,
+    }));
+    await expect(client.hasReadAccess()).rejects.toBeInstanceOf(GhRateLimited);
   });
 
   it("inviteCollaborator PUTs the collaborator with push permission", async () => {

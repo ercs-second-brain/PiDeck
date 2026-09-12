@@ -20,6 +20,8 @@ function useSidebarCollapsed(): [boolean, (value: boolean) => void] {
 export interface ShellProps {
   route: Route;
   context: string | null;
+  /** GitHub throttling reset time; null when not throttled. */
+  throttledUntil: string | null;
   projects: Project[];
   sessions: SessionView[];
   selectedId: string | null;
@@ -37,13 +39,14 @@ export interface ShellProps {
  * two never show together: the sidebar is the home screen, the main pane is
  * a full-screen detail view reached via history (browser back returns).
  */
-export function Shell({ route, context, fill, children, ...sidebarProps }: ShellProps) {
+export function Shell({ route, context, throttledUntil, fill, children, ...sidebarProps }: ShellProps) {
   const [collapsed, setCollapsed] = useSidebarCollapsed();
   const detail = route.name !== "home";
   return (
     <div className={`shell${collapsed ? " shell--collapsed" : ""}${detail ? " shell--detail" : ""}`}>
       <Header
         context={context}
+        throttledUntil={throttledUntil}
         detail={detail}
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}

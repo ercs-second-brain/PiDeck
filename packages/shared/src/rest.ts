@@ -14,12 +14,19 @@ import {
 export const OkSchema = z.object({ ok: z.literal(true) });
 export type Ok = z.infer<typeof OkSchema>;
 
+export const GithubStatusSchema = z.object({
+  throttledUntil: z.string().nullable(),
+  lastError: z.string().nullable(),
+});
+export type GithubStatus = z.infer<typeof GithubStatusSchema>;
+
 export const StatusSchema = z.object({
   version: z.string(),
   stateDir: z.string(),
   pollIntervalSeconds: z.number().int().positive(),
   piReady: z.boolean(),
   ghReady: z.boolean(),
+  github: GithubStatusSchema,
 });
 export type Status = z.infer<typeof StatusSchema>;
 
