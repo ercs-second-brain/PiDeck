@@ -25,11 +25,13 @@ function makeHarness(initial: { cols: number; rows: number } = { cols: 80, rows:
     fit,
     pending: { ...initial },
     fitNow: (() => {}) as () => void,
+    flush: () => {},
     dispose: () => {},
   };
   const controller = createFitController({ terminal, fit, connection, onFitted });
   harness.fitNow = controller;
   harness.dispose = controller.dispose;
+  harness.flush = controller.flush;
   return harness;
 }
 
@@ -108,5 +110,16 @@ describe("createFitController", () => {
     h.dispose();
     vi.advanceTimersByTime(300);
     expect(h.fit).toHaveBeenCalledOnce();
+  });
+
+  it("flush fits immediately, cancelling a pending trailing fit", () => {
+    const h = makeHarness();
+    h.pending = { cols: 120, rows: 35 };
+    h.fitNow(); // schedules the trailing fit
+    h.flush(); // runs before the debounce window elapses
+    expect(h.fit).toHaveBeenCalledTimes(2);
+    expect(h.resize).toHaveBeenCalledWith(120, 35);
+    vi.advanceTimersByTime(300);
+    expect(h.fit).toHaveBeenCalledTimes(2); // the trailing fit was cancelled
   });
 });
