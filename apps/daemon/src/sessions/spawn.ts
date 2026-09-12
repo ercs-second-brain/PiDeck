@@ -13,7 +13,9 @@
  * - orchestrator/global: the clone itself.
  *
  * Worktrees live under `<stateDir>/worktrees/<sessionId>` so project
- * clones stay clean; they are removed on archive.
+ * clones stay clean; they are removed on archive. Each pane runs pi with
+ * `--session-dir <stateDir>/pi-sessions/<sessionId>` so the session's JSONL
+ * lives at a path PiDeck chose (see context.ts); removed on archive too.
  */
 
 import { spawn } from "node:child_process";
@@ -157,8 +159,15 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
   mkdirSync(dirname(promptFile), { recursive: true });
   writeFileSync(promptFile, options.systemPrompt, "utf8");
 
+  // Pin pi's session storage to a path we own: the context probe reads the
+  // JSONL from here without reconstructing pi's internal cwd-slug layout.
+  const piSessionDir = join(deps.stateDir, "pi-sessions", id);
+  mkdirSync(piSessionDir, { recursive: true });
+
   const command = [
     "pi",
+    "--session-dir",
+    piSessionDir,
     "--append-system-prompt",
     promptFile,
     ...(options.model ? ["--model", options.model] : []),
@@ -209,6 +218,7 @@ export async function archiveSession(deps: ArchiveDeps, session: Session): Promi
   }
   removeWorktree(deps.git ?? defaultGitRunner(), deps.cloneDir, worktreeDir(deps.stateDir, session.id));
   rmSync(join(deps.stateDir, "system-prompts", `${session.id}.md`), { force: true });
+  rmSync(join(deps.stateDir, "pi-sessions", session.id), { recursive: true, force: true });
   return deps.registry.archive(session.id);
 }
 

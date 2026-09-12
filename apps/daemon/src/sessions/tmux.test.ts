@@ -120,7 +120,7 @@ describe("Tmux", () => {
     expect(calls[0]).toEqual(["kill-session", "-t", "s1"]);
   });
 
-  it("capturePane captures visible pane plus scrollback with escapes and joins", async () => {
+  it("capturePane captures full scrollback with escapes and joins", async () => {
     const { tmux, calls } = fakeRunner(() => ({ stdout: "line1\nline2\n", stderr: "" }));
     await expect(tmux.capturePane("s1")).resolves.toBe("line1\nline2");
     expect(calls[0]).toEqual([
@@ -131,7 +131,7 @@ describe("Tmux", () => {
       "-t",
       "s1",
       "-S",
-      "-2000",
+      "-",
     ]);
   });
 

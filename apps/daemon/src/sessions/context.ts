@@ -1,15 +1,15 @@
 /**
  * Context-usage probe: reports how full a session's context window is.
  *
- * How pi persists session state (verified against pi 0.85.1 sources and
- * on-disk state):
+ * How pi session state works (verified against pi 0.85.1 sources and on-disk
+ * state):
  *
- * - Every interactive run appends one JSON line per event to
- *   `<agentDir>/sessions/<cwd-slug>/<timestamp>_<uuid>.jsonl`, where
- *   `<agentDir>` is `$PI_CODING_AGENT_DIR` or `~/.pi/agent` and the slug is
- *   pi's own rule: `--` + the absolute cwd with leading `/` stripped and
- *   every `/`, `\`, `:` replaced by `-` + `--` (e.g. `/home/me` →
- *   `--home-me--`). A restart in the same cwd starts a new file.
+ * - Every interactive run appends one JSON line per event to a JSONL file in
+ *   its session dir; `--session-dir <dir>` pins that dir, so every PiDeck
+ *   session spawns with `--session-dir <stateDir>/pi-sessions/<sessionId>`
+ *   and its JSONL is exactly where we chose — no reliance on pi's internal
+ *   cwd-slug layout. A pi restart in the same dir starts a new file, so the
+ *   newest `.jsonl` is the live one.
  * - The first line is `{"type":"session",...}`; model switches appear as
  *   `{"type":"model_change","provider":...,"modelId":...}`; assistant turns
  *   as `{"type":"message","message":{"role":"assistant","usage":{...}}}`.
@@ -22,11 +22,12 @@
  * - `{"type":"compaction"}` entries reset the conversation; until the next
  *   assistant turn reports usage, the true occupancy is unknowable.
  *
- * This module therefore: finds the newest session JSONL for the session's
- * cwd, walks it for the latest assistant usage and latest model_change,
- * looks up the context window in models-store.json, and returns
- * `tokens / window * 100` (one decimal). Anything missing, unparseable, or
- * behind a trailing compaction returns `null` — never a guess.
+ * This module therefore: reads the newest session JSONL under the pinned
+ * session dir, walks it for the latest assistant usage and latest
+ * model_change, looks up the context window in models-store.json, and
+ * returns `tokens / window * 100` (one decimal). Anything missing,
+ * unparseable, or behind a trailing compaction returns `null` — never a
+ * guess.
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -36,10 +37,11 @@ import type { Session } from "@pideck/shared";
 
 export interface ContextProbeOptions {
   /**
-   * The cwd the pi session runs in (the session's worktree, or the clone
-   * for orchestrator/global). pi keys its session files on it.
+   * The daemon state dir: each session's pi JSONL lives under
+   * `<stateDir>/pi-sessions/<sessionId>/` (pinned at spawn with
+   * `--session-dir`).
    */
-  cwd: string;
+  stateDir: string;
   /** pi's agent dir (defaults to `$PI_CODING_AGENT_DIR` or `~/.pi/agent`). */
   agentDir?: string;
 }
@@ -55,11 +57,6 @@ function resolveAgentDir(explicit?: string): string {
   const env = process.env.PI_CODING_AGENT_DIR;
   if (env !== undefined && env.length > 0) return env;
   return join(homedir(), ".pi", "agent");
-}
-
-/** pi's exact session-dir slug for a cwd (see module header). */
-export function sessionDirSlug(cwd: string): string {
-  return `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 }
 
 function newestSessionFile(dir: string): string | null {
@@ -164,13 +161,13 @@ function lookupContextWindow(agentDir: string, model: { provider: string; modelI
 
 /**
  * Context-window usage of a session's latest pi turn, in percent (one
- * decimal). Returns `null` when it cannot be known: no session file for the
- * cwd, no assistant usage yet, an unknown model or context window, or a
- * compaction after the last measured turn.
+ * decimal). Returns `null` when it cannot be known: no session file in the
+ * pinned session dir, no assistant usage yet, an unknown model or context
+ * window, or a compaction after the last measured turn.
  */
 export function contextPercent(session: Session, options: ContextProbeOptions): number | null {
   const agentDir = resolveAgentDir(options.agentDir);
-  const file = newestSessionFile(join(agentDir, "sessions", sessionDirSlug(options.cwd)));
+  const file = newestSessionFile(join(options.stateDir, "pi-sessions", session.id));
   if (file === null) return null;
   const info = scanSessionFile(file);
   if (info === null || info.trailingCompaction) return null;

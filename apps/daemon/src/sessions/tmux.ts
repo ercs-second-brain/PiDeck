@@ -249,13 +249,14 @@ export class Tmux {
   }
 
   /**
-   * Captures the visible pane plus `lines` of scrollback of a session's
-   * active window. `-e` keeps escape sequences (archived logs keep their
-   * colours); `-J` joins hard-wrapped rows back into logical lines so the
-   * capture is not baked to the pane width it had at capture time.
+   * Captures the pane's full scrollback (plus its visible screen) of a
+   * session's active window — `-S -` walks history back to its start, so an
+   * archive keeps everything the pane ever showed. `-e` keeps escape
+   * sequences (archived logs keep their colours); `-J` joins hard-wrapped
+   * rows back into logical lines so the capture is not baked to the pane
+   * width it had at capture time.
    */
-  async capturePane(name: string, options: { lines?: number } = {}): Promise<string> {
-    const lines = options.lines ?? 2000;
+  async capturePane(name: string): Promise<string> {
     const { stdout } = await this.run([
       "capture-pane",
       "-p",
@@ -264,7 +265,7 @@ export class Tmux {
       "-t",
       name,
       "-S",
-      `-${lines}`,
+      "-",
     ]);
     return stdout.replace(/\n+$/, "");
   }

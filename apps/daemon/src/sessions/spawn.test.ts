@@ -120,14 +120,17 @@ describe("spawnPiSession", () => {
     expect(script).toContain("GH_TOKEN='t'");
     expect(create.slice(12)).toEqual([
       "pi",
+      "--session-dir",
+      join(stateDir, "pi-sessions", session.id),
       "--append-system-prompt",
       expect.any(String),
       "--model",
       "anthropic/claude",
     ]);
 
-    const promptFile = create[14]!;
+    const promptFile = create[16]!;
     expect(readFileSync(promptFile, "utf8")).toBe("You are a worker.");
+    expect(existsSync(join(stateDir, "pi-sessions", session.id))).toBe(true);
 
     expect(deps.registry.get(session.id)).toEqual(session);
     expect(session.issueNumber).toBe(42);
@@ -198,7 +201,13 @@ describe("spawnPiSession", () => {
     expect(gitState.calls).toEqual([]);
     const create = tmuxState.created[0]!.args;
     expect(create[7]).toBe(cloneDir);
-    expect(create.slice(12)).toEqual(["pi", "--append-system-prompt", expect.any(String)]);
+    expect(create.slice(12)).toEqual([
+      "pi",
+      "--session-dir",
+      join(stateDir, "pi-sessions", session.id),
+      "--append-system-prompt",
+      expect.any(String),
+    ]);
     expect(create.join(" ")).not.toContain("--model");
     expect(session.model).toBeNull();
   });
@@ -238,8 +247,10 @@ describe("archiveSession", () => {
     const worktree = join(stateDir, "worktrees", "s1");
     mkdirSync(worktree, { recursive: true });
     mkdirSync(join(stateDir, "system-prompts"), { recursive: true });
+    mkdirSync(join(stateDir, "pi-sessions", "s1"), { recursive: true });
     writeFileSync(join(worktree, "file.txt"), "x");
     writeFileSync(join(stateDir, "system-prompts", "s1.md"), "p");
+    writeFileSync(join(stateDir, "pi-sessions", "s1", "session.jsonl"), "{}\n");
 
     const archived = await archiveSession(deps, session);
 
@@ -247,6 +258,7 @@ describe("archiveSession", () => {
     expect(tmuxState.killed).toEqual(["pideck-s1"]);
     expect(existsSync(worktree)).toBe(false);
     expect(existsSync(join(stateDir, "system-prompts", "s1.md"))).toBe(false);
+    expect(existsSync(join(stateDir, "pi-sessions", "s1"))).toBe(false);
     expect(archived.archivedAt).toEqual(expect.any(String));
     expect(registry.get("s1")?.archivedAt).toEqual(archived.archivedAt);
   });

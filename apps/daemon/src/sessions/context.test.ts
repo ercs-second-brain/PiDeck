@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { SessionSchema, type Session } from "@pideck/shared";
-import { contextPercent, sessionDirSlug } from "./context.js";
+import { contextPercent } from "./context.js";
 
-const CWD = "/repo/worktrees/w1";
+const CWD_UNUSED = "/repo/worktrees/w1";
 
 function session(): Session {
   return SessionSchema.parse({
@@ -23,7 +23,7 @@ function jsonlLine(entry: Record<string, unknown>): string {
 }
 
 function sessionHeader(): string {
-  return jsonlLine({ type: "session", version: 3, id: "abc", timestamp: "t", cwd: CWD });
+  return jsonlLine({ type: "session", version: 3, id: "abc", timestamp: "t", cwd: CWD_UNUSED });
 }
 
 function modelChange(provider: string, modelId: string): string {
@@ -44,15 +44,17 @@ function compaction(): string {
   return jsonlLine({ type: "compaction", id: "c1", parentId: "a1", timestamp: "t", summary: "s" });
 }
 
+let stateDir: string;
 let agentDir: string;
 
 beforeEach(() => {
-  agentDir = mkdtempSync(join(tmpdir(), "pideck-context-"));
-  mkdirSync(join(agentDir, "sessions", sessionDirSlug(CWD)), { recursive: true });
+  stateDir = mkdtempSync(join(tmpdir(), "pideck-context-"));
+  agentDir = mkdtempSync(join(tmpdir(), "pideck-agent-"));
+  mkdirSync(join(stateDir, "pi-sessions", session().id), { recursive: true });
 });
 
 function writeSession(lines: string[], name = "2026-01-01T00-00-00-000Z_0000.jsonl"): void {
-  writeFileSync(join(agentDir, "sessions", sessionDirSlug(CWD), name), lines.join(""), "utf8");
+  writeFileSync(join(stateDir, "pi-sessions", session().id, name), lines.join(""), "utf8");
 }
 
 function writeModelsStore(models: Array<Record<string, unknown>>, provider = "anthropic"): void {
@@ -65,12 +67,9 @@ function writeModelsStore(models: Array<Record<string, unknown>>, provider = "an
 
 const MODEL = [{ id: "claude", contextWindow: 200000 }];
 
-describe("sessionDirSlug", () => {
-  it("matches pi's slug rule", () => {
-    expect(sessionDirSlug("/home/me")).toBe("--home-me--");
-    expect(sessionDirSlug("/a/b:c\\d")).toBe("--a-b-c-d--");
-  });
-});
+function probe(): number | null {
+  return contextPercent(session(), { stateDir, agentDir });
+}
 
 describe("contextPercent", () => {
   it("computes percent from the latest assistant usage and the model catalog", () => {
@@ -80,7 +79,7 @@ describe("contextPercent", () => {
       assistantUsage({ input: 100, output: 50, cacheRead: 400, cacheWrite: 0, totalTokens: 550 }),
     ]);
     writeModelsStore(MODEL);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBe(0.3);
+    expect(probe()).toBe(0.3);
   });
 
   it("falls back to input+output+cacheRead+cacheWrite without totalTokens", () => {
@@ -90,7 +89,7 @@ describe("contextPercent", () => {
       assistantUsage({ input: 100, output: 50, cacheRead: 400, cacheWrite: 0 }),
     ]);
     writeModelsStore(MODEL);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBe(0.3);
+    expect(probe()).toBe(0.3);
   });
 
   it("uses the latest usage entry, not the first", () => {
@@ -101,7 +100,7 @@ describe("contextPercent", () => {
       assistantUsage({ totalTokens: 100000 }),
     ]);
     writeModelsStore(MODEL);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBe(50);
+    expect(probe()).toBe(50);
   });
 
   it("tracks model switches", () => {
@@ -113,27 +112,27 @@ describe("contextPercent", () => {
       assistantUsage({ totalTokens: 50000 }),
     ]);
     writeModelsStore([{ id: "big", contextWindow: 1000000 }], "other");
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBe(5);
+    expect(probe()).toBe(5);
   });
 
-  it("returns null with no session file for the cwd", () => {
-    expect(contextPercent(session(), { cwd: "/somewhere/else", agentDir })).toBeNull();
+  it("returns null with no session file in the pinned session dir", () => {
+    expect(contextPercent(session(), { stateDir, agentDir })).toBeNull();
   });
 
   it("returns null with no assistant usage yet", () => {
     writeSession([sessionHeader(), modelChange("anthropic", "claude")]);
     writeModelsStore(MODEL);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBeNull();
+    expect(probe()).toBeNull();
   });
 
   it("returns null for an unknown model or missing context window", () => {
     writeSession([sessionHeader(), modelChange("anthropic", "unknown"), assistantUsage({ totalTokens: 5 })]);
     writeModelsStore(MODEL);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBeNull();
+    expect(probe()).toBeNull();
 
     writeSession([sessionHeader(), modelChange("anthropic", "claude"), assistantUsage({ totalTokens: 5 })]);
     writeModelsStore([{ id: "claude" }]);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBeNull();
+    expect(probe()).toBeNull();
   });
 
   it("returns null when a compaction trails the last usage", () => {
@@ -144,12 +143,12 @@ describe("contextPercent", () => {
       compaction(),
     ]);
     writeModelsStore(MODEL);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBeNull();
+    expect(probe()).toBeNull();
   });
 
   it("returns null without a models-store.json", () => {
     writeSession([sessionHeader(), modelChange("anthropic", "claude"), assistantUsage({ totalTokens: 5 })]);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBeNull();
+    expect(probe()).toBeNull();
   });
 
   it("ignores aborted and error assistant turns", () => {
@@ -160,14 +159,18 @@ describe("contextPercent", () => {
       assistantUsage({ totalTokens: 9999 }, "error"),
     ]);
     writeModelsStore(MODEL);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBeNull();
+    expect(probe()).toBeNull();
   });
 
-  it("picks the newest session file in the cwd dir", () => {
+  it("picks the newest session file in the pinned dir", () => {
     writeSession([sessionHeader(), modelChange("anthropic", "claude"), assistantUsage({ totalTokens: 1 })], "old.jsonl");
     writeSession([sessionHeader(), modelChange("anthropic", "claude"), assistantUsage({ totalTokens: 100000 })], "new.jsonl");
-    utimesSync(join(agentDir, "sessions", sessionDirSlug(CWD), "new.jsonl"), new Date(), new Date(Date.now() + 5000));
+    utimesSync(
+      join(stateDir, "pi-sessions", session().id, "new.jsonl"),
+      new Date(),
+      new Date(Date.now() + 5000),
+    );
     writeModelsStore(MODEL);
-    expect(contextPercent(session(), { cwd: CWD, agentDir })).toBe(50);
+    expect(probe()).toBe(50);
   });
 });
