@@ -1,0 +1,438 @@
+#!/usr/bin/env node
+// A scripted stand-in for the gh CLI. Serves a mutable JSON repo state —
+// pointed at by FAKE_GH_STATE — with exactly the surface the daemon's GitHub
+// client uses, and applies writes back to that state file. No network.
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+
+const statePath = process.env.FAKE_GH_STATE;
+if (!statePath) {
+  fail("FAKE_GH_STATE is not set");
+}
+
+const args = process.argv.slice(2);
+
+function fail(message) {
+  process.stderr.write(`fake-gh: ${message}\n`);
+  process.exit(2);
+}
+
+function load() {
+  return JSON.parse(readFileSync(statePath, "utf8"));
+}
+
+function save(state) {
+  const tmp = `${statePath}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  renameSync(tmp, statePath);
+}
+
+function loginFor(state) {
+  const token = process.env.GH_TOKEN;
+  return (token !== undefined && state.tokens[token]) || state.primaryLogin;
+}
+
+function canRead(state, login, repo) {
+  if (login === state.primaryLogin) return true;
+  return (state.readAccess[repo] ?? []).includes(login);
+}
+
+function findIssue(state, number) {
+  return state.issues.find((issue) => issue.number === number) ?? null;
+}
+
+function findPrOrDie(state, number) {
+  const pr = state.prs.find((pr) => pr.number === number);
+  if (pr === undefined) fail(`no pull request #${number}`);
+  return pr;
+}
+
+function closeReferencedIssues(state, pr) {
+  for (const match of pr.body.matchAll(/(?:[Cc]loses|[Ff]ixes|[Rr]esolves) #(\d+)/g)) {
+    const issue = findIssue(state, Number(match[1]));
+    if (issue !== null) issue.state = "closed";
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function nextId(state) {
+  state.seq += 1;
+  return state.seq;
+}
+
+function gh(state) {
+  const login = loginFor(state);
+  let method = "GET";
+  let path = null;
+  const fields = {};
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--method") {
+      method = args[i + 1];
+      i++;
+    } else if (args[i] === "-f" || args[i] === "-F") {
+      const [key, value = ""] = (args[i + 1] ?? "").split("=");
+      fields[key] = value;
+      i++;
+    } else if (path === null) {
+      path = args[i];
+    }
+  }
+  if (path === null) fail("api: missing path");
+
+  const [rawPath] = path.split("?");
+  const segments = rawPath.replace(/^\//, "").split("/");
+  const write = () => save(state);
+
+  if (method === "GET" && segmentsEqual(segments, ["repos", "*", "*"])) {
+    if (canRead(state, login, `${segments[1]}/${segments[2]}`)) return emit("{}");
+    fail(`Must have read access to ${segments[1]}/${segments[2]} (as ${login})`);
+  }
+  if (method === "PUT" && segmentsEqual(segments, ["repos", "*", "*", "collaborators", "*"])) {
+    const repo = `${segments[1]}/${segments[2]}`;
+    const invitee = segments[4];
+    const invited = state.invitations.some(
+      (invitation) => invitation.repo === repo && invitation.invitee === invitee,
+    );
+    if (!invited && !(state.readAccess[repo] ?? []).includes(invitee)) {
+      state.invitations.push({ id: nextId(state), repo, invitee });
+      save(state);
+    }
+    return emit("");
+  }
+  if (segmentsEqual(segments, ["user", "repository_invitations"])) {
+    if (method === "GET") {
+      const invitations = state.invitations
+        .filter((invitation) => invitation.invitee === login)
+        .map((invitation) => ({ id: invitation.id, repo: invitation.repo }));
+      return emit(JSON.stringify(invitations));
+    }
+    fail("api: unsupported method on /user/repository_invitations");
+  }
+  if (method === "PATCH" && segmentsEqual(segments, ["user", "repository_invitations", "*"])) {
+    const id = Number(segments[2]);
+    const invitation = state.invitations.find((entry) => entry.id === id);
+    if (invitation === undefined) fail(`no invitation ${id}`);
+    state.invitations = state.invitations.filter((invitation) => invitation.id !== id);
+    const readers = state.readAccess[invitation.repo] ?? [];
+    if (!readers.includes(invitation.invitee)) readers.push(invitation.invitee);
+    state.readAccess[invitation.repo] = readers;
+    write();
+    return emit("");
+  }
+  if (segmentsEqual(segments, ["repos", "*", "*", "issues", "*", "dependencies", "blocked_by"])) {
+    const issue = findIssue(state, Number(segments[4]));
+    if (issue === null) fail(`no issue #${segments[4]}`);
+    const blockers = issue.blockedBy.map((number) => ({
+      number,
+      state: findIssue(state, number)?.state ?? "open",
+    }));
+    return emit(JSON.stringify(blockers));
+  }
+  if (segmentsEqual(segments, ["repos", "*", "*", "issues", "*", "comments"])) {
+    const number = Number(segments[4]);
+    if (method === "GET") {
+      return emit(JSON.stringify((state.comments[String(number)] ?? []).map(asGhComment)));
+    }
+    if (method === "POST") {
+      const comment = { id: nextId(state), user: login, body: fields.body ?? "", created_at: nowIso() };
+      const list = state.comments[String(number)] ?? [];
+      list.push(comment);
+      state.comments[String(number)] = list;
+      write();
+      return emit(JSON.stringify({ id: comment.id }));
+    }
+    fail("api: unsupported method on issue comments");
+  }
+  if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*", "reviews"])) {
+    const pr = findPrOrDie(state, Number(segments[4]));
+    return emit(JSON.stringify(pr.reviews.map(asGhReview)));
+  }
+  if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*", "comments"])) {
+    const pr = findPrOrDie(state, Number(segments[4]));
+    return emit(JSON.stringify(pr.reviewComments.map(asGhComment)));
+  }
+  if (segmentsEqual(segments, ["repos", "*", "*", "pulls", "*"])) {
+    const pr = findPrOrDie(state, Number(segments[4]));
+    return emit(JSON.stringify({ body: pr.body }));
+  }
+  fail(`api: unhandled ${method} ${rawPath}`);
+}
+
+function segmentsEqual(segments, pattern) {
+  if (segments.length !== pattern.length) return false;
+  return pattern.every((part, index) => part === "*" || part === segments[index]);
+}
+
+// The daemon's client validates raw gh API shapes: authors arrive as user objects.
+function asGhComment(comment) {
+  return { ...comment, user: { login: comment.user } };
+}
+
+function asGhReview(review) {
+  return { ...review, user: { login: review.user } };
+}
+
+function issueList(state) {
+  if (!jsonFlagWith(args, "number,title,url,assignees,labels")) fail("issue list: unexpected --json fields");
+  const issues = state.issues
+    .filter((issue) => issue.state === "open")
+    .map((issue) => ({
+      number: issue.number,
+      title: issue.title,
+      url: issue.url,
+      assignees: issue.assignees.map((login) => ({ login })),
+      labels: issue.labels.map((name) => ({ name })),
+    }));
+  return emit(JSON.stringify(issues));
+}
+
+function issueEdit(state) {
+  const number = Number(args[2]);
+  const issue = findIssue(state, number);
+  if (issue === null) fail(`no issue #${number}`);
+  let changed = false;
+  const add = flagValues(args, "--add-assignee");
+  const remove = flagValues(args, "--remove-assignee");
+  for (const login of add) {
+    if (!issue.assignees.includes(login)) {
+      issue.assignees.push(login);
+      changed = true;
+    }
+  }
+  for (const login of remove) {
+    if (issue.assignees.includes(login)) {
+      issue.assignees = issue.assignees.filter((existing) => existing !== login);
+      changed = true;
+    }
+  }
+  if (changed) save(state);
+  return emit("");
+}
+
+function prList(state) {
+  if (!jsonFlagWith(args, "number,headRefName,headRefOid,mergeable,reviewDecision,statusCheckRollup")) {
+    fail("pr list: unexpected --json fields");
+  }
+  const prs = state.prs
+    .filter((pr) => pr.state === "open")
+    .map((pr) => ({
+      number: pr.number,
+      headRefName: pr.headRefName,
+      headRefOid: pr.headRefOid,
+      mergeable: pr.mergeable,
+      reviewDecision: reviewDecisionOf(pr),
+      statusCheckRollup: pr.checks,
+    }));
+  return emit(JSON.stringify(prs));
+}
+
+function prMerge(state) {
+  const pr = findPrOrDie(state, Number(args[2]));
+  pr.state = "merged";
+  closeReferencedIssues(state, pr);
+  save(state);
+  return emit("");
+}
+
+function prEdit(state) {
+  const pr = findPrOrDie(state, Number(args[2]));
+  for (const login of flagValues(args, "--add-reviewer")) {
+    if (!pr.requestedReviewers.includes(login)) pr.requestedReviewers.push(login);
+  }
+  save(state);
+  return emit("");
+}
+
+function prReview(state) {
+  const pr = findPrOrDie(state, Number(args[2]));
+  const stateArg = args.includes("--approve")
+    ? "APPROVED"
+    : args.includes("--request-changes")
+      ? "CHANGES_REQUESTED"
+      : null;
+  if (stateArg === null) fail("pr review: needs --approve or --request-changes");
+  const bodyFlagIndex = args.indexOf("--body");
+  pr.reviews.push({
+    id: nextId(state),
+    user: loginFor(state),
+    state: stateArg,
+    submitted_at: nowIso(),
+    body: bodyFlagIndex === -1 ? null : (args[bodyFlagIndex + 1] ?? null),
+  });
+  save(state);
+  return emit("");
+}
+
+function repoView(state) {
+  const repoIndex = args.indexOf("--repo");
+  const repo = repoIndex === -1 ? state.repo : args[repoIndex + 1];
+  if (!canRead(state, loginFor(state), repo)) fail(`Must have read access to ${repo}`);
+  return emit(`* ${repo}`);
+}
+
+function authStatus(state) {
+  return emit(`github.com\n  ✓ Logged in to github.com account ${loginFor(state)}`);
+}
+
+function jsonFlagWith(rest, expected) {
+  const index = rest.indexOf("--json");
+  return index !== -1 && rest[index + 1] === expected;
+}
+
+function flagValues(rest, flag) {
+  const values = [];
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === flag) values.push(rest[i + 1]);
+  }
+  return values;
+}
+
+function reviewDecisionOf(pr) {
+  const latest = [...pr.reviews].sort((a, b) => a.id - b.id).at(-1);
+  if (latest === undefined) return null;
+  return latest.state === "APPROVED" || latest.state === "CHANGES_REQUESTED" ? latest.state : null;
+}
+
+function emit(text, trailingNewline = true) {
+  process.stdout.write(trailingNewline ? `${text}\n` : text);
+}
+
+// Test-facing state mutations: `gh __op <operation> <json>`.
+function applyChecks(pr, payload) {
+  pr.checks =
+    payload.status === "failed"
+      ? payload.failingChecks.map((checkName) => ({
+          name: checkName,
+          status: "COMPLETED",
+          conclusion: "FAILURE",
+        }))
+      : payload.status === "pending"
+        ? [{ name: "ci", status: "IN_PROGRESS", state: "PENDING" }]
+        : [{ name: "ci", status: "COMPLETED", conclusion: "SUCCESS" }];
+}
+
+function op(state) {
+  const name = args[1];
+  const payload = args[2] === undefined ? {} : JSON.parse(args[2]);
+  const repo = state.repo;
+  switch (name) {
+    case "openIssue":
+      state.issues.push({
+        number: payload.number,
+        title: payload.title,
+        url: `https://github.com/${repo}/issues/${payload.number}`,
+        state: "open",
+        assignees: payload.assignees ?? [],
+        labels: [],
+        blockedBy: payload.blockedBy ?? [],
+      });
+      break;
+    case "setBlockedBy": {
+      const issue = findIssue(state, payload.issue);
+      if (issue === null) fail(`no issue #${payload.issue}`);
+      issue.blockedBy = payload.blockers;
+      break;
+    }
+    case "openPr":
+      state.prs.push({
+        number: payload.number,
+        headRefName: `pideck/issue-${payload.issue}`,
+        headRefOid: payload.headSha,
+        mergeable: payload.mergeable ?? "MERGEABLE",
+        checks: [],
+        reviews: [],
+        reviewComments: [],
+        requestedReviewers: [],
+        body: payload.body ?? `Closes #${payload.issue}`,
+        state: "open",
+      });
+      break;
+    case "setCI": {
+      const pr = findPrOrDie(state, payload.pr);
+      applyChecks(pr, payload);
+      break;
+    }
+    case "push": {
+      const pr = findPrOrDie(state, payload.pr);
+      pr.headRefOid = payload.headSha;
+      if (payload.ci !== undefined) {
+        applyChecks(pr, payload.ci);
+      }
+      break;
+    }
+    case "addReview": {
+      const pr = findPrOrDie(state, payload.pr);
+      const review = {
+        id: nextId(state),
+        user: payload.by,
+        state: payload.reviewState,
+        submitted_at: nowIso(),
+        body: payload.body ?? null,
+      };
+      pr.reviews.push(review);
+      emit(JSON.stringify({ id: review.id }), false);
+      save(state);
+      return;
+    }
+    case "assign": {
+      const issue = findIssue(state, payload.issue);
+      if (issue === null) fail(`no issue #${payload.issue}`);
+      if (!issue.assignees.includes(payload.login)) issue.assignees.push(payload.login);
+      break;
+    }
+    case "merge": {
+      const pr = findPrOrDie(state, payload.pr);
+      pr.state = "merged";
+      closeReferencedIssues(state, pr);
+      break;
+    }
+    case "addComment": {
+      const list = state.comments[String(payload.number)] ?? [];
+      const comment = {
+        id: nextId(state),
+        user: payload.author,
+        body: payload.body,
+        created_at: nowIso(),
+      };
+      list.push(comment);
+      state.comments[String(payload.number)] = list;
+      emit(JSON.stringify({ id: comment.id }), false);
+      save(state);
+      return;
+    }
+    case "state":
+      emit(JSON.stringify(state), false);
+      return;
+    default:
+      fail(`unknown __op ${name}`);
+  }
+  save(state);
+  emit("");
+}
+
+const state = load();
+if (args[0] === "__op") {
+  op(state);
+} else if (args[0] === "auth" && args[1] === "status") {
+  authStatus(state);
+} else if (args[0] === "issue" && args[1] === "list") {
+  issueList(state);
+} else if (args[0] === "issue" && args[1] === "edit") {
+  issueEdit(state);
+} else if (args[0] === "pr" && args[1] === "list") {
+  prList(state);
+} else if (args[0] === "pr" && args[1] === "merge") {
+  prMerge(state);
+} else if (args[0] === "pr" && args[1] === "edit") {
+  prEdit(state);
+} else if (args[0] === "pr" && args[1] === "review") {
+  prReview(state);
+} else if (args[0] === "repo" && args[1] === "view") {
+  repoView(state);
+} else if (args[0] === "api") {
+  gh(state);
+} else {
+  fail(`unhandled command: ${args.join(" ")}`);
+}
