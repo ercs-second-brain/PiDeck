@@ -92,11 +92,11 @@ case "$cmd" in
     name=""
     while [ $# -gt 0 ]; do case "$1" in -t) name="$2"; shift ;; esac; shift; done
     persona=$(cat "$STATE/$name/window" 2>/dev/null || echo worker)
-    printf 'pi \\033[1;33mv0.4.2\\033[0m \\xe2\\x80\\xa2 %s\\n' "$persona"
+    printf 'pi \\033[1;33mv0.4.2\\033[0m \\342\\200\\242 %s\\n' "$persona"
     printf '\\n'
-    printf '\\033[2mWorking on the assigned issue — reading the repo\\xe2\\x80\\xa6\\033[0m\\n'
+    printf '\\033[2mWorking on the assigned issue — reading the repo\\342\\200\\246\\033[0m\\n'
     printf '\\n'
-    printf '\\033[36m\\xe2\\x9d\\xaf\\033[0m '
+    printf '\\033[36m\\342\\235\\257\\033[0m '
     ;;
   *)
     ;;
