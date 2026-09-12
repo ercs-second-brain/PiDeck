@@ -718,6 +718,8 @@ function buildShots(sessionId) {
           await page.locator(".shell:not(.shell--collapsed)").waitFor();
         }
         await page.getByText("#47").waitFor();
+        // the ⋯ button is hover-only on desktop
+        await page.locator(".srow-line", { hasText: "my-api" }).first().hover();
         await page.locator('[aria-label="Actions for my-api"]').click();
         await page.locator(".srow-menu").waitFor();
       },
