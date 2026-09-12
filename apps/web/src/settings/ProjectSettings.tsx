@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { ProjectSettingsSchema, type Project, type ProjectSettings } from "@pideck/shared";
+import { errorMessage, ProjectSettingsSchema, type Project, type ProjectSettings } from "@pideck/shared";
 import { Page } from "../ui/Page";
 import { Section } from "../ui/Section";
 import { Row } from "../ui/Row";
@@ -51,7 +51,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         apply(loadedSettings);
       })
       .catch((err: unknown) => {
-        if (alive) setLoadError(err instanceof Error ? err.message : String(err));
+        if (alive) setLoadError(errorMessage(err));
       });
     return () => {
       alive = false;

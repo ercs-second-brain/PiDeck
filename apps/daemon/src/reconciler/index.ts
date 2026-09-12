@@ -8,7 +8,7 @@
  * just the first poll.
  */
 
-import type { Project } from "@pideck/shared";
+import { errorMessage, type Project } from "@pideck/shared";
 import { GhClient } from "../github/client.js";
 import { GhRateLimited } from "../github/error.js";
 import type { GhComment, GhIssue, GhPr, GhReview } from "../github/schemas.js";
@@ -33,18 +33,7 @@ import {
 } from "./desired.js";
 import { ProjectReader, type ProjectFacts } from "./read.js";
 
-export { deriveState, type SessionStateFacts } from "./state.js";
-export { ProjectReader, type ProjectFacts } from "./read.js";
-export {
-  deriveActions,
-  deriveGlobalAction,
-  orchestratorAction,
-  prForWorker,
-  type Action,
-  type DeriveInput,
-} from "./desired.js";
-export { applyActions, type ApplyDeps, type PromptSource } from "./apply.js";
-export { Trace, compactFacts, traceFile } from "./trace.js";
+export { type ProjectFacts } from "./read.js";
 
 /** The slice of the GitHub client the reconciler reads through. */
 export interface GhClientLike {
@@ -159,10 +148,6 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     } catch {
       return null;
     }
-  }
-
-  function errorMessage(err: unknown): string {
-    return err instanceof Error ? err.message : String(err);
   }
 
   async function runTick(): Promise<void> {

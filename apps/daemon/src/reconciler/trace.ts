@@ -13,17 +13,18 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { TraceEntrySchema, type Session, type TraceEntry, type TraceFacts, type WorkerState } from "@pideck/shared";
+import { statePaths } from "../store/stateDir.js";
 import type { ProjectFacts } from "./read.js";
 
 const MAX_LINE_BYTES = 1024;
 
 export function traceFile(stateDir: string, sessionId: string): string {
-  return join(stateDir, "traces", `${sessionId}.jsonl`);
+  return join(statePaths(stateDir).tracesDir, `${sessionId}.jsonl`);
 }
 
 /** The session's pinned pi transcript (newest JSONL), or null when gone. */
 export function piTranscriptPath(stateDir: string, sessionId: string): string | null {
-  const dir = join(stateDir, "pi-sessions", sessionId);
+  const dir = join(statePaths(stateDir).piSessionsDir, sessionId);
   let files: string[];
   try {
     files = readdirSync(dir).filter((name) => name.endsWith(".jsonl"));
@@ -150,7 +151,7 @@ export class Trace {
 
   /** The pi transcript for this session, when it still exists. */
   transcriptPath(sessionId: string): string | null {
-    return existsSync(join(this.#stateDir, "pi-sessions", sessionId))
+    return existsSync(join(statePaths(this.#stateDir).piSessionsDir, sessionId))
       ? piTranscriptPath(this.#stateDir, sessionId)
       : null;
   }

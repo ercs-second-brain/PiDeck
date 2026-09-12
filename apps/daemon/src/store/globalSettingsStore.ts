@@ -1,10 +1,10 @@
-import { join } from "node:path";
+import { statePaths } from "./stateDir.js";
+
 import {
   GlobalSettingsSchema,
   type GlobalSettings,
   type GlobalSettingsPut,
   type GlobalSettingsRead,
-  type Persona,
   type ReviewAccount,
   type ReviewAccountPut,
 } from "@pideck/shared";
@@ -22,7 +22,7 @@ export class GlobalSettingsStore {
   private file: JsonFile<GlobalSettings>;
 
   constructor(stateDir: string) {
-    this.file = new JsonFile(join(stateDir, "settings.json"), GlobalSettingsSchema, emptySettings);
+    this.file = new JsonFile(statePaths(stateDir).settingsFile, GlobalSettingsSchema, emptySettings);
     this.file.load();
   }
 
@@ -49,12 +49,6 @@ export class GlobalSettingsStore {
     if (patch.modelByPersona !== undefined) {
       settings.modelByPersona = { ...settings.modelByPersona, ...patch.modelByPersona };
     }
-    this.file.write(settings);
-  }
-
-  setModel(persona: Persona, model: string | null): void {
-    const settings = this.file.load();
-    settings.modelByPersona = { ...settings.modelByPersona, [persona]: model };
     this.file.write(settings);
   }
 }

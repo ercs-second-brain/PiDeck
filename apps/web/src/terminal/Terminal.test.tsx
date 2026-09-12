@@ -10,6 +10,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeWebSocket } from "../test-support/websocket";
 
 // -- Fakes for the xterm browser modules -------------------------------------
 
@@ -98,52 +99,6 @@ class FakeCanvasAddon {}
 class FakeUnicode11Addon {}
 
 // -- Fake WebSocket -----------------------------------------------------------
-
-type FakeFrame = Record<string, unknown>;
-
-class FakeWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static instances: FakeWebSocket[] = [];
-  static reset() {
-    FakeWebSocket.instances = [];
-  }
-  url: string;
-  readyState = 0;
-  sent: string[] = [];
-  onopen: (() => void) | null = null;
-  onmessage: ((event: { data: unknown }) => void) | null = null;
-  onclose: ((event: { code: number; reason: string }) => void) | null = null;
-  constructor(url: string) {
-    this.url = url;
-    FakeWebSocket.instances.push(this);
-  }
-  send(data: string) {
-    this.sent.push(data);
-  }
-  close() {
-    this.readyState = 3;
-  }
-  open() {
-    this.readyState = 1;
-    this.onopen?.();
-  }
-  serverSends(frame: FakeFrame) {
-    this.onmessage?.({ data: JSON.stringify(frame) });
-  }
-  drop() {
-    this.readyState = 3;
-    this.onclose?.({ code: 1006, reason: "" });
-  }
-  get lastFrame(): FakeFrame {
-    return JSON.parse(this.sent[this.sent.length - 1] ?? "{}") as FakeFrame;
-  }
-  get frames(): FakeFrame[] {
-    return this.sent.map((raw) => JSON.parse(raw) as FakeFrame);
-  }
-}
 
 // -- Mounting helpers ----------------------------------------------------------
 

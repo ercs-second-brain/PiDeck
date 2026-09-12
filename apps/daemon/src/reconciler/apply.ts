@@ -10,7 +10,13 @@
 
 import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Project, ProjectSettings, Session } from "@pideck/shared";
+import {
+  errorMessage,
+  type Project,
+  type ProjectSettings,
+  type Session,
+} from "@pideck/shared";
+import { statePaths } from "../store/stateDir.js";
 import type { Persona } from "@pideck/shared";
 import type { SessionPatch, SessionRegistry } from "../sessions/registry.js";
 import { archiveSession, spawnPiSession, type GitRunner, type SpawnPiOptions } from "../sessions/spawn.js";
@@ -243,7 +249,7 @@ function patchPromptFile(stateDir: string, sessionId: string, promptText: string
     .replaceAll(PENDING_SESSION_ID, sessionId)
     .replaceAll(PENDING_ORCHESTRATOR_SESSION_ID, sessionId);
   if (patched === promptText) return;
-  const file = join(stateDir, "system-prompts", `${sessionId}.md`);
+  const file = join(statePaths(stateDir).systemPromptsDir, `${sessionId}.md`);
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, patched, "utf8");
   renameSync(tmp, file);
@@ -254,6 +260,3 @@ function update(deps: ApplyDeps, sessionId: string, patch: SessionPatch): void {
   deps.notifyChange?.();
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}

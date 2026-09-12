@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SessionSchema, type Session } from "@pideck/shared";
 import { contextPercent } from "./context.js";
 
@@ -51,6 +51,11 @@ beforeEach(() => {
   stateDir = mkdtempSync(join(tmpdir(), "pideck-context-"));
   agentDir = mkdtempSync(join(tmpdir(), "pideck-agent-"));
   mkdirSync(join(stateDir, "pi-sessions", session().id), { recursive: true });
+});
+
+afterEach(() => {
+  if (stateDir) rmSync(stateDir, { recursive: true, force: true });
+  if (agentDir) rmSync(agentDir, { recursive: true, force: true });
 });
 
 function writeSession(lines: string[], name = "2026-01-01T00-00-00-000Z_0000.jsonl"): void {

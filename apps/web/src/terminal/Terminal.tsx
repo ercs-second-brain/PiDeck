@@ -48,7 +48,7 @@ const STATUS_LABELS: Record<TerminalStatus, string> = {
  * Whether the disconnected pill should show: only while the pane is not
  * streaming — connecting or mid-backoff. Attached panes stay quiet.
  */
-export function disconnected(status: TerminalStatus): boolean {
+function disconnected(status: TerminalStatus): boolean {
   return status !== "connected";
 }
 

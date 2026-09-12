@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { statePaths } from "./stateDir.js";
 import { z } from "zod";
 import {
   ProjectCreateSchema,
@@ -78,8 +79,9 @@ export class ProjectStore {
   private settingsStore: GlobalSettingsStore | null = null;
 
   constructor(stateDir: string, private run: CommandRunner = runCommand, reviewAccess?: ReviewAccessCheck) {
-    this.file = new JsonFile(join(stateDir, "projects.json"), ProjectsFileSchema, { projects: [] });
-    this.projectRoot = join(stateDir, "projects");
+    const paths = statePaths(stateDir);
+    this.file = new JsonFile(paths.projectsFile, ProjectsFileSchema, { projects: [] });
+    this.projectRoot = paths.projectsDir;
     this.stateDir = stateDir;
     this.reviewAccess = reviewAccess;
     this.file.load();
@@ -130,15 +132,6 @@ export class ProjectStore {
     record.settings = settings;
     this.file.write({ projects: records });
     return settings;
-  }
-
-  /** Updates editable project fields (name, defaultBranch, path). */
-  update(id: string, patch: Partial<Pick<Project, "name" | "defaultBranch" | "path">>): Project {
-    const records = this.file.load().projects;
-    const record = this.find(records, id);
-    record.project = ProjectSchema.parse({ ...record.project, ...patch });
-    this.file.write({ projects: records });
-    return record.project;
   }
 
   remove(id: string): void {

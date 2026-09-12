@@ -8,6 +8,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { shellQuote } from "../shell.js";
 
 export interface CommandResult {
   stdout: string;
@@ -108,7 +109,7 @@ function commandWithEnv(
 ): string[] | undefined {
   const assignments = Object.entries(env)
     .filter(([key]) => ENV_KEY.test(key))
-    .map(([key, value]) => `export ${key}=${shQuote(value)}`)
+    .map(([key, value]) => `export ${key}=${shellQuote(value)}`)
     .join("; ");
   if (command === undefined || command.length === 0) {
     if (assignments === "") return undefined;
@@ -121,11 +122,6 @@ function commandWithEnv(
     `exec "\${SHELL:-/bin/sh}" -l`,
   ].join(" ");
   return ["sh", "-c", script, "sh", ...command];
-}
-
-/** Single-quotes a value for safe embedding in a shell script. */
-function shQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 /** Bytes per `send-keys -H` invocation — tmux rejects commands past ~16KB. */

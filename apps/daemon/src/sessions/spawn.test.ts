@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SessionSchema } from "@pideck/shared";
 import { Tmux, TmuxError, type TmuxRunner } from "./tmux.js";
 import { SessionRegistry } from "./registry.js";
@@ -80,6 +80,11 @@ let cloneDir: string;
 beforeEach(() => {
   stateDir = mkdtempSync(join(tmpdir(), "pideck-spawn-"));
   cloneDir = mkdtempSync(join(tmpdir(), "pideck-clone-"));
+});
+
+afterEach(() => {
+  if (stateDir) rmSync(stateDir, { recursive: true, force: true });
+  if (cloneDir) rmSync(cloneDir, { recursive: true, force: true });
 });
 
 describe("spawnPiSession", () => {

@@ -1,13 +1,22 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadShippedPrompt } from "./shipped.js";
 import { PromptOverrides } from "./overrides.js";
 
+const dirs: string[] = [];
+
 function stateDir(): string {
-  return mkdtempSync(join(tmpdir(), "pideck-state-"));
+  const dir = mkdtempSync(join(tmpdir(), "pideck-state-"));
+  dirs.push(dir);
+  return dir;
 }
+
+afterEach(() => {
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  dirs.length = 0;
+});
 
 describe("PromptOverrides", () => {
   it("returns null when nothing is stored", () => {

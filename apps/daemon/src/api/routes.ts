@@ -1,17 +1,18 @@
 import {
   PersonaSchema,
+  errorMessage,
   type GlobalSettingsPut,
   type Persona,
   type Project,
   type ProjectCreate,
   type ProjectSettings,
-  type ProjectUpdate,
   type Prompt,
   type PromptPut,
   type Session,
   type SessionSend,
 } from "@pideck/shared";
 import { existsSync, readFileSync } from "node:fs";
+import { statePaths } from "../store/stateDir.js";
 import { join } from "node:path";
 import { loadShippedPrompt } from "../prompts/shipped.js";
 import { archiveSession } from "../sessions/spawn.js";
@@ -57,8 +58,6 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     projectCreate: ({ body }) => deps.projects.add(body as ProjectCreate),
 
     projectGet: ({ params }) => projectOr404(deps, params.id!),
-    projectUpdate: ({ params, body }) =>
-      notFound(() => deps.projects.update(params.id!, body as ProjectUpdate)),
     projectDelete: ({ params }) => {
       notFound(() => deps.projects.remove(params.id!));
       return { ok: true };
@@ -80,7 +79,7 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
       try {
         await deps.tmux.sendLine(session.tmuxSession, (body as SessionSend).text);
       } catch (err) {
-        throw new ApiError(409, `tmux session is gone: ${errMessage(err)}`);
+        throw new ApiError(409, `tmux session is gone: ${errorMessage(err)}`);
       }
       return { ok: true };
     },
@@ -97,7 +96,7 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
 
     sessionLog: ({ params }) => {
       const session = sessionOr404(deps, params.id!);
-      const file = join(deps.stateDir, "logs", `${session.id}.log`);
+      const file = join(statePaths(deps.stateDir).logsDir, `${session.id}.log`);
       if (!existsSync(file)) throw new ApiError(404, "no archived log for this session");
       return { log: readFileSync(file, "utf8") };
     },
@@ -172,10 +171,6 @@ function notFound<T>(fn: () => T): T {
     }
     throw err;
   }
-}
-
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 const PROBE_CACHE_MS = 30_000;

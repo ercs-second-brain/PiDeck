@@ -123,18 +123,31 @@ service unit files) and restarts the service. Up to date → no-op.
 
 ## Config/state layout (`~/.pideck/`)
 
-| Path | Purpose |
-| --- | --- |
-| `env` | sourceable env (`PD_HOME/SRC/NODE/WEB_PORT`, `PIDECK_MODEL`) for the service + CLI |
-| `config.json` | install metadata (paths, port, os, ref) |
-| `settings.json` | review account + model per persona, read by the daemon, chmod 600 (shape: `packages/shared/src/settings.ts`) |
-| `onboarding.json` | pi + gh + review onboarding record |
-| `state/onboard-complete` | marker: onboarding finished with a verified review account |
-| `src/` | monorepo clone (built artifacts the service runs) |
-| `opt/` | private node/gh/pnpm/pi installs (when not on system) |
-| `bin/` | `pideck` CLI (service control + daemon-CLI forwarder), `pideck-daemon` service launcher |
-| `lib/` | installed installer libs + `onboard.sh` |
-| `log/` | daemon stdout/stderr |
+One directory, two owners: the install layer writes the install/config rows,
+the daemon writes the state rows (via `statePaths` in
+`apps/daemon/src/store/stateDir.ts`).
+
+| Path | Owner | Purpose |
+| --- | --- | --- |
+| `env` | install | sourceable env (`PD_HOME/SRC/NODE/WEB_PORT`, `PIDECK_MODEL`) for the service + CLI |
+| `config.json` | install | install metadata (paths, port, os, ref) |
+| `settings.json` | install + daemon | review account + model per persona; onboard.sh creates it (chmod 600), the daemon edits it through `GlobalSettingsStore` (shape: `packages/shared/src/settings.ts`) |
+| `onboarding.json` | install | pi + gh + review onboarding record |
+| `state/onboard-complete` | install | marker: onboarding finished with a verified review account |
+| `src/` | install | monorepo clone (built artifacts the service runs) |
+| `opt/` | install | private node/gh/pnpm/pi installs (when not on system) |
+| `bin/` | install | `pideck` CLI (service control + daemon-CLI forwarder), `pideck-daemon` service launcher |
+| `lib/` | install | installed installer libs + `onboard.sh` |
+| `log/` | install | daemon stdout/stderr |
+| `sessions.json` | daemon | session registry (shared `Session` records) |
+| `projects.json` | daemon | registered projects + their settings |
+| `prompts.json` | daemon | per-persona prompt overrides |
+| `projects/` | daemon | per-project clones under `<id>/clone` |
+| `sessions/` | daemon | per-session working clones (`<sessionId>/repo`) |
+| `system-prompts/` | daemon | the prompt file each live pi session was started with |
+| `pi-sessions/` | daemon | pi's own per-session JSONL transcripts |
+| `logs/` | daemon | per-session captured pane logs |
+| `traces/` | daemon | per-session delivery/state/facts traces (JSONL) |
 
 ## Shell lint & tests
 

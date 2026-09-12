@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { serve, type DaemonServer } from "./api/server.js";
-import { makeDeps, FakeTmux, sessionRecord } from "./api/testing.js";
+import { makeDeps, sessionRecord } from "./api/testing.js";
+import { FakeTmux } from "./sessions/testing/fakeTmux.js";
 import { runCli, type CliIo } from "./cli.js";
 import type { Trace } from "./reconciler/trace.js";
 
@@ -106,7 +107,7 @@ describe("cli", () => {
     const { base, deps, tmux } = await startCliDaemon();
     const worker = sessionRecord({ projectId: null });
     deps.registry.add(worker);
-    tmux.alive.add(worker.tmuxSession);
+    tmux.createSession(worker.tmuxSession);
 
     const { io, stdout } = cliFor(base);
     expect(await runCli(["send", "--session", worker.id, "--message", "hello world"], io)).toBe(0);

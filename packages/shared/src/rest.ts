@@ -30,13 +30,6 @@ export const StatusSchema = z.object({
 });
 export type Status = z.infer<typeof StatusSchema>;
 
-export const ProjectUpdateSchema = ProjectSchema.pick({
-  name: true,
-  defaultBranch: true,
-  path: true,
-}).partial();
-export type ProjectUpdate = z.infer<typeof ProjectUpdateSchema>;
-
 export const SessionSendSchema = z.object({ text: z.string().min(1) });
 export type SessionSend = z.infer<typeof SessionSendSchema>;
 
@@ -87,12 +80,6 @@ export const restEndpoints = {
     response: ProjectSchema,
   },
   projectGet: { method: "GET", path: "/api/projects/:id", response: ProjectSchema },
-  projectUpdate: {
-    method: "PATCH",
-    path: "/api/projects/:id",
-    request: ProjectUpdateSchema,
-    response: ProjectSchema,
-  },
   projectDelete: { method: "DELETE", path: "/api/projects/:id", response: OkSchema },
   projectSettingsGet: {
     method: "GET",

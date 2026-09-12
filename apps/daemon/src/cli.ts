@@ -5,7 +5,16 @@
  */
 
 import { pathToFileURL } from "node:url";
-import type { Project, SessionTrace, SessionView, Status, TraceEntry, TraceFacts } from "@pideck/shared";
+import {
+  DEFAULT_PORT,
+  errorMessage,
+  type Project,
+  type SessionTrace,
+  type SessionView,
+  type Status,
+  type TraceEntry,
+  type TraceFacts,
+} from "@pideck/shared";
 
 export interface CliIo {
   url: string;
@@ -26,7 +35,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   try {
     return await dispatch(argv, io);
   } catch (err) {
-    io.stderr(`pideck: ${err instanceof Error ? err.message : String(err)}`);
+    io.stderr(`pideck: ${errorMessage(err)}`);
     return 1;
   }
 }
@@ -132,7 +141,7 @@ async function dispatch(argv: string[], io: CliIo): Promise<number> {
 }
 
 export function daemonUrl(env: NodeJS.ProcessEnv = process.env): string {
-  return env.PD_DAEMON_URL ?? `http://127.0.0.1:${env.PD_WEB_PORT ?? 8321}`;
+  return env.PD_DAEMON_URL ?? `http://127.0.0.1:${env.PD_WEB_PORT ?? DEFAULT_PORT}`;
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -144,7 +153,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   try {
     return await runCli(argv, io);
   } catch (err) {
-    io.stderr(`pideck: ${err instanceof Error ? err.message : String(err)}`);
+    io.stderr(`pideck: ${errorMessage(err)}`);
     return 1;
   }
 }

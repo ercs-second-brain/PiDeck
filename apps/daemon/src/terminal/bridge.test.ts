@@ -5,10 +5,10 @@
  * daemon takes.
  */
 
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TerminalDataSchema } from "@pideck/shared";
 import {
   CLOSE_SESSION_GONE,
@@ -17,7 +17,20 @@ import {
   type TerminalBridgeOptions,
   type TerminalSocket,
 } from "./bridge.js";
-import { FakeTmux } from "../sessions/testing/fake-tmux.js";
+import { FakeTmux } from "../sessions/testing/fakeTmux.js";
+
+const tempDirs: string[] = [];
+
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 class FakeSocket implements TerminalSocket {
   readonly sent: string[] = [];
@@ -329,7 +342,7 @@ describe("terminal bridge", () => {
 
   it("re-pipes a pane that still pipes from a previous daemon run", async () => {
     const { tmux, bridge, open } = setup();
-    const stale = mkdtempSync(path.join(tmpdir(), "pideck-stale-"));
+    const stale = tempDir("pideck-stale-");
     tmux.openPipe(TMUX_SESSION, path.join(stale, "stale.stream"));
     expect(tmux.pipeActive(TMUX_SESSION)).toBe(true);
 

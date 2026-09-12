@@ -1,8 +1,11 @@
-import type { SessionView } from "@pideck/shared";
+import { SessionViewSchema, type SessionView } from "@pideck/shared";
 
-/** A minimal SessionView for component tests; override fields per case. */
+/** A SessionView built through the shared contract; override fields per case. */
 export function makeView(overrides: Partial<SessionView["session"]> = {}): SessionView {
-  return {
+  const clean = Object.fromEntries(
+    Object.entries(overrides).filter(([, value]) => value !== undefined),
+  );
+  return SessionViewSchema.parse({
     session: {
       id: "s1",
       persona: "worker",
@@ -10,19 +13,11 @@ export function makeView(overrides: Partial<SessionView["session"]> = {}): Sessi
       tmuxSession: "pideck-s1",
       spawnedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
       model: null,
-      lastPromptedHeadSha: null,
-      lastDeliveredIssueCommentId: null,
-      lastDeliveredPrCommentId: null,
-      lastDeliveredReviewId: null,
-      lastNotifiedConflictSha: null,
-      fixAttempts: 0,
-      lastActivityAt: null,
-      ...overrides,
+      ...clean,
     },
     state: "done",
     status: "archived",
     parentSessionId: null,
     title: null,
-    reviewAccess: null,
-  };
+  });
 }

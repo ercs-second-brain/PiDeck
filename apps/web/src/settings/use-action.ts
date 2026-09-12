@@ -5,6 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage } from "@pideck/shared";
 
 export type ActionState = "idle" | "busy" | "saved" | "error";
 
@@ -38,7 +39,7 @@ export function useAction(): TrackedAction {
       timer.current = setTimeout(() => setState("idle"), SAVED_VISIBLE_MS);
     } catch (err) {
       setState("error");
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     }
   }, []);
 

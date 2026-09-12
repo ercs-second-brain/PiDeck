@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
+import { DEFAULT_PORT, errorMessage } from "@pideck/shared";
 import { TerminalBridge } from "../terminal/bridge.js";
 import type { DaemonDeps } from "./deps.js";
 import { buildApiHandlers } from "./routes.js";
@@ -57,7 +58,7 @@ export async function serve(deps: DaemonDeps, options: ServeOptions = {}): Promi
     try {
       routed = await routeRequest(handlers, req);
     } catch (err) {
-      routed = { status: 500, body: { error: err instanceof Error ? err.message : String(err) } };
+      routed = { status: 500, body: { error: errorMessage(err) } };
     }
     if (routed.status === 404 && webDistDir !== null && !url.pathname.startsWith("/api/")) {
       const file = lookupStaticFile(webDistDir, req.url ?? "/");
@@ -72,7 +73,7 @@ export async function serve(deps: DaemonDeps, options: ServeOptions = {}): Promi
   }
 
   const host = options.host ?? "0.0.0.0";
-  const port = options.port ?? 8321;
+  const port = options.port ?? DEFAULT_PORT;
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, host, resolve);

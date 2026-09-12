@@ -5,53 +5,11 @@ import { PiProbeSchema, ProbeSchema, SessionSchema, type Session } from "@pideck
 import { PromptOverrides } from "../prompts/overrides.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { Trace } from "../reconciler/trace.js";
-import { Tmux } from "../sessions/tmux.js";
+import { FakeTmux } from "../sessions/testing/fakeTmux.js";
 import { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import { ProjectStore, type CommandRunner } from "../store/projectStore.js";
 import type { DaemonDeps } from "./deps.js";
 import { createUpdater } from "./update.js";
-
-/**
- * A Tmux fake that subclasses the real class so it stays assignable to the
- * registry-facing Tmux type; every pane op is recorded or kept in memory.
- */
-export class FakeTmux extends Tmux {
-  sent: { session: string; text: string }[] = [];
-  alive = new Set<string>();
-  killed: string[] = [];
-
-  constructor() {
-    super({ runner: async () => ({ stdout: "", stderr: "" }), enterDelayMs: 0 });
-  }
-
-  override create(name: string): Promise<void> {
-    this.alive.add(name);
-    return Promise.resolve();
-  }
-
-  override isAlive(name: string): Promise<boolean> {
-    return Promise.resolve(this.alive.has(name));
-  }
-
-  override listSessions(): Promise<string[]> {
-    return Promise.resolve([...this.alive]);
-  }
-
-  override sendLine(session: string, text: string): Promise<void> {
-    this.sent.push({ session, text });
-    return Promise.resolve();
-  }
-
-  override kill(session: string): Promise<void> {
-    this.killed.push(session);
-    this.alive.delete(session);
-    return Promise.resolve();
-  }
-
-  override capturePane(): Promise<string> {
-    return Promise.resolve("pane scrollback");
-  }
-}
 
 /**
  * CommandRunner fake for ProjectStore: `git clone` creates the target dir,
@@ -75,7 +33,7 @@ export function tempStateDir(prefix = "pideck-api-"): string {
  * different upstream SHA, `git remote` a repo URL — so a check reports an
  * update as available.
  */
-export const fakeUpdateRunner: CommandRunner = (cmd, args) => {
+const fakeUpdateRunner: CommandRunner = (cmd, args) => {
   if (cmd === "git" && args[0] === "rev-parse") return { stdout: "aaaaaaaaaaa\n" };
   if (cmd === "git" && args[0] === "remote") {
     return { stdout: "https://github.com/acme/widget.git\n" };

@@ -34,3 +34,84 @@ jobs:
             install/lib/*.sh install/test/*.sh
       - name: Shell tests (install/)
         run: sh install/test/run-all.sh
+
+  integration:
+    runs-on: ubuntu-latest
+    env:
+      PIDECK_GH_INTEGRATION: "1"
+      PIDECK_TMUX_INTEGRATION: "1"
+      PIDECK_TERMINAL_IT: "1"
+      # The gh suite runs against the fake gh (tools/fake-gh) on PATH, not
+      # against github.com — no credentials needed.
+      PIDECK_GH_INTEGRATION_REPO: acme/it
+      FAKE_GH_STATE: /tmp/fake-gh-state.json
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tmux
+        run: sudo apt-get update -y && sudo apt-get install -y tmux
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Fake gh repo state
+        run: |
+          cat > "$FAKE_GH_STATE" <<'EOF'
+          {
+            "seq": 1000,
+            "repo": "acme/it",
+            "primaryLogin": "acme-primary",
+            "tokens": {},
+            "issues": [
+              {
+                "number": 517,
+                "title": "Integration issue",
+                "url": "https://github.com/acme/it/issues/517",
+                "state": "open",
+                "assignees": [],
+                "labels": [],
+                "blockedBy": []
+              }
+            ],
+            "comments": {
+              "517": [
+                {
+                  "id": 1001,
+                  "user": "acme-primary",
+                  "body": "integration comment",
+                  "created_at": "2026-01-01T00:00:00Z"
+                }
+              ]
+            },
+            "prs": [
+              {
+                "number": 537,
+                "headRefName": "pideck-517",
+                "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "mergeable": "MERGEABLE",
+                "checks": [
+                  { "name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS" }
+                ],
+                "reviews": [],
+                "reviewComments": [],
+                "requestedReviewers": [],
+                "body": "Integration PR",
+                "state": "open"
+              }
+            ],
+            "invitations": [],
+            "readAccess": {}
+          }
+          EOF
+      - name: Put the fake gh on PATH
+        run: |
+          chmod +x tools/fake-gh/gh
+          echo "$(pwd)/tools/fake-gh" >> "$GITHUB_PATH"
+      - name: Opt-in integration suites
+        run: |
+          pnpm vitest run \
+            apps/daemon/src/github/client.integration.test.ts \
+            apps/daemon/src/sessions/tmux.integration.test.ts \
+            apps/daemon/src/terminal/terminal.integration.test.ts

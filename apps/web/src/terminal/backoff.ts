@@ -4,7 +4,7 @@
  */
 
 /** Base delay for reconnect attempt `n` (1-based), capped at 8s. */
-export function backoffDelayMs(attempt: number): number {
+function backoffDelayMs(attempt: number): number {
   return Math.min(500 * 2 ** Math.max(0, attempt - 1), 8000);
 }
 

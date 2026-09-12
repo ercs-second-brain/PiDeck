@@ -11,7 +11,8 @@ import {
   type SessionView,
 } from "@pideck/shared";
 import { serve, type DaemonServer } from "./server.js";
-import { makeDeps, FakeTmux, sessionRecord } from "./testing.js";
+import { makeDeps, sessionRecord } from "./testing.js";
+import { FakeTmux } from "../sessions/testing/fakeTmux.js";
 
 let daemons: DaemonServer[] = [];
 let dirs: string[] = [];
@@ -93,7 +94,7 @@ describe("REST contract", () => {
     expect(piCalls).toBe(1);
   });
 
-  it("creates, lists, gets, patches and deletes projects", async () => {
+  it("creates, lists, gets and deletes projects", async () => {
     const { base } = await startDaemon();
     const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
     expect(project.owner).toBe("acme");
@@ -104,9 +105,6 @@ describe("REST contract", () => {
 
     const got = await call(base, "GET", `/api/projects/${project.id}`);
     expect(validate(restEndpoints["projectGet"].response, got.body).id).toBe(project.id);
-
-    const patched = await call(base, "PATCH", `/api/projects/${project.id}`, { name: "Renamed" });
-    expect(validate(restEndpoints["projectUpdate"].response, patched.body).name).toBe("Renamed");
 
     const deleted = await call(base, "DELETE", `/api/projects/${project.id}`);
     expect(validate(restEndpoints["projectDelete"].response, deleted.body)).toEqual({ ok: true });
@@ -229,7 +227,7 @@ describe("REST contract", () => {
     const { base, deps, tmux } = await startDaemon();
     const worker = sessionRecord();
     deps.registry.add(worker);
-    tmux.alive.add(worker.tmuxSession);
+    tmux.createSession(worker.tmuxSession);
 
     const sent = await call(base, "POST", `/api/sessions/${worker.id}/send`, { text: "hello" });
     expect(validate(restEndpoints["sessionSend"].response, sent.body)).toEqual({ ok: true });
@@ -249,7 +247,7 @@ describe("REST contract", () => {
     const { base, deps, tmux } = await startDaemon();
     const worker = sessionRecord();
     deps.registry.add(worker);
-    tmux.alive.add(worker.tmuxSession);
+    tmux.createSession(worker.tmuxSession);
 
     const res = await call(base, "POST", `/api/sessions/${worker.id}/terminate`);
     expect(validate(restEndpoints["sessionTerminate"].response, res.body)).toEqual({ ok: true });

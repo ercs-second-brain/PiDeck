@@ -9,16 +9,23 @@
  */
 
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import type {
-  GlobalSettingsPut,
-  PiProbe,
-  Probe,
-  Project,
-  ProjectCreate,
-  ReviewAccountPut,
+import {
+  errorMessage,
+  type GlobalSettingsPut,
+  type PiProbe,
+  type Probe,
+  type Project,
+  type ProjectCreate,
+  type ReviewAccountPut,
 } from "@pideck/shared";
 import { api } from "../lib/api";
-import { Badge, Button, Field, Page, Row, Section, Switch } from "../ui";
+import { Badge } from "../ui/Badge";
+import { Button } from "../ui/Button";
+import { Field } from "../ui/Field";
+import { Page } from "../ui/Page";
+import { Row } from "../ui/Row";
+import { Section } from "../ui/Section";
+import { Switch } from "../ui/Switch";
 
 type StepId = "pi" | "github" | "review" | "repo";
 
@@ -32,10 +39,6 @@ const STEPS: readonly { id: StepId; label: string }[] = [
 const dim: CSSProperties = { color: "var(--text-dim)" };
 const red: CSSProperties = { color: "var(--red)", fontSize: 13 };
 const row: CSSProperties = { display: "flex", gap: 8, marginTop: 12 };
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /** Module-level so the probe steps' mount effect sees stable callbacks. */
 function runPiProbe(): Promise<PiProbe> {

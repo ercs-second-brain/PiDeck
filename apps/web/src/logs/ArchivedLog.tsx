@@ -14,7 +14,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
-import type { Project, SessionView } from "@pideck/shared";
+import { PERSONA_LABELS, type Project, type SessionView } from "@pideck/shared";
 import { githubLinks } from "../shell/tree";
 import { relativeTime } from "../shell/relativeTime";
 import { api, ApiError } from "../lib/api";
@@ -25,15 +25,8 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Empty } from "../ui/Empty";
 import { stateBadge } from "../ui/tones";
-import type { Persona } from "@pideck/shared";
 import "./logs.css";
 
-const PERSONA_LABELS: Record<Persona, string> = {
-  global: "Global agent",
-  orchestrator: "Orchestrator",
-  worker: "Worker",
-  reviewer: "Reviewer",
-};
 
 /**
  * Mount/teardown of the read-only log surface: the same xterm configuration

@@ -1,4 +1,7 @@
 export * from "./persona.js";
+export * from "./paths.js";
+export * from "./placeholders.js";
+export * from "./errors.js";
 export * from "./state.js";
 export * from "./session.js";
 export * from "./project.js";
