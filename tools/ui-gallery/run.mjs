@@ -538,7 +538,7 @@ function buildShots(sessionId) {
       ["ready", "worker state: ready"],
       ["blocked", "worker state: blocked"],
     ].map(([state, label]) => ({
-      name: `session-worker-${state}`,
+      name: `session-worker-${state.replaceAll("_", "-")}`,
       design: DESIGN.terminal,
       viewport: "desktop",
       state: label,
