@@ -42,7 +42,7 @@ describe.skipIf(!enabled)("terminal bridge integration", () => {
 
   afterAll(async () => {
     closeWs?.();
-    bridge.dispose();
+    bridge!.dispose();
     // The daemon shutdown path must stop the pipe-pane the stream opened.
     const pipe = await pipeActive().catch(() => "1");
     expect(pipe).toBe("0");
