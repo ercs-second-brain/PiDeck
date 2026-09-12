@@ -21,13 +21,14 @@ describe.skipIf(!enabled)("terminal bridge integration", () => {
   const tmuxSession = `pideck-it-${process.pid}`;
   const sessions = new Map([["s1", { id: "s1", tmuxSession }]]);
   let baseUrl = "";
+  let bridge: TerminalBridge | undefined;
   let closeWs: (() => void) | undefined;
 
   beforeAll(async () => {
     await tmux.run(["new-session", "-d", "-s", tmuxSession]);
     const server: Server = createServer(() => {});
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const bridge = new TerminalBridge({
+    bridge = new TerminalBridge({
       sessions: { get: (id) => sessions.get(id) },
       tmux,
       log: () => {},
@@ -41,6 +42,7 @@ describe.skipIf(!enabled)("terminal bridge integration", () => {
 
   afterAll(async () => {
     closeWs?.();
+    bridge.dispose();
     // The daemon shutdown path must stop the pipe-pane the stream opened.
     const pipe = await pipeActive().catch(() => "1");
     expect(pipe).toBe("0");
