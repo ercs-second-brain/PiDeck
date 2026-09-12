@@ -739,7 +739,7 @@ function buildShots(sessionId) {
         await page.locator('[aria-label^="Actions for #47"]').click();
         await page.getByRole("menuitem", { name: "Terminate" }).click();
         await page.getByText("Terminate the worker for #47?").waitFor();
-        await page.keyboard.press("Escape");
+        // the dialog stays open for the capture; the next shot navigates away
       },
     },
     {
@@ -773,7 +773,8 @@ function buildShots(sessionId) {
       async run(page) {
         await page.locator(".srow", { hasText: "#47" }).click();
         await page.locator(".xterm-screen").first().waitFor();
-        await page.waitForTimeout(400);
+        // give the ring-buffer replay over the WebSocket time to paint
+        await page.waitForTimeout(1200);
       },
     },
     {
