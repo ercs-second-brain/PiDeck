@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { serve, type DaemonServer } from "./api/server.js";
 import { makeDeps, sessionRecord } from "./api/testing.js";
 import { FakeTmux } from "./sessions/testing/fakeTmux.js";
 import { runCli, type CliIo } from "./cli.js";
+import { PI_TRANSCRIPT_JSONL } from "./sessions/testFixture.js";
 import type { Trace } from "./reconciler/trace.js";
 
 let daemons: DaemonServer[] = [];
@@ -160,11 +161,7 @@ describe("cli", () => {
     deps.registry.add(worker);
     const dir = join(deps.stateDir, "pi-sessions", worker.id);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl"),
-      readFileSync(join(import.meta.dirname, "sessions", "fixtures", "pi-transcript.jsonl"), "utf8"),
-      "utf8",
-    );
+    writeFileSync(join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl"), PI_TRANSCRIPT_JSONL, "utf8");
 
     const { io, stdout } = cliFor(base);
     expect(await runCli(["transcript", worker.id], io)).toBe(0);

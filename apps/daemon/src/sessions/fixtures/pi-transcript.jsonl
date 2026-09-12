@@ -1,7 +1,0 @@
-{"type":"session","version":3,"id":"fixture-session","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/repo/w1"}
-{"type":"model_change","id":"a1","parentId":null,"timestamp":"2026-01-01T00:00:00.100Z","provider":"openrouter","modelId":"test/model"}
-{"type":"thinking_level_change","id":"a2","parentId":"a1","timestamp":"2026-01-01T00:00:00.101Z","thinkingLevel":"high"}
-{"type":"message","id":"b1","parentId":"a2","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Run the shell command 'echo hi' and then stop."}],"timestamp":1767225601000}}
-{"type":"message","id":"b2","parentId":"b1","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"call-1","name":"bash","arguments":{"command":"echo hi"}}],"stopReason":"toolUse","timestamp":1767225602000}}
-{"type":"message","id":"b3","parentId":"b2","timestamp":"2026-01-01T00:00:02.100Z","message":{"role":"toolResult","toolCallId":"call-1","toolName":"bash","content":[{"type":"text","text":"hi\n"}],"isError":false,"timestamp":1767225602100}}
-{"type":"message","id":"b4","parentId":"b3","timestamp":"2026-01-01T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"The command output `hi`, as expected. Stopping here as requested."}],"stopReason":"stop","timestamp":1767225603000}}

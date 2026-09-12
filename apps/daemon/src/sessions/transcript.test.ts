@@ -1,11 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readTranscript } from "./transcript.js";
-
-/** The captured pi transcript checked in next to this test. */
-const FIXTURE = join(import.meta.dirname, "fixtures", "pi-transcript.jsonl");
+import { PI_TRANSCRIPT_JSONL } from "./testFixture.js";
 
 let stateDir: string;
 
@@ -25,7 +23,7 @@ function writeSession(lines: string[], name = "2026-01-01T00-00-00-000Z_0000.jso
 describe("readTranscript", () => {
   it("parses the captured pi transcript fixture: roles, timestamps, tool call summary", () => {
     mkdirSync(join(stateDir, "pi-sessions", "s1"), { recursive: true });
-    writeFileSync(join(stateDir, "pi-sessions", "s1", "real.jsonl"), readFileSync(FIXTURE, "utf8"), "utf8");
+    writeFileSync(join(stateDir, "pi-sessions", "s1", "real.jsonl"), PI_TRANSCRIPT_JSONL, "utf8");
     const { entries } = readTranscript(stateDir, "s1");
     expect(entries).toHaveLength(3);
     expect(entries[0]).toMatchObject({ role: "user", at: "2026-01-01T00:00:01.000Z", text: "Run the shell command 'echo hi' and then stop." });

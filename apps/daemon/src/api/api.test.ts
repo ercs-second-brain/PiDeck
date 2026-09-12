@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,6 +13,7 @@ import {
 } from "@pideck/shared";
 import { serve, type DaemonServer } from "./server.js";
 import { makeDeps, sessionRecord } from "./testing.js";
+import { PI_TRANSCRIPT_JSONL } from "../sessions/testFixture.js";
 import { FakeTmux } from "../sessions/testing/fakeTmux.js";
 
 let daemons: DaemonServer[] = [];
@@ -302,11 +303,7 @@ describe("REST contract", () => {
     deps.registry.add(worker);
     const dir = join(deps.stateDir, "pi-sessions", worker.id);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl"),
-      readFileSync(join(import.meta.dirname, "..", "sessions", "fixtures", "pi-transcript.jsonl"), "utf8"),
-      "utf8",
-    );
+    writeFileSync(join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl"), PI_TRANSCRIPT_JSONL, "utf8");
 
     const res = await call(base, "GET", `/api/sessions/${worker.id}/transcript`);
     expect(res.status).toBe(200);
