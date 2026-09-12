@@ -14,6 +14,7 @@ import { ProjectSchema, ProjectSettingsSchema } from "@pideck/shared";
 import { GhClient } from "../github/client.js";
 import { PromptOverrides } from "../prompts/overrides.js";
 import { startReconciler, type ReconcilerHandle } from "../reconciler/index.js";
+import { Trace } from "../reconciler/trace.js";
 import { SessionRegistry } from "../sessions/registry.js";
 import { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import { ProjectStore } from "../store/projectStore.js";
@@ -55,6 +56,7 @@ beforeEach(() => {
     registry,
     tmux: tmux.tmux,
     prompts: new PromptOverrides(stateDir),
+    trace: new Trace(stateDir),
     stateDir,
     intervalMs: 3_600_000,
     git: async () => "",

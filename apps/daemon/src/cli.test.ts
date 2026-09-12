@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { serve, type DaemonServer } from "./api/server.js";
 import { makeDeps, FakeTmux, sessionRecord } from "./api/testing.js";
 import { runCli, type CliIo } from "./cli.js";
+import type { Trace } from "./reconciler/trace.js";
 
 let daemons: DaemonServer[] = [];
 let dirs: string[] = [];
@@ -46,6 +47,15 @@ function cliFor(base: string): { io: CliIo; stdout: string[]; stderr: string[] }
     stderr: (line) => stderr.push(line),
   };
   return { io, stdout, stderr };
+}
+
+/** Waits for the hub's first state-derivation write for a session. */
+async function untilDerived(trace: Trace, id: string): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    if (trace.read(id).some((entry) => entry.kind === "state")) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`the hub never derived a state entry for ${id}`);
 }
 
 describe("cli", () => {
@@ -108,6 +118,9 @@ describe("cli", () => {
     const { base, deps } = await startCliDaemon();
     const worker = sessionRecord({ projectId: null });
     deps.registry.add(worker);
+    // The live hub derives the new session's view and traces the state
+    // change; wait for that write so the file contents below are settled.
+    await untilDerived(deps.trace, worker.id);
     deps.trace.append(worker.id, { at: "2026-01-01T00:00:00Z", kind: "spawn", detail: "spawned worker for issue #7" });
     deps.trace.append(worker.id, {
       at: "2026-01-01T00:01:00Z",
@@ -126,15 +139,17 @@ describe("cli", () => {
     const { io, stdout } = cliFor(base);
     expect(await runCli(["trace", worker.id], io)).toBe(0);
     const lines = stdout.join("\n").trimEnd().split("\n");
-    expect(lines).toHaveLength(3);
-    expect(lines[0]).toContain("spawn  spawned worker for issue #7");
-    expect(lines[1]).toContain("delivery  CI failed: build");
-    expect(lines[2]).toContain("working → fixing · fixing CI on PR #11");
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain("state  - → working · working");
+    expect(lines[1]).toContain("spawn  spawned worker for issue #7");
+    expect(lines[2]).toContain("delivery  CI failed: build");
+    expect(lines[3]).toContain("working → fixing · fixing CI on PR #11");
 
     const { io: jsonIo, stdout: jsonOut } = cliFor(base);
     expect(await runCli(["trace", worker.id, "--json"], jsonIo)).toBe(0);
     const parsed = JSON.parse(jsonOut.join(""));
-    expect(parsed.entries).toHaveLength(3);
+    expect(parsed.entries).toHaveLength(4);
+    expect(parsed.entries[0]).toMatchObject({ kind: "state", from: null, to: "working", status: "working" });
     expect(parsed.transcriptPath).toBeNull();
   });
 
