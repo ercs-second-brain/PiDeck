@@ -732,6 +732,7 @@ function buildShots(sessionId) {
       route: "/",
       async run(page) {
         await page.keyboard.press("Escape");
+        await page.locator(".srow-line", { hasText: "#47" }).first().hover();
         await page.locator('[aria-label^="Actions for #47"]').click();
         await page.getByRole("menuitem", { name: "Terminate" }).click();
         await page.getByText("Terminate the worker for #47?").waitFor();
