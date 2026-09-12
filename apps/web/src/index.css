@@ -1,0 +1,78 @@
+/*
+ * PiDeck web tokens (docs/DESIGN.md §1) and base styles: one calm dark
+ * surface, one accent, state colours only for state. Plain CSS custom
+ * properties — no framework, no component library.
+ */
+
+:root {
+  --bg: #0c0d10;
+  --bg-raised: #13151a;
+  --bg-hover: #1a1d24;
+  --border: #262a33;
+  --text: #f4f5f7;
+  --text-dim: #8b93a0;
+  --accent: #f59f4c;
+  --green: #44c97a;
+  --red: #f05d5e;
+  --amber: #e5c34b;
+  --blue: #5b9cff;
+  --purple: #c678dd;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrainsMono Nerd Font", "FiraCode Nerd Font", ui-monospace, Menlo, monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-base: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-2xl: 22px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-pill: 999px;
+
+  --shadow-pop: 0 4px 16px color-mix(in srgb, black 40%, transparent);
+  --shadow-modal: 0 8px 32px color-mix(in srgb, black 50%, transparent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}

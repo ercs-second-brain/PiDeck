@@ -1,0 +1,33 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.field__control {
+  height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-size: var(--fs-md);
+}
+
+.field__control:disabled {
+  opacity: 0.5;
+}
+
+.field__error {
+  color: var(--red);
+  font-size: var(--fs-sm);
+}
+
+@media (pointer: coarse) {
+  .field__control {
+    height: 40px;
+    font-size: var(--fs-lg);
+  }
+}

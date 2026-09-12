@@ -124,6 +124,26 @@ touch to prevent iOS zoom) · `Switch` (real checkbox, `role="switch"`) · `Butt
 (default / primary / danger / ghost) · `Badge` (state pill) · `Dialog` (confirmations only) ·
 `Empty` (dim one-liner + optional CTA) · `Toast` (bottom-right, bottom-centre on mobile).
 
+Props are plain values — no context, no styling API. These signatures are binding for every
+screen built on the primitives:
+
+| Primitive | Props |
+| --- | --- |
+| `Page` | `title: string` · `subnav?: ReactNode` · `children` |
+| `Section` | `title?: string` · `description?: string` · `footer?: ReactNode` (Save + status) · `children` |
+| `Row` | `label: string` · `description?: string` · `children` (the control) |
+| `Field` | `value: string` (always a string; consumers parse numbers) · `onChange(value: string)` · `type?: "text" \| "password" \| "number" \| "select"` · `options?: { value, label }[]` (select only) · `placeholder?` · `disabled?` · `min?` · `max?` · `step?` · `error?: string` (inline under the control in `--red`) · `label?: string` (accessible name) |
+| `Switch` | `checked: boolean` · `onChange(checked: boolean)` · `label: string` (accessible name) |
+| `Button` | `variant?: "default" \| "primary" \| "danger" \| "ghost"` · `type?: "button" \| "submit"` · `disabled?` · `autoFocus?` · `onClick?` · `children` |
+| `Badge` | `tone: "blue" \| "amber" \| "purple" \| "green" \| "red" \| "dim"` · `children` |
+| `Dialog` | `open: boolean` · `title: string` · `children?` (description line) · `confirmLabel?: string` (default "Confirm") · `danger?: boolean` · `busy?: boolean` (disables the buttons while the confirmed action runs) · `onConfirm` · `onCancel` |
+| `Empty` | `children` (the dim one-liner) · `action?: ReactNode` (CTA button) |
+| `Toast` | `message: string \| null` · `onDismiss?: () => void` (auto-dismisses after 3 s when given) |
+
+Worker states map to badge tones via `src/ui/tones.ts` (`stateBadge(state)` → tone + label),
+never hand-rolled by a screen: `working` blue · `ci`/`fixing`/`addressing` amber ·
+`in_review` purple (labelled "in review") · `ready` green · `blocked` red · `done` dim.
+
 ## 5. Screens
 
 **Settings** (`/settings`, sub-nav: General · Review account · Models · Prompts):

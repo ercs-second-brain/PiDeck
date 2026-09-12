@@ -1,0 +1,42 @@
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+}
+
+.row + .row {
+  border-top: 1px solid var(--border);
+}
+
+.row__text {
+  min-width: 0;
+}
+
+.row__label {
+  font-size: var(--fs-base);
+}
+
+.row__description {
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: var(--fs-md);
+}
+
+.row__control {
+  flex: none;
+  min-width: 0;
+  max-width: 60%;
+}
+
+@media (max-width: 479px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .row__control {
+    max-width: none;
+  }
+}
