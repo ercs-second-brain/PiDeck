@@ -11,8 +11,8 @@ import type { IncomingMessage } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { TerminalBridge, type TerminalBridgeOptions, type TerminalSocket } from "./bridge.js";
 
-/** Path the terminal WebSocket is served on. */
-export const TERMINAL_WS_PATH = "/ws/terminal";
+/** Path the daemon's single WebSocket is served on. */
+export const TERMINAL_WS_PATH = "/ws";
 
 export interface TerminalWsOptions {
   /** Path the WS endpoint is served on. */
