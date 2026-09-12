@@ -3,17 +3,22 @@
  * reconcile the registry with live tmux state at startup.
  *
  * The cwd each persona gets:
- * - worker: a fresh git worktree of the project clone (the `cwd` argument)
- *   on branch `pideck/issue-<n>`, based on the default branch (resolved
- *   from `origin/HEAD`, falling back to the clone's own HEAD). If the
- *   branch already exists — a replaced worker — the worktree reuses it
- *   instead of resetting, so in-progress work survives replacement.
- * - reviewer: a detached worktree of the PR head (fetched from
- *   `pull/<n>/head`).
- * - orchestrator/global: the clone itself.
+ * - worker: its own clone of the project clone at
+ *   `<stateDir>/sessions/<id>/repo` — same filesystem, so the clone
+ *   hardlinks the existing objects and is near-instant. origin is
+ *   repointed at the GitHub repo and fetched, so the session branches
+ *   from current upstream; the local clone is only a warm object cache.
+ *   On branch `pideck/issue-<n>`: checked out against `origin/<default>`
+ *   when the branch does not exist upstream, tracking
+ *   `origin/pideck/issue-<n>` when it does (a replaced worker keeps
+ *   in-progress work).
+ * - reviewer: its own clone the same way, then detached at the PR head
+ *   (fetched from `pull/<n>/head`).
+ * - orchestrator/global: the project clone itself (they only write `docs/`).
  *
- * Worktrees live under `<stateDir>/worktrees/<sessionId>` so project
- * clones stay clean; they are removed on archive. Each pane runs pi with
+ * Each session owns everything under `<stateDir>/sessions/<id>`, removed on
+ * archive — no shared `.git`, so one session's `git stash`, `gc`, or hooks
+ * can never touch another's. Each pane runs pi with
  * `--session-dir <stateDir>/pi-sessions/<sessionId>` so the session's JSONL
  * lives at a path PiDeck chose (see context.ts); removed on archive too.
  */
@@ -29,8 +34,10 @@ import type { SessionRegistry } from "./registry.js";
 export interface SpawnPiOptions {
   persona: Persona;
   projectId: string | null;
-  /** Project clone the session works from (worker/reviewer get a worktree). */
+  /** Project clone the session works from (worker/reviewer get a clone of it). */
   cwd: string;
+  /** Upstream URL the session clone's origin is repointed at. */
+  repoUrl?: string;
   systemPrompt: string;
   model: string | null;
   env?: Record<string, string>;
@@ -41,7 +48,7 @@ export interface SpawnPiOptions {
 export interface SpawnDeps {
   tmux: Tmux;
   registry: SessionRegistry;
-  /** State dir: worktrees, system prompts, and logs live under it. */
+  /** State dir: session clones, system prompts, and logs live under it. */
   stateDir: string;
   git?: GitRunner;
 }
@@ -71,68 +78,79 @@ export function defaultGitRunner(): GitRunner {
     });
 }
 
-export function worktreeDir(stateDir: string, sessionId: string): string {
-  return join(stateDir, "worktrees", sessionId);
+export function sessionDir(stateDir: string, sessionId: string): string {
+  return join(stateDir, "sessions", sessionId);
 }
 
-/** The branch a fresh worktree starts from: `origin/HEAD` or the clone's HEAD. */
-async function defaultBranch(git: GitRunner, clone: string): Promise<string> {
+/** The branch a session clone starts from: `origin/HEAD` or the clone's HEAD. */
+async function defaultBranch(git: GitRunner, repo: string): Promise<string> {
   try {
     const ref = await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], {
-      cwd: clone,
+      cwd: repo,
     });
     return ref.trim().replace(/^origin\//, "");
   } catch {
-    const head = await git(["rev-parse", "HEAD"], { cwd: clone });
+    const head = await git(["rev-parse", "HEAD"], { cwd: repo });
     return head.trim();
   }
 }
 
-async function branchExists(git: GitRunner, clone: string, branch: string): Promise<boolean> {
+/** Whether the branch exists on the remote of the session's own clone. */
+async function branchExistsUpstream(
+  git: GitRunner,
+  repo: string,
+  branch: string,
+): Promise<boolean> {
   try {
-    await git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: clone });
+    await git(["show-ref", "--verify", "--quiet", `refs/remotes/origin/${branch}`], {
+      cwd: repo,
+    });
     return true;
   } catch {
     return false;
   }
 }
 
-async function createWorkerWorktree(
+/**
+ * Clones the project clone into the session's own repo and repoints origin
+ * at the upstream URL (the project clone is only a warm object cache).
+ */
+async function createSessionClone(
   git: GitRunner,
-  clone: string,
-  path: string,
+  projectClone: string,
+  repo: string,
+  repoUrl: string | undefined,
+): Promise<void> {
+  mkdirSync(dirname(repo), { recursive: true });
+  await git(["clone", projectClone, repo], { cwd: projectClone });
+  if (repoUrl !== undefined) {
+    await git(["remote", "set-url", "origin", repoUrl], { cwd: repo });
+  }
+}
+
+/** Worker branching: fetch upstream, then reuse the upstream branch or base a new one off the default. */
+async function setupWorkerBranch(
+  git: GitRunner,
+  repo: string,
   branch: string,
 ): Promise<void> {
-  mkdirSync(dirname(path), { recursive: true });
-  if (await branchExists(git, clone, branch)) {
-    await git(["worktree", "add", path, branch], { cwd: clone });
+  await git(["fetch", "origin"], { cwd: repo });
+  if (await branchExistsUpstream(git, repo, branch)) {
+    // The fresh clone has no local branch, so checkout tracks origin/<branch>.
+    await git(["checkout", branch], { cwd: repo });
   } else {
-    const base = await defaultBranch(git, clone);
-    await git(["worktree", "add", "-b", branch, path, base], { cwd: clone });
+    const base = await defaultBranch(git, repo);
+    await git(["checkout", "-B", branch, `origin/${base}`], { cwd: repo });
   }
 }
 
-async function createReviewerWorktree(
+async function setupReviewerCheckout(
   git: GitRunner,
-  clone: string,
-  path: string,
+  repo: string,
   prNumber: number,
 ): Promise<void> {
-  mkdirSync(dirname(path), { recursive: true });
-  await git(["fetch", "origin", `pull/${prNumber}/head`], { cwd: clone });
-  await git(["worktree", "add", "--detach", path, "FETCH_HEAD"], { cwd: clone });
-}
-
-/** Removes a session's worktree; prunes the repo's worktree metadata. */
-export function removeWorktree(
-  git: GitRunner,
-  clone: string | null,
-  path: string,
-): void {
-  rmSync(path, { recursive: true, force: true });
-  if (clone !== null) {
-    git(["worktree", "prune"], { cwd: clone }).catch(() => {});
-  }
+  await git(["fetch", "origin", `pull/${prNumber}/head`], { cwd: repo });
+  await git(["checkout", "--detach", "FETCH_HEAD"], { cwd: repo });
 }
 
 /** Launches pi in tmux and registers the session. Returns the record. */
@@ -143,16 +161,13 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
 
   let cwd = options.cwd;
   if (options.persona === "worker" && options.issueNumber !== undefined) {
-    cwd = worktreeDir(deps.stateDir, id);
-    await createWorkerWorktree(
-      git,
-      options.cwd,
-      cwd,
-      `pideck/issue-${options.issueNumber}`,
-    );
+    cwd = join(sessionDir(deps.stateDir, id), "repo");
+    await createSessionClone(git, options.cwd, cwd, options.repoUrl);
+    await setupWorkerBranch(git, cwd, `pideck/issue-${options.issueNumber}`);
   } else if (options.persona === "reviewer" && options.prNumber !== undefined) {
-    cwd = worktreeDir(deps.stateDir, id);
-    await createReviewerWorktree(git, options.cwd, cwd, options.prNumber);
+    cwd = join(sessionDir(deps.stateDir, id), "repo");
+    await createSessionClone(git, options.cwd, cwd, options.repoUrl);
+    await setupReviewerCheckout(git, cwd, options.prNumber);
   }
 
   const promptFile = join(deps.stateDir, "system-prompts", `${id}.md`);
@@ -200,16 +215,14 @@ export interface ArchiveDeps {
   tmux: Tmux;
   registry: SessionRegistry;
   stateDir: string;
-  git?: GitRunner;
-  /** Project clone the session was created from (for worktree pruning). */
-  cloneDir: string | null;
 }
 
 /**
  * Archives a session: captures the pane scrollback to
  * `<stateDir>/logs/<sessionId>.log`, kills the tmux session, removes the
- * session's worktree, and marks the record archived (kept). A pane that is
- * already gone skips straight to cleanup — its scrollback died with it.
+ * session's own directory (clone included), and marks the record archived
+ * (kept). A pane that is already gone skips straight to cleanup — its
+ * scrollback died with it.
  */
 export async function archiveSession(deps: ArchiveDeps, session: Session): Promise<Session> {
   if (await deps.tmux.isAlive(session.tmuxSession)) {
@@ -219,7 +232,7 @@ export async function archiveSession(deps: ArchiveDeps, session: Session): Promi
     writeFileSync(logFile, `${log}\n`, "utf8");
     await deps.tmux.kill(session.tmuxSession);
   }
-  removeWorktree(deps.git ?? defaultGitRunner(), deps.cloneDir, worktreeDir(deps.stateDir, session.id));
+  rmSync(sessionDir(deps.stateDir, session.id), { recursive: true, force: true });
   rmSync(join(deps.stateDir, "system-prompts", `${session.id}.md`), { force: true });
   rmSync(join(deps.stateDir, "pi-sessions", session.id), { recursive: true, force: true });
   return deps.registry.archive(session.id);

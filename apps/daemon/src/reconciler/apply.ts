@@ -136,6 +136,7 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         persona: "worker",
         projectId: ctx.project.id,
         cwd: ctx.project.path,
+        repoUrl: ctx.project.repoUrl,
         systemPrompt: deps.prompts.systemPrompt("worker", {
           ISSUE_NUMBER: String(action.issue.number),
           REPO: `${ctx.project.owner}/${ctx.project.repo}`,
@@ -163,6 +164,7 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         persona: "reviewer",
         projectId: ctx.project.id,
         cwd: ctx.project.path,
+        repoUrl: ctx.project.repoUrl,
         systemPrompt: deps.prompts.systemPrompt("reviewer", {
           PR_NUMBER: String(action.pr.number),
           REPO: `${ctx.project.owner}/${ctx.project.repo}`,
@@ -188,13 +190,7 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
       return null;
     case "archive":
       await archiveSession(
-        {
-          tmux: deps.tmux,
-          registry: deps.registry,
-          stateDir: deps.stateDir,
-          git: deps.git,
-          cloneDir: ctx.project?.path ?? null,
-        },
+        { tmux: deps.tmux, registry: deps.registry, stateDir: deps.stateDir },
         action.session,
       );
       deps.notifyChange?.();

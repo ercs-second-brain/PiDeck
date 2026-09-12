@@ -25,3 +25,4 @@ taken with the project owner; change one here before changing the spec.
 | 18 | Polling only; reconciliation every poll; nothing blocked-by-related persisted | Webhooks need a public endpoint. Restart = first poll. |
 | 19 | Review account required in onboarding; model per persona; macOS + Linux; in-UI updates | Loop cannot run without the reviewer. |
 | 20 | Same repo, wiped, rebuilt from this spec; no migration | Clean break from the demo. |
+| 21 | Each worker and reviewer session gets its own isolated clone, not a shared-clone worktree | Worktrees share `.git` (stash stack, refs, hooks, config, `gc`) and agents run arbitrary git — a `stash pop` in one session applied another's work; per-session clones (hardlinked objects, near-instant) make the whole hazard family impossible by construction. |
