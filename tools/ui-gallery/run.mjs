@@ -111,11 +111,6 @@ function installFakeBins(temp) {
   chmodSync(join(bin, "gh"), 0o755);
   writeFileSync(join(bin, "tmux"), fakeTmuxScript(), "utf8");
   chmodSync(join(bin, "tmux"), 0o755);
-  // The shim the updater spawns when the pill is clicked; a no-op keeps the
-  // daemon alive so the "Updating…" pill state can be captured.
-  mkdirSync(join(temp, "state", "bin"), { recursive: true });
-  writeFileSync(join(temp, "state", "bin", "pideck"), "#!/bin/sh\nexit 0\n", "utf8");
-  chmodSync(join(temp, "state", "bin", "pideck"), 0o755);
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +318,11 @@ const ARCHIVED_TRACE = [
 function seedState(stateDir, tmuxStateDir) {
   rmSync(stateDir, { recursive: true, force: true });
   mkdirSync(stateDir, { recursive: true });
+  // A no-op shim for the updater: clicking the pill spawns it and stays alive
+  // long enough to capture the "Updating…" state.
+  mkdirSync(join(stateDir, "bin"), { recursive: true });
+  writeFileSync(join(stateDir, "bin", "pideck"), "#!/bin/sh\nsleep 30\n", "utf8");
+  chmodSync(join(stateDir, "bin", "pideck"), 0o755);
 
   const projectList = Object.entries(projects).map(([id, spec]) => {
     const path = join(stateDir, "clones", id);
