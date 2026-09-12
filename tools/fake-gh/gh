@@ -107,6 +107,10 @@ function gh(state) {
   const repo =
     segments[0] === "repos" && segments.length >= 3 ? `${segments[1]}/${segments[2]}` : null;
 
+  if (method === "GET" && segmentsEqual(segments, ["user"])) {
+    if (args.includes("--jq") && args[args.indexOf("--jq") + 1] === ".login") return emit(loginFor(state));
+    return emit(JSON.stringify({ login: loginFor(state) }));
+  }
   if (method === "GET" && segmentsEqual(segments, ["repos", "*", "*"])) {
     if (canRead(state, login, `${segments[1]}/${segments[2]}`)) return emit("{}");
     fail(`Must have read access to ${segments[1]}/${segments[2]} (as ${login})`);
@@ -306,6 +310,20 @@ function authStatus(state) {
   return emit(`github.com\n  ✓ Logged in to github.com account ${loginFor(state)}`);
 }
 
+// The device-code login the review-account onboarding drives: print the code
+// and URL gh prints, and treat the login as completed immediately.
+function authLogin(state) {
+  process.stderr.write(`\n! First copy your one-time code: ${state.deviceCode ?? "PIDE-DEVC"}\n`);
+  process.stderr.write("Open this URL to continue in your web browser: https://github.com/login/device\n");
+  return emit("");
+}
+
+function authToken(state) {
+  const entry = Object.entries(state.tokens).find(([, login]) => login !== state.primaryLogin);
+  if (entry === undefined) fail("no review-account token in fake state");
+  return emit(entry[0]);
+}
+
 function jsonFlagWith(rest, expected) {
   const index = rest.indexOf("--json");
   return index !== -1 && rest[index + 1] === expected;
@@ -468,6 +486,10 @@ if (args[0] === "__op") {
   op(state);
 } else if (args[0] === "auth" && args[1] === "status") {
   authStatus(state);
+} else if (args[0] === "auth" && args[1] === "login") {
+  authLogin(state);
+} else if (args[0] === "auth" && args[1] === "token") {
+  authToken(state);
 } else if (args[0] === "issue" && args[1] === "list") {
   issueList(state);
 } else if (args[0] === "issue" && args[1] === "edit") {
