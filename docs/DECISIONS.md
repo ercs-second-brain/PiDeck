@@ -25,3 +25,9 @@ taken with the project owner; change one here before changing the spec.
 | 18 | Polling only; reconciliation every poll; nothing blocked-by-related persisted | Webhooks need a public endpoint. Restart = first poll. |
 | 19 | Review account required in onboarding; model per persona; macOS + Linux; in-UI updates | Loop cannot run without the reviewer. |
 | 20 | Same repo, wiped, rebuilt from this spec; no migration | Clean break from the demo. |
+| 21 | Worker blockers are issue comments starting with `BLOCKED:`; delivery routing is by content, not author | Worker and orchestrator both act through the primary account, so authorship cannot distinguish direction; a prefix the daemon matches keeps the blocker path GitHub-native. |
+| 22 | pi runs with `--session-dir <stateDir>/pi-sessions/<sessionId>` | Pins pi's session storage to a path PiDeck owns, so the context probe reads the session JSONL without reconstructing pi's internal cwd-slug layout. |
+| 23 | The review account must be a collaborator on every registered repo, and the daemon manages that access | `gh pr review` needs push-level access; the daemon checks access on registration and every poll, invites with push as the primary account, and accepts the invitation as the review account. No reviewer spawns while access is missing. |
+| 24 | PR conflicts route to the worker, not the orchestrator | A conflicted PR never runs CI and never gets reviewed, so the worker must rebase; watermarked per head so a push that still conflicts re-notifies. |
+| 25 | `workerConcurrency` is a fixed default (3); never auto-sized from hardware | No user asked for hardware probing; the knob exists for the one who wants a different number. |
+| 26 | Loop tooling scope: fake gh, the end-to-end loop test, the session trace, and the UI gallery; prompt evals deferred | The loop must be reproducible without GitHub or real agents; eval harnesses wait until the loop is stable. |
