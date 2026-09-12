@@ -30,7 +30,7 @@ async function startCliDaemon() {
     heartbeatMs: 0,
   });
   daemons.push(daemon);
-  const project = deps.projects.add({
+  const project = await deps.projects.add({
     mode: "clone",
     repoUrl: join(tmpdir(), "pideck-src", "acme", "widget"),
   });

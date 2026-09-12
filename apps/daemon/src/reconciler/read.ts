@@ -53,6 +53,8 @@ export interface ProjectFacts {
   issues: IssueFacts[];
   prs: PrFacts[];
   primaryLogin: string | null;
+  /** Set when the review account cannot read the repo; then no reviewer runs. */
+  reviewAccess?: string;
 }
 
 const ISSUE_BRANCH = /^pideck\/issue-(\d+)$/;

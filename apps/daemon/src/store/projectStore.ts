@@ -10,6 +10,9 @@ import {
   type ProjectCreate,
   type ProjectSettings,
 } from "@pideck/shared";
+import { GhClient } from "../github/client.js";
+import { ensureReviewAccess } from "../github/reviewAccess.js";
+import { GlobalSettingsStore } from "./globalSettingsStore.js";
 import { JsonFile } from "./jsonFile.js";
 
 const ProjectRecordSchema = z.object({
@@ -23,6 +26,9 @@ type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
 type ProjectsFile = z.infer<typeof ProjectsFileSchema>;
 
 export type CommandRunner = (cmd: string, args: string[], cwd?: string) => { stdout: string };
+
+/** Overridable review-access check run when a project is registered. */
+export type ReviewAccessCheck = (repo: { owner: string; repo: string }) => Promise<void>;
 
 export function runCommand(cmd: string, args: string[], cwd?: string): { stdout: string } {
   try {
@@ -59,20 +65,27 @@ function slug(raw: string): string {
 /**
  * Registered projects persisted at `<stateDir>/projects.json`. `add` clones an
  * existing repo or creates one with `gh repo create`, always landing the clone
- * at `<stateDir>/projects/<id>/clone`. `remove` deletes the whole
- * `<stateDir>/projects/<id>` directory — clone and any worktrees with it.
+ * at `<stateDir>/projects/<id>/clone`, then guarantees the review account can
+ * read the repo (check, invite with push, accept — never fatal: the reconciler
+ * re-checks every poll and reports what it cannot fix). `remove` deletes the
+ * whole `<stateDir>/projects/<id>` directory — clone and any worktrees with it.
  */
 export class ProjectStore {
   private file: JsonFile<ProjectsFile>;
   private projectRoot: string;
+  private stateDir: string;
+  private reviewAccess?: ReviewAccessCheck;
+  private settingsStore: GlobalSettingsStore | null = null;
 
-  constructor(stateDir: string, private run: CommandRunner = runCommand) {
+  constructor(stateDir: string, private run: CommandRunner = runCommand, reviewAccess?: ReviewAccessCheck) {
     this.file = new JsonFile(join(stateDir, "projects.json"), ProjectsFileSchema, { projects: [] });
     this.projectRoot = join(stateDir, "projects");
+    this.stateDir = stateDir;
+    this.reviewAccess = reviewAccess;
     this.file.load();
   }
 
-  add(input: ProjectCreate): Project {
+  async add(input: ProjectCreate): Promise<Project> {
     const create = ProjectCreateSchema.parse(input);
     const records = this.file.load().projects;
 
@@ -81,6 +94,15 @@ export class ProjectStore {
         ? this.addClone(records, create.repoUrl, create.name ?? null)
         : this.addCreate(records, create.name, create.private);
 
+    return this.finishAdd(records, project);
+  }
+
+  private async finishAdd(records: ProjectRecord[], project: Project): Promise<Project> {
+    try {
+      await this.ensureReviewAccess(project);
+    } catch {
+      // Access problems surface through the reconciler's per-tick re-check.
+    }
     records.push({
       project,
       settings: ProjectSettingsSchema.parse({}),
@@ -124,6 +146,25 @@ export class ProjectStore {
     this.find(records, id);
     rmSync(join(this.projectRoot, id), { recursive: true, force: true });
     this.file.write({ projects: records.filter((record) => record.project.id !== id) });
+  }
+
+  private ensureReviewAccess(project: Pick<Project, "owner" | "repo">): Promise<void> {
+    if (this.reviewAccess !== undefined) {
+      return this.reviewAccess({ owner: project.owner, repo: project.repo }).then(() => undefined);
+    }
+    const account = this.globalSettings().reviewToken();
+    if (account === null) return Promise.resolve();
+    const repo = `${project.owner}/${project.repo}`;
+    return ensureReviewAccess({
+      primary: new GhClient({ repo }),
+      review: new GhClient({ repo, token: account.token }),
+      reviewLogin: account.username,
+      repo,
+    }).then(() => undefined);
+  }
+
+  private globalSettings(): GlobalSettingsStore {
+    return (this.settingsStore ??= new GlobalSettingsStore(this.stateDir));
   }
 
   private addClone(records: ProjectRecord[], repoUrl: string, name: string | null): Project {

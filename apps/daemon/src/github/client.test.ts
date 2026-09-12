@@ -269,4 +269,34 @@ describe("GhClient", () => {
     const probe = await client.authStatus();
     expect(probe).toEqual({ ok: false, detail: "not logged into any hosts" });
   });
+
+  it("hasReadAccess is true when the repo endpoint answers", async () => {
+    const { client, calls } = fakeExec(() => ok(JSON.stringify({ full_name: "o/r" })));
+    expect(await client.hasReadAccess()).toBe(true);
+    expect(calls[0]?.args).toEqual(["api", "repos/o/r"]);
+  });
+
+  it("hasReadAccess is false on a nonzero exit", async () => {
+    const { client } = fakeExec(() => ({ stdout: "", stderr: "gh: Not Found", exitCode: 1 }));
+    expect(await client.hasReadAccess()).toBe(false);
+  });
+
+  it("inviteCollaborator PUTs the collaborator with push permission", async () => {
+    const { client, calls } = fakeExec(() => ok(""));
+    await client.inviteCollaborator("reviewer-bot");
+    expect(calls[0]?.args).toEqual([
+      "api", "--method", "PUT", "repos/o/r/collaborators/reviewer-bot", "-f", "permission=push",
+    ]);
+  });
+
+  it("acceptInvitations PATCHes every pending invitation", async () => {
+    const { client, calls } = fakeExec((call) =>
+      call.args.includes("/user/repository_invitations") && !call.args.includes("--method")
+        ? ok(JSON.stringify([{ id: 3 }, { id: 8 }]))
+        : ok(""),
+    );
+    expect(await client.acceptInvitations()).toBe(2);
+    expect(calls[1]?.args).toEqual(["api", "--method", "PATCH", "/user/repository_invitations/3"]);
+    expect(calls[2]?.args).toEqual(["api", "--method", "PATCH", "/user/repository_invitations/8"]);
+  });
 });
