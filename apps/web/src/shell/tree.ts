@@ -22,6 +22,8 @@ export interface ProjectNode {
   orchestrator: SessionView | null;
   workers: WorkerNode[];
   archived: SessionView[];
+  /** Set when the review account cannot read this project's repo. */
+  reviewAccess: string | null;
 }
 
 /** The full tree: the global agent row on top, then one node per project. */
@@ -43,7 +45,7 @@ const byArchivedDesc = (a: SessionView, b: SessionView): number =>
 export function buildTree(projects: Project[], views: SessionView[]): SidebarTree {
   const nodes = new Map<string, ProjectNode>();
   for (const project of projects) {
-    nodes.set(project.id, { project, orchestrator: null, workers: [], archived: [] });
+    nodes.set(project.id, { project, orchestrator: null, workers: [], archived: [], reviewAccess: null });
   }
 
   let globalAgent: SessionView | null = null;
@@ -58,6 +60,9 @@ export function buildTree(projects: Project[], views: SessionView[]): SidebarTre
     const projectId = view.session.projectId;
     const node = projectId === null ? undefined : nodes.get(projectId);
     if (node === undefined) continue;
+    // The review-access fact is per project; any session of the project
+    // carries it.
+    if (node.reviewAccess === null && view.reviewAccess !== null) node.reviewAccess = view.reviewAccess;
     if (view.session.archivedAt !== undefined) {
       node.archived.push(view);
     } else {

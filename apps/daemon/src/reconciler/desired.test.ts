@@ -408,6 +408,33 @@ describe("deriveActions — worker deliveries", () => {
     expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredIssueCommentId: 3 });
   });
 
+  it("a thread longer than one page delivers everything: the watermark lands on the true last comment", () => {
+    const worker = session("worker", {
+      issueNumber: 1,
+      lastDeliveredIssueCommentId: 100,
+    });
+    // 150 comments; the worker has been told up to #100, so #101–#150 are new.
+    const comments = Array.from({ length: 150 }, (_, i) => ({
+      id: i + 1,
+      author: "someone",
+      body: i === 149 ? "latest steer" : "history",
+      createdAt: "2025-06-01T10:00:00Z",
+    }));
+    const actions = derive(facts({ issues: [issue({ comments })] }), [worker]);
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.text).toContain("issuecomment-150");
+    expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredIssueCommentId: 150 });
+
+    // The next tick with the watermark applied: nothing re-delivered, none skipped.
+    const caughtUp = session("worker", {
+      issueNumber: 1,
+      lastDeliveredIssueCommentId: 150,
+    });
+    const nextTick = derive(facts({ issues: [issue({ comments })] }), [caughtUp]);
+    expect(nextTick.filter((a) => a.kind === "deliver")).toHaveLength(0);
+  });
+
   it("a BLOCKED: comment goes to the orchestrator instead", () => {
     const worker = session("worker", { issueNumber: 1 });
     const comment = { id: 4, author: "acme-worker", body: "BLOCKED: missing decision", createdAt: "2025-06-01T10:00:00Z" };

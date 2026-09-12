@@ -92,10 +92,14 @@ export interface CreateOptions {
 const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
- * Wraps a pane command so the pane process starts with the canonical env:
- * `sh -c 'export ...; exec "$@"' sh <command...>`. The payload travels as
- * separate argv entries, so commands containing spaces or quotes survive
- * verbatim; only the env values are embedded in the script. Returns the
+ * Wraps a pane command so the pane process starts with the canonical env and
+ * outlives the payload: `sh -c 'export ...; "$@"; code=$?; printf ...; exec
+ * "$SHELL" -l' sh <command...>`. The payload travels as separate argv
+ * entries, so commands containing spaces or quotes survive verbatim; only
+ * the env values are embedded in the script. When the payload exits (pi
+ * ending on its own, or failing to boot), the pane prints
+ * `[pideck] pi exited <code>` and drops into a login shell, so the pane and
+ * its scrollback stay readable instead of dying with the agent. Returns the
  * command unchanged when there is nothing to inject.
  */
 function commandWithEnv(
@@ -106,11 +110,17 @@ function commandWithEnv(
     .filter(([key]) => ENV_KEY.test(key))
     .map(([key, value]) => `export ${key}=${shQuote(value)}`)
     .join("; ");
-  if (assignments === "") return command;
   if (command === undefined || command.length === 0) {
+    if (assignments === "") return undefined;
     return ["sh", "-c", `${assignments}; exec "\${SHELL:-/bin/sh}" -l`];
   }
-  return ["sh", "-c", `${assignments}; exec "$@"`, "sh", ...command];
+  const script = [
+    ...(assignments === "" ? [] : [`${assignments};`]),
+    '"$@"; code=$?;',
+    `printf '\\n[pideck] pi exited %s\\n' "$code";`,
+    `exec "\${SHELL:-/bin/sh}" -l`,
+  ].join(" ");
+  return ["sh", "-c", script, "sh", ...command];
 }
 
 /** Single-quotes a value for safe embedding in a shell script. */
@@ -334,6 +344,28 @@ export class Tmux {
     const tail = payload.slice(-80);
     const bottom = screen.split("\n").slice(-5).join("\n");
     return bottom.includes(tail);
+  }
+
+  /**
+   * Basename of the active pane's current command (e.g. `node` while pi
+   * runs, `zsh` once the exit-wrapper shell took over), or null when it
+   * cannot be read. This is how a "pi exited, shell alive" pane is told
+   * apart from a live one.
+   */
+  async paneCurrentCommand(name: string): Promise<string | null> {
+    try {
+      const { stdout } = await this.run([
+        "display-message",
+        "-p",
+        "-t",
+        name,
+        "#{pane_current_command}",
+      ]);
+      const command = stdout.trim();
+      return command === "" ? null : command;
+    } catch {
+      return null;
+    }
   }
 
   /** Kills a tmux session. Throws `TmuxError` if it does not exist. */

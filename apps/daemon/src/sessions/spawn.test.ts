@@ -16,6 +16,10 @@ interface FakeTmuxState {
   alive: Set<string>;
   created: { args: string[] }[];
   killed: string[];
+  /** Basename of each pane's current command; defaults to `node` (pi running). */
+  paneCommands?: Map<string, string>;
+  /** When set, `new-session` fails like a tmux error. */
+  failCreate?: boolean;
 }
 
 function fakeTmux(state: FakeTmuxState): Tmux {
@@ -26,6 +30,7 @@ function fakeTmux(state: FakeTmuxState): Tmux {
       throw new TmuxError("no session", { args, exitCode: 1 });
     }
     if (cmd === "new-session") {
+      if (state.failCreate) throw new TmuxError("create refused", { args, exitCode: 1 });
       state.created.push({ args });
       state.alive.add(args[7]!);
       return { stdout: "", stderr: "" };
@@ -36,6 +41,10 @@ function fakeTmux(state: FakeTmuxState): Tmux {
       return { stdout: "", stderr: "" };
     }
     if (cmd === "capture-pane") return { stdout: "pane log\nlast line", stderr: "" };
+    if (cmd === "display-message") {
+      return { stdout: `${state.paneCommands?.get(rest[2]!) ?? "node"}\n`, stderr: "" };
+    }
+    if (cmd === "list-sessions") return { stdout: [...state.alive].join("\n"), stderr: "" };
     return { stdout: "", stderr: "" };
   };
   return new Tmux({ runner, enterDelayMs: 0, waitPollMs: 5, waitQuietMs: 0 });
@@ -228,6 +237,35 @@ describe("spawnPiSession", () => {
     expect(deps.registry.get(session.id)).toEqual(session);
   });
 
+  it("registers the session record even when the pane creation fails", async () => {
+    const tmuxState: FakeTmuxState = {
+      alive: new Set(),
+      created: [],
+      killed: [],
+      failCreate: true,
+    };
+    const registry = new SessionRegistry(stateDir);
+    const deps = {
+      tmux: fakeTmux(tmuxState),
+      registry,
+      stateDir,
+      git: fakeGit({ calls: [], branches: new Set() }),
+    };
+    await expect(
+      spawnPiSession(deps, {
+        persona: "orchestrator",
+        projectId: "proj",
+        cwd: cloneDir,
+        systemPrompt: "x",
+        model: null,
+      }),
+    ).rejects.toThrow();
+    expect(tmuxState.created).toEqual([]);
+    // The record exists before the pane: the next reconciliation sees a
+    // registered session with no pane and archives it — no orphan.
+    expect(registry.list({ archived: false })).toHaveLength(1);
+  });
+
   it("spawns a reviewer in its own clone, detached at the PR head", async () => {
     const gitState: FakeGitState = { calls: [], branches: new Set() };
     const deps = {
@@ -394,6 +432,67 @@ describe("reconcileWithTmux", () => {
     const result = await reconcileWithTmux(registry, tmux);
 
     expect(result.dead.map((s) => s.id)).toEqual(["gone"]);
+    expect(result.orphanTmuxSessions).toEqual([]);
     expect(registry.get("gone")?.archivedAt).toBeUndefined();
+  });
+
+  it("reports a pane whose pi exited and only the wrapper's shell remains as dead", async () => {
+    const registry = new SessionRegistry(stateDir);
+    const running = SessionSchema.parse({
+      id: "running",
+      persona: "worker",
+      projectId: "proj",
+      tmuxSession: "pideck-running",
+      spawnedAt: new Date().toISOString(),
+      model: null,
+    });
+    const exited = SessionSchema.parse({
+      id: "exited",
+      persona: "worker",
+      projectId: "proj",
+      tmuxSession: "pideck-exited",
+      spawnedAt: new Date().toISOString(),
+      model: null,
+    });
+    registry.add(running);
+    registry.add(exited);
+
+    const tmux = fakeTmux({
+      alive: new Set(["pideck-running", "pideck-exited"]),
+      created: [],
+      killed: [],
+      paneCommands: new Map([
+        ["pideck-running", "node"],
+        ["pideck-exited", "zsh"],
+      ]),
+    });
+    const result = await reconcileWithTmux(registry, tmux);
+    expect(result.dead.map((s) => s.id)).toEqual(["exited"]);
+  });
+
+  it("archives pideck-* panes with no registry record: capture to logs, then kill", async () => {
+    const registry = new SessionRegistry(stateDir);
+    const known = SessionSchema.parse({
+      id: "known",
+      persona: "worker",
+      projectId: "proj",
+      tmuxSession: "pideck-known",
+      spawnedAt: new Date().toISOString(),
+      model: null,
+    });
+    registry.add(known);
+    const tmuxState: FakeTmuxState = {
+      alive: new Set(["pideck-known", "pideck-orphan", "other-agent"]),
+      created: [],
+      killed: [],
+    };
+    const tmux = fakeTmux(tmuxState);
+    const logs: string[] = [];
+    const result = await reconcileWithTmux(registry, tmux, { stateDir, log: (l) => logs.push(l) });
+
+    expect(result.orphanTmuxSessions).toEqual(["pideck-orphan"]);
+    expect(readFileSync(join(stateDir, "logs", "pideck-orphan.log"), "utf8")).toBe("pane log\nlast line\n");
+    expect(tmuxState.killed).toEqual(["pideck-orphan"]);
+    expect(logs.join("\n")).toContain("orphan pane pideck-orphan");
   });
 });

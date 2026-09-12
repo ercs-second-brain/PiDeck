@@ -31,6 +31,9 @@ export const SessionViewSchema = z.object({
   parentSessionId: z.string().nullable(),
   /** The issue (or the issue behind the reviewer's PR) title, when known. */
   title: z.string().nullable(),
+  /** Set when the review account cannot read the session's repo — no
+   * reviewer runs while this is set. */
+  reviewAccess: z.string().nullable().default(null),
 });
 
 export type SessionView = z.infer<typeof SessionViewSchema>;

@@ -153,7 +153,13 @@ async function setupReviewerCheckout(
   await git(["checkout", "--detach", "FETCH_HEAD"], { cwd: repo });
 }
 
-/** Launches pi in tmux and registers the session. Returns the record. */
+/** Launches pi in tmux and registers the session. Returns the record.
+ *
+ * The record is written before the pane is created: a crash between the two
+ * steps then leaves a registered session with no pane, which the next
+ * reconciliation archives (and replaces) — never an orphan pane with no
+ * record for the daemon to reason about.
+ */
 export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): Promise<Session> {
   const id = randomUUID();
   const tmuxSession = `pideck-${id}`;
@@ -187,16 +193,6 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
     promptFile,
     ...(options.model ? ["--model", options.model] : []),
   ];
-  await deps.tmux.create(tmuxSession, {
-    cwd,
-    windowName: options.persona,
-    command,
-    env: { ...options.env, PD_SESSION_ID: id },
-  });
-  // A pane that is still booting swallows the first typed line; deliver only
-  // once pi's chrome has settled. Bounded — see Tmux.waitReady.
-  await deps.tmux.waitReady(tmuxSession);
-
   const session = SessionSchema.parse({
     id,
     persona: options.persona,
@@ -207,7 +203,19 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
     spawnedAt: new Date().toISOString(),
     model: options.model,
   });
+  // Registered first: if the create below fails or the daemon dies first,
+  // the record exists and reconciliation cleans the gap up; the reverse
+  // order would leak a pane the registry cannot see.
   deps.registry.add(session);
+  await deps.tmux.create(tmuxSession, {
+    cwd,
+    windowName: options.persona,
+    command,
+    env: { ...options.env, PD_SESSION_ID: id },
+  });
+  // A pane that is still booting swallows the first typed line; deliver only
+  // once pi's chrome has settled. Bounded — see Tmux.waitReady.
+  await deps.tmux.waitReady(tmuxSession);
   return session;
 }
 
@@ -238,21 +246,54 @@ export async function archiveSession(deps: ArchiveDeps, session: Session): Promi
   return deps.registry.archive(session.id);
 }
 
+/** Shell basenames the pi exit wrapper leaves behind when pi is gone. */
+const SHELL_COMMANDS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh"]);
+
 /**
- * Startup reconciliation: every non-archived record whose tmux session is
- * gone is reported dead. Records are NOT archived here — the reconciler
- * decides replacement (fresh session for the same issue/PR). The shared
- * `Session` contract carries no dead flag, so deadness is reported to the
- * caller instead of persisted; consumers can re-derive it from tmux at any
- * time.
+ * Reconciles the registry with live tmux state. Every non-archived record
+ * whose tmux session is gone is reported dead, and so is one whose pane is
+ * alive only because the exit wrapper's shell took over — pi exited on its
+ * own, the pane is readable, and the session is dead for work (its captured
+ * log is preserved by the archive that follows). Records are NOT archived
+ * here — the reconciler decides replacement (fresh session for the same
+ * issue/PR). The shared `Session` contract carries no dead flag, so deadness
+ * is reported to the caller instead of persisted; consumers can re-derive it
+ * from tmux at any time.
+ *
+ * `pideck-*` tmux sessions with no registry record — left behind by a crash
+ * mid-spawn or a lost registry write — are archived too: their pane is
+ * captured to `<stateDir>/logs/<tmuxSession>.log` and the session killed, so
+ * no pane outlives the daemon's knowledge of it. The archive needs a
+ * `stateDir`; without one orphans are only reported.
  */
 export async function reconcileWithTmux(
   registry: SessionRegistry,
   tmux: Tmux,
-): Promise<{ dead: Session[] }> {
+  options: { stateDir?: string; log?: (line: string) => void } = {},
+): Promise<{ dead: Session[]; orphanTmuxSessions: string[] }> {
   const dead: Session[] = [];
   for (const session of registry.list({ archived: false })) {
-    if (!(await tmux.isAlive(session.tmuxSession))) dead.push(session);
+    if (!(await tmux.isAlive(session.tmuxSession))) {
+      dead.push(session);
+      continue;
+    }
+    // A pane that runs the wrapper's shell is a pi that exited; the session
+    // is dead for work even though tmux still shows it alive.
+    const command = await tmux.paneCurrentCommand(session.tmuxSession);
+    if (command !== null && SHELL_COMMANDS.has(command)) dead.push(session);
   }
-  return { dead };
+  const orphanTmuxSessions: string[] = [];
+  const registered = new Set(registry.all().map((session) => session.tmuxSession));
+  for (const name of await tmux.listSessions()) {
+    if (!name.startsWith("pideck-") || registered.has(name)) continue;
+    orphanTmuxSessions.push(name);
+    if (options.stateDir === undefined) continue;
+    const log = await tmux.capturePane(name);
+    const logFile = join(options.stateDir, "logs", `${name}.log`);
+    mkdirSync(dirname(logFile), { recursive: true });
+    writeFileSync(logFile, `${log}\n`, "utf8");
+    await tmux.kill(name);
+    options.log?.(`reconciler: archived orphan pane ${name} with no registry record`);
+  }
+  return { dead, orphanTmuxSessions };
 }
