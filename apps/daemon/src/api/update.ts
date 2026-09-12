@@ -1,8 +1,11 @@
 /**
  * Self-update: compares the installed checkout's HEAD with the upstream ref
  * (via `gh`) and applies an update by spawning the installed shim's
- * `pideck update`, which fetches, rebuilds and restarts the service. Checks
- * are cached for about an hour so the web banner never hammers the network.
+ * `pideck update`, which fetches, rebuilds and restarts the service. Passive
+ * checks are cached for about an hour so the web banner never hammers the
+ * network; an explicit check (the settings button, the banner's periodic
+ * re-check) bypasses the cache. The reported version is the upstream short
+ * SHA plus the ref's age, enough to decide whether the update matters.
  */
 
 import { spawn as nodeSpawn } from "node:child_process";
@@ -13,9 +16,10 @@ import type { SessionRegistry } from "../sessions/registry.js";
 import { parseRepoUrl, runCommand, type CommandRunner } from "../store/projectStore.js";
 import { ApiError } from "./router.js";
 
-/** How long a successful check is served from cache. */
+/** How long a passive check is served from cache. */
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const SHORT_SHA = 7;
+const MINUTE_MS = 60 * 1000;
 
 export type UpdateRunner = CommandRunner;
 
@@ -31,14 +35,14 @@ export interface UpdaterConfig {
   now?: () => number;
 }
 
-export interface Updater {
-  check(): UpdateCheck;
-  apply(): { ok: true };
-}
-
 interface RepoConfig {
   url: string;
   ref: string;
+}
+
+export interface Updater {
+  check(force?: boolean): UpdateCheck;
+  apply(): { ok: true };
 }
 
 /** Reads repoUrl/repoRef from the install's config.json, if present. */
@@ -59,6 +63,23 @@ function readRepoConfig(configJson: string | undefined): RepoConfig | null {
 
 function shortSha(sha: string): string {
   return sha.slice(0, SHORT_SHA);
+}
+
+/** The upstream ref's age in coarse units, or null when the date is unusable. */
+function refAge(committedAt: string, at: number): string | null {
+  const committed = Date.parse(committedAt);
+  if (Number.isNaN(committed)) return null;
+  const minutes = Math.max(0, Math.floor((at - committed) / MINUTE_MS));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} m old`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h old`;
+  return `${Math.floor(hours / 24)} d old`;
+}
+
+function describeVersion(sha: string, committedAt: string | null, at: number): string {
+  const age = committedAt === null ? null : refAge(committedAt, at);
+  return age === null ? shortSha(sha) : `${shortSha(sha)} · ${age}`;
 }
 
 export function createUpdater(config: UpdaterConfig): Updater {
@@ -86,22 +107,29 @@ export function createUpdater(config: UpdaterConfig): Updater {
     return { url, ref: "main" };
   }
 
-  function upstreamHeadSha(repo: RepoConfig): string {
+  function upstreamCommit(repo: RepoConfig): { sha: string; committedAt: string | null } {
     const { owner, repo: name } = parseRepoUrl(repo.url);
-    return run("gh", ["api", `repos/${owner}/${name}/commits/${repo.ref}`, "--jq", ".sha"]).stdout.trim();
+    const out = run("gh", [
+      "api",
+      `repos/${owner}/${name}/commits/${repo.ref}`,
+      "--jq",
+      '.sha + " " + (.commit.committer.date // "")',
+    ]).stdout.trim();
+    const [sha = "", committedAt = ""] = out.split(" ");
+    return { sha, committedAt: committedAt === "" ? null : committedAt };
   }
 
-  function check(): UpdateCheck {
+  function check(force = false): UpdateCheck {
     const at = now();
-    if (cache !== null && at - cache.at < CACHE_TTL_MS) return cache.check;
+    if (!force && cache !== null && at - cache.at < CACHE_TTL_MS) return cache.check;
     const localSha = localHeadSha();
-    const remoteSha = upstreamHeadSha(repoConfig());
+    const { sha: remoteSha, committedAt } = upstreamCommit(repoConfig());
     if (localSha === "" || remoteSha === "") {
       throw new Error("could not compare the checkout with the upstream ref");
     }
     const parsed = UpdateCheckSchema.parse({
       updateAvailable: localSha !== remoteSha,
-      latestVersion: shortSha(remoteSha),
+      latestVersion: describeVersion(remoteSha, committedAt, at),
     });
     cache = { at, check: parsed };
     return parsed;
