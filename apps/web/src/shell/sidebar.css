@@ -118,10 +118,6 @@
   color: var(--text-dim);
 }
 
-.srow--dead {
-  color: var(--text-dim);
-}
-
 .sidebar__add {
   flex: none;
   margin-top: auto;

@@ -172,9 +172,19 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
     }
   };
 
-  const renderSessionRow = (view: SessionView, level: number, items: MenuItem[]) => {
+  const renderSessionRow = (view: SessionView, level: number, items: MenuItem[], archived = false) => {
     const row = sessionRow(view);
     const badge = view.state !== null ? stateBadge(view.state) : null;
+    const badgeEl =
+      badge === null ? null : archived && view.session.archivedAt !== undefined ? (
+        <Badge tone="dim" dot>
+          {`${badge.label} · archived ${relativeTime(view.session.archivedAt, now)}`}
+        </Badge>
+      ) : (
+        <Badge tone={badge.tone} dot>
+          {badge.label}
+        </Badge>
+      );
     const editing = renaming?.id === view.session.id;
     return (
       <div key={view.session.id} className="srow-line" data-selected={selectedId === view.session.id || undefined}>
@@ -206,11 +216,7 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
             {view.session.lastActivityAt !== null && (
               <span className="srow__time">{relativeTime(view.session.lastActivityAt, now)}</span>
             )}
-            {badge !== null && (
-              <Badge tone={badge.tone} dot>
-                {badge.label}
-              </Badge>
-            )}
+            {badgeEl}
           </button>
         )}
         {items.length > 0 && (
@@ -238,6 +244,11 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
         rows.push(renderSessionRow(reviewer, 2, sessionMenu(node.project, reviewer)));
       }
     }
+    const archivedRows: ReturnType<typeof renderSessionRow>[] = node.archived.flatMap((entry) => [
+      renderSessionRow(entry.view, 1, sessionMenu(node.project, entry.view), true),
+      ...entry.reviewers.map((reviewer) => renderSessionRow(reviewer, 2, sessionMenu(node.project, reviewer), true)),
+    ]);
+    const archivedCount = node.archived.reduce((count, entry) => count + 1 + entry.reviewers.length, 0);
     return (
       <div key={node.project.id} className="sidebar__project">
         <div className="srow-line">
@@ -277,29 +288,9 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
                   onClick={() => setArchivedOpen(toggled(archivedOpen, node.project.id))}
                 >
                   <span className="srow__chevron" aria-hidden="true">{showArchived ? "▾" : "▸"}</span>
-                  <span className="srow__label">Archived ({node.archived.length})</span>
+                  <span className="srow__label">Archived ({archivedCount})</span>
                 </button>
-                {showArchived &&
-                  node.archived.map((view) => {
-                    const badge = view.state !== null ? stateBadge(view.state) : null;
-                    return (
-                      <button
-                        key={view.session.id}
-                        type="button"
-                        className="srow srow--dead"
-                        style={{ paddingLeft: "calc(10px + 16px)" }}
-                        title={rowText(view)}
-                        onClick={() => onNavigate(`/sessions/${view.session.id}`)}
-                      >
-                        <span className="srow__label">{rowText(view)}</span>
-                        {badge !== null && (
-                          <Badge tone="dim" dot>
-                            {badge.label}
-                          </Badge>
-                        )}
-                      </button>
-                    );
-                  })}
+                {showArchived && archivedRows}
               </>
             )}
           </>

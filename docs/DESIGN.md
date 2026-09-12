@@ -115,6 +115,10 @@ Browser back returns to the list. Settings pages are likewise full-screen.
 - `⋯` on a worker or reviewer row: Rename… (inline edit; persists as the row's label), GitHub
   links, Terminate.
 - Live via WS; a tiny relative timestamp ("2m") in `--text-dim` mono on hover shows last activity.
+- Archived sessions fold into a per-project `▸ Archived (n)` group (collapsed by default, remembers
+  open/closed per project); inside it rows render exactly like live rows — same primitives, indent
+  and `↳` nesting, real `label ?? #N title` text, a `dim` dot whose tooltip reads
+  "done · archived <relative time>" — and a selected archived row gets the same accent bar.
 - `+ Add project` is the last row, styled like the other rows (36px, 44px on touch); the sidebar
   row is the only entry point — the header has no `+`.
 
