@@ -60,9 +60,15 @@ translating wheel/touch into tmux copy-mode, which lags and jumps. PiDeck instea
 
 - The daemon streams raw pane output with `tmux pipe-pane` into a per-session ring buffer
   (~2 MB) and forwards it over the WebSocket; input goes back via `tmux send-keys`.
+- Sessions are created at 200×50 with `window-size manual`, so a pane running unattached never
+  renders at tmux's 80×24 default. On attach the daemon resizes the window to the client's size
+  before replaying; when the size changed, the replay is a fresh `capture-pane -e -p` of the
+  redrawn screen (the ring buffer replays only when sizes already match).
 - xterm owns scrollback locally. Scrolling is native for mouse, trackpad, and touch. A
   "jump to bottom" pill appears when scrolled up; new output does not yank the view while the
   user is reading history.
+- pi's TUI owns its own scrolling: for pi panes xterm's scrollback stays intentionally empty,
+  so "can't scroll up" is expected, not a bug — scroll inside the TUI.
 - Reconnect replays the ring buffer, then resumes live.
 
 Mobile terminal: fills the viewport under the header; with the on-screen keyboard open the pane

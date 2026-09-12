@@ -119,6 +119,15 @@ function shQuote(value: string): string {
 }
 
 /** Bytes per `send-keys -H` invocation — tmux rejects commands past ~16KB. */
+/**
+ * Size for freshly created sessions. Large enough that a pane running
+ * unattached never renders for tmux's cramped 80×24 default; the daemon
+ * resizes the window to the client's size on attach.
+ */
+const DEFAULT_SESSION_COLS = 200;
+const DEFAULT_SESSION_ROWS = 50;
+
+/** Bytes per `send-keys -H` invocation — tmux rejects commands past ~16KB. */
 const SEND_CHUNK_BYTES = 4096;
 
 /**
@@ -195,10 +204,27 @@ export class Tmux {
 
   /** Creates a detached session whose initial window runs `command` in `cwd`. */
   async create(name: string, options: CreateOptions): Promise<void> {
-    const args = ["new-session", "-d", "-s", name, "-n", options.windowName ?? name, "-c", options.cwd];
+    const args = [
+      "new-session",
+      "-d",
+      "-x",
+      String(DEFAULT_SESSION_COLS),
+      "-y",
+      String(DEFAULT_SESSION_ROWS),
+      "-s",
+      name,
+      "-n",
+      options.windowName ?? name,
+      "-c",
+      options.cwd,
+    ];
     const command = commandWithEnv(options.command, options.env ?? {});
     if (command !== undefined) args.push(...command);
     await this.run(args);
+    // Pin the window size: without this tmux snaps the window to whatever
+    // client attaches first, and the daemon — not any single client — owns
+    // the size.
+    await this.run(["set-option", "-t", name, "window-size", "manual"]);
   }
 
   /** Whether the tmux session exists. */

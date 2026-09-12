@@ -32,4 +32,10 @@ export class RingBuffer {
   replay(): Buffer {
     return Buffer.concat(this.chunks);
   }
+
+  /** Drops every retained byte. */
+  clear(): void {
+    this.chunks = [];
+    this.total = 0;
+  }
 }

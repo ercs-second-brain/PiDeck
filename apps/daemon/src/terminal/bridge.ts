@@ -7,9 +7,22 @@
  * `tmux pipe-pane` into a per-session ring buffer and is forwarded
  * byte-for-byte, so escape sequences, colours and cursor positioning reach
  * xterm untouched and many browsers can watch the same pane. Input goes
- * back via chunked hex `send-keys`. Attach and reconnect replay the ring
- * buffer before live streaming resumes; detaching one browser never
- * touches the pane.
+ * back via chunked hex `send-keys`. Detaching one browser never touches
+ * the pane.
+ *
+ * Replay on attach, by size:
+ *
+ * - Same size (reconnect after a drop): replay the ring buffer — raw byte
+ *   history, byte-for-byte.
+ * - Different size: the ring buffer holds bytes the pane drew for its old
+ *   geometry, so replaying them paints a stale screen. Instead the window
+ *   is resized first, the pane gets a moment to redraw for the new size
+ *   (the resize is the SIGWINCH), and the replay is a fresh
+ *   `capture-pane -e -p` of the redrawn screen — which also replaces the
+ *   ring buffer, so later same-size reconnects replay the resized screen.
+ *
+ * Sessions are created at 200×50 with `window-size manual` (see Tmux.create),
+ * so an unattached pane never renders at tmux's 80×24 default either.
  *
  * The bridge is transport-agnostic: sockets implement {@link TerminalSocket}
  * and the `ws` adapter lives in `ws-server.ts`, keeping the protocol logic
@@ -57,6 +70,8 @@ export interface TerminalBridgeOptions {
   inputChunkBytes?: number;
   /** Poll interval (ms) when fs.watch is unavailable on the stream file. */
   streamPollMs?: number;
+  /** Settle time after a size change, letting the pane redraw before the fresh replay capture. */
+  redrawSettleMs?: number;
   /** Log sink for connect/attach/diagnostic lines (default `console.log`). */
   log?: (line: string) => void;
 }
@@ -70,6 +85,7 @@ interface ResolvedOptions {
   maxInputBytes: number;
   inputChunkBytes: number;
   streamPollMs: number;
+  redrawSettleMs: number;
   log: (line: string) => void;
 }
 
@@ -80,6 +96,7 @@ const DEFAULTS = {
   maxInputBytes: 64 * 1024,
   inputChunkBytes: 4096,
   streamPollMs: 100,
+  redrawSettleMs: 300,
 };
 
 interface Client {
@@ -193,17 +210,23 @@ export class TerminalBridge {
     // buffer holds whatever tmux last rendered, so the window must already
     // be at the client's size or the replayed screen is drawn for a width
     // the pane is not showing (content cut off after reattach).
+    let resized = false;
     if (cols !== undefined && rows !== undefined) {
-      await this.resizeWindow(session.tmuxSession, cols, rows);
+      resized = await this.resizeWindow(session.tmuxSession, cols, rows);
     }
 
-    await stream.ensureSeeded();
-    const replay = stream.replay();
-    // No await between addClient and markReady: a broadcast cannot slip in
-    // before the replay, and bytes streamed during the seed capture are
-    // already in the ring buffer and thus in the replay.
+    // Hold broadcasts for this client while the replay is computed: bytes
+    // streamed meanwhile stay in the ring buffer and end up in the snapshot
+    // taken below. The snapshot itself is read synchronously together with
+    // markReady, so nothing can slip between them.
     stream.addClient(client.socket);
     client.sessionId = sessionId;
+    // After a size change the raw ring buffer is stale (bytes drawn for
+    // the old geometry): let the pane redraw, then replay a fresh capture
+    // of the resized screen. Same-size reconnects keep the raw replay.
+    const replay = resized
+      ? await this.recaptureAfterRedraw(stream)
+      : (await stream.ensureSeeded(), stream.replay());
     if (replay.length > 0) {
       client.socket.send(
         JSON.stringify({
@@ -276,8 +299,26 @@ export class TerminalBridge {
     await this.resizeWindow(session.tmuxSession, cols, rows);
   }
 
-  private async resizeWindow(tmuxSession: string, cols: number, rows: number): Promise<void> {
+  /** Waits out the pane's post-resize redraw, then captures the new screen. */
+  private async recaptureAfterRedraw(stream: PaneStream): Promise<Buffer> {
+    await new Promise((resolve) => setTimeout(resolve, this.options.redrawSettleMs));
+    return stream.recapture();
+  }
+
+  /**
+   * Propagates a client's terminal size to the session's window. Returns
+   * whether the window's size actually changed.
+   */
+  private async resizeWindow(tmuxSession: string, cols: number, rows: number): Promise<boolean> {
     try {
+      const before = await this.options.tmux.run([
+        "display-message",
+        "-p",
+        "-t",
+        `${tmuxSession}:`,
+        "#{window_width} #{window_height}",
+      ]);
+      if (before.stdout.trim() === `${cols} ${rows}`) return false;
       await this.options.tmux.run([
         "resize-window",
         "-t",
@@ -287,8 +328,10 @@ export class TerminalBridge {
         "-y",
         String(rows),
       ]);
+      return true;
     } catch {
       // The pane may have died between the check and the resize; harmless.
+      return false;
     }
   }
 

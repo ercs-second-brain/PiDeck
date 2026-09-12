@@ -11,7 +11,9 @@
  * session is gone and nobody is watching, the stream disposes itself.
  *
  * Pane output passes through byte-for-byte: nothing is captured, diffed or
- * re-rendered server-side.
+ * re-rendered server-side. The one exception is replay replacement after a
+ * size change (see {@link recapture}): the raw bytes for the old geometry
+ * are swapped for a fresh `capture-pane` of the resized screen.
  */
 
 import {
@@ -139,6 +141,24 @@ export class PaneStream {
 
   private async seed(): Promise<void> {
     if (this.disposed || this.ring.size > 0) return;
+    await this.captureInto(false);
+  }
+
+  /**
+   * Recaptures the pane after a size change: replaces the replay buffer
+   * with a fresh capture of the screen as currently rendered, so clients
+   * attaching at a new size never replay bytes drawn for the old one.
+   * Falls back to the existing buffer when the capture fails.
+   */
+  async recapture(): Promise<Buffer> {
+    if (this.disposed) return this.ring.replay();
+    await this.captureInto(true);
+    return this.ring.replay();
+  }
+
+  /** Captures the pane's scrollback and, when asked, replaces the buffer. */
+  private async captureInto(replace: boolean): Promise<void> {
+    if (this.disposed) return;
     try {
       const result = await this.tmux.run([
         "capture-pane",
@@ -150,8 +170,19 @@ export class PaneStream {
         "-S",
         `-${this.options.scrollbackLines}`,
       ]);
-      if (this.ring.size === 0 && result.stdout.length > 0) {
-        this.ring.push(Buffer.from(result.stdout, "utf8"));
+      if (this.disposed) return;
+      if (result.stdout.length > 0) {
+        // Capture output ends each line with a bare LF, but xterm only
+        // returns to column 0 on CRLF — a full-width line followed by a
+        // bare LF wraps and scrolls the screen. Live pty bytes already
+        // carry CRLF; the capture needs it restored.
+        const data = Buffer.from(result.stdout.replace(/\r?\n/g, "\r\n"), "utf8");
+        if (replace) {
+          this.ring.clear();
+          this.ring.push(data);
+        } else if (this.ring.size === 0) {
+          this.ring.push(data);
+        }
       }
     } catch {
       // Seeding is best-effort; the live stream still works.

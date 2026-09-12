@@ -38,6 +38,10 @@ describe("Tmux", () => {
     expect(calls[0]).toEqual([
       "new-session",
       "-d",
+      "-x",
+      "200",
+      "-y",
+      "50",
       "-s",
       "s1",
       "-n",
@@ -48,6 +52,7 @@ describe("Tmux", () => {
       "--model",
       "m",
     ]);
+    expect(calls[1]).toEqual(["set-option", "-t", "s1", "window-size", "manual"]);
   });
 
   it("injects env pane-side via an export wrapper", async () => {
