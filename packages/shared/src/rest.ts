@@ -62,6 +62,16 @@ export const UpdateCheckSchema = z.object({
 });
 export type UpdateCheck = z.infer<typeof UpdateCheckSchema>;
 
+/** The one-time code and URL gh's device flow shows for the review account. */
+export const ReviewLoginStartSchema = z.object({ code: z.string(), url: z.string() });
+export type ReviewLoginStart = z.infer<typeof ReviewLoginStartSchema>;
+
+export const ReviewLoginStatusSchema = z.object({
+  status: z.enum(["pending", "done", "failed"]),
+  detail: z.string().nullable(),
+});
+export type ReviewLoginStatus = z.infer<typeof ReviewLoginStatusSchema>;
+
 export interface RestEndpoint {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
@@ -137,6 +147,16 @@ export const restEndpoints = {
   probePi: { method: "GET", path: "/api/onboarding/pi", response: PiProbeSchema },
   probeGhPrimary: { method: "GET", path: "/api/onboarding/gh/primary", response: ProbeSchema },
   probeGhReview: { method: "GET", path: "/api/onboarding/gh/review", response: ProbeSchema },
+  reviewLoginStart: {
+    method: "POST",
+    path: "/api/onboarding/review-login/start",
+    response: ReviewLoginStartSchema,
+  },
+  reviewLoginStatus: {
+    method: "GET",
+    path: "/api/onboarding/review-login/status",
+    response: ReviewLoginStatusSchema,
+  },
 
   updateCheck: { method: "GET", path: "/api/update", response: UpdateCheckSchema },
   updateApply: { method: "POST", path: "/api/update/apply", response: OkSchema },
