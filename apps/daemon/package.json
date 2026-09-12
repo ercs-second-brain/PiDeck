@@ -8,10 +8,12 @@
   },
   "dependencies": {
     "@pideck/shared": "workspace:*",
+    "ws": "^8.19.0",
     "zod": "^4.6.2"
   },
   "devDependencies": {
     "@types/node": "^22",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
