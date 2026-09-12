@@ -4,7 +4,9 @@ import { UpdateBanner } from "../update/UpdateBanner";
 
 /**
  * The 44px app header: sidebar toggle (desktop) or back (mobile detail
- * views) plus the current context on the left; settings gear on the right.
+ * views) plus the current context on the left, the brand lockup centred
+ * on desktop and left after the back button on mobile; settings gear on
+ * the right.
  */
 export function Header({ context, throttledUntil, detail, collapsed, onToggle, onNavigate }: {
   context: string | null;
@@ -28,14 +30,24 @@ export function Header({ context, throttledUntil, detail, collapsed, onToggle, o
         <button type="button" className="header__icon header__back" aria-label="Back to sessions" onClick={() => onNavigate("/")}>
           ←
         </button>
-        {context === null ? (
-          <span className="header__brand">
-            <span className="header__brand-dot" aria-hidden="true" />
-            PiDeck
+        <a
+          className="header__brand"
+          href="/"
+          aria-label="PiDeck home"
+          onClick={(event) => {
+            event.preventDefault();
+            onNavigate("/");
+          }}
+        >
+          <img className="header__brand-mark" src="/icon.svg" alt="" width={22} height={22} />
+          <span className="header__brand-copy">
+            <span className="header__brand-name">
+              Pi<span className="header__brand-deck">Deck</span>
+            </span>
+            <span className="header__brand-tag">let 'em cook</span>
           </span>
-        ) : (
-          <span className="header__context">{context}</span>
-        )}
+        </a>
+        {context !== null && <span className="header__context">{context}</span>}
       </div>
       <div className="header__actions">
         {throttledUntil !== null && (

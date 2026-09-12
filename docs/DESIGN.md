@@ -125,7 +125,22 @@ Browser back returns to the list. Settings pages are likewise full-screen.
 ### Header
 
 Left: sidebar toggle (desktop) or back (mobile) + current context (project › session name).
-Right: update pill when available, settings gear. Nothing else.
+Centre: the brand lockup (§3 Brand). Right: update pill when available, settings gear. Nothing else.
+On phones the lockup moves up next to the back button, ahead of the context, and the update hint
+is dropped — the pill alone carries the update.
+
+### Brand
+
+The lockup is the 22px mark plus two rows of copy: `Pi` in `--text` + `Deck` in `--accent` at
+`--fs-lg` weight 700, and the tagline `let 'em cook` at `--fs-xs` in `--text-dim`. On desktop it
+sits centred in the header; on mobile it sits left, after the back button. It links to `/`.
+
+The mark (`apps/web/public/icon.svg`) is a deck — three cards cascading out of a stack, the
+front card carrying a terminal cursor slot — on a `--bg` tile. It uses only `--bg` and
+`--accent`; the PWA icons and favicon are raster exports of it (`apps/web/public/icons/`, the
+maskable variants keep the glyph inside the maskable safe zone). Do: keep the mark on `--bg` or
+`--bg-raised`, keep the two-colour palette. Don't: never recolour the mark, never add gradients,
+shadows, or outlines to it.
 
 ## 4. Primitives (`src/ui/`)
 
