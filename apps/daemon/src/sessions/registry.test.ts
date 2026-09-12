@@ -1,7 +1,7 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SessionSchema, type Session } from "@pideck/shared";
 import { SessionRegistry } from "./registry.js";
 
@@ -21,6 +21,10 @@ let stateDir: string;
 
 beforeEach(() => {
   stateDir = mkdtempSync(join(tmpdir(), "pideck-registry-"));
+});
+
+afterEach(() => {
+  if (stateDir) rmSync(stateDir, { recursive: true, force: true });
 });
 
 describe("SessionRegistry", () => {
