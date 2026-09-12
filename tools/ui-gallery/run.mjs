@@ -113,7 +113,6 @@ function installFakeBins(temp) {
   mkdirSync(join(temp, "state", "bin"), { recursive: true });
   writeFileSync(join(temp, "state", "bin", "pideck"), "#!/bin/sh\nexit 0\n", "utf8");
   chmodSync(join(temp, "state", "bin", "pideck"), 0o755);
-  return ghStatePath;
 }
 
 // ---------------------------------------------------------------------------
