@@ -236,3 +236,19 @@ docs/             SPEC.md (this), PHILOSOPHY.md, DECISIONS.md
 - No comments that cite issue numbers. Code explains itself or the doc explains it.
 - No settings without a stated user who needs them.
 - GitHub is the source of truth; PiDeck persists only what GitHub cannot tell it.
+
+## 10. Testing & debugging
+
+The loop is exercised without GitHub, real agents, or the network:
+
+- **Fake gh** — `tools/fake-gh/`, a scripted `gh` serving a mutable JSON repo
+  state (issues, blockers, comments, PRs with CI rollup, reviews, collaborator
+  invitations) and applying writes back to it. The daemon-level test
+  (`apps/daemon/src/e2e/loop.test.ts`) boots the real reconciler against it
+  with a fake tmux and walks §2 end to end in seconds.
+- **Scenario runner** — scripts a whole §2 story (multi-issue, red CI, change
+  requests, merge) as a sequence of state mutations, for reproducing bugs
+  locally against a live daemon.
+- **Session trace** — replays one session's deliveries, watermarks, and pane
+  log from the state dir, to answer "why was I prompted".
+- **UI gallery** — renders every web primitive and screen state on one page.
