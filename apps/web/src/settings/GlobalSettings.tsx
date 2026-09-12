@@ -27,13 +27,14 @@ import { Button } from "../ui/Button";
 import { PromptEditor } from "./PromptEditor";
 import { PERSONA_MODEL_DESCRIPTIONS } from "./personas";
 import {
-  checkForUpdate,
+  checkForUpdateNow,
   loadGlobalSettings,
   loadPiProbe,
   loadStatus,
   saveGlobalSettings,
 } from "./client";
 import { actionLabel, useAction } from "./use-action";
+import { updateButtonLabel, useUpdateApply } from "../update/use-update-apply";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -117,6 +118,8 @@ function SettingsNav({
 function GeneralSection({ status }: { status: Status | null }) {
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const action = useAction();
+  const hasUpdate = update?.updateAvailable === true;
+  const apply = useUpdateApply(hasUpdate);
 
   return (
     <Section
@@ -128,15 +131,25 @@ function GeneralSection({ status }: { status: Status | null }) {
           {update && (
             <span style={{ color: "var(--text-dim)" }}>
               {update.updateAvailable
-                ? `Update available (v${update.latestVersion ?? "unknown"})`
+                ? `Update available (${update.latestVersion ?? "unknown"})`
                 : "Up to date"}
             </span>
           )}
+          {apply.hint !== null && <span style={{ color: "var(--text-dim)" }}>{apply.hint}</span>}
+          {hasUpdate && (
+            <Button
+              variant="primary"
+              disabled={apply.phase === "updating" || apply.agentsLive}
+              onClick={() => (apply.phase === "stuck" ? apply.reload() : void apply.apply())}
+            >
+              {updateButtonLabel(apply.phase, "Update now")}
+            </Button>
+          )}
           <Button
             disabled={action.state === "busy"}
-            onClick={() => void action.run(async () => setUpdate(await checkForUpdate()))}
+            onClick={() => void action.run(async () => setUpdate(await checkForUpdateNow()))}
           >
-            {actionLabel(action.state, "Check for updates", "Checking…")}
+            {actionLabel(action.state, "Check for updates", "Checking…", "Checked")}
           </Button>
         </>
       }

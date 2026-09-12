@@ -26,6 +26,8 @@ export const saveGlobalSettings = (put: GlobalSettingsPut): Promise<GlobalSettin
   api("globalSettingsPut", undefined, put);
 export const loadPiProbe = (): Promise<PiProbe> => api("probePi");
 export const checkForUpdate = (): Promise<UpdateCheck> => api("updateCheck");
+/** An explicit check bypasses the daemon's passive-check cache. */
+export const checkForUpdateNow = (): Promise<UpdateCheck> => api("updateCheckNow");
 
 export const loadPrompt = (persona: Persona): Promise<Prompt> => api("promptGet", { persona });
 export const savePrompt = (persona: Persona, put: PromptPut): Promise<Prompt> =>

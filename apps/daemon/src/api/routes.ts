@@ -170,6 +170,7 @@ export function buildApiHandlers(deps: DaemonDeps): ApiHandlers {
     reviewLoginStatus: () => deps.reviewLogin.status(),
 
     updateCheck: () => deps.updates.check(),
+    updateCheckNow: () => deps.updates.check(true),
     updateApply: () => deps.updates.apply(),
   };
 }

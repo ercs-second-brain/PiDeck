@@ -18,6 +18,7 @@ vi.mock("./client", () => ({
   saveGlobalSettings: vi.fn(),
   loadPiProbe: vi.fn(),
   checkForUpdate: vi.fn(),
+  checkForUpdateNow: vi.fn(),
   loadPrompt: vi.fn(),
   savePrompt: vi.fn(),
   resetPrompt: vi.fn(),
@@ -27,8 +28,15 @@ vi.mock("./client", () => ({
   deleteProject: vi.fn(),
 }));
 
+vi.mock("../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/api")>();
+  return { ...actual, api: vi.fn() };
+});
+
 import { GlobalSettings } from "./GlobalSettings";
 import * as client from "./client";
+import { api } from "../lib/api";
+import { makeView } from "../logs/test-support";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -66,6 +74,9 @@ const PROBE: PiProbe = {
 };
 
 const roots: Root[] = [];
+
+/** Endpoint → resolved value for the useUpdateApply hook's direct api calls. */
+const apiResponses: Partial<Record<string, unknown>> = {};
 
 function mount(element: React.ReactElement): { root: Root; container: HTMLElement } {
   const container = document.createElement("div");
@@ -122,10 +133,20 @@ describe("<GlobalSettings />", () => {
     mocked.loadStatus.mockResolvedValue(STATUS);
     mocked.loadGlobalSettings.mockResolvedValue(SETTINGS);
     mocked.loadPiProbe.mockResolvedValue(PROBE);
+    Object.assign(apiResponses, {
+      status: STATUS,
+      updateApply: { ok: true },
+      sessionList: [],
+    });
+    vi.mocked(api).mockImplementation(((name: string) => {
+      const value = apiResponses[name];
+      if (value instanceof Error) return Promise.reject(value);
+      return Promise.resolve(value);
+    }) as never);
   });
 
   it("shows the read-only daemon facts and the update check on General", async () => {
-    mocked.checkForUpdate.mockResolvedValue({ updateAvailable: true, latestVersion: "1.3.0" });
+    mocked.checkForUpdateNow.mockResolvedValue({ updateAvailable: true, latestVersion: "1.3.0" });
     const { container } = mount(<GlobalSettings />);
     await flush();
     expect(container.textContent).toContain("30s");
@@ -135,8 +156,58 @@ describe("<GlobalSettings />", () => {
       buttonByText(container, "Check for updates").click();
     });
     await flush();
-    expect(mocked.checkForUpdate).toHaveBeenCalled();
-    expect(container.textContent).toContain("Update available (v1.3.0)");
+    expect(mocked.checkForUpdateNow).toHaveBeenCalled();
+    expect(container.textContent).toContain("Update available (1.3.0)");
+    expect(container.textContent).toContain("Checked");
+  });
+
+  it("labels a finished check as Checked, not Saved", async () => {
+    mocked.checkForUpdateNow.mockResolvedValue({ updateAvailable: false, latestVersion: null });
+    const { container } = mount(<GlobalSettings />);
+    await flush();
+    await act(async () => {
+      buttonByText(container, "Check for updates").click();
+    });
+    await flush();
+    expect(container.textContent).toContain("Up to date");
+    expect(buttonByText(container, "Checked")).toBeTruthy();
+    expect(container.textContent).not.toContain("Saved");
+  });
+
+  it("offers an inline update after a check and applies it through the shared path", async () => {
+    mocked.checkForUpdateNow.mockResolvedValue({
+      updateAvailable: true,
+      latestVersion: "abc1234 · 2 h old",
+    });
+    const { container } = mount(<GlobalSettings />);
+    await flush();
+    await act(async () => {
+      buttonByText(container, "Check for updates").click();
+    });
+    await flush();
+    expect(container.textContent).toContain("Update available (abc1234 · 2 h old)");
+    const updateNow = buttonByText(container, "Update now");
+    expect(updateNow.disabled).toBe(false);
+    await act(async () => {
+      updateNow.click();
+    });
+    await flush();
+    expect(api).toHaveBeenCalledWith("updateApply");
+    expect(container.textContent).toContain("fetching, rebuilding and restarting…");
+    expect(buttonByText(container, "Updating…").disabled).toBe(true);
+  });
+
+  it("disables the inline update while agents are live", async () => {
+    mocked.checkForUpdateNow.mockResolvedValue({ updateAvailable: true, latestVersion: "abc1234" });
+    apiResponses.sessionList = [makeView({ persona: "worker" })];
+    const { container } = mount(<GlobalSettings />);
+    await flush();
+    await act(async () => {
+      buttonByText(container, "Check for updates").click();
+    });
+    await flush();
+    expect(buttonByText(container, "Update now").disabled).toBe(true);
+    expect(container.textContent).toContain("agents are live");
   });
 
   it("replaces the review account with a new token and never displays the token", async () => {

@@ -79,6 +79,7 @@ beforeEach(() => {
   });
   Object.assign(responses, {
     updateCheck: updateAvailable,
+    updateCheckNow: updateAvailable,
     sessionList: [],
     status: statusOld,
     updateApply: { ok: true },
@@ -104,6 +105,18 @@ describe("UpdateBanner", () => {
     responses.updateCheck = noUpdate;
     const container = await mountBanner();
     expect(container.querySelector("button.update__pill")).toBeNull();
+  });
+
+  it("re-checks periodically and appears when a fresh check finds an update", async () => {
+    responses.updateCheck = noUpdate;
+    responses.updateCheckNow = noUpdate;
+    const container = await mountBanner();
+    expect(container.querySelector("button.update__pill")).toBeNull();
+
+    responses.updateCheckNow = updateAvailable;
+    await advance(10 * 60 * 1000);
+    expect(container.querySelector("button.update__pill")).not.toBeNull();
+    expect(api).toHaveBeenCalledWith("updateCheckNow");
   });
 
   it("disables the pill with a hint while a worker or reviewer is live", async () => {

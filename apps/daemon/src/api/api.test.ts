@@ -391,6 +391,11 @@ describe("REST contract", () => {
     const { base, deps } = await startDaemon();
     const check = validate(restEndpoints["updateCheck"].response, (await call(base, "GET", "/api/update")).body);
     expect(check).toEqual({ updateAvailable: true, latestVersion: "bbbbbbb" });
+    const fresh = validate(
+      restEndpoints["updateCheckNow"].response,
+      (await call(base, "POST", "/api/update/check")).body,
+    );
+    expect(fresh).toEqual(check);
 
     const applied = await call(base, "POST", "/api/update/apply");
     expect(validate(restEndpoints["updateApply"].response, applied.body)).toEqual({ ok: true });

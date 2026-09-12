@@ -191,6 +191,7 @@ export const restEndpoints = {
   },
 
   updateCheck: { method: "GET", path: "/api/update", response: UpdateCheckSchema },
+  updateCheckNow: { method: "POST", path: "/api/update/check", response: UpdateCheckSchema },
   updateApply: { method: "POST", path: "/api/update/apply", response: OkSchema },
 } satisfies Record<string, RestEndpoint>;
 
