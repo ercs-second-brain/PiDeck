@@ -1,4 +1,5 @@
 .header {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
@@ -21,6 +22,15 @@
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+@media (max-width: 899px) {
+  /* The update hint never wraps, so it pins .header__actions to its full
+     text width and squeezes the context out of the phone header; on phones
+     the pill alone carries the update. */
+  .header__actions .update__hint {
+    display: none;
+  }
 }
 
 .header__pill {
@@ -58,18 +68,41 @@
 }
 
 .header__brand {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  font-size: var(--fs-base);
-  font-weight: 600;
+  margin-left: var(--sp-2);
+  border-radius: var(--radius-control);
+  text-decoration: none;
 }
 
-.header__brand-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
+.header__brand-mark {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+.header__brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.header__brand-name {
+  color: var(--text);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.header__brand-deck {
+  color: var(--accent);
+}
+
+.header__brand-tag {
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
 }
 
 .header__context {
@@ -91,10 +124,24 @@
   }
 }
 
+@media (min-width: 900px) {
+  .header__brand {
+    position: absolute;
+    top: env(safe-area-inset-top);
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
 @media (pointer: coarse) {
-  /* DESIGN.md §6: touch targets ≥ 40px — the glyph size is unchanged. */
+  /* DESIGN.md §6: touch targets ≥ 40px — the glyphs and copy size are unchanged. */
   .header__icon {
     width: 40px;
     height: 40px;
+  }
+
+  .header__brand {
+    padding: 4px 0;
   }
 }
