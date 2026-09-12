@@ -20,3 +20,15 @@ Node >= 22; pnpm is pinned via `packageManager` in the root `package.json`.
 
 All four must pass before you push or open a PR. In CI they run in the order
 lint → build → typecheck → test.
+
+## UI gallery
+
+Before opening any PR that touches the web app, run `pnpm build && pnpm
+ui-gallery --assert` (first time: `npx playwright install chromium`; needs
+Chromium, so it never runs in CI) and read `runs/ui/<timestamp>/index.html`
+against `docs/DESIGN.md` — every route and state at desktop and mobile widths,
+each shot labelled with the section it should be judged against, layout
+assertions running alongside. It boots the real daemon against the fake `gh`
+and a fake tmux with a seeded state, in about a minute; see
+`tools/ui-gallery/README.md`. Anything the gallery or the assertions surface
+becomes its own issue — the tool documents, it does not fix.
