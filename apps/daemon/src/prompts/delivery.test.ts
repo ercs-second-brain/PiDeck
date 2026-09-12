@@ -31,6 +31,8 @@ describe("delivery templates", () => {
     expect(line).toContain('#12 "Add rate limiting"');
     expect(line).toContain("branch pideck/issue-12");
     expect(line).toContain('"Closes #12"');
+    expect(line).toContain("real body");
+    expect(line).toContain('"## What"');
     expect(line).toContain("https://github.com/acme/api/issues/12");
   });
 

@@ -55,7 +55,8 @@ function singleLine(text: string): string {
 export function spawnWorker(issue: SpawnWorkerInput): string {
   return singleLine(
     `Worker session for issue #${issue.number} "${issue.title}" — work on branch ${issue.branch}, ` +
-      `open the PR with pideck pr open (it adds "Closes #${issue.number}"). ${issue.url}`,
+      `open the PR with pideck pr open (it adds "Closes #${issue.number}") and give it a real body ` +
+      `— a short "## What" summary of the change, never just Closes. ${issue.url}`,
   );
 }
 
