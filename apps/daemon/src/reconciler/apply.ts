@@ -129,11 +129,13 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         persona: "orchestrator",
         projectId: ctx.project.id,
         cwd: ctx.project.path,
-        systemPrompt: deps.prompts.systemPrompt("orchestrator", vars),
+        systemPrompt: `${deps.prompts.systemPrompt("orchestrator", vars)}\n\n${action.briefing}`,
         model: deps.prompts.model("orchestrator"),
       });
-      await deps.tmux.sendLine(session.tmuxSession, action.briefing);
-      return { sessionId: session.id, entry: { kind: "spawn", detail: "spawned orchestrator" } };
+      return {
+        sessionId: session.id,
+        entry: { kind: "spawn", detail: "spawned orchestrator with the briefing in its prompt" },
+      };
     }
     case "spawn-worker": {
       if (ctx.project === null) return null;

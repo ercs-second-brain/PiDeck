@@ -193,7 +193,7 @@ describe("applyActions", () => {
     expect(registry.list({ persona: "reviewer" })).toHaveLength(0);
   });
 
-  it("spawns the orchestrator with the briefing and patches ORCHESTRATOR_SESSION_ID", async () => {
+  it("spawns the orchestrator with the briefing in the prompt file and no typed delivery", async () => {
     const tally = { spawned: 0, archived: 0, delivered: 0, errors: 0 };
     await applyActions(
       deps,
@@ -206,9 +206,12 @@ describe("applyActions", () => {
     expect(orchestrators).toHaveLength(1);
     const orchestrator = orchestrators[0]!;
     const prompt = readFileSync(join(stateDir, "system-prompts", `${orchestrator.id}.md`), "utf8");
+    expect(prompt).toContain("orchestrator-prompt");
+    expect(prompt).toContain("Briefing for My API: live: (none).");
     expect(prompt).toContain(orchestrator.id);
     expect(prompt).not.toContain("{{ORCHESTRATOR_SESSION_ID}}");
-    expect(sentLines(tmuxCalls).join("\n")).toContain("Briefing for My API");
+    expect(sentLines(tmuxCalls)).toEqual([]);
+    expect(tally).toMatchObject({ spawned: 1, delivered: 0, errors: 0 });
   });
 
   it("delivers into a live pane and only then writes the watermark", async () => {

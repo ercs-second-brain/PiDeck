@@ -116,8 +116,10 @@ When unsure which, do the reversible thing.
 - `docs/` — living documents the orchestrator maintains: decisions, briefs, PRDs, standing
   preferences, `docs/REVIEW.md` (reviewer guidance). Committed directly to the default branch.
 - `AGENTS.md` — immutable rules only. Pi reads it natively.
-- On (re)launch the daemon delivers a **briefing**: open issues (assigned / blocked / unassigned),
-  in-flight PRs with state, live workers/reviewers, and a pointer to `docs/`.
+- On (re)launch the daemon renders a **briefing** into the orchestrator's system prompt: open
+  issues (assigned / blocked / unassigned), in-flight PRs with state, live workers/reviewers, and
+  a pointer to `docs/`. The briefing is context, never a trigger — the orchestrator reads it and
+  waits for the user; daemon steering messages are the only exception.
 
 ### Reviewer policy
 
@@ -195,7 +197,10 @@ answer "why was I prompted".
 | PR approved + CI green | orchestrator | "PR #n for issue #m is approved and green — alignment check" |
 | worker blocker comment / fix attempts exhausted | orchestrator | pointer to the issue comment |
 | worker stalled (no push/PR/comment for `stallMinutes`) | orchestrator | "worker for #n has been silent" |
-| (re)launch | orchestrator | the briefing (§3) |
+
+The (re)launch briefing (§3) is not a delivery: it is rendered into the orchestrator's system
+prompt at spawn, so a fresh orchestrator starts with context and no typed message — it says
+nothing until the user speaks.
 
 Steering messages to the orchestrator queue for pi's next turn; they never interrupt.
 The fix-attempt bound is a safety net: on exhaustion the *worker* is told to comment its status on

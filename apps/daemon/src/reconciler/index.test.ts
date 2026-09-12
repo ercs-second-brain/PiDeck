@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -205,8 +205,11 @@ describe("startReconciler", () => {
     expect(registry.list({ persona: "global" })).toHaveLength(1);
     expect(registry.list({ persona: "orchestrator", projectId: "my-api" })).toHaveLength(1);
     expect(registry.list({ persona: "worker", projectId: "my-api" })).toHaveLength(1);
+    const orchestrator = registry.list({ persona: "orchestrator", projectId: "my-api" })[0]!;
+    const prompt = readFileSync(join(stateDir, "system-prompts", `${orchestrator.id}.md`), "utf8");
+    expect(prompt).toContain("Briefing for My API");
     const lines = sentLines(tmuxCalls);
-    expect(lines.some((l) => l.startsWith("Briefing for My API"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("Briefing for"))).toBe(false);
     expect(lines.some((l) => l.includes('issue #1 "Add rate limiting"'))).toBe(true);
     const summary = logs.find((l) => l.includes("spawned,"))!;
     expect(summary).toContain("4 spawned");
