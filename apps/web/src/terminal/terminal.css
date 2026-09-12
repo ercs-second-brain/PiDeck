@@ -1,0 +1,148 @@
+/*
+ * Terminal pane chrome: the pane shares the app surface so it never reads as
+ * a box; everything here is quiet chrome around xterm (status pill, jump
+ * pill, mobile key row, mobile composer). Tokens reference the app's CSS
+ * custom properties with literal fallbacks so the pane renders correctly
+ * wherever it is mounted.
+ */
+
+.terminal-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg, #0c0d10);
+}
+
+.terminal-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The xterm host: no padding, so the fit addon measures exactly what is
+   visible and the screen background fills the pane edge to edge. */
+.terminal-screen {
+  position: absolute;
+  inset: 0;
+}
+
+.terminal-screen .xterm,
+.terminal-screen .xterm-viewport,
+.terminal-screen .xterm-screen {
+  height: 100%;
+}
+
+/* Small disconnected state: a quiet pill in the pane's top-right corner. */
+.terminal-status {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 10px;
+  border: 1px solid var(--border, #262a33);
+  border-radius: 999px;
+  background: var(--bg-raised, #13151a);
+  color: var(--text-dim, #8b93a0);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 11px;
+  line-height: 18px;
+  pointer-events: none;
+}
+
+/* Jump-to-bottom pill: appears while the user is reading history. */
+.terminal-jump {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border, #262a33);
+  border-radius: 999px;
+  background: var(--bg-raised, #13151a);
+  color: var(--accent, #f59f4c);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.terminal-jump:hover {
+  background: var(--bg-hover, #1a1d24);
+}
+
+/* Mobile key row: on-screen keys a touch keyboard lacks. Touch targets are
+   at least 40px; the row sits above the composer, inside the safe area. */
+.terminal-keyrow {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border, #262a33);
+  background: var(--bg-raised, #13151a);
+}
+
+.terminal-key {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid var(--border, #262a33);
+  border-radius: 6px;
+  background: var(--bg, #0c0d10);
+  color: var(--text, #f4f5f7);
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  font-size: 13px;
+  line-height: 1;
+  touch-action: manipulation;
+}
+
+.terminal-key:hover {
+  background: var(--bg-hover, #1a1d24);
+}
+
+.terminal-key-armed {
+  border-color: var(--accent, #f59f4c);
+  color: var(--accent, #f59f4c);
+}
+
+/* Mobile composer: the primary way to type on phones. 16px input font
+   prevents iOS zoom-on-focus; multi-line, sends on Enter, Shift+Enter
+   inserts a newline. */
+.terminal-composer {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border, #262a33);
+  background: var(--bg-raised, #13151a);
+}
+
+.terminal-composer-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 120px;
+  padding: 8px 10px;
+  resize: none;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 16px;
+  line-height: 1.4;
+  border: 1px solid var(--border, #262a33);
+  border-radius: 6px;
+  background: var(--bg, #0c0d10);
+  color: var(--text, #f4f5f7);
+}
+
+.terminal-composer-send {
+  flex: none;
+  min-width: 44px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border, #262a33);
+  border-radius: 6px;
+  background: var(--bg, #0c0d10);
+  color: var(--text, #f4f5f7);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.terminal-composer-send:hover {
+  background: var(--bg-hover, #1a1d24);
+}
