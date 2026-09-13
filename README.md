@@ -49,7 +49,9 @@ and `pnpm typecheck` must pass too — see `AGENTS.md`.
 `pnpm e2e` runs the live loop once against real GitHub: it builds, pushes
 `tools/e2e/fixture/` to a private throwaway repo, registers it in a throwaway
 daemon, and asserts the scenario on GitHub facts and `/api/sessions` before
-deleting the repo (unless `--keep`; other legs: `--scenario blocked|restart`).
+deleting the repo (unless `--keep`; other legs: `--scenario blocked|restart|rereview` —
+`rereview` walks the post-approval loop: the reviewer approves with an inline comment,
+the worker addresses it and pushes, the reviewer re-reviews the new head, then merge).
 It needs the primary `gh` auth and the review account's PAT in
 `PD_E2E_REVIEW_TOKEN`, so like the gallery it is a pre-merge check, not CI.
 

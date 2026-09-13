@@ -40,6 +40,29 @@ export async function issueGhId(repoFull, number) {
   return raw.id;
 }
 
+/** Every review on the PR: id, verdict, the head it was filed at, author. */
+export async function prReviews(repoFull, number) {
+  const raw = await ghJson(["api", `repos/${repoFull}/pulls/${number}/reviews?per_page=100`]);
+  return raw.map((r) => ({
+    id: r.id,
+    state: r.state,
+    commitId: r.commit_id,
+    author: r.user?.login ?? null,
+  }));
+}
+
+/** The PR's inline review comments: id, review, author, path, line. */
+export async function prReviewComments(repoFull, number) {
+  const raw = await ghJson(["api", `repos/${repoFull}/pulls/${number}/comments?per_page=100`]);
+  return raw.map((c) => ({
+    id: c.id,
+    reviewId: c.pull_request_review_id,
+    author: c.user?.login ?? null,
+    path: c.path,
+    line: c.line ?? c.original_line ?? null,
+  }));
+}
+
 export async function issueView(repoFull, number) {
   return ghJson([
     "issue", "view", String(number), "--repo", repoFull,
