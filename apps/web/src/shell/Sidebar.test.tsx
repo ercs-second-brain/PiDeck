@@ -200,6 +200,23 @@ describe("<Sidebar />", () => {
     expect(container.querySelector("nav")!.lastElementChild).toBe(add);
   });
 
+  it("indents the archived group and its rows one level deeper than the live tree", () => {
+    const container = mountSidebar([
+      view({ id: "w", persona: "worker", issueNumber: 42, title: "Add rate limiting", archivedAt: "2026-01-02T00:00:00Z", state: "done" }),
+      view({ id: "live", persona: "worker", issueNumber: 43, title: "Fix flaky test" }),
+    ]);
+    const toggle = [...container.querySelectorAll(".srow")].find((el) => el.textContent?.includes("Archived (1)"))!;
+    const live = [...container.querySelectorAll(".srow")].find((el) => el.querySelector(".srow__num")?.textContent === "#43")!;
+    const livePad = live.getAttribute("style")!;
+    expect(livePad).toContain("padding-left");
+    expect(toggle.getAttribute("style")).toBe(livePad);
+
+    click(toggle);
+    const archived = [...container.querySelectorAll(".srow")].find((el) => el.querySelector(".srow__num")?.textContent === "#42")!;
+    const deepPad = `padding-left: calc(${10 + 2 * 16}px);`;
+    expect(archived.getAttribute("style")).toContain(deepPad);
+  });
+
   it("collapses the archived group by default, counts it in the header, and shows real names inside", () => {
     const container = mountSidebar([
       view({ id: "w", persona: "worker", issueNumber: 42, title: "Add rate limiting", archivedAt: "2026-01-02T00:00:00Z", state: "done" }),
