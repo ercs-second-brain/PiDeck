@@ -1046,13 +1046,21 @@ async function main() {
       return true;
     }, { label: "the seeded states to derive", timeoutMs: 60_000 });
 
-    // The onboarding step shots need the review account temporarily unset so
-    // the wizard starts at step 1; the review step saves it again.
-    await api(port, "/api/settings", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reviewAccount: null }),
-    });
+    // The onboarding step shots need the review account unset so the wizard
+    // starts at step 1. The settings contract can no longer clear the account
+    // through the API, so rewrite the seeded file: the store re-reads
+    // settings.json on every access, and the review step saves it again.
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify(
+        {
+          reviewAccount: null,
+          modelByPersona: { global: null, orchestrator: null, worker: null, reviewer: null },
+        },
+        null,
+        2,
+      ),
+    );
 
     const shots = buildShots({
       working: "w-working",

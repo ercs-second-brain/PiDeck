@@ -119,6 +119,10 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
   };
   let timer: ReturnType<typeof setInterval> | null = null;
   let queue: Promise<void> = Promise.resolve();
+  // The review account is required: while onboarding is incomplete the loop
+  // stays idle. Log once — a crash-loop over a missing account is worse than
+  // a quiet wait, and the API surface stays up for onboarding.
+  let loggedNotOnboarded = false;
   const factsByProject = new Map<string, ProjectFacts>();
   const backoffByProject = new Map<string, TickBackoff>();
   let lastGithubError: string | null = null;
@@ -151,16 +155,20 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
   }
 
   async function runTick(): Promise<void> {
+    if (!deps.settings.onboarded()) {
+      if (!loggedNotOnboarded) {
+        log("reconciler: not onboarded — the review account is required; the loop stays idle until onboarding finishes");
+        loggedNotOnboarded = true;
+      }
+      return;
+    }
     const startedAt = Date.now();
     const tally: Tally = { spawned: 0, archived: 0, delivered: 0, errors: 0 };
     const registry = deps.registry;
     const reviewToken = deps.settings.reviewToken();
-    const reviewLogin = reviewToken?.username ?? null;
+    const reviewLogin: string | null = reviewToken.username;
     const reviewGhFor =
-      deps.ghReview ?? ((repo: string) => new GhClient({ repo, token: reviewToken?.token }));
-    if (reviewToken === null) {
-      log("reconciler: no review account — the review leg is off");
-    }
+      deps.ghReview ?? ((repo: string) => new GhClient({ repo, token: reviewToken.token }));
 
     // Memory keyed on sessions and projects that no longer exist cannot come
     // back — drop it so the maps stay bounded. The global session keeps its

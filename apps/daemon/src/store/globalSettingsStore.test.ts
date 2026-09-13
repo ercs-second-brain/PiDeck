@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GlobalSettingsStore } from "./globalSettingsStore.js";
+import type { GlobalSettingsPut } from "@pideck/shared";
 
 let dir: string | undefined;
 
@@ -31,6 +32,7 @@ describe("GlobalSettingsStore", () => {
     const store = new GlobalSettingsStore(stateDir);
 
     expect(store.read().reviewAccount).toEqual({ username: "reviewer", tokenSet: true });
+    expect(store.onboarded()).toBe(true);
     expect(store.reviewToken()).toEqual({ username: "reviewer", token: "ghp_good" });
     expect(store.read().modelByPersona).toEqual({
       global: null,
@@ -40,13 +42,14 @@ describe("GlobalSettingsStore", () => {
     });
   });
 
-  it("starts with the shared-contract defaults", () => {
+  it("treats a missing review account as onboarding incomplete, not a valid config", () => {
     const store = new GlobalSettingsStore(tempDir());
     expect(store.read()).toEqual({
       reviewAccount: null,
       modelByPersona: { global: null, orchestrator: null, worker: null, reviewer: null },
     });
-    expect(store.reviewToken()).toBeNull();
+    expect(store.onboarded()).toBe(false);
+    expect(() => store.reviewToken()).toThrow(/not onboarded: the review account is required/);
   });
 
   it("saves the review account and masks the token on read", () => {
@@ -84,16 +87,20 @@ describe("GlobalSettingsStore", () => {
     expect(() => store.put({ reviewAccount: { username: "review-bot" } })).toThrow(
       /both or neither/,
     );
-    expect(store.read().reviewAccount).toBeNull();
+    expect(store.onboarded()).toBe(false);
   });
 
-  it("clears the review account entirely", () => {
+  it("rejects clearing the review account entirely", () => {
     const store = new GlobalSettingsStore(tempDir());
     store.put({ reviewAccount: { username: "review-bot", token: "ghp_secret" } });
 
-    store.put({ reviewAccount: null });
-    expect(store.read().reviewAccount).toBeNull();
-    expect(store.reviewToken()).toBeNull();
+    // The PUT contract rejects null before the store, so this only reaches it
+    // from a caller that bypasses schema validation.
+    expect(() => store.put({ reviewAccount: null } as unknown as GlobalSettingsPut)).toThrow(
+      /the review account is required/,
+    );
+    expect(store.onboarded()).toBe(true);
+    expect(store.reviewToken()).toEqual({ username: "review-bot", token: "ghp_secret" });
   });
 
   it("saves model per persona", () => {

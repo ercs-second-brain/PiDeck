@@ -463,6 +463,13 @@ describe("REST contract", () => {
     expect(JSON.stringify(stored)).not.toContain("ghp_secret");
   });
 
+  it("rejects clearing the review account", async () => {
+    const { base } = await startDaemon();
+    const res = await call(base, "PUT", "/api/settings", { reviewAccount: null });
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain("the review account is required");
+  });
+
   it("reads, edits and resets persona prompts", async () => {
     const { base } = await startDaemon();
     const shipped = validate(restEndpoints["promptGet"].response, (await call(base, "GET", "/api/prompts/worker")).body);

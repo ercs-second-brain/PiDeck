@@ -177,7 +177,7 @@ describe("project create", () => {
 });
 
 describe("global settings", () => {
-  it("loads without a review account, before onboarding completes", () => {
+  it("models the pre-onboarding file as a null review account", () => {
     const settings = GlobalSettingsSchema.parse({});
     expect(settings.reviewAccount).toBeNull();
     expect(settings.modelByPersona).toEqual({
@@ -212,16 +212,18 @@ describe("global settings", () => {
     ).toBeNull();
   });
 
-  it("lets a put omit the token to keep it and null to clear the account", () => {
+  it("requires the review account: a put can replace it but never clear it", () => {
     const keep = GlobalSettingsPutSchema.parse({
       reviewAccount: { username: "reviewer-bot" },
       modelByPersona: { global: null, orchestrator: null, worker: "m", reviewer: null },
     });
     expect(keep.reviewAccount).toEqual({ username: "reviewer-bot" });
     expect(keep.modelByPersona?.worker).toBe("m");
-    expect(GlobalSettingsPutSchema.parse({ reviewAccount: null }).reviewAccount).toBeNull();
     expect(GlobalSettingsPutSchema.parse({}).reviewAccount).toBeUndefined();
     expect(() => GlobalSettingsPutSchema.parse({ reviewAccount: {} })).toThrow();
+    expect(() => GlobalSettingsPutSchema.parse({ reviewAccount: null })).toThrow(
+      /the review account is required/,
+    );
   });
 });
 

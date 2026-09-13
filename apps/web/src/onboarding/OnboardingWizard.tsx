@@ -120,7 +120,13 @@ type DeviceFlowState = "starting" | "pending" | "done" | "failed";
  * panel shows the one-time code + URL with a live status. A PAT form stays as
  * a collapsed fallback; either path stores the account and enables Next.
  */
-function ReviewStep({ onVerified }: { onVerified: () => void }) {
+function ReviewStep({
+  initialTokenSet,
+  onVerified,
+}: {
+  initialTokenSet: boolean;
+  onVerified: () => void;
+}) {
   const [login, setLogin] = useState<ReviewLoginStart | null>(null);
   const [flow, setFlow] = useState<DeviceFlowState>("starting");
   const [flowDetail, setFlowDetail] = useState<string | null>(null);
@@ -129,7 +135,9 @@ function ReviewStep({ onVerified }: { onVerified: () => void }) {
   const [verifiedAs, setVerifiedAs] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
-  const [tokenSet, setTokenSet] = useState(false);
+  // The stored token is write-only: the daemon reports only that one exists.
+  // It starts as whatever onboarding already stored and is set once saved.
+  const [tokenSet, setTokenSet] = useState(initialTokenSet);
   const [busy, setBusy] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; token?: string }>({});
   const [error, setError] = useState<string | null>(null);
@@ -370,12 +378,17 @@ export function OnboardingWizard({ onDone }: { onDone: (project: Project) => voi
   const [step, setStep] = useState<StepId>("pi");
   const [completed, setCompleted] = useState<ReadonlySet<StepId>>(() => new Set());
   const [entered, setEntered] = useState(false);
+  // The review account is required: the step cannot be skipped, and its PAT
+  // fallback must see a token stored by a previous onboarding run.
+  const [reviewTokenSet, setReviewTokenSet] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const [status, settings] = await Promise.all([api("status"), api("globalSettingsGet")]);
+        if (cancelled) return;
+        setReviewTokenSet(settings.reviewAccount?.tokenSet ?? false);
         if (status.piReady && status.ghReady && settings.reviewAccount?.tokenSet) {
           setCompleted(new Set<StepId>(["pi", "github", "review"]));
           setStep("repo");
@@ -432,7 +445,9 @@ export function OnboardingWizard({ onDone }: { onDone: (project: Project) => voi
           onNext={() => advance("github")}
         />
       )}
-      {entered && step === "review" && <ReviewStep onVerified={() => advance("review")} />}
+      {entered && step === "review" && (
+        <ReviewStep initialTokenSet={reviewTokenSet} onVerified={() => advance("review")} />
+      )}
       {entered && step === "repo" && <RepoStep onCreated={onDone} />}
     </Page>
   );

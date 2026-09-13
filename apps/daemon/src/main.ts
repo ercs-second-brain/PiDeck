@@ -64,7 +64,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<DaemonSer
     prompts,
     trace,
     ghPrimary: () => ghPrimaryProbe(),
-    ghReview: () => ghReviewProbe(settings.reviewToken()?.token ?? null),
+    ghReview: () => ghReviewProbe(settings.onboarded() ? settings.reviewToken().token : null),
     pi: async () => piProbe(),
     reviewLogin: new ReviewLoginFlow(stateDir, settings),
     updates: createUpdater({

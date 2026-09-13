@@ -159,6 +159,8 @@ describe("startReconciler", () => {
     stateDir = mkdtempSync(join(tmpdir(), "pideck-reconciler-"));
     projects = seededProjects(stateDir);
     settings = new GlobalSettingsStore(stateDir);
+    // The review account is required: every loop test runs onboarded.
+    settings.put({ reviewAccount: { username: "acme-review", token: "tok" } });
     registry = new SessionRegistry(stateDir);
     const tmuxAndCalls = fakeTmux();
     tmux = tmuxAndCalls.tmux;
@@ -177,6 +179,10 @@ describe("startReconciler", () => {
           },
         );
       },
+      // No test may reach the real gh binary from the loop — it stalls under
+      // fake timers and would touch the network. Overriding tests pass their
+      // own fake that fails the flow on purpose.
+      ghReview: () => ({ hasReadAccess: async () => true, acceptInvitations: async () => 1 }),
       projects,
       settings,
       registry,
@@ -263,11 +269,20 @@ describe("startReconciler", () => {
     }
   });
 
-  it("logs once per tick that the review leg is off without a review account", async () => {
-    ghStates.set("my-api", { issues: [], prs: [], comments: [] });
+  it("stays idle and logs once while onboarding is incomplete", async () => {
+    const notOnboardedDir = mkdtempSync(join(tmpdir(), "pideck-reconciler-"));
+    settings = new GlobalSettingsStore(notOnboardedDir);
+    deps = { ...deps, settings };
+    ghStates.set("my-api", { issues: [rawIssue()], prs: [], comments: [] });
     handle = startReconciler(deps);
+
     await handle.tick();
-    expect(logs.filter((l) => l.includes("the review leg is off"))).toHaveLength(1);
+    await handle.tick();
+
+    expect(logs.filter((l) => l.includes("not onboarded"))).toHaveLength(1);
+    expect(registry.list()).toHaveLength(0);
+    expect(handle.factsFor("my-api")).toBeNull();
+    rmSync(notOnboardedDir, { recursive: true, force: true });
   });
 
   it("invites the review account and accepts the invitation automatically", async () => {

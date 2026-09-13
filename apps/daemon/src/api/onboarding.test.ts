@@ -161,7 +161,7 @@ describe("ReviewLoginFlow", () => {
     );
     expect(status.status).toBe("failed");
     expect(status.detail).toContain("device flow failed");
-    expect(deps.settings.reviewToken()).toBeNull();
+    expect(deps.settings.onboarded()).toBe(false);
   });
 
   it("times a running flow out", async () => {
@@ -181,7 +181,7 @@ describe("ReviewLoginFlow", () => {
     );
     expect(status.status).toBe("failed");
     expect(status.detail).toContain("timed out");
-    expect(deps.settings.reviewToken()).toBeNull();
+    expect(deps.settings.onboarded()).toBe(false);
   });
 });
 

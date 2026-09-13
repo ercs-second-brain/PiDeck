@@ -1,8 +1,10 @@
 /**
  * The global settings page with the General · Review account · Models ·
  * Prompts sub-nav. General shows read-only daemon facts plus an update
- * check; Review account replaces or clears the reviewer's GitHub identity
- * (the token is write-only and never displayed); Models assigns a pi model
+ * check; Review account replaces the reviewer's GitHub identity (the token
+ * is write-only and never displayed; the account is required and cannot be
+ * cleared, and a page without one shows the finish-onboarding banner);
+ * Models assigns a pi model
  * per persona from the onboarding probe's model list; Prompts hosts the
  * prompt editor. All daemon access goes through ./client.
  */
@@ -24,6 +26,7 @@ import { Section } from "../ui/Section";
 import { Row } from "../ui/Row";
 import { Field } from "../ui/Field";
 import { Button } from "../ui/Button";
+import { navigate } from "../router";
 import { PromptEditor } from "./PromptEditor";
 import { PERSONA_MODEL_DESCRIPTIONS } from "./personas";
 import {
@@ -71,6 +74,7 @@ export function GlobalSettings() {
 
   return (
     <Page title="Settings" subnav={<SettingsNav tab={tab} onSelect={setTab} />}>
+      {settings?.reviewAccount === null && <NotOnboardedBanner />}
       {loadError && <p style={{ color: "var(--red)" }}>Settings could not be loaded: {loadError}</p>}
       {!loadError && tab === "general" && <GeneralSection status={status} />}
       {!loadError && tab === "account" && settings && (
@@ -175,6 +179,31 @@ function GeneralSection({ status }: { status: Status | null }) {
   );
 }
 
+function NotOnboardedBanner() {
+  return (
+    <div
+      role="status"
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+        flexWrap: "wrap",
+        padding: "10px 14px",
+        border: "1px solid var(--amber)",
+        borderRadius: 8,
+        marginBottom: 16,
+      }}
+    >
+      <span>
+        Finish onboarding: the review account is required, and the loop stays idle until it is set up.
+      </span>
+      <Button variant="primary" onClick={() => navigate("/onboarding")}>
+        Finish onboarding
+      </Button>
+    </div>
+  );
+}
+
 function ReviewAccountSection({
   settings,
   onSaved,
@@ -212,30 +241,14 @@ function ReviewAccountSection({
     });
   };
 
-  const onClear = () => {
-    setUsernameError(null);
-    setTokenError(null);
-    void action.run(async () => {
-      const saved = await saveGlobalSettings({ reviewAccount: null });
-      onSaved(saved);
-      setUsername("");
-      setToken("");
-    });
-  };
-
   return (
     <Section
       title="Review account"
-      description="The second GitHub account reviewers review from. Required for the loop."
+      description="The second GitHub account reviewers review from. Required for the loop; it can be replaced but not cleared."
       footer={
         <>
           {action.error && (
             <p style={{ color: "var(--red)", margin: 0 }}>{action.error}</p>
-          )}
-          {tokenSet && (
-            <Button variant="ghost" disabled={action.state === "busy"} onClick={onClear}>
-              {actionLabel(action.state, "Clear account", "Clearing…", "Cleared")}
-            </Button>
           )}
           <Button variant="primary" disabled={action.state === "busy"} onClick={onSave}>
             {actionLabel(action.state, "Save", "Saving…")}
