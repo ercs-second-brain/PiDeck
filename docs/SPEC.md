@@ -196,7 +196,7 @@ answer "why was I prompted".
 | new issue comment from someone other than the worker | worker (wakes idle) | pointer to the comment |
 | spawn | reviewer | PR number, repo, "file exactly one review" |
 | new head since last review | reviewer | "re-review" |
-| PR approved + CI green | orchestrator | "PR #n for issue #m is approved and green — alignment check" |
+| PR approved + CI green, and quiet — no `reviewChanges` delivery outstanding to the worker for this head (this tick, or one it has not answered yet), and with a live reviewer the approval is for the head the reviewer was armed at | orchestrator | "PR #n for issue #m is approved and green — alignment check" |
 | worker blocker comment / fix attempts exhausted | orchestrator | pointer to the issue comment |
 | worker stalled (no push/PR/comment for `stallMinutes`) | orchestrator | "worker for #n has been silent" |
 
@@ -214,7 +214,14 @@ reviewer holds the baton only mid-round — a fresh approval ends it, and a new 
 re-review until the PR is gone. The baton returns to
 the worker when the reviewer's submission (`CHANGES_REQUESTED`) is observed — one `reviewChanges`
 delivery, with the round's inline comments read alongside it; comments from anyone else (a human,
-the orchestrator) reach the worker immediately. The worker reads `in review` while the reviewer
+the orchestrator) reach the worker immediately. The same quiet gates the orchestrator's
+approved-and-green notice: it holds while a `reviewChanges` delivery to the worker for the noticed
+head is outstanding — delivered this tick, or delivered earlier and not yet answered by the
+worker's own thread replies (which are never delivered, so a reply id past the worker's comment
+watermark lifts the hold) — and, while a reviewer is live, while the head differs from the one the
+reviewer was armed at unless the approval is newer than that arming. Once the worker answers (or
+pushes, which re-arms the reviewer and the per-head notice), the notice fires; without a live
+reviewer the notice keeps the plain per-head rule. The worker reads `in review` while the reviewer
 holds the baton and `addressing` while it holds it itself; the reviewer's row reads `awaiting
 author` while the worker holds it and `approved PR #n, awaiting merge` once approved and idle.
 Every hand-off is written to both sessions' traces —
