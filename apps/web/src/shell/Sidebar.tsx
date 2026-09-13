@@ -245,8 +245,8 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
       }
     }
     const archivedRows: ReturnType<typeof renderSessionRow>[] = node.archived.flatMap((entry) => [
-      renderSessionRow(entry.view, 1, sessionMenu(node.project, entry.view), true),
-      ...entry.reviewers.map((reviewer) => renderSessionRow(reviewer, 2, sessionMenu(node.project, reviewer), true)),
+      renderSessionRow(entry.view, 2, sessionMenu(node.project, entry.view), true),
+      ...entry.reviewers.map((reviewer) => renderSessionRow(reviewer, 3, sessionMenu(node.project, reviewer), true)),
     ]);
     const archivedCount = node.archived.reduce((count, entry) => count + 1 + entry.reviewers.length, 0);
     return (
@@ -283,7 +283,7 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
                 <button
                   type="button"
                   className="srow srow--muted"
-                  style={{ paddingLeft: "10px" }}
+                  style={{ paddingLeft: "calc(10px + 1 * 16px)" }}
                   aria-expanded={showArchived}
                   onClick={() => setArchivedOpen(toggled(archivedOpen, node.project.id))}
                 >
