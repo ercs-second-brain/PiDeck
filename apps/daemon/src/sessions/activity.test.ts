@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sessionActive, ACTIVE_WINDOW_MS } from "./activity.js";
+import { sessionActive } from "./activity.js";
 
 let stateDir: string;
 
@@ -51,87 +51,68 @@ function user(at: string): string {
   })}\n`;
 }
 
-const NOW = Date.parse("2026-02-01T12:00:00.000Z");
+const NOW = "2026-02-01T12:00:00.000Z";
+/** An hour before NOW — far past any age-based window. */
+const HOUR_AGO = "2026-02-01T11:00:00.000Z";
 
 describe("sessionActive", () => {
-  it("is active while the newest event is a fresh in-flight assistant turn", () => {
+  it("is active while a tool call runs, however long — the newest event is an in-flight turn", () => {
     writeSession([
-      line({ type: "session" }, "2026-02-01T11:59:00.000Z"),
-      assistant("toolUse", "2026-02-01T11:59:30.000Z"),
+      line({ type: "session" }, HOUR_AGO),
+      assistant("toolUse", HOUR_AGO),
     ]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(true);
+    expect(sessionActive(stateDir, "s1")).toBe(true);
   });
 
-  it("is active while a tool result is fresh — the turn is still in flight", () => {
-    writeSession([assistant("toolUse", "2026-02-01T11:59:00.000Z"), toolResult("2026-02-01T11:59:40.000Z")]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(true);
+  it("is active while the model generates its next step after a tool result, however long", () => {
+    writeSession([assistant("toolUse", HOUR_AGO), toolResult(HOUR_AGO)]);
+    expect(sessionActive(stateDir, "s1")).toBe(true);
   });
 
   it("is idle once the turn completes", () => {
     writeSession([
-      assistant("toolUse", "2026-02-01T11:59:00.000Z"),
-      toolResult("2026-02-01T11:59:10.000Z"),
-      assistant("stop", "2026-02-01T11:59:59.000Z"),
+      assistant("toolUse", HOUR_AGO),
+      toolResult(HOUR_AGO),
+      assistant("stop", NOW),
     ]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(false);
-  });
-
-  it("is idle when the in-flight event ages past the window", () => {
-    writeSession([assistant("toolUse", "2026-02-01T11:58:59.000Z")]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(false);
-    writeSession([assistant("toolUse", "2026-02-01T11:59:01.000Z")]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(true);
+    expect(sessionActive(stateDir, "s1")).toBe(false);
   });
 
   it("is idle while the newest event is a user prompt waiting to be picked up", () => {
-    writeSession([user("2026-02-01T11:59:59.000Z")]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(false);
+    writeSession([user(NOW)]);
+    expect(sessionActive(stateDir, "s1")).toBe(false);
   });
 
   it("is idle for an aborted in-flight turn", () => {
-    writeSession([assistant("aborted", "2026-02-01T11:59:59.000Z")]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(false);
+    writeSession([assistant("aborted", NOW)]);
+    expect(sessionActive(stateDir, "s1")).toBe(false);
   });
 
-  it("falls back to the file mtime when the event carries no usable timestamp", () => {
-    const file = writeSession([JSON.stringify({ type: "message", message: { role: "assistant", stopReason: "toolUse" } })]);
-    const fresh = NOW - ACTIVE_WINDOW_MS / 2;
-    utimesSync(file, new Date(fresh), new Date(fresh));
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(true);
-    const stale = NOW - ACTIVE_WINDOW_MS * 2;
-    utimesSync(file, new Date(stale), new Date(stale));
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(false);
-  });
-
-  it("falls back to the message's numeric timestamp when the event timestamp is not ISO", () => {
-    const at = NOW - 1000;
-    writeSession([
-      `${JSON.stringify({ type: "session", timestamp: "t" })}\n`,
-      `${JSON.stringify({ type: "message", timestamp: "t", message: { role: "assistant", stopReason: "toolUse", timestamp: at } })}\n`,
-    ]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(true);
+  it("is idle for a dead pane even with an in-flight transcript", () => {
+    writeSession([assistant("toolUse", HOUR_AGO)]);
+    expect(sessionActive(stateDir, "s1", false)).toBe(false);
   });
 
   it("skips a torn last line and reads the newest complete event", () => {
     writeSession([
-      `${assistant("toolUse", "2026-02-01T11:59:59.000Z")}`,
+      `${assistant("toolUse", NOW)}`,
       '{"type":"message","message":{"role":"assista',
     ]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(true);
+    expect(sessionActive(stateDir, "s1")).toBe(true);
   });
 
   it("reads the newest of several session files", () => {
-    writeSession([assistant("toolUse", "2026-02-01T11:00:00.000Z")], "old.jsonl");
-    writeSession([assistant("toolUse", "2026-02-01T11:59:59.000Z")], "new.jsonl");
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(true);
+    writeSession([assistant("stop", NOW)], "old.jsonl");
+    writeSession([assistant("toolUse", NOW)], "new.jsonl");
+    expect(sessionActive(stateDir, "s1")).toBe(true);
   });
 
   it("is idle without a session file", () => {
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(false);
+    expect(sessionActive(stateDir, "s1")).toBe(false);
   });
 
   it("is idle when the JSONL has no message events at all", () => {
-    writeSession([line({ type: "session" }, "2026-02-01T11:59:59.000Z")]);
-    expect(sessionActive(stateDir, "s1", NOW)).toBe(false);
+    writeSession([line({ type: "session" }, NOW)]);
+    expect(sessionActive(stateDir, "s1")).toBe(false);
   });
 });
