@@ -35,9 +35,13 @@ export function deriveState(
             ? session.prNumber === undefined
               ? "awaiting author"
               : `awaiting author on PR #${session.prNumber}`
-            : session.prNumber === undefined
-              ? "reviewing"
-              : `reviewing PR #${session.prNumber}`,
+            : facts.pr?.reviewDecision === "APPROVED"
+              ? session.prNumber === undefined
+                ? "approved, awaiting merge"
+                : `approved PR #${session.prNumber}, awaiting merge`
+              : session.prNumber === undefined
+                ? "reviewing"
+                : `reviewing PR #${session.prNumber}`,
       };
     case "orchestrator":
       return { state: null, status: "orchestrator" };

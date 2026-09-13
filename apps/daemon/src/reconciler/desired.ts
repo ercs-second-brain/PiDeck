@@ -28,7 +28,9 @@
  * outstanding; `prBaton` says who holds it). While the reviewer holds the
  * baton, its own inline comments do not steer the worker and no CI-red
  * prompt goes out; the baton returns to the worker when its submission
- * requesting changes is observed, as one `reviewChanges` delivery.
+ * requesting changes is observed, as one `reviewChanges` delivery. An
+ * approval ends the round the same way, but the reviewer stays with its
+ * worker until the PR is gone: a new head re-arms it for re-review.
  */
 
 import type { Project, ProjectSettings, Session } from "@pideck/shared";
@@ -57,21 +59,29 @@ export type Baton = "worker" | "reviewer";
  * requesting changes — newer than the reviews it was prompted past — is
  * observed. Then the worker holds it until it pushes (a new head), either
  * because the reviewer said so or, when no reviewer is live, because the
- * head still matches the one the worker was last told to address. An
- * approved PR has no baton; the reviewer is archived and the worker is done.
+ * head still matches the one the worker was last told to address. On an
+ * approved PR the reviewer holds the baton only mid-round: an approval
+ * newer than the reviews it was prompted past ends its round (the worker
+ * reads ready); a new head re-arms it for re-review until the PR is gone.
  */
 export function prBaton(
   pr: Pick<PrFacts, "headSha" | "reviewDecision" | "reviews">,
   reviewer: Session | null,
   worker: Session | null,
 ): Baton | null {
-  if (pr.reviewDecision === "APPROVED") return null;
   if (reviewer !== null && reviewer.lastPromptedHeadSha === pr.headSha) {
     const concluded = pr.reviews.some(
       (review) =>
         review.state === "CHANGES_REQUESTED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
     );
-    return concluded ? "worker" : "reviewer";
+    if (concluded) return "worker";
+    if (pr.reviewDecision === "APPROVED") {
+      const approvedSincePrompt = pr.reviews.some(
+        (review) => review.state === "APPROVED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
+      );
+      return approvedSincePrompt ? null : "reviewer";
+    }
+    return "reviewer";
   }
   if (
     worker !== null &&
@@ -203,30 +213,29 @@ export function deriveActions(input: DeriveInput): Action[] {
         },
       });
     }
-    if (reviewer !== undefined) {
-      if (pr.reviewDecision === "APPROVED") {
-        actions.push({ kind: "archive", session: reviewer, reason: `PR #${pr.number} approved` });
-      } else if (
-        pr.green &&
-        pr.mergeable !== "CONFLICTING" &&
-        baton !== "worker" &&
-        pr.headSha !== reviewer.lastPromptedHeadSha
-      ) {
-        actions.push({
-          kind: "deliver",
-          target: reviewer,
-          text: reReview({ prNumber: pr.number }),
-          // The re-armed reviewer knows every review filed so far; only a
-          // newer submission concludes its next round.
-          watermark: {
-            sessionId: reviewer.id,
-            patch: {
-              lastPromptedHeadSha: pr.headSha,
-              lastDeliveredReviewId: maxId(pr.reviews.map((r) => r.id)),
-            },
+    if (
+      reviewer !== undefined &&
+      pr.green &&
+      pr.mergeable !== "CONFLICTING" &&
+      baton !== "worker" &&
+      // A fresh approval ends the round at the prompted head; only a new
+      // head (e.g. fixes pushed after approval-with-comments) re-arms it.
+      pr.headSha !== reviewer.lastPromptedHeadSha
+    ) {
+      actions.push({
+        kind: "deliver",
+        target: reviewer,
+        text: reReview({ prNumber: pr.number }),
+        // The re-armed reviewer knows every review filed so far; only a
+        // newer submission concludes its next round.
+        watermark: {
+          sessionId: reviewer.id,
+          patch: {
+            lastPromptedHeadSha: pr.headSha,
+            lastDeliveredReviewId: maxId(pr.reviews.map((r) => r.id)),
           },
-        });
-      }
+        },
+      });
     }
     if (pr.green && pr.reviewDecision === "APPROVED" && pr.issueNumber !== null && orchestrator !== undefined) {
       if (input.notifiedHeads.get(pr.number) !== pr.headSha) {

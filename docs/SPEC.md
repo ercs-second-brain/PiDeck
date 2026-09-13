@@ -90,7 +90,7 @@ resettable to default in the web UI. Each can be assigned its own model.
 | **global** | nothing | nothing | `pideck send` to orchestrators | one per install |
 | **orchestrator** | nothing directly (assigns issues) | `docs/` only, commits directly | GitHub + terminal | one per project, persistent |
 | **worker** | nothing | source, on `pideck/issue-<n>` | GitHub | one per assigned issue, assignment → merge |
-| **reviewer** | nothing | nothing | GitHub reviews | one per PR, first green → approved |
+| **reviewer** | nothing | nothing | GitHub reviews | one per PR, first green → merge |
 
 ### Prompt style
 
@@ -145,7 +145,8 @@ state (session registry + tmux) is closed.
 | open PR on `pideck/issue-<n>` | attached to issue n's worker |
 | PR merged or closed | worker archived |
 | PR CI green + not approved + no merge conflicts | exactly one live reviewer |
-| PR approved, merged, or closed | no reviewer |
+| PR approved | its reviewer stays live: a new green head re-arms it for re-review |
+| PR merged or closed | no reviewer (worker and reviewer archived) |
 
 Workers and reviewers are **replaced** (fresh session, same issue/PR) when their pane dies, the
 user deletes them, or their context usage exceeds the configured percentage.
@@ -208,12 +209,15 @@ once. The reviewer's round starts only when the worker is quiet: the PR head unc
 consecutive polls, CI green, and no `fixing`/`addressing` prompt outstanding to the worker (the
 same rule re-arms the reviewer for a re-review). While the reviewer holds the baton, its own
 inline comments do not steer the worker and no CI-red prompt goes out for that head; a push by the
-worker ends the round and re-arms the reviewer through the quiet rule. The baton returns to the
-worker when the reviewer's submission (`CHANGES_REQUESTED`) is observed — one `reviewChanges`
+worker ends the round and re-arms the reviewer through the quiet rule. On an approved PR the
+reviewer holds the baton only mid-round — a fresh approval ends it, and a new head re-arms it for
+re-review until the PR is gone. The baton returns to
+the worker when the reviewer's submission (`CHANGES_REQUESTED`) is observed — one `reviewChanges`
 delivery, with the round's inline comments read alongside it; comments from anyone else (a human,
 the orchestrator) reach the worker immediately. The worker reads `in review` while the reviewer
 holds the baton and `addressing` while it holds it itself; the reviewer's row reads `awaiting
-author` while the worker holds it. Every hand-off is written to both sessions' traces —
+author` while the worker holds it and `approved PR #n, awaiting merge` once approved and idle.
+Every hand-off is written to both sessions' traces —
 `baton: worker → reviewer`, `baton: reviewer → worker` — with the head SHA.
 
 Steering messages to the orchestrator queue for pi's next turn; they never interrupt.
