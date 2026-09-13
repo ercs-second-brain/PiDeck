@@ -17,6 +17,7 @@ import type { Probe } from "@pideck/shared";
 import type { GlobalSettingsStore } from "../store/globalSettingsStore.js";
 import type { ProjectStore } from "../store/projectStore.js";
 import { contextPercent } from "../sessions/context.js";
+import { sessionActive } from "../sessions/activity.js";
 import type { GitRunner } from "../sessions/spawn.js";
 import type { SessionRegistry } from "../sessions/registry.js";
 import { reconcileWithTmux } from "../sessions/spawn.js";
@@ -226,12 +227,16 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
         const context = new Map(
           live.map((s) => [s.id, contextPercent(s, { stateDir: deps.stateDir })]),
         );
+        // The transcript-shape liveness probe: a stalled reviewer still
+        // mid-turn is left alone; only dead-quiet ones are nudged/replaced.
+        const active = new Map(live.map((s) => [s.id, sessionActive(deps.stateDir, s.id)]));
         const deriveInput = {
           project,
           settings,
           facts: projectFacts,
           live,
           context,
+          active,
           reviewLogin,
           now: new Date(),
         };

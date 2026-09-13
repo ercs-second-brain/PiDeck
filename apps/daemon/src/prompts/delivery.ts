@@ -33,6 +33,15 @@ export interface ReReviewInput {
   prNumber: number;
 }
 
+export interface ReviewNudgeInput {
+  prNumber: number;
+}
+
+export interface ReviewerStalledInput {
+  prNumber: number;
+  stallMinutes: number;
+}
+
 export interface ApprovedGreenInput {
   prNumber: number;
   issueNumber: number;
@@ -101,6 +110,20 @@ export function spawnReviewer(input: SpawnReviewerInput): string {
 export function reReview(input: ReReviewInput): string {
   return singleLine(
     `New head on PR #${input.prNumber} — re-review and file your next single review with pideck review.`,
+  );
+}
+
+export function reviewNudge(input: ReviewNudgeInput): string {
+  return singleLine(
+    `PR #${input.prNumber} still has no review from you — read the diff and file exactly one ` +
+      `review with pideck review: approve or request changes.`,
+  );
+}
+
+export function reviewerStalled(input: ReviewerStalledInput): string {
+  return singleLine(
+    `The reviewer for PR #${input.prNumber} has been silent for ${input.stallMinutes} minutes ` +
+      `without filing a review — it is being replaced; check GitHub.`,
   );
 }
 

@@ -21,6 +21,7 @@ const session = {
   spawnedAt: "2025-01-01T00:00:00Z",
   model: null,
   lastPromptedHeadSha: null,
+  lastPromptedHeadAt: null,
   lastDeliveredIssueCommentId: null,
   lastDeliveredPrCommentId: null,
   lastDeliveredReviewId: null,

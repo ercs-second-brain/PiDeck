@@ -45,6 +45,7 @@ function view(overrides: {
       label: overrides.label,
       archivedAt: overrides.archivedAt,
       lastPromptedHeadSha: null,
+      lastPromptedHeadAt: null,
       lastDeliveredIssueCommentId: null,
       lastDeliveredPrCommentId: null,
       lastDeliveredReviewId: null,
