@@ -141,9 +141,9 @@ export function sessionRow(view: SessionView): RowText {
     }
     case "reviewer":
       return {
-        num: null,
+        num: view.session.prNumber !== undefined ? `#${view.session.prNumber}` : null,
         glyph: "↳",
-        label: view.session.label ?? view.title ?? (view.status === "" ? "Reviewer" : view.status),
+        label: view.session.label ?? "Reviewer",
       };
   }
 }
