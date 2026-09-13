@@ -79,8 +79,8 @@ stdin restored, and forwards your flags (`curl … | sh -s -- --dry-run`, etc.).
 2. **primary gh auth** — uses a PAT from `~/.env` (`GH_TOKEN`/`GITHUB_TOKEN`)
    when present, else runs `gh auth login`, and verifies the result.
 3. **review account — required** — the review leg files real PR reviews as a
-   **second GitHub account**; with a single account the loop has no review
-   leg at all. Onboarding asks for the username + PAT, verifies the token
+   **second GitHub account**; the loop cannot run without it. Onboarding asks
+   for the username + PAT, verifies the token
    with `gh auth status` (and that the token belongs to that username), and
    does not complete until it passes. Noninteractive runs supply it via
    `PD_REVIEW_USER` + `PD_REVIEW_TOKEN`.

@@ -1,7 +1,10 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { appendFileSync, openSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
 
 /**
  * The throwaway daemon: one `node dist/index.js` child with PD_HOME in the
@@ -42,6 +45,20 @@ export function start(root, ws, port, logPath, pollSeconds, tmuxSocket) {
       return child.exitCode;
     },
   };
+}
+
+/**
+ * Kills the run's private tmux server. The panes outlive the daemon by design
+ * (a restart reuses them), so teardown must remove the server itself — a
+ * failed or interrupted run must not leave `tmux -L pideck-e2e-<ts>` and its
+ * panes running.
+ */
+export async function killTmuxServer(tmuxSocket) {
+  try {
+    await execFileP("tmux", ["-L", `pideck-e2e-${tmuxSocket}`, "kill-server"]);
+  } catch {
+    // the server is already gone — nothing to clean up
+  }
 }
 
 /** Waits for /api/status with both legs ready — gh primary and pi. */
