@@ -89,7 +89,8 @@ function sentLines(calls: string[][]): string[] {
 }
 
 const prompts: PromptSource = {
-  systemPrompt: (persona, vars) => `${persona}-prompt ${vars.SESSION_ID ?? vars.ORCHESTRATOR_SESSION_ID ?? ""}`,
+  systemPrompt: (persona, vars) =>
+    `${persona}-prompt [${vars.PROJECT_PATH}] ${vars.SESSION_ID ?? vars.ORCHESTRATOR_SESSION_ID ?? ""}`,
   model: () => "test-model",
 };
 
@@ -151,6 +152,11 @@ describe("applyActions", () => {
     expect(prompt).toContain("worker-prompt");
     expect(prompt).toContain(worker.id);
     expect(prompt).not.toContain("{{SESSION_ID}}");
+    // The working copy named in the prompt is the session's own clone, never
+    // the shared project clone the worker could cd into.
+    expect(prompt).toContain(join(stateDir, "sessions", worker.id, "repo"));
+    expect(prompt).not.toContain(project.path);
+    expect(prompt).not.toContain("{{PROJECT_PATH}}");
 
     expect(sentLines(tmuxCalls).join("\n")).toContain('issue #1 "Add rate limiting"');
     expect(sentLines(tmuxCalls).join("\n")).toContain("pideck/issue-1");
@@ -179,6 +185,10 @@ describe("applyActions", () => {
     const createCall = tmuxCalls.find((args) => args[0] === "new-session");
     expect(createCall?.join(" ")).toContain("GH_TOKEN=");
     expect(sentLines(tmuxCalls).join("\n")).toContain("file exactly one review");
+
+    const prompt = readFileSync(join(stateDir, "system-prompts", `${reviewer.id}.md`), "utf8");
+    expect(prompt).toContain(join(stateDir, "sessions", reviewer.id, "repo"));
+    expect(prompt).not.toContain(project.path);
   });
 
   it("refuses to spawn a reviewer without a review account", async () => {

@@ -23,6 +23,7 @@ import {
   archiveSession,
   defaultGitRunner,
   refreshProjectClone,
+  sessionRepoPath,
   spawnPiSession,
   type GitRunner,
   type SpawnPiOptions,
@@ -156,7 +157,9 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
           ISSUE_NUMBER: String(action.issue.number),
           REPO: `${ctx.project.owner}/${ctx.project.repo}`,
           DEFAULT_BRANCH: ctx.project.defaultBranch,
-          PROJECT_PATH: ctx.project.path,
+          // Resolved to the session's own clone after the spawn — see
+          // patchPromptFile. The project clone is never a worker's copy.
+          PROJECT_PATH: PENDING_PROJECT_PATH,
           SESSION_ID: PENDING_SESSION_ID,
         }),
         model: deps.prompts.model("worker"),
@@ -184,6 +187,7 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
           PR_NUMBER: String(action.pr.number),
           REPO: `${ctx.project.owner}/${ctx.project.repo}`,
           DEFAULT_BRANCH: ctx.project.defaultBranch,
+          PROJECT_PATH: PENDING_PROJECT_PATH,
           SESSION_ID: PENDING_SESSION_ID,
         }),
         model: deps.prompts.model("reviewer"),
@@ -245,12 +249,15 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
 
 const PENDING_SESSION_ID = "{{SESSION_ID}}";
 const PENDING_ORCHESTRATOR_SESSION_ID = "{{ORCHESTRATOR_SESSION_ID}}";
+const PENDING_PROJECT_PATH = "{{PROJECT_PATH}}";
 
 /**
  * Spawns the session, then patches the session id into its system prompt.
  * The id only exists once spawnPiSession returns, but pi has already been
  * pointed at the prompt file — so the file is rewritten atomically with the
- * real value the moment spawn returns, before pi reads it.
+ * real value the moment spawn returns, before pi reads it. The worker and
+ * reviewer working copy is patched the same way: {{PROJECT_PATH}} must name
+ * the session's own clone, not the shared project clone agents could cd into.
  */
 async function spawnPersona(deps: ApplyDeps, options: SpawnPiOptions): Promise<Session> {
   const promptText = options.systemPrompt;
@@ -259,14 +266,24 @@ async function spawnPersona(deps: ApplyDeps, options: SpawnPiOptions): Promise<S
     options,
   );
   deps.notifyChange?.();
-  patchPromptFile(deps.stateDir, session.id, promptText);
+  const projectPath =
+    options.persona === "worker" || options.persona === "reviewer"
+      ? sessionRepoPath(deps.stateDir, session.id)
+      : options.cwd;
+  patchPromptFile(deps.stateDir, session.id, promptText, projectPath);
   return session;
 }
 
-function patchPromptFile(stateDir: string, sessionId: string, promptText: string): void {
+function patchPromptFile(
+  stateDir: string,
+  sessionId: string,
+  promptText: string,
+  projectPath: string,
+): void {
   const patched = promptText
     .replaceAll(PENDING_SESSION_ID, sessionId)
-    .replaceAll(PENDING_ORCHESTRATOR_SESSION_ID, sessionId);
+    .replaceAll(PENDING_ORCHESTRATOR_SESSION_ID, sessionId)
+    .replaceAll(PENDING_PROJECT_PATH, projectPath);
   if (patched === promptText) return;
   const file = join(statePaths(stateDir).systemPromptsDir, `${sessionId}.md`);
   const tmp = `${file}.tmp`;

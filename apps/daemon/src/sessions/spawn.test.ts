@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -181,6 +181,85 @@ describe("spawnPiSession", () => {
       ["show-ref", "--verify", "--quiet", "refs/remotes/origin/pideck/issue-42"],
       ["checkout", "pideck/issue-42"],
     ]);
+  });
+
+  it("refuses a worker without an issueNumber instead of sharing the project clone", async () => {
+    const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
+    const gitState: FakeGitState = { calls: [], branches: new Set() };
+    const registry = new SessionRegistry(stateDir);
+    const deps = {
+      tmux: fakeTmux(tmuxState),
+      registry,
+      stateDir,
+      git: fakeGit(gitState),
+    };
+    await expect(
+      spawnPiSession(deps, {
+        persona: "worker",
+        projectId: "proj",
+        cwd: cloneDir,
+        systemPrompt: "p",
+        model: null,
+      }),
+    ).rejects.toThrow(/issueNumber/);
+    expect(tmuxState.created).toEqual([]);
+    expect(gitState.calls).toEqual([]);
+    expect(registry.list({ archived: false })).toHaveLength(0);
+  });
+
+  it("refuses a reviewer without a prNumber instead of sharing the project clone", async () => {
+    const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
+    const gitState: FakeGitState = { calls: [], branches: new Set() };
+    const registry = new SessionRegistry(stateDir);
+    const deps = {
+      tmux: fakeTmux(tmuxState),
+      registry,
+      stateDir,
+      git: fakeGit(gitState),
+    };
+    await expect(
+      spawnPiSession(deps, {
+        persona: "reviewer",
+        projectId: "proj",
+        cwd: cloneDir,
+        repoUrl: REPO_URL,
+        systemPrompt: "p",
+        model: null,
+      }),
+    ).rejects.toThrow(/prNumber/);
+    expect(tmuxState.created).toEqual([]);
+    expect(gitState.calls).toEqual([]);
+    expect(registry.list({ archived: false })).toHaveLength(0);
+  });
+
+  it("removes the half-built session dir and rethrows when the clone fails", async () => {
+    const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
+    const git: GitRunner = async (args) => {
+      if (args[0] === "clone") throw new Error("clone failed: disk full");
+      throw new Error(`unexpected git command: ${args.join(" ")}`);
+    };
+    const registry = new SessionRegistry(stateDir);
+    const deps = {
+      tmux: fakeTmux(tmuxState),
+      registry,
+      stateDir,
+      git,
+    };
+    await expect(
+      spawnPiSession(deps, {
+        persona: "worker",
+        projectId: "proj",
+        cwd: cloneDir,
+        repoUrl: REPO_URL,
+        systemPrompt: "p",
+        model: null,
+        issueNumber: 42,
+      }),
+    ).rejects.toThrow("clone failed");
+    expect(tmuxState.created).toEqual([]);
+    expect(registry.list({ archived: false })).toHaveLength(0);
+    const sessionsDir = join(stateDir, "sessions");
+    expect(existsSync(sessionsDir) ? readdirSync(sessionsDir) : []).toEqual([]);
   });
 
   it("waits for the pane to settle before returning the session", async () => {
