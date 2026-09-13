@@ -166,7 +166,7 @@ export function startReconciler(deps: ReconcilerDeps): ReconcilerHandle {
     const tally: Tally = { spawned: 0, archived: 0, delivered: 0, errors: 0 };
     const registry = deps.registry;
     const reviewToken = deps.settings.reviewToken();
-    const reviewLogin: string | null = reviewToken.username;
+    const reviewLogin: string = reviewToken.username;
     const reviewGhFor =
       deps.ghReview ?? ((repo: string) => new GhClient({ repo, token: reviewToken.token }));
 

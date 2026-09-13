@@ -37,7 +37,7 @@ describe("deriveState — the eight worker states", () => {
   it("a worker with pending CI is ci", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "pending", reviewDecision: null, mergeable: "MERGEABLE" } },
+      { ...facts, pr: { ciStatus: "pending", reviewDecision: null, mergeable: "MERGEABLE", approvedAtHead: false } },
     );
     expect(view.state).toBe("ci");
     expect(view.status).toBe("CI running for PR #21");
@@ -46,7 +46,7 @@ describe("deriveState — the eight worker states", () => {
   it("a worker with failing CI is fixing", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "failed", reviewDecision: null, mergeable: "MERGEABLE" } },
+      { ...facts, pr: { ciStatus: "failed", reviewDecision: null, mergeable: "MERGEABLE", approvedAtHead: false } },
     );
     expect(view.state).toBe("fixing");
     expect(view.status).toBe("fixing CI on PR #21");
@@ -55,7 +55,7 @@ describe("deriveState — the eight worker states", () => {
   it("a worker whose PR conflicts with main is fixing, not awaiting review", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "ok", reviewDecision: null, mergeable: "CONFLICTING" } },
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: null, mergeable: "CONFLICTING", approvedAtHead: false } },
     );
     expect(view.state).toBe("fixing");
     expect(view.status).toBe("conflicts with main on PR #21");
@@ -64,7 +64,7 @@ describe("deriveState — the eight worker states", () => {
   it("a worker awaiting a review decision is in_review", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "ok", reviewDecision: "REVIEW_REQUESTED", mergeable: "MERGEABLE" } },
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: "REVIEW_REQUESTED", mergeable: "MERGEABLE", approvedAtHead: false } },
     );
     expect(view.state).toBe("in_review");
     expect(view.status).toBe("awaiting review on PR #21");
@@ -73,19 +73,28 @@ describe("deriveState — the eight worker states", () => {
   it("requested changes are addressing", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE" } },
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE", approvedAtHead: false } },
     );
     expect(view.state).toBe("addressing");
     expect(view.status).toBe("addressing review on PR #21");
   });
 
-  it("approved and green is ready", () => {
+  it("approved and green is ready — only with the head-matched approval", () => {
     const view = deriveState(
       session("worker", { issueNumber: 12, prNumber: 21 }),
-      { ...facts, pr: { ciStatus: "ok", reviewDecision: "APPROVED", mergeable: "MERGEABLE" } },
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: "APPROVED", mergeable: "MERGEABLE", approvedAtHead: true } },
     );
     expect(view.state).toBe("ready");
     expect(view.status).toBe("approved and green, PR #21");
+  });
+
+  it("a stale approval (GitHub says APPROVED, the head-matched rule does not) reads in_review", () => {
+    const view = deriveState(
+      session("worker", { issueNumber: 12, prNumber: 21 }),
+      { ...facts, pr: { ciStatus: "ok", reviewDecision: "APPROVED", mergeable: "MERGEABLE", approvedAtHead: false } },
+    );
+    expect(view.state).toBe("in_review");
+    expect(view.status).toBe("awaiting review on PR #21");
   });
 
   it("open blockers block, exhausting fix attempts blocks too", () => {
@@ -119,7 +128,7 @@ describe("deriveState — the eight worker states", () => {
     expect(
       deriveState(session("reviewer", { prNumber: 21 }), {
         ...facts,
-        pr: { ciStatus: "ok", reviewDecision: "APPROVED", mergeable: "MERGEABLE" },
+        pr: { ciStatus: "ok", reviewDecision: "APPROVED", mergeable: "MERGEABLE", approvedAtHead: false },
       }),
     ).toEqual({ state: "in_review", status: "approved PR #21, awaiting merge" });
     expect(deriveState(session("orchestrator"), facts)).toEqual({ state: null, status: "orchestrator" });
@@ -133,7 +142,7 @@ describe("deriveState — the eight worker states", () => {
       session("worker", { issueNumber: 12, prNumber: 21 }),
       {
         ...facts,
-        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE" },
+        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE", approvedAtHead: false },
         batonHolder: "reviewer",
       },
     );
@@ -144,7 +153,7 @@ describe("deriveState — the eight worker states", () => {
     expect(
       deriveState(session("reviewer", { prNumber: 21 }), {
         ...facts,
-        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE" },
+        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE", approvedAtHead: false },
         batonHolder: "worker",
       }),
     ).toEqual({ state: "in_review", status: "awaiting author on PR #21" });
@@ -154,7 +163,7 @@ describe("deriveState — the eight worker states", () => {
       session("worker", { issueNumber: 12, prNumber: 21 }),
       {
         ...facts,
-        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE" },
+        pr: { ciStatus: "ok", reviewDecision: "CHANGES_REQUESTED", mergeable: "MERGEABLE", approvedAtHead: false },
         batonHolder: "worker",
       },
     );
@@ -165,7 +174,7 @@ describe("deriveState — the eight worker states", () => {
     expect(
       deriveState(session("worker", { issueNumber: 12, prNumber: 21 }), {
         ...facts,
-        pr: { ciStatus: "failed", reviewDecision: null, mergeable: "MERGEABLE" },
+        pr: { ciStatus: "failed", reviewDecision: null, mergeable: "MERGEABLE", approvedAtHead: false },
       }).state,
     ).toBe("fixing");
   });

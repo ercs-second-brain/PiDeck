@@ -248,6 +248,8 @@ describe("REST contract", () => {
 
   it("derives worker state, title and reviewer parent from the reconciler's facts", async () => {
     const { base, deps } = await startDaemon();
+    // The head-matched approval rule needs to know the review account.
+    deps.settings.put({ reviewAccount: { username: "reviewer", token: "ghp_secret" } });
     const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
     const worker = sessionRecord({
       persona: "worker",
@@ -283,7 +285,9 @@ describe("REST contract", () => {
                 failingChecks: [],
                 green: true,
                 issueNumber: 7,
-                reviews: [],
+                reviews: [
+                  { id: 3, author: "reviewer", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" },
+                ],
                 reviewComments: [],
                 prComments: [],
               },

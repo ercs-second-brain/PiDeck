@@ -40,6 +40,7 @@ export interface FakeGhReview {
   state: string;
   submitted_at: string;
   body: string | null;
+  commit_id: string;
 }
 
 export interface FakeGhCheck {

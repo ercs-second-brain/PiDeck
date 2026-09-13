@@ -202,6 +202,7 @@ function gh(state) {
       state: reviewState,
       submitted_at: nowIso(),
       body: payload.body ?? null,
+      commit_id: pr.headRefOid,
     };
     pr.reviews.push(review);
     for (const c of payload.comments ?? []) {
@@ -432,6 +433,7 @@ function prReview(state) {
     state: stateArg,
     submitted_at: nowIso(),
     body: bodyFlagIndex === -1 ? null : (args[bodyFlagIndex + 1] ?? null),
+    commit_id: pr.headRefOid,
   });
   save(state);
   return emit("");
@@ -580,6 +582,7 @@ function op(state) {
         state: payload.reviewState,
         submitted_at: nowIso(),
         body: payload.body ?? null,
+        commit_id: pr.headRefOid,
       };
       pr.reviews.push(review);
       emit(JSON.stringify({ id: review.id }), false);

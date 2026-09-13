@@ -51,6 +51,7 @@ const REVIEWS_JSON = JSON.stringify([
     state: "CHANGES_REQUESTED",
     submitted_at: "2026-01-02T00:00:00Z",
     body: "Please fix",
+    commit_id: "abc123",
   },
 ]);
 
@@ -222,6 +223,7 @@ describe("GhClient", () => {
         state: "CHANGES_REQUESTED",
         submittedAt: "2026-01-02T00:00:00Z",
         body: "Please fix",
+        commitId: "abc123",
       },
     ]);
 
@@ -231,9 +233,10 @@ describe("GhClient", () => {
       state: "COMMENTED",
       submitted_at: "2026-01-02T00:00:00Z",
       body: null,
+      commit_id: "abc123",
     }));
     const page2 = [
-      { id: 9100, user: { login: "reviewer-bot" }, state: "CHANGES_REQUESTED", submitted_at: "2026-01-03T00:00:00Z", body: "fix" },
+      { id: 9100, user: { login: "reviewer-bot" }, state: "CHANGES_REQUESTED", submitted_at: "2026-01-03T00:00:00Z", body: "fix", commit_id: "def456" },
     ];
     const paged = fakeExec((call) =>
       call.args.some((a) => a.includes("page=2")) ? ok(JSON.stringify(page2)) : ok(JSON.stringify(page1)),
@@ -247,6 +250,7 @@ describe("GhClient", () => {
       state: "CHANGES_REQUESTED",
       submittedAt: "2026-01-03T00:00:00Z",
       body: "fix",
+      commitId: "def456",
     });
   });
 
