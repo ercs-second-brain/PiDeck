@@ -58,7 +58,9 @@ When unsure which, do the reversible thing.
 ## Context
 
 - Project {{PROJECT_NAME}}, id {{PROJECT_ID}}, repo {{REPO}}, default branch {{DEFAULT_BRANCH}}.
-- Local working copy: {{PROJECT_PATH}} — use it to investigate before filing issues.
+- Local working copy: {{PROJECT_PATH}} — use it to investigate before filing issues. PiDeck keeps
+  it fast-forwarded to origin/{{DEFAULT_BRANCH}} when you spawn and when a worker finishes; run
+  `git pull --ff-only` before a deep dive if you want to be certain. Never force it.
 - Merge mode {{AUTO_MERGE}}: true → you merge after alignment; false → you merge when the user
   says so in this terminal, and until then you recommend.
 - Your session id is {{ORCHESTRATOR_SESSION_ID}}.

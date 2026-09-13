@@ -19,7 +19,14 @@ import {
 import { statePaths } from "../store/stateDir.js";
 import type { Persona } from "@pideck/shared";
 import type { SessionPatch, SessionRegistry } from "../sessions/registry.js";
-import { archiveSession, spawnPiSession, type GitRunner, type SpawnPiOptions } from "../sessions/spawn.js";
+import {
+  archiveSession,
+  defaultGitRunner,
+  refreshProjectClone,
+  spawnPiSession,
+  type GitRunner,
+  type SpawnPiOptions,
+} from "../sessions/spawn.js";
 import type { Tmux } from "../sessions/tmux.js";
 import { spawnReviewer, spawnWorker, type PromptVars } from "../prompts/index.js";
 import type { TraceEntry } from "@pideck/shared";
@@ -201,6 +208,16 @@ async function applyAction(deps: ApplyDeps, ctx: ApplyContext, action: Action): 
         { tmux: deps.tmux, registry: deps.registry, stateDir: deps.stateDir },
         action.session,
       );
+      // A worker is archived exactly when its issue/PR closes — the moment
+      // main may have moved. Bring the orchestrator's clone up before it
+      // looks again; failures are logged and never forced.
+      if (action.session.persona === "worker" && ctx.project !== null) {
+        await refreshProjectClone(
+          deps.git ?? defaultGitRunner(),
+          ctx.project.path,
+          deps.log,
+        );
+      }
       deps.notifyChange?.();
       return { sessionId: action.session.id, entry: { kind: "archive", detail: action.reason } };
     case "deliver":
@@ -238,7 +255,7 @@ const PENDING_ORCHESTRATOR_SESSION_ID = "{{ORCHESTRATOR_SESSION_ID}}";
 async function spawnPersona(deps: ApplyDeps, options: SpawnPiOptions): Promise<Session> {
   const promptText = options.systemPrompt;
   const session = await spawnPiSession(
-    { tmux: deps.tmux, registry: deps.registry, stateDir: deps.stateDir, git: deps.git },
+    { tmux: deps.tmux, registry: deps.registry, stateDir: deps.stateDir, git: deps.git, log: deps.log },
     options,
   );
   deps.notifyChange?.();

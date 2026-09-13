@@ -14,7 +14,9 @@
  *   in-progress work).
  * - reviewer: its own clone the same way, then detached at the PR head
  *   (fetched from `pull/<n>/head`).
- * - orchestrator/global: the project clone itself (they only write `docs/`).
+ * - orchestrator: the project clone itself (it only writes `docs/`), fast-forwarded
+ *   to the upstream default branch at spawn — see refreshProjectClone.
+ * - global: the state dir itself (no project).
  *
  * Each session owns everything under `<stateDir>/sessions/<id>`, removed on
  * archive — no shared `.git`, so one session's `git stash`, `gc`, or hooks
@@ -28,7 +30,12 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { statePaths } from "../store/stateDir.js";
-import { SessionSchema, type Persona, type Session } from "@pideck/shared";
+import {
+  SessionSchema,
+  errorMessage,
+  type Persona,
+  type Session,
+} from "@pideck/shared";
 import { Tmux } from "./tmux.js";
 import type { SessionRegistry } from "./registry.js";
 
@@ -52,6 +59,8 @@ export interface SpawnDeps {
   /** State dir: session clones, system prompts, and logs live under it. */
   stateDir: string;
   git?: GitRunner;
+  /** Told about clone refreshes that had to be skipped. */
+  log?: (line: string) => void;
 }
 
 export type GitRunner = (args: string[], options?: { cwd: string }) => Promise<string>;
@@ -154,6 +163,25 @@ async function setupReviewerCheckout(
   await git(["checkout", "--detach", "FETCH_HEAD"], { cwd: repo });
 }
 
+/**
+ * Fast-forwards a project clone to its upstream: the orchestrator works
+ * directly in this clone, so merged work must reach it. A clone that cannot
+ * fast-forward (local changes on the default branch) is logged and left
+ * alone — never forced.
+ */
+export async function refreshProjectClone(
+  git: GitRunner,
+  projectClone: string,
+  log?: (line: string) => void,
+): Promise<void> {
+  try {
+    await git(["fetch", "origin"], { cwd: projectClone });
+    await git(["merge", "--ff-only", "@{upstream}"], { cwd: projectClone });
+  } catch (err) {
+    log?.(`clone refresh skipped for ${projectClone}: ${errorMessage(err)}`);
+  }
+}
+
 /** Launches pi in tmux and registers the session. Returns the record.
  *
  * The record is written before the pane is created: a crash between the two
@@ -175,6 +203,8 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
     cwd = join(sessionDir(deps.stateDir, id), "repo");
     await createSessionClone(git, options.cwd, cwd, options.repoUrl);
     await setupReviewerCheckout(git, cwd, options.prNumber);
+  } else if (options.persona === "orchestrator") {
+    await refreshProjectClone(git, cwd, deps.log);
   }
 
   const promptFile = join(statePaths(deps.stateDir).systemPromptsDir, `${id}.md`);

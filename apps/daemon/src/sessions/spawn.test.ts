@@ -66,7 +66,7 @@ function fakeGit(state: FakeGitState): GitRunner {
       throw new TmuxError("no such ref", { args, exitCode: 1 });
     }
     if (cmd === "symbolic-ref") return "origin/main\n";
-    if (cmd === "fetch" || cmd === "clone" || cmd === "remote" || cmd === "checkout") return "";
+    if (cmd === "fetch" || cmd === "clone" || cmd === "remote" || cmd === "checkout" || cmd === "merge") return "";
     if (cmd === "rev-parse") return "abc123\n";
     throw new Error(`unexpected git command: ${args.join(" ")}`);
   };
@@ -297,7 +297,7 @@ describe("spawnPiSession", () => {
     expect(session.prNumber).toBe(7);
   });
 
-  it("spawns an orchestrator directly in the project clone with no git work", async () => {
+  it("spawns an orchestrator directly in the project clone, fast-forwarding it first", async () => {
     const gitState: FakeGitState = { calls: [], branches: new Set() };
     const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
     const deps = {
@@ -313,7 +313,10 @@ describe("spawnPiSession", () => {
       systemPrompt: "orchestrate",
       model: null,
     });
-    expect(gitState.calls).toEqual([]);
+    expect(gitState.calls).toEqual([
+      ["fetch", "origin"],
+      ["merge", "--ff-only", "@{upstream}"],
+    ]);
     const create = tmuxState.created[0]!.args;
     expect(create[11]).toBe(cloneDir);
     expect(create.slice(16)).toEqual([
@@ -325,6 +328,58 @@ describe("spawnPiSession", () => {
     ]);
     expect(create.join(" ")).not.toContain("--model");
     expect(session.model).toBeNull();
+  });
+
+  it("spawns the orchestrator anyway when the project clone cannot be fast-forwarded, and logs the skip", async () => {
+    const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
+    const gitCalls: string[][] = [];
+    const git: GitRunner = async (args) => {
+      gitCalls.push([...args]);
+      if (args[0] === "merge") throw new Error("local changes would be overwritten");
+      return "";
+    };
+    const logs: string[] = [];
+    const deps = {
+      tmux: fakeTmux(tmuxState),
+      registry: new SessionRegistry(stateDir),
+      stateDir,
+      git,
+      log: (line: string) => logs.push(line),
+    };
+    const session = await spawnPiSession(deps, {
+      persona: "orchestrator",
+      projectId: "proj",
+      cwd: cloneDir,
+      systemPrompt: "orchestrate",
+      model: null,
+    });
+    expect(gitCalls).toEqual([
+      ["fetch", "origin"],
+      ["merge", "--ff-only", "@{upstream}"],
+    ]);
+    expect(logs.join("\n")).toContain("clone refresh skipped");
+    expect(deps.registry.get(session.id)).toEqual(session);
+    expect(tmuxState.created).toHaveLength(1);
+  });
+
+  it("spawns the global agent in the state dir with no git work", async () => {
+    const gitState: FakeGitState = { calls: [], branches: new Set() };
+    const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
+    const deps = {
+      tmux: fakeTmux(tmuxState),
+      registry: new SessionRegistry(stateDir),
+      stateDir,
+      git: fakeGit(gitState),
+    };
+    await spawnPiSession(deps, {
+      persona: "global",
+      projectId: null,
+      cwd: stateDir,
+      systemPrompt: "global",
+      model: null,
+    });
+    expect(gitState.calls).toEqual([]);
+    expect(tmuxState.created[0]!.args[11]).toBe(stateDir);
   });
 });
 

@@ -276,6 +276,69 @@ describe("applyActions", () => {
     expect(archives[0]).toMatchObject({ kind: "archive", detail: "test" });
   });
 
+  it("fast-forwards the project clone when a worker is archived", async () => {
+    const session = SessionSchema.parse({
+        id: "s-worker",
+        persona: "worker",
+        projectId: "my-api",
+        issueNumber: 1,
+        tmuxSession: "pideck-s-worker",
+        spawnedAt: "2025-06-01T00:00:00Z",
+        model: null,
+      });
+    registry.add(session);
+    const { tmux } = fakeTmux(["pideck-s-worker"]);
+    deps = { ...deps, tmux };
+    const tally = { spawned: 0, archived: 0, delivered: 0, errors: 0 };
+    await applyActions(
+      deps,
+      { project, settings, reviewToken: null },
+      [{ kind: "archive", session, reason: "issue #1 closed or merged" }],
+      tally,
+    );
+
+    expect(gitCalls).toEqual([
+      ["fetch", "origin"],
+      ["merge", "--ff-only", "@{upstream}"],
+    ]);
+    expect(tally).toMatchObject({ archived: 1, errors: 0 });
+  });
+
+  it("archives a worker even when the project clone cannot be fast-forwarded", async () => {
+    const session = SessionSchema.parse({
+        id: "s-worker",
+        persona: "worker",
+        projectId: "my-api",
+        issueNumber: 1,
+        tmuxSession: "pideck-s-worker",
+        spawnedAt: "2025-06-01T00:00:00Z",
+        model: null,
+      });
+    registry.add(session);
+    const { tmux } = fakeTmux(["pideck-s-worker"]);
+    const logs: string[] = [];
+    deps = {
+      ...deps,
+      tmux,
+      git: async (args) => {
+        if (args[0] === "merge") throw new Error("local changes would be overwritten");
+        return "";
+      },
+      log: (line) => logs.push(line),
+    };
+    const tally = { spawned: 0, archived: 0, delivered: 0, errors: 0 };
+    await applyActions(
+      deps,
+      { project, settings, reviewToken: null },
+      [{ kind: "archive", session, reason: "issue #1 closed or merged" }],
+      tally,
+    );
+
+    expect(registry.get("s-worker")!.archivedAt).toBeDefined();
+    expect(logs.join("\n")).toContain("clone refresh skipped");
+    expect(tally).toMatchObject({ archived: 1, errors: 0 });
+  });
+
   it("counts action failures without stopping the rest", async () => {
     deps = { ...deps, ...fakeTmux(["someone-else"]) };
     const target = SessionSchema.parse({
