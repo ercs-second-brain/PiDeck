@@ -138,6 +138,8 @@ describe("spawnPiSession", () => {
     const script = create[14]!;
     expect(script).toContain("PD_SESSION_ID");
     expect(script).toContain("GH_TOKEN='t'");
+    expect(script).toContain("unset -v PD_HOME PD_E2E_REVIEW_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN");
+    expect(script).not.toContain("export PD_HOME");
     expect(create.slice(16)).toEqual([
       "pi",
       "--session-dir",
@@ -155,6 +157,30 @@ describe("spawnPiSession", () => {
     expect(deps.registry.get(session.id)).toEqual(session);
     expect(session.issueNumber).toBe(42);
     expect(session.model).toBe("anthropic/claude");
+  });
+
+  it("strips PD_HOME and the runner's token var from the pane env even when handed them", async () => {
+    const tmuxState: FakeTmuxState = { alive: new Set(), created: [], killed: [] };
+    const deps = {
+      tmux: fakeTmux(tmuxState),
+      registry: new SessionRegistry(stateDir),
+      stateDir,
+      git: fakeGit({ calls: [], branches: new Set() }),
+    };
+    await spawnPiSession(deps, {
+      persona: "global",
+      projectId: null,
+      cwd: cloneDir,
+      systemPrompt: "p",
+      model: null,
+      env: { PD_HOME: "/srv/pideck", PD_E2E_REVIEW_TOKEN: "ghp_runner", GH_TOKEN: "t" },
+    });
+
+    const script = tmuxState.created[0]!.args[14]!;
+    expect(script).toContain("unset -v PD_HOME PD_E2E_REVIEW_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN");
+    expect(script).not.toContain("/srv/pideck");
+    expect(script).not.toContain("ghp_runner");
+    expect(script).toContain("export PD_SESSION_ID=");
   });
 
   it("checks out the upstream issue branch when it exists, keeping in-progress work", async () => {

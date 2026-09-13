@@ -6,8 +6,8 @@ import type { z } from "zod";
  * One JSON document on disk, loaded through a zod schema and written atomically
  * (temp file + rename). A missing file yields the given empty value; a file that
  * is not valid JSON or fails the schema throws — never a silent reset. Files are
- * written 0600: settings.json carries the review account's PAT, and the daemon
- * must not loosen the mode onboard.sh sets.
+ * written 0600: review-token.json carries the review account's PAT, and the
+ * daemon must not loosen the mode onboard.sh sets for settings.json.
  */
 export class JsonFile<T> {
   readonly path: string;

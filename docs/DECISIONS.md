@@ -32,3 +32,4 @@ taken with the project owner; change one here before changing the spec.
 | 25 | PR conflicts route to the worker, not the orchestrator | A conflicted PR never runs CI and never gets reviewed, so the worker must rebase; watermarked per head so a push that still conflicts re-notifies. |
 | 26 | `workerConcurrency` is a fixed default (3); never auto-sized from hardware | No user asked for hardware probing; the knob exists for the one who wants a different number. |
 | 27 | Loop tooling scope: fake gh, the end-to-end loop test, the session trace, and the UI gallery; prompt evals deferred | The loop must be reproducible without GitHub or real agents; eval harnesses wait until the loop is stable. |
+| 28 | The review token never sits in `settings.json`; it lives in a 0600 daemon-only file, and panes never inherit `PD_HOME` | Agents share the daemon's user and hunt for credentials; the settings file is the first path any agent tries, so it must carry no secrets.

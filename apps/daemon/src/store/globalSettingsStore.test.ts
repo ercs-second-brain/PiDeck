@@ -26,7 +26,7 @@ describe("GlobalSettingsStore", () => {
     "../../../../install/test/fixtures/settings.json",
   );
 
-  it("reads the onboarding fixture the shell test pins onboard.sh to", () => {
+  it("reads the onboarding fixture the shell test pins onboard.sh to, and strips its token", () => {
     const stateDir = tempDir();
     copyFileSync(onboardingFixture, join(stateDir, "settings.json"));
     const store = new GlobalSettingsStore(stateDir);
@@ -40,6 +40,21 @@ describe("GlobalSettingsStore", () => {
       worker: null,
       reviewer: null,
     });
+
+    // The migration moved the token out of settings.json on first read.
+    const raw = JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf8"));
+    expect(raw.reviewAccount).toEqual({ username: "reviewer" });
+    expect(JSON.stringify(raw)).not.toContain("ghp_good");
+    const token = JSON.parse(readFileSync(join(stateDir, "review-token.json"), "utf8"));
+    expect(token).toEqual({ token: "ghp_good" });
+  });
+
+  it("keeps review-token.json owner-only", () => {
+    const stateDir = tempDir();
+    const store = new GlobalSettingsStore(stateDir);
+    store.put({ reviewAccount: { username: "review-bot", token: "ghp_secret" } });
+    const mode = statSync(join(stateDir, "review-token.json")).mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 
   it("treats a missing review account as onboarding incomplete, not a valid config", () => {
@@ -61,12 +76,15 @@ describe("GlobalSettingsStore", () => {
     expect(store.reviewToken()).toEqual({ username: "review-bot", token: "ghp_secret" });
 
     const raw = JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf8"));
-    expect(raw.reviewAccount).toEqual({ username: "review-bot", token: "ghp_secret" });
+    expect(raw.reviewAccount).toEqual({ username: "review-bot" });
+    expect(JSON.stringify(raw)).not.toContain("ghp_secret");
+    const token = JSON.parse(readFileSync(join(stateDir, "review-token.json"), "utf8"));
+    expect(token).toEqual({ token: "ghp_secret" });
   });
 
   it("keeps settings.json owner-only after a daemon-side save", () => {
     // onboard.sh creates the file 0600; the daemon rewrites it atomically and
-    // must not loosen the mode — the PAT lives here.
+    // must not loosen the mode.
     const stateDir = tempDir();
     const store = new GlobalSettingsStore(stateDir);
     store.put({ reviewAccount: { username: "review-bot", token: "ghp_secret" } });
@@ -136,11 +154,20 @@ describe("GlobalSettingsStore", () => {
 
   it("throws a clear error on a schema-invalid settings file", () => {
     const stateDir = tempDir();
-    writeFileSync(
-      join(stateDir, "settings.json"),
-      JSON.stringify({ reviewAccount: { username: "x" } }),
-    );
+    writeFileSync(join(stateDir, "settings.json"), JSON.stringify({ reviewAccount: 42 }));
     expect(() => new GlobalSettingsStore(stateDir)).toThrow(/settings\.json/);
+  });
+
+  it("reads as not onboarded when a username survives but its token file is gone", () => {
+    const stateDir = tempDir();
+    const store = new GlobalSettingsStore(stateDir);
+    store.put({ reviewAccount: { username: "review-bot", token: "ghp_secret" } });
+    rmSync(join(stateDir, "review-token.json"));
+
+    const reopened = new GlobalSettingsStore(stateDir);
+    expect(reopened.onboarded()).toBe(false);
+    expect(reopened.read().reviewAccount).toEqual({ username: "review-bot", tokenSet: false });
+    expect(() => reopened.reviewToken()).toThrow(/not onboarded: the review account is required/);
   });
 
   it("writes atomically without leaving temp files", () => {
