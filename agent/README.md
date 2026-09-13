@@ -21,7 +21,7 @@ for token:
 | `{{PROJECT_NAME}}` | Project display name |
 | `{{REPO}}` | `owner/repo` on GitHub |
 | `{{DEFAULT_BRANCH}}` | Project's default branch |
-| `{{PROJECT_PATH}}` | Local working-copy path |
+| `{{PROJECT_PATH}}` | Local working-copy path: workers and reviewers get their own per-session clone at `<stateDir>/sessions/<id>/repo` (removed on archive); orchestrator gets the shared project clone. Never `cd` into the project clone from a worker or reviewer. |
 | `{{ISSUE_NUMBER}}` | The worker's assigned issue number |
 | `{{PR_NUMBER}}` | The reviewer's PR number |
 | `{{SESSION_ID}}` | This session's id |
