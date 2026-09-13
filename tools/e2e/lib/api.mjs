@@ -8,9 +8,25 @@
 export class Api {
   constructor(base) {
     this.base = base;
+    this.pending = new Set();
   }
 
-  async call(method, path, body) {
+  /** Resolves once every in-flight call has settled — used before teardown. */
+  async quiesce() {
+    await Promise.allSettled([...this.pending]);
+  }
+
+  call(method, path, body) {
+    // Every call is tracked from spawn to settle so the runner can await
+    // stragglers before killing the daemon; an un-awaited call's rejection
+    // is absorbed here instead of surfacing as an unhandled rejection.
+    const call = this.settle(method, path, body);
+    this.pending.add(call);
+    call.catch(() => {}).finally(() => this.pending.delete(call));
+    return call;
+  }
+
+  async settle(method, path, body) {
     const response = await fetch(`${this.base}${path}`, {
       method,
       ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),

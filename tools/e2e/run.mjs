@@ -152,7 +152,12 @@ async function main() {
     console.log(`[e2e] scenario ${scenarioName} passed`);
   } catch (err) {
     result.error = err instanceof Error ? err.message : String(err);
+    console.error(`[e2e] scenario ${scenarioName} failed:`, err instanceof Error ? err.stack : err);
   } finally {
+    // Let in-flight API calls settle before the daemon goes down, so a
+    // failed call cannot escalate into an unhandled rejection that kills
+    // the process before result.json and cleanup run.
+    if (api !== null) await api.quiesce();
     if (daemon !== null) await daemon.kill().catch(() => {});
     result.finishedAt = new Date().toISOString();
     if (interrupted) {
