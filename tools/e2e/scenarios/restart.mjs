@@ -71,23 +71,25 @@ export async function run(ctx) {
   await until(`worker spawned for issue #${a}`, () => ctx.sessions().then((all) => workerFor(all, a)));
   const pr = await until(`PR opened for #${a}`, () => prByHead(repoFull, headRef(a)));
 
-  const beforeLive = live(ctx.allSessions());
+  const beforeLive = live(await ctx.allSessions());
   await ctx.restart();
-  const afterLive = live(ctx.allSessions());
+  const afterLive = live(await ctx.allSessions());
 
-  const beforeIds = beforeLive.map((v) => v.id);
-  const afterIds = afterLive.map((v) => v.id);
-  if (new Set(afterIds).size !== afterIds.length) throw new Error("restart: duplicate live session records");
+  const beforeIds = beforeLive.map((v) => v.session.id);
+  const afterIds = afterLive.map((v) => v.session.id);
+  if (new Set(afterIds).size !== afterIds.length) {
+    throw new Error(`restart: duplicate live session records — [${afterIds.join(", ")}]`);
+  }
   if (afterIds.length !== beforeIds.length || afterIds.some((id) => !beforeIds.includes(id))) {
     throw new Error(
       `restart: live session inventory changed — before [${beforeIds.join(", ")}] after [${afterIds.join(", ")}]`,
     );
   }
   for (const v of afterLive) {
-    const w = beforeLive.find((x) => x.id === v.id);
+    const w = beforeLive.find((x) => x.session.id === v.session.id);
     if (w === undefined) continue;
     if (JSON.stringify(watermark(w)) !== JSON.stringify(watermark(v))) {
-      throw new Error(`restart: watermarks on session ${v.id.slice(0, 8)} were not preserved`);
+      throw new Error(`restart: watermarks on session ${v.session.id.slice(0, 8)} were not preserved`);
     }
   }
   const owners = new Set(afterLive.map(inventoryKey));
