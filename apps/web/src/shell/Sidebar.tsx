@@ -181,7 +181,7 @@ export function Sidebar({ projects, sessions, selectedId, onNavigate, onChanged,
           {`${badge.label} · archived ${relativeTime(view.session.archivedAt, now)}`}
         </Badge>
       ) : (
-        <Badge tone={badge.tone} dot>
+        <Badge tone={badge.tone} dot pulse={view.active === true}>
           {badge.label}
         </Badge>
       );

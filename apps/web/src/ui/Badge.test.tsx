@@ -45,4 +45,11 @@ describe("<Badge />", () => {
     expect(dot.getAttribute("title")).toBe("fixing");
     expect(dot.getAttribute("aria-label")).toBe("fixing");
   });
+
+  it("pulses only when asked", () => {
+    const pulsing = mount(<Badge tone="blue" dot pulse>working</Badge>);
+    expect(pulsing.querySelector(".badge--dot")!.classList.contains("badge--pulse")).toBe(true);
+    const still = mount(<Badge tone="blue" dot>working</Badge>);
+    expect(still.querySelector(".badge--dot")!.classList.contains("badge--pulse")).toBe(false);
+  });
 });

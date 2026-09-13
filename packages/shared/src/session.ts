@@ -39,6 +39,11 @@ export const SessionViewSchema = z.object({
   /** Set when the review account cannot read the session's repo — no
    * reviewer runs while this is set. */
   reviewAccess: z.string().nullable().default(null),
+  /** True while the session's pi agent is mid-turn: the newest event in its
+   * pinned JSONL is an in-flight assistant/tool event within the liveness
+   * window. Always set by the daemon's views; optional so fixtures can omit
+   * it. */
+  active: z.boolean().optional(),
 });
 
 export type SessionView = z.infer<typeof SessionViewSchema>;
