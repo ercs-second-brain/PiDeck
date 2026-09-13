@@ -66,6 +66,7 @@ function derive(
   live: ReturnType<typeof session>[] = [],
   overrides: Partial<{
     context: Map<string, number | null>;
+    active: Map<string, boolean>;
     notifiedHeads: Map<number, string>;
     stallNotices: Map<string, string>;
     now: Date;
@@ -77,6 +78,7 @@ function derive(
     facts: projectFacts,
     live,
     context: overrides.context ?? new Map(),
+    active: overrides.active ?? new Map(),
     reviewLogin: "acme-review",
     notifiedHeads: overrides.notifiedHeads ?? new Map(),
     stallNotices: overrides.stallNotices ?? new Map(),
@@ -111,6 +113,7 @@ describe("deriveActions — the SPEC §4 table", () => {
       facts: facts({ issues: [issue({ number: 1 }), issue({ number: 2 })] }),
       live: [],
       context: new Map(),
+      active: new Map(),
       reviewLogin: "acme-review",
       notifiedHeads: new Map(),
       stallNotices: new Map(),
@@ -169,7 +172,11 @@ describe("deriveActions — the SPEC §4 table", () => {
     const spawn = spawns[0]!;
     if (spawn.kind !== "spawn-reviewer") throw new Error("expected spawn-reviewer");
     expect(spawn.pr.number).toBe(11);
-    expect(spawn.initial).toEqual({ lastPromptedHeadSha: "sha-1", lastDeliveredReviewId: null });
+    expect(spawn.initial).toEqual({
+      lastPromptedHeadSha: "sha-1",
+      lastPromptedHeadAt: "2025-06-01T12:00:00.000Z",
+      lastDeliveredReviewId: null,
+    });
   });
 
   it("no reviewer when CI is not green or the PR conflicts", () => {
@@ -213,6 +220,7 @@ describe("deriveActions — the SPEC §4 table", () => {
     expect(delivers[0]!.text).toContain("re-review");
     expect(delivers[0]!.watermark?.patch).toEqual({
       lastPromptedHeadSha: "sha-2",
+      lastPromptedHeadAt: "2025-06-01T12:00:00.000Z",
       lastDeliveredReviewId: null,
     });
     expect(actions.filter((a) => a.kind === "archive")).toHaveLength(0);
@@ -589,6 +597,7 @@ describe("deriveActions — the baton hand-off", () => {
     expect(spawns).toHaveLength(1);
     expect((spawns[0] as { initial: unknown }).initial).toEqual({
       lastPromptedHeadSha: "sha-2",
+      lastPromptedHeadAt: "2025-06-01T12:00:00.000Z",
       lastDeliveredReviewId: null,
     });
   });
@@ -626,6 +635,7 @@ describe("deriveActions — the baton hand-off", () => {
     expect(reReviews).toHaveLength(1);
     expect(reReviews[0]!.watermark?.patch).toEqual({
       lastPromptedHeadSha: "sha-3",
+      lastPromptedHeadAt: "2025-06-01T12:00:00.000Z",
       lastDeliveredReviewId: null,
     });
   });
@@ -724,6 +734,7 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
     expect(delivers[0]!.text).toContain("re-review");
     expect(delivers[0]!.watermark?.patch).toEqual({
       lastPromptedHeadSha: "sha-2",
+      lastPromptedHeadAt: "2025-06-01T12:00:00.000Z",
       lastDeliveredReviewId: null,
     });
   });
@@ -885,6 +896,154 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
     const delivers = actions.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
     expect(delivers[0]!.target.id).toBe(orch.id);
+  });
+});
+
+describe("deriveActions — the reviewer stall bound", () => {
+  it("a dead-quiet reviewer past the stall bound is nudged once per round", () => {
+    // Armed at spawn an hour ago; no review filed since; probe says idle.
+    const reviewer = session("reviewer", {
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastPromptedHeadAt: "2025-06-01T11:00:00Z",
+    });
+    const actions = derive(facts({ prs: [pr()] }), [reviewer]);
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(reviewer.id);
+    expect(delivers[0]!.text).toContain("no review from you");
+    // The nudge re-arms the round's clock so the replace stage waits a full
+    // stall window before firing.
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastPromptedHeadSha: "sha-1",
+      lastPromptedHeadAt: "2025-06-01T12:00:00.000Z",
+      lastDeliveredReviewId: null,
+    });
+    expect((delivers[0] as { stallNotice?: unknown }).stallNotice).toEqual({
+      sessionId: reviewer.id,
+      at: "2025-06-01T12:00:00.000Z",
+    });
+    expect(actions.filter((a) => a.kind === "archive")).toHaveLength(0);
+  });
+
+  it("a reviewer still mid-turn is left alone, however slow", () => {
+    const reviewer = session("reviewer", {
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastPromptedHeadAt: "2025-06-01T11:00:00Z",
+    });
+    const actions = derive(facts({ prs: [pr()] }), [reviewer], {
+      active: new Map([[reviewer.id, true]]),
+    });
+    expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
+    expect(actions.filter((a) => a.kind === "archive")).toHaveLength(0);
+  });
+
+  it("inside the stall bound nothing is nudged", () => {
+    const reviewer = session("reviewer", {
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastPromptedHeadAt: "2025-06-01T11:20:00Z",
+    });
+    const actions = derive(facts({ prs: [pr()] }), [reviewer]);
+    expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
+  });
+
+  it("a nudged reviewer that stays dead-quiet is replaced and the orchestrator is told", () => {
+    const reviewer = session("reviewer", {
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastPromptedHeadAt: "2025-06-01T12:00:00Z",
+    });
+    const orch = session("orchestrator");
+    // The nudge was sent at 12:00, re-arming the clock; the silence outlived
+    // the re-armed bound.
+    const actions = derive(facts({ prs: [pr()] }), [reviewer, orch], {
+      now: new Date("2025-06-01T12:46:00Z"),
+      stallNotices: new Map([[reviewer.id, "2025-06-01T12:00:00.000Z"]]),
+    });
+    expect(actions).toContainEqual({
+      kind: "archive",
+      session: reviewer,
+      reason: "reviewer stalled on PR #11",
+    });
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(orch.id);
+    expect(delivers[0]!.text).toContain("The reviewer for PR #11 has been silent for 45 minutes");
+    expect(actions.filter((a) => a.kind === "spawn-reviewer")).toHaveLength(0);
+  });
+
+  it("the replacement stage fires even without an orchestrator to notify", () => {
+    const reviewer = session("reviewer", {
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastPromptedHeadAt: "2025-06-01T12:00:00Z",
+    });
+    const actions = derive(facts({ prs: [pr()] }), [reviewer], {
+      now: new Date("2025-06-01T12:46:00Z"),
+      stallNotices: new Map([[reviewer.id, "2025-06-01T12:00:00.000Z"]]),
+    });
+    expect(actions).toContainEqual({
+      kind: "archive",
+      session: reviewer,
+      reason: "reviewer stalled on PR #11",
+    });
+    expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
+  });
+
+  it("a fresh round re-arms the bound: the nudge, not the replacement, fires again", () => {
+    const reviewer = session("reviewer", {
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-2",
+      lastPromptedHeadAt: "2025-06-01T12:30:00Z",
+    });
+    const orch = session("orchestrator");
+    // The mark is older than the new round's arming time (a new head
+    // re-armed the reviewer via re-review after an earlier nudge).
+    const actions = derive(
+      facts({ issues: [issue()], prs: [pr({ headSha: "sha-2" })] }),
+      [reviewer, orch],
+      {
+        now: new Date("2025-06-01T13:20:00Z"),
+        stallNotices: new Map([[reviewer.id, "2025-06-01T12:00:00.000Z"]]),
+      },
+    );
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(reviewer.id);
+    expect(actions.filter((a) => a.kind === "archive")).toHaveLength(0);
+  });
+
+  it("a round concluded by a submission or a fresh approval is never stalled", () => {
+    const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const reviewer = session("reviewer", {
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastPromptedHeadAt: "2025-06-01T10:00:00Z",
+      lastDeliveredReviewId: 4,
+    });
+    const submission = {
+      id: 5,
+      author: "acme-review",
+      state: "CHANGES_REQUESTED",
+      submittedAt: null,
+      body: null,
+      commitId: "sha-1",
+    };
+    const withSubmission = derive(
+      facts({ issues: [issue()], prs: [pr({ green: false, ciStatus: "pending", reviews: [submission] })] }),
+      [worker, reviewer],
+    );
+    expect(withSubmission.filter((a) => a.kind === "deliver")).toHaveLength(1); // reviewChanges to the worker
+    expect(withSubmission.filter((a) => a.kind === "deliver" && a.target.id === reviewer.id)).toHaveLength(0);
+
+    const approval = { ...submission, state: "APPROVED" };
+    const approved = derive(
+      facts({ issues: [issue()], prs: [pr({ reviewDecision: "APPROVED", reviews: [approval] })] }),
+      [worker, reviewer, session("orchestrator")],
+    );
+    expect(approved.filter((a) => a.kind === "archive")).toHaveLength(0);
   });
 });
 

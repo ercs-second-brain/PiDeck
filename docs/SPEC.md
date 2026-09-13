@@ -150,7 +150,11 @@ state (session registry + tmux) is closed.
 | review account cannot read the repo | no reviewer; Status shows why |
 
 Workers and reviewers are **replaced** (fresh session, same issue/PR) when their pane dies, the
-user deletes them, or their context usage exceeds the configured percentage.
+user deletes them, or their context usage exceeds the configured percentage. A reviewer round is
+additionally bounded: a reviewer that holds the baton for its prompted head past `stallMinutes`
+with no review filed — and whose pi turn is not mid-flight — is nudged once, then replaced with a
+fresh reviewer for the same PR while the orchestrator is told; a reviewer still mid-turn is left
+alone, however slow.
 
 Each worker and reviewer session runs in its own isolated clone of the project (under the daemon
 state dir, origin repointed at GitHub); the orchestrator and global agent work in the project
@@ -177,10 +181,10 @@ tick; and the `/api/status` probes (`pi`, `gh`) are cached for 30 s.
 ### Per-session memory (persisted in the session registry)
 
 `persona`, `projectId`, `issueNumber`, `prNumber`, `tmuxSession`, `spawnedAt`, `model`, and
-delivery watermarks keyed on GitHub ids: `lastPromptedHeadSha`, `lastDeliveredIssueCommentId`,
-`lastDeliveredPrCommentId`, `lastDeliveredReviewId`, `lastNotifiedConflictSha`,
-`lastAddressedHeadSha`, `fixAttempts`, `lastActivityAt`. Losing a watermark costs at most one
-duplicate prompt.
+delivery watermarks keyed on GitHub ids: `lastPromptedHeadSha`, `lastPromptedHeadAt`,
+`lastDeliveredIssueCommentId`, `lastDeliveredPrCommentId`, `lastDeliveredReviewId`,
+`lastNotifiedConflictSha`, `lastAddressedHeadSha`, `fixAttempts`, `lastActivityAt`. Losing a
+watermark costs at most one duplicate prompt.
 
 Everything in this section is a pure derivation over GitHub state, exercised end to end against
 the fake gh (§10); the session trace (§10) replays one session's deliveries and watermarks to
@@ -197,6 +201,8 @@ answer "why was I prompted".
 | new issue comment from someone other than the worker | worker (wakes idle) | pointer to the comment |
 | spawn | reviewer | PR number, repo, "file exactly one review" |
 | new head since last review | reviewer | "re-review" |
+| reviewer round stalled (baton held past `stallMinutes`, no review filed, turn not mid-flight) | reviewer | the review prompt again, once per round |
+| the nudged reviewer's silence outlives the re-armed bound | orchestrator | "reviewer for PR #n has been silent" |
 | the review account's newest review is APPROVED at the PR's current head + CI green, and quiet — no `reviewChanges` delivery outstanding to the worker for this head (this tick, or one it has not answered yet) | orchestrator | "PR #n for issue #m is approved and green — alignment check" |
 | worker blocker comment / fix attempts exhausted | orchestrator | pointer to the issue comment |
 | worker stalled (no push/PR/comment for `stallMinutes`) | orchestrator | "worker for #n has been silent" |
@@ -226,6 +232,10 @@ reviewer and the per-head notice), the notice fires. The worker reads `in review
 holds the baton and `addressing` while it holds it itself; `ready` is the same head-matched rule,
 not GitHub's (possibly stale) `reviewDecision`; the reviewer's row reads `awaiting
 author` while the worker holds it and `approved PR #n, awaiting merge` once approved and idle.
+A reviewer round is bounded like a worker is: silence past `stallMinutes` counted from the round's
+arming time (`lastPromptedHeadAt`) — with no submission and no mid-flight pi turn — nudges the
+reviewer once, and a silence that outlives the nudged bound replaces it (the stall notice marks
+the nudge, so a re-armed round starts over).
 Every hand-off is written to both sessions' traces —
 `baton: worker → reviewer`, `baton: reviewer → worker` — with the head SHA.
 

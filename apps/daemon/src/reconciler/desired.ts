@@ -35,7 +35,11 @@
  * The approved+green notice fires once per head (`notifiedHeads`) and only
  * when the review account's newest review is an APPROVED review at the PR's
  * current head (`approvedAtHead`) and the worker is quiet (see
- * `approvedGreenReady`).
+ * `approvedGreenReady`). A reviewer round is bounded the same way a worker
+ * is: a reviewer that holds the baton for its prompted head past
+ * `stallMinutes` without filing a review — and whose pi turn is not
+ * mid-flight (`active`, the liveness probe) — is nudged once, then replaced
+ * with a fresh reviewer for the same PR while the orchestrator is told.
  */
 
 import type { Project, ProjectSettings, Session } from "@pideck/shared";
@@ -50,6 +54,8 @@ import {
   prConflict,
   reReview,
   reviewChanges,
+  reviewNudge,
+  reviewerStalled as reviewerStalledText,
   stalled,
 } from "../prompts/index.js";
 import type { GhComment, GhReview } from "../github/schemas.js";
@@ -104,6 +110,27 @@ export function approvedAtHead(
 }
 
 /**
+ * The reviewer stall rule: the reviewer has held the baton for its prompted
+ * head (armed at spawn or re-review, `lastPromptedHeadAt`) longer than
+ * `stallMinutes` and filed no review that concluded the round, and its pi
+ * turn is not mid-flight — the activity probe's shape distinguishes a
+ * session that is still working, however slow, from one that went
+ * dead-quiet. A mid-turn reviewer is left alone; a dead-quiet one is
+ * nudged once per round, then replaced.
+ */
+export function reviewerStalled(
+  pr: Pick<PrFacts, "headSha" | "reviewDecision" | "reviews">,
+  reviewer: Session,
+  active: boolean,
+  now: Date,
+  stallMinutes: number,
+): boolean {
+  if (active || prBaton(pr, reviewer) !== "reviewer") return false;
+  if (reviewer.lastPromptedHeadAt === null) return false;
+  return now.getTime() - Date.parse(reviewer.lastPromptedHeadAt) > stallMinutes * 60_000;
+}
+
+/**
  * The quiet rule for reviewer rounds: a `reviewChanges` delivery outstanding
  * to the worker for this head — this tick, or an earlier one it has not
  * answered by pushing — holds a new round back.
@@ -139,6 +166,10 @@ export interface DeriveInput {
   live: Session[];
   /** Context-window percent per live session id, when measurable. */
   context: ReadonlyMap<string, number | null>;
+  /** Whether each live session's pi turn is mid-flight right now (the
+   * transcript-shape probe); a stalled reviewer still mid-turn is left
+   * alone. */
+  active: ReadonlyMap<string, boolean>;
   /** The review account's login; the account is required, never null. */
   reviewLogin: string;
   /** Heads already announced as approved+green; apply marks it after the send. */
@@ -232,6 +263,7 @@ export function deriveActions(input: DeriveInput): Action[] {
         pr,
         initial: {
           lastPromptedHeadSha: pr.headSha,
+          lastPromptedHeadAt: nowIso,
           lastDeliveredReviewId: maxId(pr.reviews.map((r) => r.id)),
         },
       });
@@ -255,10 +287,61 @@ export function deriveActions(input: DeriveInput): Action[] {
           sessionId: reviewer.id,
           patch: {
             lastPromptedHeadSha: pr.headSha,
+            lastPromptedHeadAt: nowIso,
             lastDeliveredReviewId: maxId(pr.reviews.map((r) => r.id)),
           },
         },
       });
+    }
+    // The reviewer stall bound: a round that never files its submission must
+    // not park the PR. A dead-quiet reviewer past the bound is nudged once
+    // (the nudge re-arms the bound); one the nudge could not wake — the
+    // silence outlived the re-armed clock — is replaced with a fresh
+    // reviewer for the same PR and the orchestrator is told.
+    if (
+      reviewer !== undefined &&
+      reviewerStalled(
+        pr,
+        reviewer,
+        input.active.get(reviewer.id) ?? false,
+        input.now,
+        settings.stallMinutes,
+      )
+    ) {
+      const noticed = input.stallNotices.get(reviewer.id);
+      const nudged =
+        noticed !== undefined &&
+        reviewer.lastPromptedHeadAt !== null &&
+        Date.parse(noticed) >= Date.parse(reviewer.lastPromptedHeadAt);
+      if (!nudged) {
+        actions.push({
+          kind: "deliver",
+          target: reviewer,
+          text: reviewNudge({ prNumber: pr.number }),
+          watermark: {
+            sessionId: reviewer.id,
+            patch: {
+              lastPromptedHeadSha: pr.headSha,
+              lastPromptedHeadAt: nowIso,
+              lastDeliveredReviewId: maxId(pr.reviews.map((r) => r.id)),
+            },
+          },
+          stallNotice: { sessionId: reviewer.id, at: nowIso },
+        });
+      } else {
+        actions.push({
+          kind: "archive",
+          session: reviewer,
+          reason: `reviewer stalled on PR #${pr.number}`,
+        });
+        if (orchestrator !== undefined) {
+          actions.push({
+            kind: "deliver",
+            target: orchestrator,
+            text: reviewerStalledText({ prNumber: pr.number, stallMinutes: settings.stallMinutes }),
+          });
+        }
+      }
     }
     if (
       pr.green &&
@@ -496,7 +579,7 @@ function deriveWorkerDeliveries(
 
 /** Exactly one orchestrator per project; a (re)launched one gets the briefing. */
 export function orchestratorAction(
-  input: Omit<DeriveInput, "notifiedHeads" | "stallNotices">,
+  input: Omit<DeriveInput, "notifiedHeads" | "stallNotices" | "active">,
 ): Action | null {
   const live = input.live.find((s) => s.persona === "orchestrator");
   if (live !== undefined) return null;

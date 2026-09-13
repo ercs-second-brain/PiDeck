@@ -15,6 +15,9 @@ export const SessionSchema = z.object({
   label: z.string().optional(),
   archivedAt: z.string().optional(),
   lastPromptedHeadSha: z.string().nullable().default(null),
+  /** When lastPromptedHeadSha was armed (spawn or re-review); a
+   *  reviewer's stall bound counts silence from here. */
+  lastPromptedHeadAt: z.string().nullable().default(null),
   lastDeliveredIssueCommentId: z.number().int().nullable().default(null),
   lastDeliveredPrCommentId: z.number().int().nullable().default(null),
   lastDeliveredReviewId: z.number().int().nullable().default(null),

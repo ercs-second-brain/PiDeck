@@ -7,6 +7,8 @@ import {
   issueComment,
   reReview,
   reviewChanges,
+  reviewNudge,
+  reviewerStalled,
   spawnReviewer,
   spawnWorker,
   stalled,
@@ -95,6 +97,18 @@ describe("delivery templates", () => {
   it("stalled reports the silent worker", () => {
     expect(expectOneLine(() => stalled({ issueNumber: 12, stallMinutes: 20 }))).toContain(
       "Worker for issue #12 has been silent for 20 minutes",
+    );
+  });
+
+  it("reviewNudge re-delivers the one-review instruction", () => {
+    expect(expectOneLine(() => reviewNudge({ prNumber: 21 }))).toContain(
+      "PR #21 still has no review from you",
+    );
+  });
+
+  it("reviewerStalled reports the silent reviewer", () => {
+    expect(expectOneLine(() => reviewerStalled({ prNumber: 21, stallMinutes: 45 }))).toContain(
+      "The reviewer for PR #21 has been silent for 45 minutes",
     );
   });
 });

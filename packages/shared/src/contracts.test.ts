@@ -50,6 +50,7 @@ describe("session", () => {
     const session = SessionSchema.parse(base);
     expect(session.fixAttempts).toBe(0);
     expect(session.lastPromptedHeadSha).toBeNull();
+    expect(session.lastPromptedHeadAt).toBeNull();
     expect(session.lastDeliveredIssueCommentId).toBeNull();
     expect(session.lastDeliveredPrCommentId).toBeNull();
     expect(session.lastDeliveredReviewId).toBeNull();

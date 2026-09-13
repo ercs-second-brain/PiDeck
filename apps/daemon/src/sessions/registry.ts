@@ -24,6 +24,7 @@ export type SessionPatch = Partial<
     | "prNumber"
     | "label"
     | "lastPromptedHeadSha"
+    | "lastPromptedHeadAt"
     | "lastDeliveredIssueCommentId"
     | "lastDeliveredPrCommentId"
     | "lastDeliveredReviewId"
