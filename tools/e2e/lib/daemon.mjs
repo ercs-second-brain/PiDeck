@@ -13,9 +13,14 @@ import { join } from "node:path";
 
 export function start(root, ws, port, logPath, pollSeconds, tmuxSocket) {
   const out = openSync(logPath, "a");
+  // The review token rides to the daemon over the loopback PUT only; the
+  // runner's env var must never reach the daemon child, or every pane it
+  // spawns inherits it (a worker's `env` would print the token).
+  const runnerEnv = { ...process.env };
+  delete runnerEnv.PD_E2E_REVIEW_TOKEN;
   const child = spawn(process.execPath, [join(root, "apps/daemon/dist/index.js")], {
     env: {
-      ...process.env,
+      ...runnerEnv,
       PD_HOME: ws.state,
       PD_WEB_HOST: "127.0.0.1",
       PD_WEB_PORT: String(port),

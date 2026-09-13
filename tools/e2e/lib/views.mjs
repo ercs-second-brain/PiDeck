@@ -13,6 +13,18 @@ export function workerFor(views, issueNumber) {
   ) ?? null;
 }
 
+/** The reviewer session on a PR — live or archived; null before it exists. */
+export function reviewerFor(views, prNumber) {
+  return views.find(
+    (v) => v.session.persona === "reviewer" && v.session.prNumber === prNumber,
+  ) ?? null;
+}
+
+/** The project's orchestrator, or null before it is spawned. */
+export function orchestratorFor(views) {
+  return views.find((v) => v.session.persona === "orchestrator") ?? null;
+}
+
 /** One compact line per live session, for timeout errors and run output. */
 export function lines(views) {
   return live(views).map((v) => {

@@ -32,6 +32,7 @@ const SCENARIO_MODULES = {
   "happy-path": "./scenarios/happy-path.mjs",
   blocked: "./scenarios/blocked.mjs",
   restart: "./scenarios/restart.mjs",
+  rereview: "./scenarios/rereview.mjs",
 };
 
 const POLL_MS = 5_000;
@@ -138,6 +139,7 @@ async function main() {
           all.filter((v) => v.session.archivedAt === undefined && v.session.projectId === project.id)),
       allSessions: () =>
         api.sessions().then((all) => all.filter((v) => v.session.projectId === project.id)),
+      trace: (sessionId) => api.trace(sessionId),
       until: (label, fact) => until(runDir, api, ws, deadline, steps, label, fact),
       restart: async () => {
         console.log("[e2e] killing the daemon mid-loop…");

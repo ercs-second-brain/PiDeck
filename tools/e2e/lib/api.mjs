@@ -47,6 +47,11 @@ export class Api {
     return this.call("GET", "/api/sessions");
   }
 
+  /** One session's trace: the deliveries and state writes behind it. */
+  async trace(sessionId) {
+    return this.call("GET", `/api/sessions/${encodeURIComponent(sessionId)}/trace`);
+  }
+
   async putReviewAccount(username, token) {
     return this.call("PUT", "/api/settings", { reviewAccount: { username, token } });
   }
