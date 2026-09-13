@@ -37,9 +37,19 @@
 }
 
 .badge--dot {
+  position: relative;
   width: 8px;
   height: 8px;
   padding: 0;
   border-radius: 50%;
   background: currentColor;
+}
+
+/* An 8px target is too small to hover reliably — the enclosing row's title
+   wins first. The invisible ::after hit-tests as part of the dot, so its
+   tooltip triggers over a comfortable 20px zone. */
+.badge--dot::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
 }
