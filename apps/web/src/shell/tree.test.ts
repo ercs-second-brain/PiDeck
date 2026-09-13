@@ -209,15 +209,20 @@ describe("sessionRow / rowText", () => {
     expect(sessionRow(view({ id: "w2", issueNumber: 43, status: "working on #43" })).label).toBe("working on #43");
   });
 
-  it("marks reviewers with the ↳ glyph and falls back to 'Reviewer'", () => {
-    expect(sessionRow(view({ id: "r", persona: "reviewer" }))).toEqual({
+  it("marks reviewers with the ↳ glyph, the PR number, and the 'Reviewer' label", () => {
+    expect(sessionRow(view({ id: "r", persona: "reviewer", prNumber: 99 }))).toEqual({
+      num: "#99",
+      glyph: "↳",
+      label: "Reviewer",
+    });
+    expect(rowText(view({ id: "r", persona: "reviewer", prNumber: 99 }))).toBe("#99 Reviewer");
+    expect(sessionRow(view({ id: "r-no-pr", persona: "reviewer" }))).toEqual({
       num: null,
       glyph: "↳",
       label: "Reviewer",
     });
-    expect(sessionRow(view({ id: "r2", persona: "reviewer", status: "reviewing" })).label).toBe("reviewing");
     expect(sessionRow(view({ id: "r3", persona: "reviewer", title: "Add rate limiting" })).label).toBe(
-      "Add rate limiting",
+      "Reviewer",
     );
   });
 
@@ -228,9 +233,11 @@ describe("sessionRow / rowText", () => {
       label: "Rate limiting",
     });
     expect(rowText(view({ id: "w", issueNumber: 42, title: "Add rate limiting", label: "Rate limiting" }))).toBe("Rate limiting");
-    expect(sessionRow(view({ id: "r", persona: "reviewer", title: "Add rate limiting", label: "Second round" })).label).toBe(
-      "Second round",
-    );
+    expect(sessionRow(view({ id: "r", persona: "reviewer", prNumber: 99, label: "Second round" }))).toEqual({
+      num: "#99",
+      glyph: "↳",
+      label: "Second round",
+    });
   });
 
   it("labels the global agent and the orchestrator", () => {
