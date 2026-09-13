@@ -10,7 +10,13 @@ import type { CiStatus } from "../github/schemas.js";
 
 export interface SessionStateFacts {
   /** The PR attached to this session, when one exists. */
-  pr: { ciStatus: CiStatus; reviewDecision: string | null; mergeable: string } | null;
+  pr: {
+    ciStatus: CiStatus;
+    reviewDecision: string | null;
+    mergeable: string;
+    /** The review account's APPROVED review at the current head. */
+    approvedAtHead: boolean;
+  } | null;
   /** The session's issue has open `blocked by` links. */
   issueBlocked: boolean;
   /** CI fix attempts are used up and the worker was told to go idle. */
@@ -77,7 +83,10 @@ export function deriveState(
       if (facts.pr.ciStatus === "pending") {
         return { state: "ci", status: `CI running for ${label}` };
       }
-      if (facts.pr.reviewDecision === "APPROVED") {
+      // Ready means the head-matched approval: the review account's APPROVED
+      // review at the current head — the same rule the merge notice gates on,
+      // not GitHub's (possibly stale) reviewDecision.
+      if (facts.pr.approvedAtHead) {
         return { state: "ready", status: `approved and green, ${label}` };
       }
       return { state: "in_review", status: `awaiting review on ${label}` };

@@ -37,6 +37,7 @@ const projectB = ProjectSchema.parse({
 interface FakeGhState {
   issues: ReturnType<typeof rawIssue>[];
   prs: GhPr[];
+  reviews?: GhReview[];
   comments: GhComment[];
   throwOnRead?: boolean;
   /** OpenIssues answers with a rate limit that resets in one minute. */
@@ -97,7 +98,7 @@ function fakeGh(state: FakeGhState): GhClientLike {
       if (state.throwOnRead) throw new Error("gh is down");
       return state.prs;
     },
-    prReviews: async (): Promise<GhReview[]> => [],
+    prReviews: async () => state.reviews ?? [],
     prReviewComments: async () => [],
     authStatus: async () => ProbeSchema.parse({ ok: true, detail: "logged in as acme-worker" }),
     inviteCollaborator: async (login) => {
@@ -456,6 +457,7 @@ describe("startReconciler", () => {
     ghStates.set("my-api", {
       issues: [rawIssue()],
       prs: [mappedPr({ reviewDecision: "APPROVED" })],
+      reviews: [{ id: 3, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" }],
       comments: [],
       invites: [],
     });

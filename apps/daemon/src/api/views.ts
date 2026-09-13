@@ -1,7 +1,7 @@
 import type { ProjectSettings, Session, SessionView } from "@pideck/shared";
 import type { CiStatus } from "../github/schemas.js";
 import { sessionActive } from "../sessions/activity.js";
-import { prBaton, prForWorker } from "../reconciler/desired.js";
+import { approvedAtHead, prBaton, prForWorker } from "../reconciler/desired.js";
 import type { ProjectFacts } from "../reconciler/read.js";
 import { deriveState, type SessionStateFacts } from "../reconciler/state.js";
 import { compactFacts } from "../reconciler/trace.js";
@@ -25,6 +25,7 @@ export function sessionViews(sessions: Session[], deps: DaemonDeps): SessionView
 function sessionView(session: Session, all: Session[], deps: DaemonDeps): SessionView {
   const facts = session.projectId === null ? null : (deps.reconcilerFacts?.(session.projectId) ?? null);
   const settings = projectSettings(deps, session.projectId);
+  const reviewLogin = deps.settings.read().reviewAccount?.username ?? null;
   const pr =
     facts === null
       ? null
@@ -32,7 +33,7 @@ function sessionView(session: Session, all: Session[], deps: DaemonDeps): Sessio
         ? prForWorker(facts, session)
         : (facts.prs.find((pr) => pr.number === session.prNumber) ?? null);
   const stateFacts: SessionStateFacts = {
-    pr: workerPr(session, facts),
+    pr: workerPr(session, facts, reviewLogin),
     issueBlocked:
       facts?.issues.some((issue) => issue.number === session.issueNumber && issue.openBlockers > 0) ??
       false,
@@ -40,11 +41,7 @@ function sessionView(session: Session, all: Session[], deps: DaemonDeps): Sessio
     batonHolder:
       pr === null
         ? null
-        : prBaton(
-            pr,
-            session.persona === "reviewer" ? session : reviewerForPr(all, pr.number),
-            session.persona === "worker" ? session : workerForPr(all, pr.number),
-          ),
+        : prBaton(pr, session.persona === "reviewer" ? session : reviewerForPr(all, pr.number)),
   };
   const { state, status } = deriveState(session, stateFacts);
   // The trace's state-derivation write site: state, facts, and baton entries
@@ -117,17 +114,25 @@ function projectSettings(deps: DaemonDeps, projectId: string | null): ProjectSet
 function workerPr(
   session: Session,
   facts: ProjectFacts | null,
+  reviewLogin: string | null,
 ): {
   ciStatus: CiStatus;
   reviewDecision: string | null;
   mergeable: string;
+  approvedAtHead: boolean;
 } | null {
   if (facts === null || (session.persona !== "worker" && session.persona !== "reviewer")) return null;
   const pr =
     session.persona === "worker"
       ? prForWorker(facts, session)
       : (facts.prs.find((pr) => pr.number === session.prNumber) ?? null);
-  return pr === null ? null : { ciStatus: pr.ciStatus, reviewDecision: pr.reviewDecision, mergeable: pr.mergeable };
+  if (pr === null) return null;
+  return {
+    ciStatus: pr.ciStatus,
+    reviewDecision: pr.reviewDecision,
+    mergeable: pr.mergeable,
+    approvedAtHead: reviewLogin !== null && approvedAtHead(pr, reviewLogin),
+  };
 }
 
 /** A reviewer lives under the worker whose PR it reviews — live, else archived. */

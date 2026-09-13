@@ -79,6 +79,7 @@ export const GhReviewSchema = z.object({
   state: z.string(),
   submitted_at: z.string().nullable(),
   body: z.string().nullable(),
+  commit_id: z.string().nullable(),
 });
 export type GhReviewRaw = z.infer<typeof GhReviewSchema>;
 
@@ -88,6 +89,8 @@ export type GhReview = {
   state: string;
   submittedAt: string | null;
   body: string | null;
+  /** The head the review was filed at, for the head-matched approval rule. */
+  commitId: string | null;
 };
 
 export const GhBodySchema = z.object({ body: z.string().nullable() });
@@ -135,6 +138,7 @@ export function toReview(raw: GhReviewRaw): GhReview {
     state: raw.state,
     submittedAt: raw.submitted_at,
     body: raw.body,
+    commitId: raw.commit_id,
   };
 }
 

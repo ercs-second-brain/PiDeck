@@ -32,13 +32,10 @@
  * approval ends the round the same way, but the reviewer stays with its
  * worker until the PR is gone: a new head re-arms it for re-review.
  *
- * The approved+green notice to the orchestrator waits for the same quiet: a
- * `reviewChanges` delivery to the worker for this head — this tick, or an
- * earlier one the worker has not answered yet (its own thread replies are
- * never delivered, so they lift the hold) — or, with a live reviewer, a head
- * other than the one the reviewer was armed at, holds the notice back. The
- * per-head watermark (`notifiedHeads`) re-arms it once the new head is
- * approved again.
+ * The approved+green notice fires once per head (`notifiedHeads`) and only
+ * when the review account's newest review is an APPROVED review at the PR's
+ * current head (`approvedAtHead`) and the worker is quiet (see
+ * `approvedGreenReady`).
  */
 
 import type { Project, ProjectSettings, Session } from "@pideck/shared";
@@ -55,7 +52,7 @@ import {
   reviewChanges,
   stalled,
 } from "../prompts/index.js";
-import type { GhComment } from "../github/schemas.js";
+import type { GhComment, GhReview } from "../github/schemas.js";
 import type { IssueFacts, PrFacts, ProjectFacts } from "./read.js";
 
 /** Who currently holds a PR's baton, or null when nobody does. */
@@ -65,9 +62,7 @@ export type Baton = "worker" | "reviewer";
  * The baton derivation. The reviewer holds it from the moment it was
  * prompted for the current head (spawn or re-review) until a submission
  * requesting changes — newer than the reviews it was prompted past — is
- * observed. Then the worker holds it until it pushes (a new head), either
- * because the reviewer said so or, when no reviewer is live, because the
- * head still matches the one the worker was last told to address. On an
+ * observed; the worker then holds it until it pushes (a new head). On an
  * approved PR the reviewer holds the baton only mid-round: an approval
  * newer than the reviews it was prompted past ends its round (the worker
  * reads ready); a new head re-arms it for re-review until the PR is gone.
@@ -75,30 +70,46 @@ export type Baton = "worker" | "reviewer";
 export function prBaton(
   pr: Pick<PrFacts, "headSha" | "reviewDecision" | "reviews">,
   reviewer: Session | null,
-  worker: Session | null,
 ): Baton | null {
-  if (reviewer !== null && reviewer.lastPromptedHeadSha === pr.headSha) {
-    const concluded = pr.reviews.some(
-      (review) =>
-        review.state === "CHANGES_REQUESTED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
+  if (reviewer === null || reviewer.lastPromptedHeadSha !== pr.headSha) return null;
+  const concluded = pr.reviews.some(
+    (review) =>
+      review.state === "CHANGES_REQUESTED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
+  );
+  if (concluded) return "worker";
+  if (pr.reviewDecision === "APPROVED") {
+    const approvedSincePrompt = pr.reviews.some(
+      (review) => review.state === "APPROVED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
     );
-    if (concluded) return "worker";
-    if (pr.reviewDecision === "APPROVED") {
-      const approvedSincePrompt = pr.reviews.some(
-        (review) => review.state === "APPROVED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
-      );
-      return approvedSincePrompt ? null : "reviewer";
-    }
-    return "reviewer";
+    return approvedSincePrompt ? null : "reviewer";
   }
-  if (
-    worker !== null &&
-    pr.reviewDecision === "CHANGES_REQUESTED" &&
-    (worker.lastAddressedHeadSha ?? pr.headSha) === pr.headSha
-  ) {
-    return "worker";
+  return "reviewer";
+}
+
+/**
+ * The head-matched approval rule: the review account's newest review must
+ * be an APPROVED review at the PR's current head. A human approval alone
+ * never counts, and a push after an approval closes the gate until the
+ * review account approves the new head.
+ */
+export function approvedAtHead(
+  pr: Pick<PrFacts, "headSha" | "reviews">,
+  reviewLogin: string,
+): boolean {
+  let newest: GhReview | null = null;
+  for (const review of pr.reviews) {
+    if (review.author === reviewLogin && (newest === null || review.id > newest.id)) newest = review;
   }
-  return null;
+  return newest !== null && newest.state === "APPROVED" && newest.commitId === pr.headSha;
+}
+
+/**
+ * The quiet rule for reviewer rounds: a `reviewChanges` delivery outstanding
+ * to the worker for this head — this tick, or an earlier one it has not
+ * answered by pushing — holds a new round back.
+ */
+function workerQuiet(pr: Pick<PrFacts, "headSha">, worker: Session | null): boolean {
+  return worker === null || worker.lastAddressedHeadSha !== pr.headSha;
 }
 
 export type Action =
@@ -128,8 +139,8 @@ export interface DeriveInput {
   live: Session[];
   /** Context-window percent per live session id, when measurable. */
   context: ReadonlyMap<string, number | null>;
-  /** The review account; the review leg is off when null. */
-  reviewLogin: string | null;
+  /** The review account's login; the account is required, never null. */
+  reviewLogin: string;
   /** Heads already announced as approved+green; apply marks it after the send. */
   notifiedHeads: Map<number, string>;
   /** Sessions already told about their current silence; apply marks it after the send. */
@@ -209,14 +220,13 @@ export function deriveActions(input: DeriveInput): Action[] {
     const reviewer = input.live.find((s) => s.persona === "reviewer" && s.prNumber === pr.number);
     const worker =
       input.live.find((s) => s.persona === "worker" && prForWorker(facts, s)?.number === pr.number) ?? null;
-    const baton = prBaton(pr, reviewer ?? null, worker);
     const reviewable = pr.green && pr.reviewDecision !== "APPROVED" && pr.mergeable !== "CONFLICTING";
     // A review account with no read access would 404 on every call — no
     // reviewer until the daemon's access check turns the leg back on.
-    const reviewLegOn = input.reviewLogin !== null && input.facts.reviewAccess === undefined;
+    const reviewLegOn = input.facts.reviewAccess === undefined;
     // A round starts only while the worker is quiet: green (head stable,
     // CI complete) and no addressing prompt outstanding to it.
-    if (reviewable && reviewer === undefined && reviewLegOn && baton !== "worker") {
+    if (reviewable && reviewer === undefined && reviewLegOn && workerQuiet(pr, worker)) {
       actions.push({
         kind: "spawn-reviewer",
         pr,
@@ -230,7 +240,7 @@ export function deriveActions(input: DeriveInput): Action[] {
       reviewer !== undefined &&
       pr.green &&
       pr.mergeable !== "CONFLICTING" &&
-      baton !== "worker" &&
+      workerQuiet(pr, worker) &&
       // A fresh approval ends the round at the prompted head; only a new
       // head (e.g. fixes pushed after approval-with-comments) re-arms it.
       pr.headSha !== reviewer.lastPromptedHeadSha
@@ -252,14 +262,13 @@ export function deriveActions(input: DeriveInput): Action[] {
     }
     if (
       pr.green &&
-      pr.reviewDecision === "APPROVED" &&
       pr.issueNumber !== null &&
       orchestrator !== undefined &&
       input.notifiedHeads.get(pr.number) !== pr.headSha &&
+      approvedAtHead(pr, input.reviewLogin) &&
       approvedGreenReady(
         pr,
         worker,
-        reviewer ?? null,
         input.facts.primaryLogin,
         worker !== null && reviewChangesSentTo.has(worker.id),
       )
@@ -291,27 +300,17 @@ export function deriveActions(input: DeriveInput): Action[] {
  * The approved+green notice waits for quiet. A `reviewChanges` delivery to
  * the worker — this tick, or an earlier one for this head that the worker
  * has not answered yet (its own thread replies are never delivered, so a
- * reply id past the comment watermark lifts the hold) — holds it back; so
- * does, with a live reviewer, any head other than the one the reviewer was
- * armed at unless the approval is newer than that arming (the same freshness
- * signal the baton reads). Without a live reviewer the per-head notice rule
- * stands as before.
+ * reply id past the comment watermark lifts the hold) — holds it back.
+ * Stale approvals never reach here: the caller gates on the head-matched
+ * approval rule (`approvedAtHead`).
  */
 export function approvedGreenReady(
-  pr: Pick<PrFacts, "headSha" | "reviews" | "reviewComments">,
+  pr: Pick<PrFacts, "headSha" | "reviewComments">,
   worker: Session | null,
-  reviewer: Session | null,
   login: string | null,
   reviewChangesSent: boolean,
 ): boolean {
   if (reviewChangesSent) return false;
-  if (reviewer !== null) {
-    const approvedSincePrompt = pr.reviews.some(
-      (review) =>
-        review.state === "APPROVED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
-    );
-    if (!approvedSincePrompt || reviewer.lastPromptedHeadSha !== pr.headSha) return false;
-  }
   if (worker === null) return true;
   if (worker.lastAddressedHeadSha !== pr.headSha) return true;
   return pr.reviewComments.some(
@@ -333,7 +332,7 @@ function deriveWorkerDeliveries(
   const login = input.facts.primaryLogin;
   const reviewer =
     pr === null ? null : (input.live.find((s) => s.persona === "reviewer" && s.prNumber === pr.number) ?? null);
-  const baton = pr === null ? null : prBaton(pr, reviewer, worker);
+  const baton = pr === null ? null : prBaton(pr, reviewer);
   const patch: SessionPatch = {};
   const deliveries: { target: Session; text: string }[] = [];
   let stallNotice: { sessionId: string; at: string } | undefined;
@@ -374,7 +373,7 @@ function deriveWorkerDeliveries(
   // of that round, not steering: consumed silently, delivered with the
   // submission that ends the round. Comments by anyone else always deliver.
   const reviewerRoundInFlight = baton === "reviewer";
-  const fromReviewAccount = (c: GhComment) => input.reviewLogin !== null && c.author === input.reviewLogin;
+  const fromReviewAccount = (c: GhComment) => c.author === input.reviewLogin;
   const threadForWorker = newThreadComments.filter(
     (c) => (login === null || c.author !== login) && !(reviewerRoundInFlight && fromReviewAccount(c)),
   );

@@ -68,7 +68,6 @@ function derive(
     context: Map<string, number | null>;
     notifiedHeads: Map<number, string>;
     stallNotices: Map<string, string>;
-    reviewLogin: string | null;
     now: Date;
   }> = {},
 ) {
@@ -78,7 +77,7 @@ function derive(
     facts: projectFacts,
     live,
     context: overrides.context ?? new Map(),
-    reviewLogin: overrides.reviewLogin !== undefined ? overrides.reviewLogin : "acme-review",
+    reviewLogin: "acme-review",
     notifiedHeads: overrides.notifiedHeads ?? new Map(),
     stallNotices: overrides.stallNotices ?? new Map(),
     now: overrides.now ?? new Date("2025-06-01T12:00:00Z"),
@@ -226,7 +225,7 @@ describe("deriveActions — the SPEC §4 table", () => {
       lastPromptedHeadSha: "sha-2",
       lastDeliveredReviewId: 5,
     });
-    const staleApproval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const staleApproval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" };
     const comment = { id: 8, author: "acme-review", body: "one more nit", createdAt: "2025-06-01T10:00:00Z" };
     // Mid-round, the re-armed reviewer's inline comments do not steer the worker.
     const midRound = facts({
@@ -236,17 +235,12 @@ describe("deriveActions — the SPEC §4 table", () => {
     expect(derive(midRound, [worker, reviewer]).filter((a) => a.kind === "deliver")).toHaveLength(0);
 
     // Its fresh approval ends the round: the worker reads ready, no prompt.
-    const fresh = { id: 9, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const fresh = { id: 9, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" };
     const approved = facts({
       issues: [issue()],
       prs: [pr({ headSha: "sha-2", reviewDecision: "APPROVED", reviews: [staleApproval, fresh] })],
     });
     expect(derive(approved, [worker, reviewer]).filter((a) => a.kind === "deliver")).toHaveLength(0);
-  });
-
-  it("no reviewer is spawned without a review account — the review leg is off", () => {
-    const actions = derive(facts({ prs: [pr()] }), [], { reviewLogin: null });
-    expect(actions.filter((a) => a.kind === "spawn-reviewer")).toHaveLength(0);
   });
 
   it("no reviewer while the review account cannot read the repo", () => {
@@ -346,7 +340,7 @@ describe("deriveActions — worker deliveries", () => {
 
   it("new review requesting changes delivers reviewChanges and advances the review watermark", () => {
     const worker = session("worker", { issueNumber: 1, prNumber: 11 });
-    const review = { id: 5, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null };
+    const review = { id: 5, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null, commitId: "sha-1" };
     const actions = derive(
       facts({ issues: [issue()], prs: [pr({ green: false, ciStatus: "pending", reviews: [review] })] }),
       [worker],
@@ -435,7 +429,7 @@ describe("deriveActions — worker deliveries", () => {
 
   it("a review requesting changes and new comments in one tick deliver one reviewChanges", () => {
     const worker = session("worker", { issueNumber: 1, prNumber: 11 });
-    const review = { id: 5, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null };
+    const review = { id: 5, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null, commitId: "sha-1" };
     const comment = { id: 8, author: "acme-review", body: "and this", createdAt: "2025-06-01T10:00:00Z" };
     const actions = derive(
       facts({ issues: [issue()], prs: [pr({ green: false, ciStatus: "pending", reviews: [review], reviewComments: [comment] })] }),
@@ -656,7 +650,7 @@ describe("deriveActions — the baton hand-off", () => {
     const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
     const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
     const comment = { id: 8, author: "acme-review", body: "off by one", createdAt: "2025-06-01T10:00:00Z" };
-    const review = { id: 9, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null };
+    const review = { id: 9, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null, commitId: "sha-1" };
     const actions = derive(
       facts({
         issues: [issue()],
@@ -737,23 +731,60 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
   it("approvedGreen reaches the orchestrator once per head", () => {
     const orch = session("orchestrator");
     const heads = new Map<number, string>();
-    const first = derive(facts({ prs: [pr({ reviewDecision: "APPROVED" })] }), [orch], { notifiedHeads: heads });
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" };
+    const approved = facts({ prs: [pr({ reviews: [approval] })] });
+    const first = derive(approved, [orch], { notifiedHeads: heads });
     const delivers = first.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
     expect((delivers[0] as { text: string }).text).toContain("PR #11 for issue #1 is approved and green");
 
     // apply marks the head after a successful send (as the daemon would).
     heads.set(11, "sha-1");
-    const second = derive(facts({ prs: [pr({ reviewDecision: "APPROVED" })] }), [orch], { notifiedHeads: heads });
+    const second = derive(approved, [orch], { notifiedHeads: heads });
     expect(second.filter((a) => a.kind === "deliver")).toHaveLength(0);
 
-    const third = derive(facts({ prs: [pr({ reviewDecision: "APPROVED", headSha: "sha-9" })] }), [orch], { notifiedHeads: heads });
+    const atNewHead = facts({
+      prs: [pr({ headSha: "sha-9", reviews: [{ ...approval, id: 6, commitId: "sha-9" }] })],
+    });
+    const third = derive(atNewHead, [orch], { notifiedHeads: heads });
     expect(third.filter((a) => a.kind === "deliver")).toHaveLength(1);
+  });
+
+  it("a human approval alone never triggers approvedGreen; a stale review-account approval does not either", () => {
+    const orch = session("orchestrator");
+    // GitHub says APPROVED, but the review account's newest review is a
+    // changes-requested at an older head: the gate stays closed.
+    const humanApproved = facts({
+      prs: [
+        pr({
+          reviewDecision: "APPROVED",
+          reviews: [
+            { id: 4, author: "acme-review", state: "CHANGES_REQUESTED", submittedAt: null, body: null, commitId: "sha-1" },
+            { id: 5, author: "acme-human", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" },
+          ],
+        }),
+      ],
+    });
+    expect(derive(humanApproved, [orch]).filter((a) => a.kind === "deliver")).toHaveLength(0);
+
+    // The review account approved — but at a head the worker has since
+    // pushed past: also closed.
+    const stale = facts({
+      prs: [
+        pr({
+          headSha: "sha-2",
+          reviewDecision: "APPROVED",
+          reviews: [{ id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" }],
+        }),
+      ],
+    });
+    expect(derive(stale, [orch]).filter((a) => a.kind === "deliver")).toHaveLength(0);
   });
 
   it("approvedGreen is deferred while no orchestrator is live", () => {
     const heads = new Map<number, string>();
-    const actions = derive(facts({ prs: [pr({ reviewDecision: "APPROVED" })] }), [], { notifiedHeads: heads });
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" };
+    const actions = derive(facts({ prs: [pr({ reviews: [approval] })] }), [], { notifiedHeads: heads });
     expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
     expect(heads.size).toBe(0);
   });
@@ -761,7 +792,7 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
   it("approval with inline comments delivers reviewChanges but holds approvedGreen back", () => {
     const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
     const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
-    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" };
     const comment = { id: 8, author: "acme-review", body: "one more nit", createdAt: "2025-06-01T10:00:00Z" };
     const actions = derive(
       facts({
@@ -779,7 +810,7 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
   it("approvedGreen waits until the worker answers the comments it was told about", () => {
     const orch = session("orchestrator");
     const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
-    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" };
     const comment = { id: 8, author: "acme-review", body: "one more nit", createdAt: "2025-06-01T10:00:00Z" };
     const told = facts({
       issues: [issue()],
@@ -812,7 +843,7 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
   it("a push after approval-with-comments holds approvedGreen until the fresh approval", () => {
     const orch = session("orchestrator");
     const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
-    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" };
     // The worker pushed fixes for the comments: the old approval is stale.
     const pushed = facts({
       issues: [issue()],
@@ -829,6 +860,7 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
       state: "APPROVED",
       submittedAt: null,
       body: null,
+      commitId: "sha-2",
     };
     const fresh = facts({
       issues: [issue()],
@@ -845,7 +877,7 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
     const orch = session("orchestrator");
     const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
     const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
-    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null, commitId: "sha-1" };
     const actions = derive(
       facts({ issues: [issue()], prs: [pr({ reviewDecision: "APPROVED", reviews: [approval] })] }),
       [worker, reviewer, orch],
