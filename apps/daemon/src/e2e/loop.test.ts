@@ -243,8 +243,8 @@ it(
     expect(registry.get(reviewer.id)!.lastPromptedHeadSha).toBe("sha-a3");
 
     // Approval, filed with `pideck review approve` as the reviewer: the
-    // reviewer is archived, the orchestrator is steered, and the worker's
-    // review watermark advances without a new prompt.
+    // reviewer stays live for re-review duty, the orchestrator is steered,
+    // and the worker's review watermark advances without a new prompt.
     clearPanes();
     cliOut = [];
     expect(await runVerb(reviewer.id, ["review", "approve", "--body", "nice"], { GH_TOKEN: REVIEW_TOKEN })).toBe(0);
@@ -257,14 +257,16 @@ it(
       (r) => r.state === "APPROVED",
     )!.id;
     expect(registry.get(worker.id)!.lastDeliveredReviewId).toBe(approvalId);
-    expect(registry.get(reviewer.id)!.archivedAt).toBeDefined();
+    expect(registry.get(reviewer.id)!.archivedAt).toBeUndefined();
 
-    // Merge closes the issue via its body; the worker archives and the
-    // blocked dependent #2 unblocks into a fresh worker.
+    // Merge closes the issue via its body; the worker and the reviewer
+    // archive together, and the blocked dependent #2 unblocks into a fresh
+    // worker.
     clearPanes();
     await fakeGh.merge(prNumber);
     await tick();
     expect(registry.get(worker.id)!.archivedAt).toBeDefined();
+    expect(registry.get(reviewer.id)!.archivedAt).toBeDefined();
     const state = await fakeGh.state();
     expect(state.repos["acme/loop"]!.prs.find((pr) => pr.number === prNumber)!.state).toBe("merged");
     expect(state.repos["acme/loop"]!.issues.find((issue) => issue.number === 1)!.state).toBe("closed");

@@ -111,11 +111,17 @@ describe("deriveState — the eight worker states", () => {
     }
   });
 
-  it("reviewer rows read in_review; orchestrator and global have no worker state", () => {
+  it("reviewer rows read in_review; approved-and-idle reads awaiting merge", () => {
     expect(deriveState(session("reviewer", { prNumber: 21 }), facts)).toEqual({
       state: "in_review",
       status: "reviewing PR #21",
     });
+    expect(
+      deriveState(session("reviewer", { prNumber: 21 }), {
+        ...facts,
+        pr: { ciStatus: "ok", reviewDecision: "APPROVED", mergeable: "MERGEABLE" },
+      }),
+    ).toEqual({ state: "in_review", status: "approved PR #21, awaiting merge" });
     expect(deriveState(session("orchestrator"), facts)).toEqual({ state: null, status: "orchestrator" });
     expect(deriveState(session("global"), facts)).toEqual({ state: null, status: "global agent" });
   });

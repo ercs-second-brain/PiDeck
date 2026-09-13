@@ -195,10 +195,53 @@ describe("deriveActions — the SPEC §4 table", () => {
     expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
   });
 
-  it("approved PR → the reviewer is archived", () => {
-    const reviewer = session("reviewer", { prNumber: 11 });
+  it("an approved PR keeps its reviewer live and idle", () => {
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
     const actions = derive(facts({ prs: [pr({ reviewDecision: "APPROVED" })] }), [reviewer]);
-    expect(actions).toContainEqual({ kind: "archive", session: reviewer, reason: "PR #11 approved" });
+    expect(actions.filter((a) => a.kind === "archive")).toHaveLength(0);
+    expect(actions.filter((a) => a.kind === "deliver" && a.target.id === reviewer.id)).toHaveLength(0);
+  });
+
+  it("a new head on an approved PR re-arms the reviewer instead of archiving it", () => {
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const actions = derive(
+      facts({ prs: [pr({ headSha: "sha-2", reviewDecision: "APPROVED" })] }),
+      [reviewer],
+    );
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(reviewer.id);
+    expect(delivers[0]!.text).toContain("re-review");
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastPromptedHeadSha: "sha-2",
+      lastDeliveredReviewId: null,
+    });
+    expect(actions.filter((a) => a.kind === "archive")).toHaveLength(0);
+  });
+
+  it("on an approved PR the reviewer holds the baton until its fresh approval is observed", () => {
+    const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-2" });
+    const reviewer = session("reviewer", {
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-2",
+      lastDeliveredReviewId: 5,
+    });
+    const staleApproval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const comment = { id: 8, author: "acme-review", body: "one more nit", createdAt: "2025-06-01T10:00:00Z" };
+    // Mid-round, the re-armed reviewer's inline comments do not steer the worker.
+    const midRound = facts({
+      issues: [issue()],
+      prs: [pr({ headSha: "sha-2", reviewDecision: "APPROVED", reviews: [staleApproval], reviewComments: [comment] })],
+    });
+    expect(derive(midRound, [worker, reviewer]).filter((a) => a.kind === "deliver")).toHaveLength(0);
+
+    // Its fresh approval ends the round: the worker reads ready, no prompt.
+    const fresh = { id: 9, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const approved = facts({
+      issues: [issue()],
+      prs: [pr({ headSha: "sha-2", reviewDecision: "APPROVED", reviews: [staleApproval, fresh] })],
+    });
+    expect(derive(approved, [worker, reviewer]).filter((a) => a.kind === "deliver")).toHaveLength(0);
   });
 
   it("no reviewer is spawned without a review account — the review leg is off", () => {

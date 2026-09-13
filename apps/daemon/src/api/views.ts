@@ -74,13 +74,19 @@ function projectSettings(deps: DaemonDeps, projectId: string | null): ProjectSet
   }
 }
 
-function workerPr(session: Session, facts: ProjectFacts | null): {
+function workerPr(
+  session: Session,
+  facts: ProjectFacts | null,
+): {
   ciStatus: CiStatus;
   reviewDecision: string | null;
   mergeable: string;
 } | null {
-  if (session.persona !== "worker" || facts === null) return null;
-  const pr = prForWorker(facts, session);
+  if (facts === null || (session.persona !== "worker" && session.persona !== "reviewer")) return null;
+  const pr =
+    session.persona === "worker"
+      ? prForWorker(facts, session)
+      : (facts.prs.find((pr) => pr.number === session.prNumber) ?? null);
   return pr === null ? null : { ciStatus: pr.ciStatus, reviewDecision: pr.reviewDecision, mergeable: pr.mergeable };
 }
 
