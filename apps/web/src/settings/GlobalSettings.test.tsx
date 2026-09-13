@@ -307,19 +307,16 @@ describe("<GlobalSettings />", () => {
     expect(container.textContent).toContain("Username is required.");
   });
 
-  it("clears the review account", async () => {
-    mocked.saveGlobalSettings.mockResolvedValue(NO_ACCOUNT);
+  it("shows the finish-onboarding banner when no review account is set", async () => {
+    mocked.loadGlobalSettings.mockResolvedValue(NO_ACCOUNT);
     const { container } = mount(<GlobalSettings />);
     await flush();
+    expect(container.textContent).toContain("Finish onboarding");
     act(() => {
       buttonByText(container, "Review account").click();
     });
     await flush();
-    await act(async () => {
-      buttonByText(container, "Clear account").click();
-    });
-    await flush();
-    expect(mocked.saveGlobalSettings).toHaveBeenCalledWith({ reviewAccount: null });
+    expect(container.textContent).not.toContain("Clear account");
   });
 
   it("offers the pi models plus a pi default per persona and saves the choice", async () => {

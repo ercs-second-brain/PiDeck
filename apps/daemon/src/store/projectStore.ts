@@ -145,8 +145,9 @@ export class ProjectStore {
     if (this.reviewAccess !== undefined) {
       return this.reviewAccess({ owner: project.owner, repo: project.repo }).then(() => undefined);
     }
-    const account = this.globalSettings().reviewToken();
-    if (account === null) return Promise.resolve();
+    const settings = this.globalSettings();
+    if (!settings.onboarded()) return Promise.resolve();
+    const account = settings.reviewToken();
     const repo = `${project.owner}/${project.repo}`;
     return ensureReviewAccess({
       primary: new GhClient({ repo }),
