@@ -10,8 +10,8 @@ import type { DaemonDeps } from "./deps.js";
  * SessionView derivation: the eight worker states come from the reconciler's
  * `deriveState`, fed with the last GitHub read pass plus the project's
  * settings, and the PR baton decides who the PR is waiting on. A reviewer's
- * parent is the live worker whose PR it reviews, and the title is the issue
- * title (for a reviewer, of the issue its PR belongs to). Before the
+ * parent is the worker whose PR it reviews — the live one, else the newest
+ * archived one — and the title is the issue title (for a reviewer, of the issue its PR belongs to). Before the
  * reconciler's first read pass every project has no facts, so workers read
  * as `working` and titles are null.
  */
@@ -84,10 +84,10 @@ function workerPr(session: Session, facts: ProjectFacts | null): {
   return pr === null ? null : { ciStatus: pr.ciStatus, reviewDecision: pr.reviewDecision, mergeable: pr.mergeable };
 }
 
-/** A reviewer lives under the live worker whose PR it reviews. */
+/** A reviewer lives under the worker whose PR it reviews — live, else archived. */
 function parentSessionId(session: Session, all: Session[]): string | null {
   if (session.persona !== "reviewer" || session.prNumber === undefined) return null;
-  const parent = workerForPr(all, session.prNumber);
+  const parent = workerForPr(all, session.prNumber) ?? archivedWorkerForPr(all, session.prNumber);
   return parent?.id ?? null;
 }
 
@@ -99,6 +99,14 @@ function reviewerForPr(all: Session[], prNumber: number): Session | null {
 function workerForPr(all: Session[], prNumber: number): Session | null {
   const workers = all.filter(
     (s) => s.persona === "worker" && s.archivedAt === undefined && s.prNumber === prNumber,
+  );
+  return workers.sort((a, b) => b.spawnedAt.localeCompare(a.spawnedAt))[0] ?? null;
+}
+
+/** The newest archived worker for a PR, for reviewers outliving their worker. */
+function archivedWorkerForPr(all: Session[], prNumber: number): Session | null {
+  const workers = all.filter(
+    (s) => s.persona === "worker" && s.archivedAt !== undefined && s.prNumber === prNumber,
   );
   return workers.sort((a, b) => b.spawnedAt.localeCompare(a.spawnedAt))[0] ?? null;
 }

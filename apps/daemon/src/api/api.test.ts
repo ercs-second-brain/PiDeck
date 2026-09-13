@@ -225,6 +225,40 @@ describe("REST contract", () => {
     expect(reviewerView.title).toBe("Add rate limiting");
   });
 
+  it("nests an archived reviewer under the newest archived worker for its PR", async () => {
+    const { base, deps } = await startDaemon();
+    const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
+    const olderWorker = sessionRecord({
+      persona: "worker",
+      id: "older",
+      projectId: project.id,
+      issueNumber: 7,
+      prNumber: 11,
+      spawnedAt: "2024-01-01T00:00:00.000Z",
+      archivedAt: "2024-01-02T00:00:00.000Z",
+    });
+    const newerWorker = sessionRecord({
+      persona: "worker",
+      id: "newer",
+      projectId: project.id,
+      issueNumber: 7,
+      prNumber: 11,
+      spawnedAt: "2024-01-03T00:00:00.000Z",
+      archivedAt: "2024-01-04T00:00:00.000Z",
+    });
+    const reviewer = sessionRecord({ persona: "reviewer", projectId: project.id, prNumber: 11 });
+    deps.registry.add(olderWorker);
+    deps.registry.add(newerWorker);
+    deps.registry.add(reviewer);
+
+    const views: SessionView[] = validate(
+      restEndpoints["projectSessionList"].response,
+      (await call(base, "GET", `/api/projects/${project.id}/sessions`)).body,
+    );
+    const reviewerView = views.find((v) => v.session.id === reviewer.id)!;
+    expect(reviewerView.parentSessionId).toBe(newerWorker.id);
+  });
+
   it("sends a line into the pane and rejects unknown or archived sessions", async () => {
     const { base, deps, tmux } = await startDaemon();
     const worker = sessionRecord();
