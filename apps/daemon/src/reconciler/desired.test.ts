@@ -369,7 +369,10 @@ describe("deriveActions — worker deliveries", () => {
     );
     const delivers = actions.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
-    expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredPrCommentId: 8 });
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastDeliveredPrCommentId: 8,
+      lastAddressedHeadSha: "sha-1",
+    });
   });
 
   it("a new PR conversation comment (the failed-alignment channel) reaches the worker", () => {
@@ -384,6 +387,7 @@ describe("deriveActions — worker deliveries", () => {
     expect((delivers[0] as { text: string }).text).toContain("PR #11");
     expect(delivers[0]!.watermark?.patch).toEqual({
       lastDeliveredPrCommentId: 9,
+      lastAddressedHeadSha: "sha-1",
       lastActivityAt: "2025-06-01T12:00:00.000Z",
     });
   });
@@ -681,7 +685,10 @@ describe("deriveActions — the baton hand-off", () => {
     const delivers = actions.filter((a) => a.kind === "deliver");
     expect(delivers).toHaveLength(1);
     expect(delivers[0]!.target.id).toBe(worker.id);
-    expect(delivers[0]!.watermark?.patch).toEqual({ lastDeliveredPrCommentId: 10 });
+    expect(delivers[0]!.watermark?.patch).toEqual({
+      lastDeliveredPrCommentId: 10,
+      lastAddressedHeadSha: "sha-1",
+    });
   });
 
   it("CI red during a reviewer round prompts nobody; a push re-arms through the quiet rule", () => {
@@ -749,6 +756,103 @@ describe("deriveActions — reviewer deliveries and orchestrator notices", () =>
     const actions = derive(facts({ prs: [pr({ reviewDecision: "APPROVED" })] }), [], { notifiedHeads: heads });
     expect(actions.filter((a) => a.kind === "deliver")).toHaveLength(0);
     expect(heads.size).toBe(0);
+  });
+
+  it("approval with inline comments delivers reviewChanges but holds approvedGreen back", () => {
+    const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const comment = { id: 8, author: "acme-review", body: "one more nit", createdAt: "2025-06-01T10:00:00Z" };
+    const actions = derive(
+      facts({
+        issues: [issue()],
+        prs: [pr({ reviewDecision: "APPROVED", reviews: [approval], reviewComments: [comment] })],
+      }),
+      [worker, reviewer],
+    );
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(worker.id);
+    expect(delivers[0]!.text).toContain("review activity");
+  });
+
+  it("approvedGreen waits until the worker answers the comments it was told about", () => {
+    const orch = session("orchestrator");
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const comment = { id: 8, author: "acme-review", body: "one more nit", createdAt: "2025-06-01T10:00:00Z" };
+    const told = facts({
+      issues: [issue()],
+      prs: [pr({ reviewDecision: "APPROVED", reviews: [approval], reviewComments: [comment] })],
+    });
+    // The watermarks the delivery tick recorded: the worker was told about
+    // the comments for this head and has not answered yet.
+    const addressing = session("worker", {
+      issueNumber: 1,
+      prNumber: 11,
+      lastPromptedHeadSha: "sha-1",
+      lastDeliveredPrCommentId: 8,
+      lastDeliveredReviewId: 5,
+      lastAddressedHeadSha: "sha-1",
+    });
+    expect(derive(told, [addressing, reviewer, orch]).filter((a) => a.kind === "deliver")).toHaveLength(0);
+
+    // The worker replies in the thread (nothing to push): the notice goes out.
+    const reply = { id: 12, author: "acme-worker", body: "addressed", createdAt: "2025-06-01T11:30:00Z" };
+    const answered = facts({
+      issues: [issue()],
+      prs: [pr({ reviewDecision: "APPROVED", reviews: [approval], reviewComments: [comment, reply] })],
+    });
+    const delivers = derive(answered, [addressing, reviewer, orch]).filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(orch.id);
+    expect((delivers[0] as { text: string }).text).toContain("approved and green");
+  });
+
+  it("a push after approval-with-comments holds approvedGreen until the fresh approval", () => {
+    const orch = session("orchestrator");
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    // The worker pushed fixes for the comments: the old approval is stale.
+    const pushed = facts({
+      issues: [issue()],
+      prs: [pr({ headSha: "sha-2", reviewDecision: "APPROVED", reviews: [approval] })],
+    });
+    expect(derive(pushed, [session("worker", { issueNumber: 1, prNumber: 11 }), reviewer, orch]).filter(
+      (a) => a.kind === "deliver" && a.target.id === orch.id,
+    )).toHaveLength(0);
+
+    // The re-armed reviewer approves the new head without comments: notify.
+    const reApproved = {
+      id: 9,
+      author: "acme-review",
+      state: "APPROVED",
+      submittedAt: null,
+      body: null,
+    };
+    const fresh = facts({
+      issues: [issue()],
+      prs: [pr({ headSha: "sha-2", reviewDecision: "APPROVED", reviews: [approval, reApproved] })],
+    });
+    const armed = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-2", lastDeliveredReviewId: 5 });
+    const delivers = derive(fresh, [session("worker", { issueNumber: 1, prNumber: 11 }), armed, orch]).filter(
+      (a) => a.kind === "deliver" && a.target.id === orch.id,
+    );
+    expect(delivers).toHaveLength(1);
+  });
+
+  it("an approval at the armed head without comments still notifies promptly", () => {
+    const orch = session("orchestrator");
+    const worker = session("worker", { issueNumber: 1, prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const reviewer = session("reviewer", { prNumber: 11, lastPromptedHeadSha: "sha-1" });
+    const approval = { id: 5, author: "acme-review", state: "APPROVED", submittedAt: null, body: null };
+    const actions = derive(
+      facts({ issues: [issue()], prs: [pr({ reviewDecision: "APPROVED", reviews: [approval] })] }),
+      [worker, reviewer, orch],
+    );
+    const delivers = actions.filter((a) => a.kind === "deliver");
+    expect(delivers).toHaveLength(1);
+    expect(delivers[0]!.target.id).toBe(orch.id);
   });
 });
 

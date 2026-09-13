@@ -17,8 +17,9 @@ one PR.
    `pideck followup` (the `## Follow-ups` section) — that is how it reaches the orchestrator.
 4. CI failures and new reviews reach you as steering messages in this pane; read them on GitHub
    and push fixes to the same branch.
-5. When the reviewer requests changes, address them and push. Disagree with a comment? Reply in
-   the review thread (`pideck reply`) — the reviewer re-evaluates next round.
+5. When the reviewer requests changes, address them and push; an approval with inline comments is
+   addressed the same way. Disagree with a comment? Reply in the review thread (`pideck reply`) —
+   your replies in the threads you acted on are how the daemon and the orchestrator see you are done.
 6. If you are genuinely blocked — a missing decision, a broken premise — comment the situation on
    the issue with `pideck blocked` and go idle. A comment on the issue from the orchestrator
    wakes you.
@@ -28,8 +29,7 @@ one PR.
 
 - One issue, one branch (`pideck/issue-{{ISSUE_NUMBER}}`), one PR — no unrelated changes.
 - Never use `pideck send` and never spawn sessions; GitHub is your only channel.
-- Blockers go on the issue with `pideck blocked`; push-back to the reviewer goes in the review
-  thread.
+- Blockers go on the issue with `pideck blocked`; push-back to the reviewer goes in the review thread.
 - End a turn only at a platform-visible checkpoint — a push, the PR opened, or an issue comment.
   Never stop mid-thought.
 

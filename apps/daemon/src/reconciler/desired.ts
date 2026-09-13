@@ -31,6 +31,14 @@
  * requesting changes is observed, as one `reviewChanges` delivery. An
  * approval ends the round the same way, but the reviewer stays with its
  * worker until the PR is gone: a new head re-arms it for re-review.
+ *
+ * The approved+green notice to the orchestrator waits for the same quiet: a
+ * `reviewChanges` delivery to the worker for this head — this tick, or an
+ * earlier one the worker has not answered yet (its own thread replies are
+ * never delivered, so they lift the hold) — or, with a live reviewer, a head
+ * other than the one the reviewer was armed at, holds the notice back. The
+ * per-head watermark (`notifiedHeads`) re-arms it once the new head is
+ * approved again.
  */
 
 import type { Project, ProjectSettings, Session } from "@pideck/shared";
@@ -137,6 +145,9 @@ function isBlockerComment(comment: GhComment): boolean {
 export function deriveActions(input: DeriveInput): Action[] {
   const { settings, facts } = input;
   const actions: Action[] = [];
+  // Workers a reviewChanges delivery went out to in this derivation; the
+  // approved+green gate holds while it is outstanding.
+  const reviewChangesSentTo = new Set<string>();
   const nowIso = input.now.toISOString();
   const orchestrator = input.live.find((s) => s.persona === "orchestrator");
 
@@ -176,7 +187,9 @@ export function deriveActions(input: DeriveInput): Action[] {
     if (firstSeenPr) {
       actions.push({ kind: "attach-pr", session: worker, prNumber: pr.number });
     }
-    deriveWorkerDeliveries(input, issue, worker, pr, orchestrator ?? null, firstSeenPr, nowIso, actions);
+    if (deriveWorkerDeliveries(input, issue, worker, pr, orchestrator ?? null, firstSeenPr, nowIso, actions)) {
+      reviewChangesSentTo.add(worker.id);
+    }
   }
 
   // A live worker whose issue no longer exists (closed, or merged via its PR),
@@ -237,15 +250,26 @@ export function deriveActions(input: DeriveInput): Action[] {
         },
       });
     }
-    if (pr.green && pr.reviewDecision === "APPROVED" && pr.issueNumber !== null && orchestrator !== undefined) {
-      if (input.notifiedHeads.get(pr.number) !== pr.headSha) {
-        actions.push({
-          kind: "deliver",
-          target: orchestrator,
-          text: approvedGreen({ prNumber: pr.number, issueNumber: pr.issueNumber }),
-          approvedGreenHead: { prNumber: pr.number, headSha: pr.headSha },
-        });
-      }
+    if (
+      pr.green &&
+      pr.reviewDecision === "APPROVED" &&
+      pr.issueNumber !== null &&
+      orchestrator !== undefined &&
+      input.notifiedHeads.get(pr.number) !== pr.headSha &&
+      approvedGreenReady(
+        pr,
+        worker,
+        reviewer ?? null,
+        input.facts.primaryLogin,
+        worker !== null && reviewChangesSentTo.has(worker.id),
+      )
+    ) {
+      actions.push({
+        kind: "deliver",
+        target: orchestrator,
+        text: approvedGreen({ prNumber: pr.number, issueNumber: pr.issueNumber }),
+        approvedGreenHead: { prNumber: pr.number, headSha: pr.headSha },
+      });
     }
   }
 
@@ -263,6 +287,38 @@ export function deriveActions(input: DeriveInput): Action[] {
   return actions;
 }
 
+/**
+ * The approved+green notice waits for quiet. A `reviewChanges` delivery to
+ * the worker — this tick, or an earlier one for this head that the worker
+ * has not answered yet (its own thread replies are never delivered, so a
+ * reply id past the comment watermark lifts the hold) — holds it back; so
+ * does, with a live reviewer, any head other than the one the reviewer was
+ * armed at unless the approval is newer than that arming (the same freshness
+ * signal the baton reads). Without a live reviewer the per-head notice rule
+ * stands as before.
+ */
+export function approvedGreenReady(
+  pr: Pick<PrFacts, "headSha" | "reviews" | "reviewComments">,
+  worker: Session | null,
+  reviewer: Session | null,
+  login: string | null,
+  reviewChangesSent: boolean,
+): boolean {
+  if (reviewChangesSent) return false;
+  if (reviewer !== null) {
+    const approvedSincePrompt = pr.reviews.some(
+      (review) =>
+        review.state === "APPROVED" && review.id > (reviewer.lastDeliveredReviewId ?? 0),
+    );
+    if (!approvedSincePrompt || reviewer.lastPromptedHeadSha !== pr.headSha) return false;
+  }
+  if (worker === null) return true;
+  if (worker.lastAddressedHeadSha !== pr.headSha) return true;
+  return pr.reviewComments.some(
+    (comment) => comment.author === login && comment.id > (worker.lastDeliveredPrCommentId ?? 0),
+  );
+}
+
 function deriveWorkerDeliveries(
   input: DeriveInput,
   issue: IssueFacts,
@@ -272,7 +328,7 @@ function deriveWorkerDeliveries(
   firstSeenPr: boolean,
   nowIso: string,
   actions: Action[],
-): void {
+): boolean {
   const settings = input.settings;
   const login = input.facts.primaryLogin;
   const reviewer =
@@ -341,8 +397,10 @@ function deriveWorkerDeliveries(
     patch.lastDeliveredReviewId = Math.max(...newReviews.map((r) => r.id));
   }
   // The submission ends the reviewer's round: the worker holds the baton on
-  // this head until it pushes.
-  if (changesRequested && pr !== null) {
+  // this head until it pushes. Comments delivered without a submission (an
+  // approval with inline comments, the orchestrator's failed-alignment
+  // notes) hold the approved+green notice until the worker answers them.
+  if ((reviewChangesSent || changesRequested) && pr !== null) {
     patch.lastAddressedHeadSha = pr.headSha;
   }
 
@@ -433,6 +491,8 @@ function deriveWorkerDeliveries(
   if (pct !== null && pct > settings.contextLimitPercent) {
     actions.push({ kind: "archive", session: worker, reason: "context limit" });
   }
+
+  return reviewChangesSent;
 }
 
 /** Exactly one orchestrator per project; a (re)launched one gets the briefing. */
