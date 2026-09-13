@@ -246,6 +246,16 @@ or, as a collapsed fallback, a username + PAT; model per persona.
 Per project: `workerConcurrency` (default 3), `maxFixAttempts` (default 5), `contextLimitPercent`
 (default 30), `stallMinutes` (default 45), `autoMerge` (default false).
 
+**Trust boundary.** Agents run as the same OS user as the daemon and will read any file they can
+name while working — transcripts show reviewer agents `cat`ing the settings file while hunting for
+the CLI. The review account's PAT therefore lives only in `<stateDir>/review-token.json` (mode
+0600, written only by the daemon); `settings.json` carries the username and a `tokenSet` marker,
+never the token, and a settings.json that still holds a token (written by an older onboard.sh) is
+migrated on first read. Panes are spawned without `PD_HOME` and without the e2e runner's token
+variable, so the state dir is not discoverable through the pane environment. The one deliberate
+exception: the reviewer's `gh` calls must run as the review identity, so the daemon injects the
+token as `GH_TOKEN` into the reviewer pane env — the reviewer pane only, never any other persona.
+
 ### CLI
 
 `pideck` forwards service verbs (`service`, `logs`, `addr`, `onboard`, `update`) to the shim and

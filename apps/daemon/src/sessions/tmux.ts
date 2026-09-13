@@ -87,6 +87,12 @@ export interface CreateOptions {
    * never touches the server's global environment.
    */
   env?: Record<string, string>;
+  /**
+   * Env keys the pane must not inherit — removed in the wrapper script so a
+   * value that only lives in the tmux server's environment (the daemon's own
+   * env) cannot leak into the pane.
+   */
+  scrubEnv?: string[];
 }
 
 /** Env keys that are safe to embed in the pane's `export` script. */
@@ -105,17 +111,21 @@ const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 function commandWithEnv(
   command: string[] | undefined,
   env: Record<string, string>,
+  scrub: string[] = [],
 ): string[] | undefined {
+  const scrubbed = scrub.filter((key) => ENV_KEY.test(key));
+  const unsets = scrubbed.length > 0 ? `unset -v ${scrubbed.join(" ")}` : "";
   const assignments = Object.entries(env)
     .filter(([key]) => ENV_KEY.test(key))
     .map(([key, value]) => `export ${key}=${shellQuote(value)}`)
     .join("; ");
+  const prologue = [unsets, assignments].filter((part) => part !== "").join("; ");
   if (command === undefined || command.length === 0) {
-    if (assignments === "") return undefined;
-    return ["sh", "-c", `${assignments}; exec "\${SHELL:-/bin/sh}" -l`];
+    if (prologue === "") return undefined;
+    return ["sh", "-c", `${prologue}; exec "\${SHELL:-/bin/sh}" -l`];
   }
   const script = [
-    ...(assignments === "" ? [] : [`${assignments};`]),
+    ...(prologue === "" ? [] : [`${prologue};`]),
     'exec "$@"',
   ].join(" ");
   return ["sh", "-c", script, "sh", ...command];
@@ -221,7 +231,7 @@ export class Tmux {
       "-c",
       options.cwd,
     ];
-    const command = commandWithEnv(options.command, options.env ?? {});
+    const command = commandWithEnv(options.command, options.env ?? {}, options.scrubEnv ?? []);
     if (command !== undefined) args.push(...command);
     await this.run(args);
     // Pin the window size: without this tmux snaps the window to whatever

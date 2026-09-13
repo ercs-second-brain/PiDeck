@@ -19,6 +19,7 @@ export function statePaths(stateDir: string) {
     sessionsFile: join(stateDir, "sessions.json"),
     projectsFile: join(stateDir, "projects.json"),
     settingsFile: join(stateDir, "settings.json"),
+    reviewTokenFile: join(stateDir, "review-token.json"),
     promptsFile: join(stateDir, "prompts.json"),
     projectsDir: join(stateDir, "projects"),
     sessionsDir: join(stateDir, "sessions"),

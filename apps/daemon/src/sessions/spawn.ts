@@ -69,6 +69,21 @@ export interface SpawnDeps {
 
 export type GitRunner = (args: string[], options?: { cwd: string }) => Promise<string>;
 
+/**
+ * Env keys a pane must never carry: `PD_HOME` would point every agent at the
+ * daemon's state dir (settings, review token), and the runner's token var
+ * must not ride in from the daemon's own environment. The wrapper script
+ * unsets them pane-side — see Tmux.create. `GH_TOKEN` is the deliberate
+ * exception: the daemon injects it into a reviewer pane as that pane's
+ * identity, and only there.
+ */
+const PANE_SCRUB_ENV = [
+  "PD_HOME",
+  "PD_E2E_REVIEW_TOKEN",
+  "GITHUB_TOKEN",
+  "GH_ENTERPRISE_TOKEN",
+];
+
 export function defaultGitRunner(): GitRunner {
   return (args, options) =>
     new Promise((resolve, reject) => {
@@ -270,11 +285,16 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
   // the record exists and reconciliation cleans the gap up; the reverse
   // order would leak a pane the registry cannot see.
   deps.registry.add(session);
+  // Panes get only what they were explicitly handed (plus their session id):
+  // the scrub keeps tmux-server-inherited secrets out of the pane env.
+  const env: Record<string, string> = { ...options.env, PD_SESSION_ID: id };
+  for (const key of PANE_SCRUB_ENV) delete env[key];
   await deps.tmux.create(tmuxSession, {
     cwd,
     windowName: options.persona,
     command,
-    env: { ...options.env, PD_SESSION_ID: id },
+    env,
+    scrubEnv: PANE_SCRUB_ENV,
   });
   // A pane that is still booting swallows the first typed line; deliver only
   // once pi's chrome has settled. Bounded — see Tmux.waitReady.
