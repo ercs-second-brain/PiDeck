@@ -18,6 +18,10 @@
  *   to the upstream default branch at spawn — see refreshProjectClone.
  * - global: the state dir itself (no project).
  *
+ * A worker without an issue number or a reviewer without a PR number cannot be
+ * isolated, so the spawn fails loudly instead of silently sharing the project
+ * clone — no persona other than orchestrator/global ever runs there.
+ *
  * Each session owns everything under `<stateDir>/sessions/<id>`, removed on
  * archive — no shared `.git`, so one session's `git stash`, `gc`, or hooks
  * can never touch another's. Each pane runs pi with
@@ -90,6 +94,11 @@ export function defaultGitRunner(): GitRunner {
 
 function sessionDir(stateDir: string, sessionId: string): string {
   return join(statePaths(stateDir).sessionsDir, sessionId);
+}
+
+/** The project clone a worker/reviewer session works in, under its session dir. */
+export function sessionRepoPath(stateDir: string, sessionId: string): string {
+  return join(sessionDir(stateDir, sessionId), "repo");
 }
 
 /** The branch a session clone starts from: `origin/HEAD` or the clone's HEAD. */
@@ -195,14 +204,37 @@ export async function spawnPiSession(deps: SpawnDeps, options: SpawnPiOptions): 
   const git = deps.git ?? defaultGitRunner();
 
   let cwd = options.cwd;
-  if (options.persona === "worker" && options.issueNumber !== undefined) {
-    cwd = join(sessionDir(deps.stateDir, id), "repo");
-    await createSessionClone(git, options.cwd, cwd, options.repoUrl);
-    await setupWorkerBranch(git, cwd, `pideck/issue-${options.issueNumber}`);
-  } else if (options.persona === "reviewer" && options.prNumber !== undefined) {
-    cwd = join(sessionDir(deps.stateDir, id), "repo");
-    await createSessionClone(git, options.cwd, cwd, options.repoUrl);
-    await setupReviewerCheckout(git, cwd, options.prNumber);
+  if (options.persona === "worker") {
+    const issueNumber = options.issueNumber;
+    if (issueNumber === undefined) {
+      throw new Error(
+        `worker spawn without an issueNumber would share the project clone at ${options.cwd}`,
+      );
+    }
+    cwd = sessionRepoPath(deps.stateDir, id);
+    try {
+      await createSessionClone(git, options.cwd, cwd, options.repoUrl);
+      await setupWorkerBranch(git, cwd, `pideck/issue-${issueNumber}`);
+    } catch (err) {
+      // The id is never reused and a half-built clone is worthless.
+      rmSync(sessionDir(deps.stateDir, id), { recursive: true, force: true });
+      throw err;
+    }
+  } else if (options.persona === "reviewer") {
+    const prNumber = options.prNumber;
+    if (prNumber === undefined) {
+      throw new Error(
+        `reviewer spawn without a prNumber would share the project clone at ${options.cwd}`,
+      );
+    }
+    cwd = sessionRepoPath(deps.stateDir, id);
+    try {
+      await createSessionClone(git, options.cwd, cwd, options.repoUrl);
+      await setupReviewerCheckout(git, cwd, prNumber);
+    } catch (err) {
+      rmSync(sessionDir(deps.stateDir, id), { recursive: true, force: true });
+      throw err;
+    }
   } else if (options.persona === "orchestrator") {
     await refreshProjectClone(git, cwd, deps.log);
   }
