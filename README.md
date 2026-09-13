@@ -11,7 +11,7 @@ The loop:
 
 1. You talk to the project orchestrator; it files GitHub issues.
 2. Assigning an issue spawns a worker on `pideck/issue-<n>`; it opens a PR.
-3. When CI is green, a reviewer (second GitHub account) reviews.
+3. When CI is green, a reviewer (the required second GitHub account) reviews.
 4. Changes requested → the same worker fixes → the same reviewer re-reviews.
 5. Approved + green → the orchestrator does an alignment check.
 6. Merge (auto or on your say-so) closes the issue and unblocks dependents.

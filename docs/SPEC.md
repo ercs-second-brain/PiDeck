@@ -51,7 +51,8 @@ you ──talk──▶ project orchestrator ──files/assigns──▶ GitHub
    You can assign an issue yourself for the same effect. Assignment is the *only* spawn trigger.
 3. **The daemon spawns a worker** for each assigned, unblocked issue (respecting the project's
    concurrency cap). The worker implements the issue on branch `pideck/issue-<n>` and opens a PR.
-4. **When CI is green, the daemon spawns a reviewer** (second GitHub account). It files a real
+4. **When CI is green, the daemon spawns a reviewer** (the required second
+   GitHub account). It files a real
    GitHub review: request changes or approve.
 5. **Changes requested → the same worker fixes and pushes → the same reviewer re-reviews.**
    Repeat until approved.

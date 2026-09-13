@@ -199,6 +199,7 @@ function fakeGhState() {
           state,
           submitted_at: ago(30 * MINUTE),
           body: null,
+          commit_id: pr.sha,
         })),
         reviewComments: [],
         requestedReviewers: [],

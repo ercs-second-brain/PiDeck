@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Api } from "./lib/api.mjs";
-import { logLine, start, waitReady } from "./lib/daemon.mjs";
+import { killTmuxServer, logLine, start, waitReady } from "./lib/daemon.mjs";
 import { createRepo, deleteRepo, makeWorkspace } from "./lib/repo.mjs";
 import { gh, loginForToken, primaryLogin } from "./lib/gh.mjs";
 import { lines } from "./lib/views.mjs";
@@ -161,6 +161,7 @@ async function main() {
     // the process before result.json and cleanup run.
     if (api !== null) await api.quiesce();
     if (daemon !== null) await daemon.kill().catch(() => {});
+    await killTmuxServer(ts);
     result.finishedAt = new Date().toISOString();
     if (interrupted) {
       result.ok = false;
