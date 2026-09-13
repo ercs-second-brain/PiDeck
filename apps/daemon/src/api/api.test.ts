@@ -149,14 +149,15 @@ describe("REST contract", () => {
   });
 
   it("flags a session as active while its pi agent is mid-turn", async () => {
-    const { base, deps } = await startDaemon();
+    const { base, deps, tmux } = await startDaemon();
     const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
     const worker = sessionRecord({ persona: "worker", projectId: project.id, issueNumber: 7 });
     deps.registry.add(worker);
+    tmux.createSession(worker.tmuxSession);
     const dir = join(deps.stateDir, "pi-sessions", worker.id);
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl");
-    const write = (lines: string[]) => writeFileSync(file, lines.join(""), "utf8");
+    const write = (lines: string[]) => writeFileSync(file, lines.join("\n") + "\n", "utf8");
     const now = () => new Date().toISOString();
     const list = async (): Promise<SessionView> => {
       const views: SessionView[] = validate(
@@ -174,10 +175,57 @@ describe("REST contract", () => {
     ]);
     expect((await list()).active).toBe(true);
 
+    // A tool call running for an hour still reads as working — shape, not age.
+    const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+    write([
+      JSON.stringify({ type: "message", timestamp: hourAgo, message: { role: "assistant", content: [], stopReason: "toolUse" } }),
+      JSON.stringify({ type: "message", timestamp: hourAgo, message: { role: "toolResult", content: [] } }),
+    ]);
+    expect((await list()).active).toBe(true);
+
     write([
       JSON.stringify({ type: "message", timestamp: now(), message: { role: "assistant", content: [], stopReason: "toolUse" } }),
       JSON.stringify({ type: "message", timestamp: now(), message: { role: "assistant", content: [], stopReason: "stop" } }),
     ]);
+    expect((await list()).active).toBe(false);
+  });
+
+  it("reads a dead pane as idle even while its transcript is mid-turn", async () => {
+    const { base, deps, tmux } = await startDaemon();
+    const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
+    const worker = sessionRecord({ persona: "worker", projectId: project.id, issueNumber: 7 });
+    deps.registry.add(worker);
+    tmux.createSession(worker.tmuxSession);
+    const dir = join(deps.stateDir, "pi-sessions", worker.id);
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl");
+    const message = (role: string, stopReason?: string): string =>
+      JSON.stringify({
+        type: "message",
+        timestamp: new Date().toISOString(),
+        message: { role, content: [], ...(stopReason === undefined ? {} : { stopReason }) },
+      });
+    writeFileSync(file, `${message("assistant", "toolUse")}\n`, "utf8");
+    const list = async (): Promise<SessionView> => {
+      const views: SessionView[] = validate(
+        restEndpoints["sessionList"].response,
+        (await call(base, "GET", "/api/sessions")).body,
+      );
+      return views.find((v) => v.session.id === worker.id)!;
+    };
+
+    expect((await list()).active).toBe(true);
+
+    // The pane persists (remain-on-exit) but its payload is gone.
+    tmux.exitPayload(worker.tmuxSession);
+    await list();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await list()).active).toBe(false);
+
+    // A pane that vanished entirely reads idle too.
+    tmux.killSession(worker.tmuxSession);
+    await list();
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect((await list()).active).toBe(false);
   });
 

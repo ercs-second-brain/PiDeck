@@ -15,7 +15,8 @@ import type { DaemonDeps } from "./deps.js";
  * archived one — and the title is the issue title (for a reviewer, of the issue its PR belongs to). Before the
  * reconciler's first read pass every project has no facts, so workers read
  * as `working` and titles are null. `active` is the pi-session liveness probe
- * (mid-turn within the last minute); archived sessions never read active.
+ * (the transcript's newest event is an in-flight turn and the tmux pane is
+ * alive); archived sessions never read active.
  */
 export function sessionViews(sessions: Session[], deps: DaemonDeps): SessionView[] {
   return sessions.map((session) => sessionView(session, sessions, deps));
@@ -64,8 +65,44 @@ function sessionView(session: Session, all: Session[], deps: DaemonDeps): Sessio
     parentSessionId: parentSessionId(session, all),
     title: titleFor(session, facts),
     reviewAccess: facts?.reviewAccess ?? null,
-    active: session.archivedAt === undefined && sessionActive(deps.stateDir, session.id),
+    active:
+      session.archivedAt === undefined &&
+      sessionActive(deps.stateDir, session.id) &&
+      paneAlive(session, deps),
   };
+}
+
+/**
+ * Last-known tmux pane liveness, one cache per daemon: the snapshot must
+ * stay synchronous, so the check runs in the background and views read the
+ * cached fact — a pane counts as alive until proven otherwise, and a dead
+ * one then reads idle from the next snapshot on. Only consulted when the
+ * transcript shape says mid-turn, so idle sessions cost no tmux calls.
+ */
+const paneAliveCaches = new WeakMap<DaemonDeps, Map<string, boolean>>();
+
+function paneAlive(session: Session, deps: DaemonDeps): boolean {
+  let cache = paneAliveCaches.get(deps);
+  if (cache === undefined) {
+    cache = new Map();
+    paneAliveCaches.set(deps, cache);
+  }
+  void refreshPaneAlive(deps, cache, session);
+  return cache.get(session.id) ?? true;
+}
+
+async function refreshPaneAlive(
+  deps: DaemonDeps,
+  cache: Map<string, boolean>,
+  session: Session,
+): Promise<void> {
+  try {
+    const alive =
+      (await deps.tmux.isAlive(session.tmuxSession)) && !(await deps.tmux.paneDead(session.tmuxSession));
+    cache.set(session.id, alive);
+  } catch {
+    // tmux hiccup — keep the last-known fact
+  }
 }
 
 function projectSettings(deps: DaemonDeps, projectId: string | null): ProjectSettings | null {

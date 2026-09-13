@@ -40,9 +40,9 @@ export const SessionViewSchema = z.object({
    * reviewer runs while this is set. */
   reviewAccess: z.string().nullable().default(null),
   /** True while the session's pi agent is mid-turn: the newest event in its
-   * pinned JSONL is an in-flight assistant/tool event within the liveness
-   * window. Always set by the daemon's views; optional so fixtures can omit
-   * it. */
+   * pinned JSONL is an in-flight assistant turn (`toolUse`) or a tool result,
+   * whatever its age, and the tmux pane is alive. Always set by the daemon's
+   * views; optional so fixtures can omit it. */
   active: z.boolean().optional(),
 });
 
