@@ -8,16 +8,19 @@ interface BadgeProps {
   /** Dot variant: an 8px circle in the tone's colour; `children` become the
    * title and accessible name instead of visible text. */
   dot?: boolean;
+  /** Dot variant: pulse the dot while the agent is actively working.
+   * Ignored without `dot`. */
+  pulse?: boolean;
   children: ReactNode;
 }
 
 /** The state pill: text label in the state's colour tint, 11px, pill radius. */
-export function Badge({ tone, dot = false, children }: BadgeProps) {
+export function Badge({ tone, dot = false, pulse = false, children }: BadgeProps) {
   if (dot) {
     const label = typeof children === "string" ? children : undefined;
     return (
       <span
-        className={`badge badge--dot badge--${tone}`}
+        className={`badge badge--dot badge--${tone}${pulse ? " badge--pulse" : ""}`}
         role="img"
         title={label}
         aria-label={label}

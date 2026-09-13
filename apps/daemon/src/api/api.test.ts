@@ -148,6 +148,39 @@ describe("REST contract", () => {
     expect((await call(base, "GET", "/api/projects/nope/sessions")).status).toBe(404);
   });
 
+  it("flags a session as active while its pi agent is mid-turn", async () => {
+    const { base, deps } = await startDaemon();
+    const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);
+    const worker = sessionRecord({ persona: "worker", projectId: project.id, issueNumber: 7 });
+    deps.registry.add(worker);
+    const dir = join(deps.stateDir, "pi-sessions", worker.id);
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "2026-01-01T00-00-00-000Z_0000.jsonl");
+    const write = (lines: string[]) => writeFileSync(file, lines.join(""), "utf8");
+    const now = () => new Date().toISOString();
+    const list = async (): Promise<SessionView> => {
+      const views: SessionView[] = validate(
+        restEndpoints["sessionList"].response,
+        (await call(base, "GET", "/api/sessions")).body,
+      );
+      return views.find((v) => v.session.id === worker.id)!;
+    };
+
+    // No transcript yet — idle.
+    expect((await list()).active).toBe(false);
+
+    write([
+      JSON.stringify({ type: "message", timestamp: now(), message: { role: "assistant", content: [], stopReason: "toolUse" } }),
+    ]);
+    expect((await list()).active).toBe(true);
+
+    write([
+      JSON.stringify({ type: "message", timestamp: now(), message: { role: "assistant", content: [], stopReason: "toolUse" } }),
+      JSON.stringify({ type: "message", timestamp: now(), message: { role: "assistant", content: [], stopReason: "stop" } }),
+    ]);
+    expect((await list()).active).toBe(false);
+  });
+
   it("carries the project's review-access failure on its session views", async () => {
     const { base, deps } = await startDaemon();
     const project: Project = validate(restEndpoints["projectCreate"].response, (await addProject(base)).body);

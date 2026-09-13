@@ -1,5 +1,6 @@
 import type { ProjectSettings, Session, SessionView } from "@pideck/shared";
 import type { CiStatus } from "../github/schemas.js";
+import { sessionActive } from "../sessions/activity.js";
 import { prBaton, prForWorker } from "../reconciler/desired.js";
 import type { ProjectFacts } from "../reconciler/read.js";
 import { deriveState, type SessionStateFacts } from "../reconciler/state.js";
@@ -13,7 +14,8 @@ import type { DaemonDeps } from "./deps.js";
  * parent is the worker whose PR it reviews — the live one, else the newest
  * archived one — and the title is the issue title (for a reviewer, of the issue its PR belongs to). Before the
  * reconciler's first read pass every project has no facts, so workers read
- * as `working` and titles are null.
+ * as `working` and titles are null. `active` is the pi-session liveness probe
+ * (mid-turn within the last minute); archived sessions never read active.
  */
 export function sessionViews(sessions: Session[], deps: DaemonDeps): SessionView[] {
   return sessions.map((session) => sessionView(session, sessions, deps));
@@ -62,6 +64,7 @@ function sessionView(session: Session, all: Session[], deps: DaemonDeps): Sessio
     parentSessionId: parentSessionId(session, all),
     title: titleFor(session, facts),
     reviewAccess: facts?.reviewAccess ?? null,
+    active: session.archivedAt === undefined && sessionActive(deps.stateDir, session.id),
   };
 }
 
